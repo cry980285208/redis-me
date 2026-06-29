@@ -235,14 +235,22 @@ const scanBatchSize = computed(() => {
   return stripped.length <= 1 ? 1000 : 10000
 })
 
+/** 当前库键总量：单机取 INFO dbN；集群为单 master 键数 × master 节点数 */
+const dbSize = computed(() => {
+  if (!share.conn) return 0
+  const perDb = Number(share.dbSizeMap['db' + share.conn.db] ?? 0)
+  if (!share.conn.cluster) return perDb
+  const masterCount = share.nodeList.filter(n => n.isMaster).length
+  return masterCount > 0 ? perDb * masterCount : perDb
+})
+
 // 扫描进度：按 SCAN 批次估算（与匹配结果数量无关，稀有键搜索时进度仍正常推进）
 const scanProgress = computed(() => {
   if (cursor.value?.finished) return 100
   if (!share.conn || scanBatchCount.value === 0) return 0
-  const dbSize = Number(share.dbSizeMap['db' + share.conn.db] ?? 0)
-  if (dbSize > 0) {
+  if (dbSize.value > 0) {
     const scanned = scanBatchCount.value * scanBatchSize.value
-    return Math.min(99, Math.round((scanned / dbSize) * 100))
+    return Math.min(99, Math.round((scanned / dbSize.value) * 100))
   }
   return Math.min(99, scanBatchCount.value * 5)
 })
@@ -699,10 +707,9 @@ async function mockData(): Promise<void> {
           await meCommands.mockData(share.conn!.id, count)
           remaining -= count
           share.exportImportingPercentage = Math.round(((total - remaining) / total) * 100)
-          await sleep(10) // 睡眠10ms以便其他动作可以获取到锁, 同时避免UI界面卡顿
+          await sleep(100) // 睡眠10ms以便其他动作可以获取到锁, 同时避免UI界面卡顿
         }
         meOk(t('keyHeader.mockOk'))
-        bus.emit(CONN_REFRESH)
         bus.emit(INFO_REFRESH)
       } finally {
         share.exportImporting = false
