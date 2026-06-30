@@ -1099,7 +1099,7 @@ function editDbName(db: number): void {
 
       <!-- 中间: 选中/过滤, 过滤/总数 -->
       <div class="center">
-        <el-text class="tip" size="large" type="primary">
+        <el-text class="tip" size="large" :style="{ color: share.color }">
           <span v-if="showCheckbox">{{ checkedKeyList.length }} / {{ filterKeyList.length }}</span>
           <span v-else-if="favoriteMode"
             >{{ filterKeyList.length }} / {{ currentFavorites.length }}</span
