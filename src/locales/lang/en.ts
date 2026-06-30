@@ -488,16 +488,16 @@ export default {
     limit: '(Data has reached limit：${limit})',
   },
 
-  keyList: { renameKey: 'Rename' },
+  keyList: { renameKey: 'Rename Key' },
 
   keyRename: { title: 'Rename Key', newKeyName: 'New key name' },
-  keyCopy: { title: 'Duplicate Key', newKeyName: 'New key name' },
+  keyCopy: { title: 'Create Duplicate', newKeyName: 'New key name' },
 
   keyTree: {
     noData: 'No Data',
     refreshKey: 'Refresh List',
     reloadKey: 'Reload',
-    copyKey: 'Copy',
+    copyKey: 'Copy Key',
     deleteKey: 'Delete',
     addKey: 'Add Key',
     copyFolder: 'Copy Folder',
@@ -812,12 +812,12 @@ export default {
     noKeySelected: 'No Key Selected',
     loadMore: 'Load More',
     loadAll: 'Load All',
-    renameKey: 'Rename',
-    duplicateKey: 'Duplicate',
+    renameKey: 'Rename Key',
+    duplicateKey: 'Create Duplicate',
     copyAsCommand: 'Copy as Command',
     copyCommandOk: 'Command copied',
     copyCommandEmpty: 'Empty key, nothing to copy',
-    refreshKey: 'Refresh',
+    refreshKey: 'Refresh Key',
 
     textMemory: 'Memory Usage: ',
     textLength: 'Bytes Length: ',
