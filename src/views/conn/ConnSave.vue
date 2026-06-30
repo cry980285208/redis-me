@@ -346,7 +346,7 @@ function applyAdvanced() {
     @closed="emit('closed')"
     draggable
     v-model="visible"
-    width="600"
+    width="660"
     :close-on-click-modal="false"
     :close-on-press-escape="false"
     append-to-body
@@ -422,71 +422,70 @@ function applyAdvanced() {
         </el-col>
       </el-row>
 
-      <!-- 颜色、复选框 -->
-      <el-row :gutter="24" justify="space-between">
-        <!-- 颜色选择 -->
-        <el-col :span="6">
-          <el-form-item :label="t('conn.color')">
-            <div class="conn-color-row">
-              <el-color-picker v-model="form.color" :predefine="PREDEFINE_COLORS" />
-              <el-button
-                class="conn-advanced-btn"
-                icon="el-icon-grid"
-                :title="t('conn.advancedTitle')"
-                @click="openAdvanced" />
-            </div>
-          </el-form-item>
-        </el-col>
-
-        <!-- 复选框：连接模式（靠右对齐） -->
-        <el-col :span="18" style="padding-left: 0; padding-right: 0">
-          <div class="conn-mode-checkboxes">
-            <!-- 集群模式 -->
-            <el-checkbox v-model="form.cluster">
-              <me-icon
-                :name="t('conn.cluster')"
-                icon="el-icon-question-filled"
-                placement="top"
-                :info="t('conn.clusterTip')"
-                :icon-left="false"
-                raw-content />
-            </el-checkbox>
-
-            <!-- 哨兵模式 -->
-            <el-checkbox v-model="form.sentinel">
-              <me-icon
-                :name="t('conn.sentinel')"
-                icon="el-icon-question-filled"
-                placement="top"
-                :info="t('conn.sentinelTip')"
-                :icon-left="false"
-                raw-content />
-            </el-checkbox>
-
-            <!-- SSL加密 -->
-            <el-checkbox v-model="form.ssl">
-              <me-icon
-                name="SSL"
-                icon="el-icon-question-filled"
-                placement="top"
-                :info="t('conn.sslTip')"
-                :icon-left="false"
-                raw-content />
-            </el-checkbox>
-
-            <!-- SSH隧道 -->
-            <el-checkbox v-model="form.ssh">
-              <me-icon
-                name="SSH"
-                icon="el-icon-question-filled"
-                placement="top"
-                :info="t('conn.sshTip')"
-                :icon-left="false"
-                raw-content />
-            </el-checkbox>
+      <!-- 颜色、复选框：左右 space-between，不再按 el-col 比例分配 -->
+      <div class="conn-color-mode-row">
+        <el-form-item :label="t('conn.color')" class="conn-color-form-item">
+          <div class="conn-color-row">
+            <el-color-picker v-model="form.color" :predefine="PREDEFINE_COLORS" />
+            <el-button
+              class="conn-advanced-btn"
+              icon="el-icon-grid"
+              :title="t('conn.advancedTitle')"
+              @click="openAdvanced" />
+            <el-input v-model.number="form.db" class="conn-db-input" placeholder="0">
+              <template #prefix>
+                <me-icon icon="me-icon-db" name="db" />
+              </template>
+            </el-input>
           </div>
-        </el-col>
-      </el-row>
+        </el-form-item>
+
+        <div class="conn-mode-checkboxes">
+          <!-- 集群模式 -->
+          <el-checkbox v-model="form.cluster">
+            <me-icon
+              :name="t('conn.cluster')"
+              icon="el-icon-question-filled"
+              placement="top"
+              :info="t('conn.clusterTip')"
+              :icon-left="false"
+              raw-content />
+          </el-checkbox>
+
+          <!-- 哨兵模式 -->
+          <el-checkbox v-model="form.sentinel">
+            <me-icon
+              :name="t('conn.sentinel')"
+              icon="el-icon-question-filled"
+              placement="top"
+              :info="t('conn.sentinelTip')"
+              :icon-left="false"
+              raw-content />
+          </el-checkbox>
+
+          <!-- SSL加密 -->
+          <el-checkbox v-model="form.ssl">
+            <me-icon
+              name="SSL"
+              icon="el-icon-question-filled"
+              placement="top"
+              :info="t('conn.sslTip')"
+              :icon-left="false"
+              raw-content />
+          </el-checkbox>
+
+          <!-- SSH隧道 -->
+          <el-checkbox v-model="form.ssh">
+            <me-icon
+              name="SSH"
+              icon="el-icon-question-filled"
+              placement="top"
+              :info="t('conn.sshTip')"
+              :icon-left="false"
+              raw-content />
+          </el-checkbox>
+        </div>
+      </div>
 
       <!-- 哨兵模式 -->
       <div v-show="form.sentinel">
@@ -699,10 +698,32 @@ function applyAdvanced() {
 </template>
 
 <style scoped lang="scss">
+.conn-color-mode-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 12px;
+}
+
+.conn-color-form-item {
+  margin-bottom: 0;
+  flex-shrink: 0;
+}
+
 .conn-color-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+}
+
+.conn-db-input {
+  width: 88px;
+
+  :deep(.el-input__prefix),
+  :deep(.el-input__prefix-inner) {
+    color: var(--el-text-color-regular);
+  }
 }
 
 .conn-name-row {
@@ -758,16 +779,18 @@ function applyAdvanced() {
 
 .conn-mode-checkboxes {
   display: flex;
-  justify-content: flex-end;
   flex-wrap: wrap;
   align-items: center;
-  width: 100%;
-  min-height: 32px;
+  flex-shrink: 0;
 
   // 与英文标签等宽占位，避免中文过短导致整组贴右
   :deep(.el-checkbox) {
     min-width: 5rem;
     margin-right: 12px;
+
+    &:last-child {
+      margin-right: 0;
+    }
   }
 }
 
