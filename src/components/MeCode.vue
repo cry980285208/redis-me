@@ -98,10 +98,7 @@ const props = withDefaults(
     mode?: string
     readOnly?: boolean
   }>(),
-  {
-    mode: 'json',
-    readOnly: false,
-  },
+  { mode: 'json', readOnly: false },
 )
 
 const dark = useDark()
@@ -115,9 +112,7 @@ const extensions = computed(() => {
   const list = [
     meBasicSetup,
     meCodePrecKeymap,
-    EditorView.theme({
-      '&': { fontSize: `${fontSizePx.value}px` },
-    }),
+    EditorView.theme({ '&': { fontSize: `${fontSizePx.value}px` } }),
   ]
 
   if (lineWrap.value) {

@@ -88,10 +88,7 @@ refresh()
 const formRef = useTemplateRef('formRef')
 const editShow = ref(false)
 const editLoading = ref(false)
-const form = reactive({
-  slowerThan: 10,
-  slowerMaxLen: 128,
-})
+const form = reactive({ slowerThan: 10, slowerMaxLen: 128 })
 const commandList = computed(() => [
   `CONFIG SET slowlog-log-slower-than ${form.slowerThan === -1 ? -1 : form.slowerThan * 1000}`,
   `CONFIG SET slowlog-max-len ${form.slowerMaxLen}`,

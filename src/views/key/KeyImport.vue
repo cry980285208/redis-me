@@ -53,9 +53,7 @@ watch(
     form.value.file = ''
   },
 )
-const rules = computed(() => ({
-  file: [{ required: true, message: t('keyImport.fileRequired') }],
-}))
+const rules = computed(() => ({ file: [{ required: true, message: t('keyImport.fileRequired') }] }))
 const handleConflictOptions = computed(() => [
   { label: t('keyImport.replace'), value: 'replace' },
   { label: t('keyImport.ignore'), value: 'ignore' },

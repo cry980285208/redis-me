@@ -16,10 +16,7 @@ import {
 } from '@/utils/rdm'
 import { meErr, meWarn } from '@/utils/util'
 
-const emit = defineEmits<{
-  import: [list: UiConn[]]
-  closed: []
-}>()
+const emit = defineEmits<{ import: [list: UiConn[]]; closed: [] }>()
 
 const { t } = useI18n()
 

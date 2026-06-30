@@ -8,11 +8,7 @@ import { shareProvideKey } from '@/types/me-interface'
 import type { RedisKey_Deserialize } from '@/types/tauri-specta'
 import { meCommands, meOk, meTtlSeconds } from '@/utils/util'
 
-type TtlForm = {
-  ttl: number
-  ttlUnit: string
-  keyList: RedisKey_Deserialize[]
-}
+type TtlForm = { ttl: number; ttlUnit: string; keyList: RedisKey_Deserialize[] }
 
 const { t } = useI18n()
 const emit = defineEmits(['success', 'closed'])
@@ -30,11 +26,7 @@ const share = inject(shareProvideKey)!
 // 表单数据
 const visible = ref(false)
 const loading = ref(false)
-const initForm: TtlForm = {
-  ttl: -1,
-  ttlUnit: 'second',
-  keyList: [],
-}
+const initForm: TtlForm = { ttl: -1, ttlUnit: 'second', keyList: [] }
 const form = ref<TtlForm>(cloneDeep(initForm))
 const rules = computed(() => ({
   ttl: [

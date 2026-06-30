@@ -13,11 +13,7 @@ const props = withDefaults(
     /** 文件对话框允许的扩展名列表 */
     fileExtensions?: string[]
   }>(),
-  {
-    filePrefix: '',
-    fileSuffix: '',
-    fileExtensions: undefined,
-  },
+  { filePrefix: '', fileSuffix: '', fileExtensions: undefined },
 )
 const model = defineModel<string>({ default: '' })
 

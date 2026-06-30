@@ -42,10 +42,7 @@ function winItem(arch, type, fileName) {
     : isInstaller
       ? 'Installer'
       : 'Portable'
-  return {
-    text: `${arch} ${label} (.${type})`,
-    link: downloadLink(fileName),
-  }
+  return { text: `${arch} ${label} (.${type})`, link: downloadLink(fileName) }
 }
 
 function macItem(chip, fileName) {
@@ -57,10 +54,7 @@ function macItem(chip, fileName) {
       : isZh.value
         ? 'Intel芯片'
         : 'Intel Mac'
-  return {
-    text: `${label} (.dmg)`,
-    link: downloadLink(fileName),
-  }
+  return { text: `${label} (.dmg)`, link: downloadLink(fileName) }
 }
 
 function linuxItem(arch, format, fileName) {
@@ -68,10 +62,7 @@ function linuxItem(arch, format, fileName) {
     ? { deb: 'Debian', rpm: 'Redhat', appimage: '通用' }[format]
     : { deb: 'Debian', rpm: 'Redhat', appimage: 'Generic' }[format]
   const suffix = format === 'appimage' ? 'AppImage' : format
-  return {
-    text: `${arch} ${label} (.${suffix})`,
-    link: downloadLink(fileName),
-  }
+  return { text: `${arch} ${label} (.${suffix})`, link: downloadLink(fileName) }
 }
 
 const downloadMenu = computed(() => {

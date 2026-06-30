@@ -39,19 +39,11 @@ const form = reactive({
 
   // SSL连接
   ssl: false,
-  sslOption: {
-    key: '',
-    cert: '',
-    ca: '',
-  },
+  sslOption: { key: '', cert: '', ca: '' },
 
   // 哨兵模式
   sentinel: false,
-  sentinelOption: {
-    masterName: '',
-    masterUsername: '',
-    masterPassword: '',
-  },
+  sentinelOption: { masterName: '', masterUsername: '', masterPassword: '' },
 
   // SSH隧道
   ssh: false,
@@ -334,9 +326,7 @@ const connMinimal = computed({
 
 // 高级选项：CONFIG 命令映射（存 meta.commandMap）
 const advancedVisible = ref(false)
-const advancedForm = reactive({
-  configMapped: '',
-})
+const advancedForm = reactive({ configMapped: '' })
 
 function openAdvanced() {
   advancedForm.configMapped = getConnCommandMap(form as UiConn).config ?? ''

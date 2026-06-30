@@ -7,10 +7,7 @@ import type { UiConn } from '@/types/me-interface'
 import { getConnIcon } from '@/utils/conn'
 import { PREDEFINE_COLORS } from '@/utils/util'
 
-const props = defineProps<{
-  data: UiConn[]
-  groupKey?: string
-}>()
+const props = defineProps<{ data: UiConn[]; groupKey?: string }>()
 
 const emit = defineEmits<{
   select: [conn: UiConn]

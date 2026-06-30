@@ -10,13 +10,9 @@ import { meCommands, meCopy, meOk, meWarn } from '@/utils/util'
 
 const visible = defineModel<boolean>({ default: false })
 
-const props = defineProps<{
-  user: AclUserDetail | null
-}>()
+const props = defineProps<{ user: AclUserDetail | null }>()
 
-const emit = defineEmits<{
-  success: []
-}>()
+const emit = defineEmits<{ success: [] }>()
 
 const { t } = useI18n()
 const share = inject(shareProvideKey)!

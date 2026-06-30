@@ -75,11 +75,7 @@ const emptyScanCursor: ScanCursor = {
   finished: false,
 }
 
-const minimalScanParam: ScanParam = {
-  match: '*',
-  type: null,
-  cursor: emptyScanCursor,
-}
+const minimalScanParam: ScanParam = { match: '*', type: null, cursor: emptyScanCursor }
 
 const dummyKey: RedisKey_Deserialize = { key: 'k', bytes: '' }
 
@@ -134,11 +130,7 @@ const minimalFieldDel: RedisFieldDel_Deserialize = {
   valFmt: null,
 }
 
-const minimalRedisCmd: RedisCommand = {
-  command: 'PING',
-  node: null,
-  autoBroadcast: null,
-}
+const minimalRedisCmd: RedisCommand = { command: 'PING', node: null, autoBroadcast: null }
 
 const minimalMemoryParam: RedisMemoryParam = {
   match: null,
@@ -150,15 +142,9 @@ const minimalMemoryParam: RedisMemoryParam = {
   needKeyType: null,
 }
 
-const minimalBatchKey: RedisBatchKey_Deserialize = {
-  match: '*',
-  keyList: [],
-}
+const minimalBatchKey: RedisBatchKey_Deserialize = { match: '*', keyList: [] }
 
-const minimalBatchTtl: RedisBatchTtl_Deserialize = {
-  keyList: [],
-  ttl: 60,
-}
+const minimalBatchTtl: RedisBatchTtl_Deserialize = { keyList: [], ttl: 60 }
 
 const minimalExportCsv: RedisExportCsv_Deserialize = {
   match: '*',

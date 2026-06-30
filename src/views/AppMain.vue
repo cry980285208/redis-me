@@ -152,10 +152,7 @@ watch(
     meTauri.connList = connList as MeTauriGlobal['connList']
 
     await meCommands.connList(connList as ConnConfig[])
-    const payload: ConnListWindowsSyncPayload = {
-      connList,
-      label: tauriWindow.label,
-    }
+    const payload: ConnListWindowsSyncPayload = { connList, label: tauriWindow.label }
     await tauriWindow.emit(CONN_LIST_WINDOWS_SYNC, payload)
   },
   { immediate: true },

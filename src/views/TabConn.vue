@@ -143,10 +143,7 @@ function handleCommand(command: string): void {
 function promptFolderName(title: string, inputValue: string, onOk: (name: string) => void): void {
   mePrompt(
     title,
-    {
-      inputValue,
-      inputValidator: v => !!normalizeGroupName(v) || t('conn.folderNameRequired'),
-    },
+    { inputValue, inputValidator: v => !!normalizeGroupName(v) || t('conn.folderNameRequired') },
     ({ value }) => {
       const name = normalizeGroupName(value)
       if (name) onOk(name)

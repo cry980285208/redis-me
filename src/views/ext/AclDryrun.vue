@@ -8,9 +8,7 @@ import { meCommands } from '@/utils/util'
 
 const visible = defineModel<boolean>({ default: false })
 
-const props = defineProps<{
-  username: string
-}>()
+const props = defineProps<{ username: string }>()
 
 const { t } = useI18n()
 const share = inject(shareProvideKey)!

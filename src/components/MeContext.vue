@@ -7,16 +7,11 @@ const emit = defineEmits(['handleCommand', 'handleClose'])
 
 const dropdownRef = useTemplateRef('dropdownRef')
 const position = ref({ top: 0, left: 0, bottom: 0, right: 0 })
-const triggerRef = ref({
-  getBoundingClientRect: () => position.value,
-})
+const triggerRef = ref({ getBoundingClientRect: () => position.value })
 
 function showMenu(e: MouseEvent): void {
   const { clientX, clientY } = e
-  position.value = DOMRect.fromRect({
-    x: clientX,
-    y: clientY,
-  })
+  position.value = DOMRect.fromRect({ x: clientX, y: clientY })
   e.preventDefault()
   dropdownRef.value?.handleOpen()
 }
