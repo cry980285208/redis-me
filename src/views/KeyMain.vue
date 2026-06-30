@@ -877,7 +877,7 @@ function editDbName(db: number): void {
                 v-if="showScanControl"
                 :content="scanToggleTip"
                 placement="bottom"
-                :show-after="500">
+                :show-after="1000">
                 <div class="scan-control" @click.stop="onScanAction">
                   <el-progress
                     type="circle"
@@ -892,7 +892,7 @@ function editDbName(db: number): void {
                     class="scan-icon" />
                 </div>
               </el-tooltip>
-              <el-tooltip :content="t('keyMain.refreshKey')" placement="bottom" :show-after="500">
+              <el-tooltip :content="t('keyMain.refreshKey')" placement="bottom" :show-after="1000">
                 <me-icon
                   icon="me-icon-search"
                   class="suffix-icon-btn"
@@ -903,7 +903,7 @@ function editDbName(db: number): void {
                 :content="t('keyMain.exactSearch')"
                 placement="bottom"
                 raw-content
-                :show-after="500">
+                :show-after="1000">
                 <el-checkbox size="small" v-model="exact" class="suffix-exact-checkbox" />
               </el-tooltip>
             </div>

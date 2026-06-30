@@ -840,7 +840,7 @@ onUnmounted(() => {
               <el-text :type="meType(redisValue.type)">{{ redisValue.type.toUpperCase() }}</el-text>
             </template>
             <template #suffix>
-              <el-tooltip :content="ttlIconHint" placement="top" :show-after="500">
+              <el-tooltip :content="ttlIconHint" placement="top" :show-after="1000">
                 <me-icon
                   icon="el-icon-timer"
                   class="suffix-ttl icon-btn"
