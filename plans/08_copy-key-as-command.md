@@ -1,5 +1,9 @@
 # 键值标签页：复制为命令 — 实现方案
 
+> **实现状态**：✅ 已实现  
+> **关键代码**：`src-tauri/src/utils/redis_cli_format.rs`、`get_key_as_command` API、`src/views/tab/RedisValue.vue`  
+> **实际实现**：键值页单键扩展菜单「复制为命令」；格式逻辑与 [09](./09_command-export-format.md) 批量导出共用。
+
 ## 一、需求
 
 在键值详情页，将当前键转为 **redis-cli 可识别、可粘贴执行** 的命令文本并复制到剪贴板。
@@ -108,7 +112,7 @@ SET binkey "\x00\x01\xffhello"
 新增 Tauri API，Rust 连接 Redis **全量读取** 后格式化为命令字符串：
 
 ```rust
-get_key_as_command(conn_id, key: RedisKey) -> String
+get_key_as_command(key: RedisKey) -> String
 ```
 
 | 优点         | 说明                            |
@@ -192,15 +196,14 @@ redis-cli HMSET h f1 "v1" f2 "v2"
 
 ### Phase 1 — Rust
 
-1. `redis_cli_escape_arg(bytes: &[u8]) -> String` + 单元测试（多行、二进制、引号、纯 ASCII 键名）
-2. `format_key_as_command` 各类型分支
-3. 注册 `get_key_as_command` API（Specta）
+1. [x] `redis_cli_format.rs` + 单元测试
+2. [x] `format_key_as_command` / `key_as_command_lines`
+3. [x] 注册 `get_key_as_command` API（Specta）
 
 ### Phase 2 — 前端
 
-1. `RedisValue.vue` 下拉新增 `copyAsCommand`（在 `duplicateKey` 下）
-2. `onKeyMoreCommand` 分支调用 API + `meCopy`
-3. i18n：`redisValue.copyAsCommand`、`redisValue.copyCommandOk`、`redisValue.copyCommandEmpty`
+1. [x] `RedisValue.vue` 下拉 `copyAsCommand` + `onKeyMoreCommand`
+2. [x] i18n：`redisValue.copyAsCommand` 等
 
 ---
 

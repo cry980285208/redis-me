@@ -75,7 +75,7 @@
 
 1. 数据解码生态不足
    - 竞品：TinyRDM/AnotherRDM/Medis 支持 MsgPack/Protobuf/Pickle/Gzip 等更丰富格式。
-   - 现状：RedisME 已支持 UTF8/Hex/Binary/Base64，但自动识别和可扩展解码不足。
+   - 现状：RedisME 已支持 UTF8/Hex/Base64/MsgPack/StrJson/Custom 视图格式，但自动识别和可扩展解码仍不足。
    - 建议：抽象解码管线，内置常见格式，并支持自定义 decoder。
 
 2. 连接管理高级能力不足

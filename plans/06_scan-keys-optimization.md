@@ -1,6 +1,20 @@
 # 扫描键功能优化改造方案
 
-> 参考项目：AnotherRedisDesktopManager、RedisInsight、tiny-rdm
+> **实现状态**：✅ 已实现  
+> **关键代码**：`src/views/KeyMain.vue`（`scanCancelled`、`scanKeyAuto`、`scanPaused` 等）  
+> **实际实现**：`KeyMain.vue` 中 `scanKeyAuto` 递归 SCAN + `scanPaused` 暂停/继续 + `scanCancelled` 取消；边扫边显示；§五 SCAN 动态 COUNT **未实现**。
+
+## 实际实现（RedisME）
+
+| 机制      | 实现                                                       |
+| --------- | ---------------------------------------------------------- |
+| 扫描驱动  | 前端 `scanKeyAuto` 循环调用后端 `scanKey`，非 Node Stream  |
+| 暂停/继续 | `scanPaused` + `canShowScanControl`                        |
+| 取消      | `scanCancelled`，Abort 当前批次                            |
+| 批量大小  | 固定 `scanBatchSize` / settings.keyScanCount，无动态 COUNT |
+| UI        | 底部扫描控制：暂停/继续/停止                               |
+
+> 参考项目：AnotherRedisDesktopManager、RedisInsight、tiny-rdm  
 > 目标：速度快、不卡死、边扫边显示
 
 ---

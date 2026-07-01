@@ -1,5 +1,9 @@
 # 集群模式多数据库（Valkey 9 / redis-rs 1.3.0）支持方案
 
+> **实现状态**：✅ Phase 1 已实现（运行时切库未做）  
+> **关键代码**：`conn.rs`（`database_id`）、`capabilities.rs`（`clusterDbSupported`）、`ConnSave.vue`、`KeyMain.vue`  
+> **实际实现**：连接时 `ClusterClientBuilder::database_id(conf.db)`；`clusterDbSupported` = 集群 + Valkey + major≥9；主界面只读 `dbX` 标签；`select_db` 返回 `ClusterDbSwitchNotSupported`；Phase 2 运行时切库暂不实现。
+
 ## 一、背景
 
 ### 1.1 上游能力
@@ -14,15 +18,16 @@
 - **Redis OSS 集群** 仍不支持非 0 库，握手时会返回 `SELECT is not allowed in cluster mode`
 - **redis-rs 后续方向**（[PR #2150](https://github.com/redis-rs/redis-rs/pull/2150)，未合并）：拟禁止集群客户端手动发 SELECT，db 视为连接级不可变属性
 
-### 1.2 项目现状
+### 1.2 实际实现
 
-| 环节         | 单机                                                      | 集群（当前）                                                              |
-| ------------ | --------------------------------------------------------- | ------------------------------------------------------------------------- |
-| 连接时 db    | `new_raw_conn` 发 SELECT；哨兵用 `set_client_to_redis_db` | `get_client_cluster` **未传** `database_id`，始终 db0                     |
-| 运行时切换   | `SELECT` + 更新本地 `db`                                  | 只改本地 `db` 和日志索引，**不发 SELECT**，日志「集群模式下不支持切换DB」 |
-| `db_list`    | `CONFIG GET databases`                                    | **返回 `[]`**                                                             |
-| 前端 db 下拉 | 显示                                                      | `v-if="!share.conn.cluster"` 隐藏                                         |
-| 连接编辑     | 已有 db 输入框                                            | 有 UI，但集群下不生效                                                     |
+| 环节         | 单机                                                      | 集群（当前）                                            |
+| ------------ | --------------------------------------------------------- | ------------------------------------------------------- |
+| 连接时 db    | `new_raw_conn` 发 SELECT；哨兵用 `set_client_to_redis_db` | `get_client_cluster` 传 `.database_id(conf.db)` ✅      |
+| 运行时切换   | `SELECT` + 更新本地 `db`                                  | **拒绝**（`ClusterDbSwitchNotSupported`）               |
+| `db_list`    | `CONFIG GET databases`                                    | 仍返回 `[]`（Phase 2）                                  |
+| 前端 db 展示 | `el-select` 可切换                                        | Valkey 9+ 集群：`showClusterDbLabel` 只读标签；否则隐藏 |
+| 连接编辑     | db 输入框 + tooltip                                       | 同左；非 0 db 在不支持的服务器上 testConn/connect 失败  |
+| 能力探测     | —                                                         | `clusterDbSupported` = 集群 + Valkey + major≥9          |
 
 依赖：`src-tauri/Cargo.toml` 已使用 `redis = "1"`（当前解析为 1.3.0）。
 
@@ -94,18 +99,16 @@ ClusterClient::builder(vec![url])
 v-if="!share.conn.cluster"
 ```
 
-**目标：**
+**目标（Phase 1 已实现）：**
 
-```vue
-v-if="!share.conn.cluster || share.capabilities.clusterDbSupported"
-```
+- Valkey 9+ 集群：`showClusterDbLabel` 只读 `dbX` 标签（**非** db 下拉切换）
+- 连接时 db 在 `ConnSave.vue` 配置；运行时 `select_db` 拒绝
 
-- 收藏、命令日志、dbSize 等已按 `conn.db` 区分，逻辑可复用
-- 切换 db 后 `share.conn.db` **写回 connList 持久化**（与单机一致）
+**Phase 2（未做）：** `clusterDbSupported` 时显示 db 下拉，切换时后端重建 client。
 
-### 3.4 集群 `db_list`
+### 3.4 集群 `db_list`（Phase 2，未实现）
 
-支持多库后不再返回 `[]`：
+当前 `impl_cluster.rs` **`db_list` 仍返回 `[]`**。Phase 2 计划：
 
 1. 对某一 master 节点执行 `CONFIG GET databases`（与单机类似）
 2. 失败时退回 `[{ db: current_db, size: 0 }]`
@@ -216,14 +219,15 @@ fn db_list(&self) -> AnyResult<Vec<RedisDB>> {
 
 ## 六、实施阶段
 
-### Phase 1（必做，小）
+### Phase 1（已完成）
 
-1. `get_client_cluster` 增加 `.database_id(conf.db as i64)`
-2. `ServerCapabilities` 增加 `cluster_db_supported`（L1+L2）
-3. 验证：`testConn` / `connect` 在 Redis 集群 + db≠0 时正确失败
-4. changelog 说明：Valkey 9+ 集群可在连接中指定初始 db
+1. ✅ `get_client_cluster` 增加 `.database_id(conf.db as i64)`
+2. ✅ `ServerCapabilities` 增加 `cluster_db_supported`（L1+L2）
+3. ✅ `testConn` / `connect` 在 Redis 集群 + db≠0 时正确失败
+4. ✅ 前端：`ConnSave.vue` db 输入 + tooltip；`KeyMain.vue` 只读 `dbX` 标签（`showClusterDbLabel`）
+5. ✅ `select_db` 明确拒绝（`ClusterDbSwitchNotSupported`）
 
-**不涉及**主界面 db 下拉、运行时切换。
+**未做**：主界面 db 下拉切换、运行时重建 client（见 Phase 2）。
 
 ### Phase 2（体验对齐单机）
 
@@ -237,13 +241,13 @@ fn db_list(&self) -> AnyResult<Vec<RedisDB>> {
 
 ## 七、前端改动清单
 
-| 文件                                     | 改动                                                          |
-| ---------------------------------------- | ------------------------------------------------------------- |
-| `src/types/me-interface.ts`              | `ServerCapabilities.clusterDbSupported`                       |
-| `src/views/AppMain.vue`                  | connect 后 capabilities 已 assign，无需额外逻辑               |
-| `src/views/KeyMain.vue`                  | db 下拉、收藏模式 db 展示：`!cluster \|\| clusterDbSupported` |
-| `src/views/conn/ConnSave.vue`            | 可选：集群且不支持时 disable db 或 tooltip                    |
-| `src/plugins/tauri.ts` / specta 生成类型 | 同步新字段                                                    |
+| 文件                                     | 改动                                                              |
+| ---------------------------------------- | ----------------------------------------------------------------- |
+| `src/types/me-interface.ts`              | `ServerCapabilities.clusterDbSupported`                           |
+| `src/views/AppMain.vue`                  | connect 后 capabilities 已 assign，无需额外逻辑                   |
+| `src/views/KeyMain.vue`                  | Valkey 9+ 集群：`showClusterDbLabel` 只读 `dbX`；单机仍用 db 下拉 |
+| `src/views/conn/ConnSave.vue`            | 可选：集群且不支持时 disable db 或 tooltip                        |
+| `src/plugins/tauri.ts` / specta 生成类型 | 同步新字段                                                        |
 
 ---
 
@@ -267,12 +271,12 @@ fn db_list(&self) -> AnyResult<Vec<RedisDB>> {
 
 ## 九、待确认项
 
-| #   | 问题                          | 建议默认                                          |
-| --- | ----------------------------- | ------------------------------------------------- |
-| 1   | 是否做 Phase 2（运行时切换）  | **做**，与单机体验一致                            |
-| 2   | 能力位命名                    | `clusterDbSupported`                              |
-| 3   | 切换 db 是否持久化到 connList | **是**                                            |
-| 4   | Redis OSS 集群下 db 输入框    | 保留，靠 testConn 失败提示；或 grey out + tooltip |
+| #   | 问题                          | 结论（2026-07-01）                      |
+| --- | ----------------------------- | --------------------------------------- |
+| 1   | 是否做 Phase 2（运行时切换）  | **暂不做**；只读 db 标签 + 连接配置指定 |
+| 2   | 能力位命名                    | `clusterDbSupported` ✅                 |
+| 3   | 切换 db 是否持久化到 connList | 单机：是；集群：仅连接配置中的 db       |
+| 4   | Redis OSS 集群下 db 输入框    | 保留，靠 testConn 失败提示 ✅           |
 
 ---
 
@@ -286,5 +290,6 @@ fn db_list(&self) -> AnyResult<Vec<RedisDB>> {
   - `src-tauri/src/utils/conn.rs` — `get_client_cluster`
   - `src-tauri/src/client/impl_cluster.rs` — `select_db` / `db_list`
   - `src-tauri/src/utils/capabilities.rs` — 能力检测
-  - `src/views/KeyMain.vue` — db 下拉
+  - `src/views/KeyMain.vue` — db 只读标签
   - `src/views/conn/ConnSave.vue` — 连接编辑 db 输入
+- 已实现方案索引：[README.md](./README.md)

@@ -1,5 +1,9 @@
 # RedisME 命令格式导出功能 - 实现方案
 
+> **实现状态**：✅ 已实现  
+> **关键代码**：`src/views/key/KeyBatch.vue`、`client_trait.rs`（`export_keys_as_command` / `import_cmds`）、`redis_cli_format.rs`  
+> **实际实现**：导出格式 **csv**（DUMP/RESTORE）与 **cmd**（redis-cli 命令，`.redis` 后缀）；默认 csv；`import_cmd` 逐行解析执行；二进制用 `\xHH` 转义。
+
 ## 一、需求分析
 
 ### 1.1 当前问题
@@ -29,114 +33,64 @@
 
 ---
 
-## 二、方案设计
+## 二、实际导出格式（与代码对齐）
 
-### 2.1 导出格式 (SQL 注释风格)
+### 2.1 CMD 格式（redis-cli 风格）
 
-```redis
--- RedisME Command Export
--- Exported at: 2024-04-12 12:00:00
--- Server: Redis 7.2.0
--- Keys: 5
-
--- STRING: mykey
-SET mykey "myvalue"
-EXPIRE mykey 3600
-
--- HASH: myhash
-HSET myhash field1 "value1"
-HSET myhash field2 "value2"
-HSET myhash field3 "value3"
-
--- LIST: mylist
-RPUSH mylist "item1"
-RPUSH mylist "item2"
-RPUSH mylist "item3"
-
--- SET: myset
-SADD myset "member1"
-SADD myset "member2"
-
--- ZSET: myzset
-ZADD myzset 1 "member1"
-ZADD myzset 2 "member2"
-
--- STREAM: mystream
-XADD mystream * field1 "value1" field2 "value2"
-
--- BASE64 (binary): mybinary
-SET mybinary BASE64:aGVsbG8gd29ybGQ=
-EXPIRE mybinary 3600
-```
-
-**格式特点:**
-
-- 使用 SQL 注释风格 (`--`)
-- 每种类型前有注释说明,如 `-- STRING: keyname`
-- 二进制数据使用 `BASE64:` 前缀标记
-- 每个键的命令分组清晰,可读性强
-- 文件后缀建议使用 `.redis`
-
----
-
-### 2.2 数据类型映射
-
-| Redis 类型           | 导出命令                         | 说明                     |
-| -------------------- | -------------------------------- | ------------------------ |
-| **STRING**           | `SET key "value"`                | 基本字符串               |
-| **STRING (binary)**  | `SET key BASE64:xxxx`            | 二进制数据,Base64 编码   |
-| **HASH**             | `HSET key field "value"` (多条)  | 哈希表,每个字段一条命令  |
-| **LIST**             | `RPUSH key "value"` (多条)       | 列表,使用 RPUSH 保持顺序 |
-| **SET**              | `SADD key "member"` (多条)       | 集合,无序                |
-| **ZSET**             | `ZADD key score "member"` (多条) | 有序集合,带分数          |
-| **STREAM**           | `XADD key * field "value"`       | 流,使用 `*` 自动生成 ID  |
-| **JSON** (RedisJSON) | `JSON.SET key $ json_value`      | JSON 类型                |
-| **其他类型**         | 跳过并记录警告                   | 如 Bloom Filter 等       |
-
-**过期时间处理:**
+**无** 文件头、`--` 注释、`BASE64:` 前缀。每行一条可执行命令；键名/参数用双引号 + C 风格转义（`redis_cli_format.rs` 的 `format_quoted`）。
 
 ```redis
--- 如果键有 TTL,追加 EXPIRE 命令
-EXPIRE key seconds
+SET "mykey" "myvalue"
+EXPIRE "mykey" 3600
+HMSET "myhash" "field1" "value1" "field2" "value2"
+RPUSH "mylist" "item1" "item2" "item3"
+SADD "myset" "member1" "member2"
+ZADD "myzset" 1 "member1" 2 "member2"
+XADD "mystream" "1700000000000-0" "field1" "value1" "field2" "value2"
+JSON.SET "myjson" $ "{\"a\":1}"
+SET "mybinary" "\x00\x01\xff"
 ```
 
----
+**格式特点：**
 
-### 2.3 二进制数据处理
+- 纯命令行，可用 `redis-cli < file.redis` 导入
+- HASH/LIST/SET/ZSET 各 **一条** 聚合命令（HMSET/RPUSH/SADD/ZADD），非多条 HSET/RPUSH
+- 二进制一律 `\xHH` 转义，与 redis-cli 一致
+- STREAM 使用实际 entry id（XRANGE 读出），非 `*`
+- 勾选 TTL 时在键命令后追加 `EXPIRE key seconds`
+- 文件后缀 `.redis`（`KeyBatch.vue`）
 
-**检测逻辑:**
+### 2.2 CSV 格式（DUMP/RESTORE，保留）
 
-```rust
-fn is_binary_data(value: &[u8]) -> bool {
-    // 包含非打印字符(控制字符,排除常见空白符)
-    value.iter().any(|&b| b < 0x20 && b != 0x09 && b != 0x0A && b != 0x0D)
-}
+```
+<base64-key>,<base64-dump>,<ttl-seconds>
 ```
 
-**编码格式:**
+默认导出格式为 **csv**；cmd 为可选（`KeyBatch.vue` `exportFormat: 'csv'`）。
 
-```redis
--- 普通字符串
-SET mykey "hello world"
+### 2.3 数据类型映射
 
--- 二进制数据 (Base64 编码)
-SET mybinary BASE64:SGVsbG8gV29ybGQ=
-```
+| Redis 类型 | 导出命令                   | 说明                     |
+| ---------- | -------------------------- | ------------------------ |
+| STRING     | `SET key "value"`          | 二进制用 `\xHH`          |
+| HASH       | `HMSET key f1 v1 f2 v2 …`  | 单条多 field             |
+| LIST       | `RPUSH key v1 v2 …`        | 单条，顺序与 LRANGE 一致 |
+| SET        | `SADD key m1 m2 …`         | 单条                     |
+| ZSET       | `ZADD key score1 m1 …`     | 单条                     |
+| STREAM     | 每条 `XADD key id f1 v1 …` | 多条，id 来自 XRANGE     |
+| JSON       | `JSON.SET key $ "…"`       | RedisJSON                |
+| 其他       | 跳过并记 err               | Bloom 等                 |
 
-**导入时自动识别:**
+### 2.4 导入
 
-```rust
-if value.starts_with("BASE64:") {
-    let decoded = base64_decode(&value[7..])?;
-    conn.set(&key, decoded)?;
-} else {
-    conn.set(&key, &value)?;
-}
-```
+- **CSV**：`RESTORE`（`import_keys`），支持冲突/TTL 策略
+- **CMD**：`import_cmds` 逐行 `parse_command` + `Cmd::exec`（`client_trait.rs`），**不**解析 `BASE64:` 前缀
 
 ---
 
 ## 三、技术实现
+
+> 下文部分伪代码仍含早期设计（文件头注释、`BASE64:` 等），**以实现代码为准**，见 §2 与 `redis_cli_format.rs` / `export_key_as_command`。
 
 ### 3.1 后端: Rust 实现
 
@@ -438,60 +392,11 @@ fn escape_value(s: &str) -> String {
 }
 ```
 
-#### 3.1.3 新增 API - 获取键的命令
+#### 3.1.3 单键复制 API（已实现，见 08）
 
-**文件: `src-tauri/src/api.rs`**
-
-```rust
-#[tauri::command]
-fn get_key_command(id: String, key: String) -> String {
-    // 获取单个键的命令格式
-}
-
-#[tauri::command]
-fn get_keys_commands(id: String, keys: Vec<String>) -> Vec<String> {
-    // 获取多个键的命令格式
-}
-```
-
-**文件: `src-tauri/src/lib.rs`**
-
-```rust
-// 在 plugin 注册中添加
-.invoke_handler(tauri::generate_handler![
-    // ... 现有 API
-    get_key_command,
-    get_keys_commands,
-])
-```
-
-**实现函数:**
-
-```rust
-/// 获取单个键的命令格式
-pub fn get_key_as_command(conn: &mut impl Commands, key: &str) -> AnyResult<String> {
-    let mut output = String::new();
-    let key_info = RedisKey::from(key.to_string());
-    let mut dummy_writer = std::io::Cursor::new(Vec::new());
-
-    export_key_as_command(conn, &mut BufWriter::new(dummy_writer), key_info, false)?;
-    Ok(output)
-}
-
-/// 获取多个键的命令格式
-pub fn get_keys_as_commands(conn: &mut impl Commands, keys: &[String]) -> AnyResult<String> {
-    let mut output = String::new();
-
-    for key in keys {
-        let key_info = RedisKey::from(key.clone());
-        let result = export_key_as_command(conn, &mut BufWriter::new(std::io::Cursor::new(Vec::new())), key_info, false);
-        if let Ok(_) = result {
-            // 追加到输出
-        }
-    }
-    Ok(output)
-}
-```
+**实际 API**（`api.rs`）：`get_key_as_command(key: RedisKey) -> String`  
+实现：`client_trait.rs` 的 `get_key_as_command0` → `key_as_command_lines`。  
+入口：`RedisValue.vue` 扩展菜单。无批量 `get_keys_commands`、无 `KeyMain` 批量复制。
 
 #### 3.1.4 修改导出调度函数
 
@@ -757,21 +662,17 @@ fn execute_command(conn: &mut impl Commands, command: &str) -> AnyResult<()> {
 
 ---
 
-## 五、修改文件清单
+## 五、修改文件清单（已实现）
 
-| 文件路径                               | 修改内容                                                           | 预估行数 |
-| -------------------------------------- | ------------------------------------------------------------------ | -------- |
-| `src-tauri/src/utils/model.rs`         | `RedisExportCsv` 添加 `export_format` 字段                         | +5       |
-| `src-tauri/src/client/client_trait.rs` | 新增导出函数: `export_key_as_command`, `export_keys_as_command` 等 | +300     |
-| `src-tauri/src/client/client_trait.rs` | 新增辅助函数: 转义、检测二进制等                                   | +80      |
-| `src-tauri/src/client/impl_single.rs`  | 修改 `export_csv` 方法,支持格式选择                                | +20      |
-| `src-tauri/src/client/impl_cluster.rs` | 修改 `export_csv` 方法,支持格式选择                                | +20      |
-| `src-tauri/src/api.rs`                 | 新增 `get_key_command`, `get_keys_commands` API                    | +30      |
-| `src-tauri/src/lib.rs`                 | 注册新 API                                                         | +5       |
-| `src/views/key/KeyBatch.vue`           | 添加导出格式选择单选框                                             | +25      |
-| `src/views/KeyMain.vue`                | 添加"复制为命令"按钮及逻辑                                         | +35      |
-| `src/locales/lang/zh-cn.js`            | 添加中文翻译                                                       | +10      |
-| `src/locales/lang/en.js`               | 添加英文翻译                                                       | +10      |
+| 文件                                 | 说明                                                                                     |
+| ------------------------------------ | ---------------------------------------------------------------------------------------- |
+| `client_trait.rs`                    | `export_keys_as_command`、`export_key_as_command`、`key_as_command_lines`、`import_cmds` |
+| `redis_cli_format.rs`                | `format_quoted`、各类型 `format_*_command`                                               |
+| `impl_single.rs` / `impl_cluster.rs` | `export_format == "cmd"` 分支                                                            |
+| `api.rs` / `lib.rs`                  | `import_cmd`、`get_key_as_command`                                                       |
+| `KeyBatch.vue`                       | 导出格式 csv/cmd 分段选择                                                                |
+| `RedisValue.vue`                     | 单键复制为命令（见 08）                                                                  |
+| `locales/lang/zh-cn.ts`、`en.ts`     | `keyBatch.exportFormat*` 等                                                              |
 
 **总计:** 约 +540 行代码
 
@@ -887,63 +788,35 @@ if ok_count % 100 == 0 {
 ### 8.1 场景 1: 批量导出
 
 ```
-1. 用户点击 "导出数据" 菜单
-   ↓
-2. 弹出导出对话框
-   - 显示匹配的键数量
-   ↓
-3. 选择导出格式
-   ○ 命令格式 (推荐)  ← 默认
-   ○ DUMP 格式 (兼容旧版)
-   ↓
-4. 选择是否包含 TTL
-   ☑ 同时导出过期时间
-   ↓
-5. 选择文件路径
-   - 命令格式默认: redis-me-export_20240412.redis
-   - DUMP 格式默认: redis-me-export_20240412.csv
-   ↓
-6. 点击 "确认导出"
-   ↓
-7. 显示进度条
-   - 导出中... 45/100
-   ↓
-8. 导出完成提示
-   - 成功: 98 个键
-   - 失败: 2 个键
+1. KeyMain → 更多 → 批量导出（KeyBatch.vue）
+2. 选择导出格式：csv（默认）/ cmd
+3. 可选包含 TTL；cmd 后缀 .redis，csv 后缀 .csv
+4. 确认 → 进度事件 → 完成统计
 ```
 
 ### 8.2 场景 2: 复制为命令
 
 ```
-1. 用户在键列表中勾选多个键
-   ↓
-2. 底部操作栏显示 "复制为命令" 按钮
-   ↓
-3. 点击按钮
-   ↓
-4. 后端获取这些键的值并转为命令格式
-   ↓
-5. 自动复制到剪贴板
-   ↓
-6. 弹出提示: "已复制 5 个键的命令"
-   ↓
-7. 用户可在 redis-cli 或其他地方粘贴执行
+1. 打开键值页 RedisValue.vue
+2. 扩展菜单 → 复制为命令
+3. 后端 get_key_as_command 全量读取 → 剪贴板
 ```
+
+> 键列表多选批量复制 **未实现**（原设计草案）。
 
 ---
 
 ## 九、优势总结
 
-| 特性           | DUMP 格式         | 命令格式 (新)           |
-| -------------- | ----------------- | ----------------------- |
-| **版本兼容性** | ❌ 可能不兼容     | ✅ 兼容性好             |
-| **可读性**     | ❌ 二进制编码     | ✅ 纯文本               |
-| **可编辑性**   | ❌ 不可编辑       | ✅ 可编辑               |
-| **直接执行**   | ❌ 需要 RESTORE   | ✅ redis-cli 可直接执行 |
-| **文件大小**   | ✅ 较小 (二进制)  | ⚠️ 较大 (文本)          |
-| **导出速度**   | ✅ 快 (DUMP 命令) | ⚠️ 慢 (需要 GET 等)     |
-| **二进制支持** | ✅ 原生支持       | ⚠️ 需 BASE64 编码       |
+| 特性           | DUMP 格式         | 命令格式 (新)                    |
+| -------------- | ----------------- | -------------------------------- |
+| **版本兼容性** | ❌ 可能不兼容     | ✅ 兼容性好                      |
+| **可读性**     | ❌ 二进制编码     | ✅ 纯文本                        |
+| **可编辑性**   | ❌ 不可编辑       | ✅ 可编辑                        |
+| **直接执行**   | ❌ 需要 RESTORE   | ✅ redis-cli 可直接执行          |
+| **文件大小**   | ✅ 较小 (二进制)  | ⚠️ 较大 (文本)                   |
+| **导出速度**   | ✅ 快 (DUMP 命令) | ⚠️ 慢 (需要 GET 等)              |
+| **二进制支持** | ✅ 原生支持       | ✅ `\xHH` 转义（redis-cli 风格） |
 
 **推荐使用场景:**
 
@@ -958,9 +831,7 @@ if ok_count % 100 == 0 {
 
 ### 10.1 导入命令格式文件
 
-- 解析 `.redis` 文件中的命令
-- 自动识别 `BASE64:` 前缀并解码
-- 执行对应的 Redis 命令
+✅ **已实现**：`import_cmd` / `import_cmds` 逐行 `parse_command` + 执行（见 §2.4）。
 
 ### 10.2 导出为脚本文件
 
@@ -975,66 +846,29 @@ if ok_count % 100 == 0 {
 
 ---
 
-## 附录: 命令格式示例
+## 附录: 命令格式示例（与实际导出一致）
 
 ### 完整导出示例
 
 ```redis
--- RedisME Command Export
--- Exported at: 2024-04-12 15:30:00
--- Server: Redis 7.2.0 (localhost:6379)
--- Keys: 8
-
--- STRING: session:user:1001
-SET session:user:1001 "{\"userId\":1001,\"token\":\"abc123\"}"
-EXPIRE session:user:1001 3600
-
--- HASH: user:1001
-HSET user:1001 name "张三"
-HSET user:1001 email "zhangsan@example.com"
-HSET user:1001 age "28"
-
--- LIST: notifications:user:1001
-RPUSH notifications:user:1001 "新订单通知"
-RPUSH notifications:user:1001 "系统更新通知"
-RPUSH notifications:user:1001 "活动提醒"
-
--- SET: tags:article:2001
-SADD tags:article:2001 "Redis"
-SADD tags:article:2001 "数据库"
-SADD tags:article:2001 "缓存"
-
--- ZSET: leaderboard:game:3001
-ZADD leaderboard:game:3001 9850 "玩家A"
-ZADD leaderboard:game:3001 9720 "玩家B"
-ZADD leaderboard:game:3001 9680 "玩家C"
-
--- STREAM: events:order
-XADD events:order * event "created" userId "1001" amount "199.99"
-XADD events:order * event "paid" userId "1001" amount "199.99"
-
--- BASE64 (binary): image:avatar:1001
-SET image:avatar:1001 BASE64:iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==
-
--- STRING: counter:visits
-SET counter:visits "1234567"
+SET "session:user:1001" "{\"userId\":1001,\"token\":\"abc123\"}"
+EXPIRE "session:user:1001" 3600
+HMSET "user:1001" "name" "张三" "email" "zhangsan@example.com" "age" "28"
+RPUSH "notifications:user:1001" "新订单通知" "系统更新通知" "活动提醒"
+SADD "tags:article:2001" "Redis" "数据库" "缓存"
+ZADD "leaderboard:game:3001" 9850 "玩家A" 9720 "玩家B" 9680 "玩家C"
+XADD "events:order" "1700000000000-0" "event" "created" "userId" "1001" "amount" "199.99"
+SET "image:avatar:1001" "\x89PNG\r\n\x1a\n..."
+SET "counter:visits" "1234567"
 ```
 
-### 复制为命令示例 (选中 3 个键)
+### 单键复制示例（`RedisValue.vue` 扩展菜单，见 08）
 
 ```redis
-SET session:user:1001 "{\"userId\":1001,\"token\":\"abc123\"}"
-HSET user:1001 name "张三"
-HSET user:1001 email "zhangsan@example.com"
-HSET user:1001 age "28"
-RPUSH notifications:user:1001 "新订单通知"
-RPUSH notifications:user:1001 "系统更新通知"
-RPUSH notifications:user:1001 "活动提醒"
+HMSET "user:1001" "name" "张三" "email" "zhangsan@example.com" "age" "28"
 ```
 
 ---
 
-**文档版本:** v1.0  
-**创建日期:** 2024-04-12  
-**状态:** 待开发  
-**优先级:** 中
+**文档版本:** v1.2  
+**状态:** ✅ 已实现（批量导出/导入 CSV+CMD；单键复制见 `08_copy-key-as-command.md`）
