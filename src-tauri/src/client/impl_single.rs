@@ -555,7 +555,7 @@ impl MeSingle {
         let mut conn = LoggingConnection::new(raw_conn, logger, redis_conn.db);
         set_client_name(&mut conn);
 
-        detect_server_capabilities(&mut conn, &mut base);
+        detect_server_capabilities(&mut conn, &mut base, false);
 
         info!("Redis单机连接初始化成功: {}", redis_conn.name);
 

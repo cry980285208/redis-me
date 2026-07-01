@@ -228,6 +228,8 @@ export default {
     commandMapAdd: '添加映射',
     commandMapTip: '对应配置中的rename-command，如 CONFIG 被重命名时填写映射名',
     testConn: '测试连接',
+    dbTip:
+      '初始化数据库序号<br/>• 单机支持，连接中切换会自动保存<br/>• 集群需 Valkey 9+，仅连接时指定、不可切换',
     uiModeMinimal: '极简',
     uiModeTip: '极简模式仅展示键值与终端，适用于 INFO、CONFIG 等命令受限的 ACL 账号',
     readonly: '只读',
@@ -938,6 +940,7 @@ export default {
     connection_lock_timeout: '获取连接超时，请稍后重试',
     sentinel_not_supported: 'SSH 隧道暂不支持哨兵模式',
     cluster_not_supported: 'SSH 隧道暂不支持集群模式',
+    cluster_db_switch_not_supported: '集群模式不支持切换 DB，请在连接配置中修改初始库后重连',
     key_not_found: '键 "{key}" 不存在',
     key_node_not_found: '未找到键 "{key}" 所在的节点',
     key_already_exists: '键 "{key}" 已存在',

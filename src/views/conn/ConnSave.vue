@@ -432,11 +432,23 @@ function applyAdvanced() {
               icon="el-icon-grid"
               :title="t('conn.advancedTitle')"
               @click="openAdvanced" />
-            <el-input v-model.number="form.db" class="conn-db-input" placeholder="0">
-              <template #prefix>
-                <me-icon icon="me-icon-db" name="db" />
-              </template>
-            </el-input>
+            <div class="conn-db-input-group">
+              <div class="conn-db-input-group__prepend">
+                <me-icon
+                  icon="me-icon-db"
+                  name="db"
+                  :info="t('conn.dbTip')"
+                  placement="top"
+                  raw-content />
+              </div>
+              <el-input-number
+                v-model="form.db"
+                :min="0"
+                :controls="false"
+                align="left"
+                class="conn-db-input"
+                placeholder="0" />
+            </div>
           </div>
         </el-form-item>
 
@@ -717,12 +729,35 @@ function applyAdvanced() {
   gap: 10px;
 }
 
-.conn-db-input {
+.conn-db-input-group {
+  display: inline-flex;
   width: 88px;
+  vertical-align: middle;
 
-  :deep(.el-input__prefix),
-  :deep(.el-input__prefix-inner) {
+  &__prepend {
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
     color: var(--el-text-color-regular);
+    background-color: var(--el-fill-color-light);
+    box-shadow:
+      1px 0 0 0 var(--el-border-color) inset,
+      0 1px 0 0 var(--el-border-color) inset,
+      0 -1px 0 0 var(--el-border-color) inset;
+    border-radius: var(--el-input-border-radius, var(--el-border-radius-base)) 0 0
+      var(--el-input-border-radius, var(--el-border-radius-base));
+  }
+}
+
+.conn-db-input {
+  width: 0;
+  flex: 1;
+
+  :deep(.el-input__wrapper) {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    padding-left: 8px;
+    padding-right: 8px;
   }
 }
 

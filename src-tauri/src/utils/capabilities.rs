@@ -16,6 +16,8 @@ ServerCapabilities {
     acl_dryrun_supported: bool,
     acl_selector_supported: bool,
     httl_supported: bool,
+    /// 集群模式是否支持编号数据库（Valkey 9+）
+    cluster_db_supported: bool,
 });
 
 /// 从 INFO 输出中解析服务器版本
@@ -36,23 +38,28 @@ pub fn parse_server_version(info: &str) -> (String, bool) {
 }
 
 /// 检测服务器能力：优先通过 INFO SERVER 解析版本号，失败时 fallback 到 HTTL 命令探测
-pub fn detect_server_capabilities(conn: &mut impl ConnectionLike, base: &mut MeBase) {
+pub fn detect_server_capabilities(
+    conn: &mut impl ConnectionLike,
+    base: &mut MeBase,
+    is_cluster: bool,
+) {
     // Value接收是为了适配单机（返回String）和集群（返回Map）场景
     if let Ok(value) = redis::cmd("info").arg("server").query::<Value>(conn) {
         let info = redis_value_to_string(value, "\n");
         let (version, is_valkey) = parse_server_version(&info);
-        base.capabilities = detect_capabilities(&version, is_valkey);
+        base.capabilities = detect_capabilities(&version, is_valkey, is_cluster);
         log::info!("服务版本: {} (is_valkey={})", version, is_valkey);
     } else {
         log::info!("INFO SERVER 不可用，尝试 HTTL 命令探测字段级 TTL 支持");
         base.capabilities.info_supported = false;
         base.capabilities.httl_supported = detect_httl_by_command(conn);
+        base.capabilities.cluster_db_supported = false;
     }
     log::info!("服务能力: {:?}", base.capabilities);
 }
 
 /// 根据版本号检测服务能力
-pub fn detect_capabilities(version: &str, is_valkey: bool) -> ServerCapabilities {
+pub fn detect_capabilities(version: &str, is_valkey: bool, is_cluster: bool) -> ServerCapabilities {
     let mut parts = version.split('.');
     let major = parts.next().and_then(|s| s.parse::<u32>().ok()).unwrap_or(0);
     let minor = parts.next().and_then(|s| s.parse::<u32>().ok()).unwrap_or(0);
@@ -70,6 +77,8 @@ pub fn detect_capabilities(version: &str, is_valkey: bool) -> ServerCapabilities
         acl_selector_supported: major > 7 || (major == 7 && minor >= 2),
         // Hash 字段级 TTL 自 Redis/Valkey 7.4 起支持
         httl_supported: major > 7 || (major == 7 && minor >= 4),
+        // Valkey 9+ 集群模式编号数据库（Redis OSS 集群不支持）
+        cluster_db_supported: is_cluster && is_valkey && major >= 9,
     }
 }
 

@@ -218,6 +218,8 @@ export default {
     commandMapTip:
       'Matches rename-command in config file. When CONFIG is renamed, enter the mapped name',
     testConn: 'Test Conn',
+    dbTip:
+      'Initial database index<br/>• Standalone: switches while connected are auto-saved<br/>• Cluster: Valkey 9+ required; set at connect only, no switching',
     uiModeMinimal: 'Minimal',
     uiModeTip:
       'Minimal mode shows only Key-Value and Terminal for ACL users without INFO, CONFIG, etc.',
@@ -952,6 +954,8 @@ export default {
     connection_lock_timeout: 'Connection lock timeout, please try again later',
     sentinel_not_supported: 'SSH tunnel does not support sentinel mode',
     cluster_not_supported: 'SSH tunnel does not support cluster mode',
+    cluster_db_switch_not_supported:
+      'Cluster mode does not support switching DB; change the initial DB in connection settings and reconnect',
     key_not_found: 'Key "{key}" not found',
     key_node_not_found: 'Node not found for key "{key}"',
     key_already_exists: 'Key "{key}" already exists',

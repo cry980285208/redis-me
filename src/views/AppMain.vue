@@ -79,6 +79,7 @@ const share = reactive<AppMainShare>({
     aclDryrunSupported: false,
     aclSelectorSupported: false,
     httlSupported: false,
+    clusterDbSupported: false,
   },
 })
 provide(shareProvideKey, share)

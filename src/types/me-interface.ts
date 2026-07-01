@@ -37,6 +37,7 @@ export interface ServerCapabilities {
   aclDryrunSupported: boolean
   aclSelectorSupported: boolean
   httlSupported: boolean
+  clusterDbSupported: boolean
 }
 
 export interface AppMainShare {

@@ -424,6 +424,11 @@ const dbSelectWidth = computed(() => {
   return `${Math.min(136, Math.max(88, len * 7 + 28 + 16))}px`
 })
 
+/** 集群 Valkey 9+ 多库：el-select 位置仅展示当前 db，不支持切换 */
+const showClusterDbLabel = computed(() =>
+  Boolean(share.conn?.cluster && share.capabilities.clusterDbSupported),
+)
+
 // el-select 后缀：项目 upDown 图标
 const dbSelectSuffixIcon = defineComponent({
   name: 'DbSelectSuffixIcon',
@@ -972,12 +977,15 @@ function editDbName(db: number): void {
                 <me-icon
                   icon="me-icon-db"
                   :name="'db' + share.conn.db"
-                  v-if="!share.conn.cluster" />
+                  v-if="!share.conn.cluster || share.capabilities.clusterDbSupported" />
               </div>
             </el-text>
           </div>
         </template>
         <template v-else>
+          <div v-if="showClusterDbLabel" class="cluster-db-label">
+            <me-icon icon="me-icon-db" :name="'db' + share.conn!.db" />
+          </div>
           <el-select
             v-model="share.conn.db"
             @change="selectDB"
@@ -985,7 +993,7 @@ function editDbName(db: number): void {
             :style="{ width: dbSelectWidth }"
             :suffix-icon="dbSelectSuffixIcon"
             filterable
-            v-if="!share.conn.cluster">
+            v-else-if="!share.conn.cluster">
             <template #header>
               <div
                 style="
@@ -1443,6 +1451,13 @@ function editDbName(db: number): void {
           white-space: nowrap;
         }
       }
+    }
+
+    .cluster-db-label {
+      flex-shrink: 0;
+      padding: 0 4px;
+      font-size: 14px;
+      color: var(--el-text-color-regular);
     }
 
     .db-option {

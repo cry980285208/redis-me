@@ -515,6 +515,8 @@ export type ServerCapabilities = {
 	aclDryrunSupported: boolean,
 	aclSelectorSupported: boolean,
 	httlSupported: boolean,
+	/**  集群模式是否支持编号数据库（Valkey 9+） */
+	clusterDbSupported: boolean,
 };
 
 export type SshOption = {
