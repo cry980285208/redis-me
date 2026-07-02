@@ -900,13 +900,13 @@ function editDbName(db: number): void {
                     class="scan-icon" />
                 </div>
               </el-tooltip>
-              <el-tooltip :content="t('keyMain.refreshKey')" placement="bottom" :show-after="1000">
-                <me-icon
-                  icon="me-icon-search"
-                  class="suffix-icon-btn"
-                  :style="{ color: share.color }"
-                  @click.stop="onRefreshKey" />
-              </el-tooltip>
+              <me-icon
+                icon="me-icon-search"
+                class="suffix-icon-btn"
+                :style="{ color: share.color }"
+                :info="t('keyMain.refreshKey')"
+                placement="bottom"
+                @click.stop="onRefreshKey" />
               <el-tooltip
                 :content="t('keyMain.exactSearch')"
                 placement="bottom"

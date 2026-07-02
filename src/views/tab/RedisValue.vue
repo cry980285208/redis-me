@@ -842,26 +842,24 @@ onUnmounted(() => {
         <div class="value-header-main">
           <el-input type="text" v-model="showKey" readonly class="value-header-input">
             <template #prepend>
-              <el-tooltip
-                :content="t('redisValue.locateKeyHint')"
+              <me-icon
+                icon="me-icon-location"
+                class="suffix-ttl icon-btn"
+                icon-left
+                :name="redisValue.type.toUpperCase()"
+                :info="t('redisValue.locateKeyHint')"
                 placement="top"
-                :show-after="1000">
-                <me-icon
-                  icon="me-icon-location"
-                  class="icon-btn"
-                  :name="redisValue.type.toUpperCase()"
-                  @click.stop="locateKeyInTree" />
-              </el-tooltip>
+                @click.stop="locateKeyInTree" />
             </template>
             <template #suffix>
-              <el-tooltip :content="ttlIconHint" placement="top" :show-after="1000">
-                <me-icon
-                  icon="el-icon-timer"
-                  class="suffix-ttl icon-btn"
-                  icon-left
-                  :name="ttlDisplayText"
-                  @click.stop="updateTTL" />
-              </el-tooltip>
+              <me-icon
+                icon="el-icon-timer"
+                class="suffix-ttl icon-btn"
+                icon-left
+                :name="ttlDisplayText"
+                :info="ttlIconHint"
+                placement="top"
+                @click.stop="updateTTL" />
             </template>
           </el-input>
 
@@ -1320,14 +1318,9 @@ onUnmounted(() => {
       cursor: pointer;
       font-size: 13px;
       color: var(--el-text-color-secondary);
-      margin-right: 2px;
 
       &:hover {
         color: var(--el-color-primary);
-      }
-
-      :deep(span) {
-        font-size: 13px;
       }
     }
 
