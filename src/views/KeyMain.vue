@@ -526,6 +526,9 @@ onMounted(() => {
   connUi.openKeyCopy = (redisKey: RedisKey_Deserialize) => {
     keyCopyRef.value?.open({ redisKey })
   }
+  connUi.scrollKeyToTree = (redisKey: RedisKey_Deserialize) => {
+    keyTreeRef.value?.setCurrentKey(redisKey)
+  }
 })
 onUnmounted(() => {
   bus.off(KEY_DELETE, deleteKey)

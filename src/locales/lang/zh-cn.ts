@@ -807,6 +807,7 @@ export default {
     copyCommandOk: '命令已复制',
     copyCommandEmpty: '空键，无可复制命令',
     refreshKey: '刷新键',
+    locateKeyHint: '在键列表中定位当前键',
 
     textMemory: '内存占用：',
     textLength: '字节长度：',

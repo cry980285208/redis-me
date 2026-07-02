@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { TreeNode } from 'element-plus/es/components/tree-v2/src/types'
 import { nanoid } from 'nanoid'
-import { computed, inject, ref, useTemplateRef, watch } from 'vue'
+import { computed, inject, nextTick, ref, useTemplateRef, watch } from 'vue'
 // 共享数据
 import { useI18n } from 'vue-i18n'
 
@@ -310,22 +310,32 @@ function checkChange() {
   emit('checkChange', redisKeys)
 }
 
-// 设置选中节点
+// 设置选中节点并滚动到视口中间（新建键 / 键值页定位复用）
 function setCurrentKey(redisKey: RedisKey_Deserialize) {
   const nodeId = TREE_KEY_ID_PREFIX + redisKey.key
 
-  // 展开所有父节点
+  // 展开父节点并同步 expandedKeys，等 flatten 更新后再 scroll
   const parts = redisKey.key.split(/:+/)
+  const parentIds: string[] = []
   for (let i = 0; i < parts.length - 1; i++) {
-    const parentId = parts.slice(0, i + 1).join(':')
-    const parentNode = treeRef.value?.getNode(parentId)
-    if (parentNode && !parentNode.expanded) {
-      treeRef.value?.expandNode(parentNode)
+    parentIds.push(parts.slice(0, i + 1).join(':'))
+  }
+  if (parentIds.length > 0) {
+    const nextExpanded = [...expandedKeys.value]
+    let changed = false
+    for (const parentId of parentIds) {
+      if (!nextExpanded.includes(parentId)) {
+        nextExpanded.push(parentId)
+        changed = true
+      }
     }
+    if (changed) expandedKeys.value = nextExpanded
   }
 
-  treeRef.value?.scrollToNode(nodeId, 'center')
-  treeRef.value?.setCurrentKey(nodeId)
+  nextTick(() => {
+    treeRef.value?.scrollToNode(nodeId, 'center')
+    treeRef.value?.setCurrentKey(nodeId)
+  })
 }
 
 // 键高度配置

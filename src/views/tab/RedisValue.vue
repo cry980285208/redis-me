@@ -58,7 +58,6 @@ import {
   meFormatDisplayValue,
   meJsonNormal,
   meOk,
-  meType,
   meWarn,
 } from '@/utils/util'
 import TableGroup from '@/views/ext/TableGroup.vue'
@@ -798,6 +797,12 @@ async function showLocation() {
   const msg = data.map(item => item.node + ' | ' + item.flags.toUpperCase()).join('<br>')
   meOk(msg, true, t('redisValue.locationTitle'), { dangerouslyUseHTMLString: true })
 }
+
+function locateKeyInTree(): void {
+  const rk = share.redisKey
+  if (!rk) return
+  connUi.scrollKeyToTree(rk)
+}
 // #endregion
 
 // #region 快捷键说明弹窗
@@ -837,7 +842,16 @@ onUnmounted(() => {
         <div class="value-header-main">
           <el-input type="text" v-model="showKey" readonly class="value-header-input">
             <template #prepend>
-              <el-text :type="meType(redisValue.type)">{{ redisValue.type.toUpperCase() }}</el-text>
+              <el-tooltip
+                :content="t('redisValue.locateKeyHint')"
+                placement="top"
+                :show-after="1000">
+                <me-icon
+                  icon="me-icon-location"
+                  class="icon-btn"
+                  :name="redisValue.type.toUpperCase()"
+                  @click.stop="locateKeyInTree" />
+              </el-tooltip>
             </template>
             <template #suffix>
               <el-tooltip :content="ttlIconHint" placement="top" :show-after="1000">
@@ -1277,7 +1291,7 @@ onUnmounted(() => {
 
   .value-header {
     :deep(.el-input-group__prepend) {
-      padding: 0 16px;
+      padding: 0 12px;
     }
 
     display: flex;

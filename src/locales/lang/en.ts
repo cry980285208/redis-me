@@ -820,6 +820,7 @@ export default {
     copyCommandOk: 'Command copied',
     copyCommandEmpty: 'Empty key, nothing to copy',
     refreshKey: 'Refresh Key',
+    locateKeyHint: 'Locate current key in key list',
 
     textMemory: 'Memory Usage: ',
     textLength: 'Bytes Length: ',
