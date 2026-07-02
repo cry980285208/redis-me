@@ -434,8 +434,9 @@ impl MeClient for MeCluster {
         Ok(clients)
     }
 
-    fn publish(&self, channel: &str, message: &str) -> AnyResult<()> {
-        publish0(self.get_conn()?, channel, message)
+    fn publish(&self, channel: &str, message: &str, msg_fmt: Option<BytesFormat>) -> AnyResult<()> {
+        let fmt = msg_fmt.unwrap_or_default();
+        publish0(self.get_conn()?, channel, message, &fmt)
     }
 
     fn subscribe(&self, channel: Option<String>) -> AnyResult<()> {

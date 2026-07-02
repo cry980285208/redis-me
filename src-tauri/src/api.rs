@@ -147,7 +147,7 @@ api_commands!(
     slow_log(count: Option<u64>, node: Option<String>) -> Vec<RedisSlowLog>;    // 慢日志
     memory_usage(param: RedisMemoryParam) -> Vec<RedisKeySize>;                 // 内存分析
     client_list(node: Option<String>, client_type: Option<String>) -> Vec<RedisClientInfo>; // 客户端列表
-    publish(channel: &str, message: &str) -> ();    // 发布消息
+    publish(channel: &str, message: &str, msg_fmt: Option<BytesFormat>) -> (); // 发布消息
     subscribe_stop() -> ();                         // 订阅消息停止
     monitor_stop()   -> ();                         // 监控命令停止
     batch_del(param: RedisBatchKey) -> ();          // 批量删除

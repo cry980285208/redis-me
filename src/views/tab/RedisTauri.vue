@@ -233,7 +233,7 @@ function defaultPayload(cmd: CommandKey): Record<string, unknown> {
     case 'clientList':
       return { id: connIdForDefaults(), node: null, clientType: null }
     case 'publish':
-      return { id: connIdForDefaults(), channel: 'ch', message: 'ping' }
+      return { id: connIdForDefaults(), channel: 'ch', message: 'ping', msgFmt: null }
     case 'subscribe':
       return { id: connIdForDefaults(), channel: null }
     case 'monitor':

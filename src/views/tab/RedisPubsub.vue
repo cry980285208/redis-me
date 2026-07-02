@@ -5,7 +5,9 @@ import { useI18n } from 'vue-i18n'
 
 import MeWebsite from '@/components/MeWebsite.vue'
 import { shareProvideKey } from '@/types/me-interface'
-import { meCopy, meCommands, meOk } from '@/utils/util'
+import type { BytesFormat } from '@/types/tauri-specta'
+import { BYTES_FORMAT, meViewToWire, toWireFormat, type ViewBytesFormat } from '@/utils/format'
+import { meCopy, meCommands, meErr, meOk } from '@/utils/util'
 
 const { t } = useI18n()
 // 共享数据
@@ -53,14 +55,27 @@ const subscribe = async () => {
   }
 }
 
-// 发送消息
+// 发送消息（编码流程与 FieldAdd 值编码一致：view → wire + msgFmt）
 const sendChannel = ref('')
 const sendMessage = ref('')
+const sendMessageFmt = ref<ViewBytesFormat>('utf8')
 const sendLoading = ref(false)
+
 async function publish() {
   sendLoading.value = true
   try {
-    await meCommands.publish(share.conn!.id, sendChannel.value, sendMessage.value)
+    const viewFmt = sendMessageFmt.value
+    const msgFmt: BytesFormat = toWireFormat(viewFmt)
+    let message = sendMessage.value
+    if (viewFmt !== 'utf8') {
+      try {
+        message = meViewToWire(message, viewFmt)
+      } catch (e) {
+        meErr(e instanceof Error ? e.message : String(e))
+        return
+      }
+    }
+    await meCommands.publish(share.conn!.id, sendChannel.value, message, msgFmt)
     sendMessage.value = ''
     meOk(t('redisPubSub.publishOk'))
   } finally {
@@ -163,12 +178,22 @@ onUnmounted(() => tauriUnlisten())
       <el-input
         v-model="sendChannel"
         :placeholder="t('redisPubSub.channel')"
-        style="width: 200px"></el-input>
+        class="footer-channel" />
       <el-input
         v-model="sendMessage"
         :placeholder="t('redisPubSub.messageContent')"
-        style="margin: 0 10px"
-        @keydown.enter.prevent="publishOnEnter" />
+        class="footer-message"
+        @keydown.enter.prevent="publishOnEnter">
+        <template #append>
+          <el-select v-model="sendMessageFmt" style="width: 100px">
+            <el-option
+              v-for="item in BYTES_FORMAT"
+              :key="item"
+              :label="item"
+              :value="item.toLowerCase()" />
+          </el-select>
+        </template>
+      </el-input>
       <el-button
         icon="el-icon-promotion"
         @click="publish"
@@ -197,6 +222,18 @@ onUnmounted(() => tauriUnlisten())
 
   .footer {
     display: flex;
+    align-items: center;
+    gap: 10px;
+
+    .footer-channel {
+      width: 200px;
+      flex-shrink: 0;
+    }
+
+    .footer-message {
+      flex: 1;
+      min-width: 0;
+    }
   }
 }
 </style>
