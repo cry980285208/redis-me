@@ -975,7 +975,7 @@ function editDbName(db: number): void {
             @click="toggleFavoriteMode">
             <me-icon icon="el-icon-back" style="color: var(--el-color-warning)" />
             <el-text type="warning" style="font-weight: bold">
-              <div class="me-flex" style="gap: 5px; margin-left: 5px">
+              <div class="me-flex" style="gap: 10px; margin-left: 5px">
                 <div>{{ t('keyMain.exitFavoriteMode') }}</div>
                 <me-icon
                   icon="me-icon-db"
