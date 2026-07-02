@@ -845,6 +845,7 @@ function editDbName(db: number): void {
           v-model="keyword"
           :readonly="loading"
           :placeholder="t('keyMain.keyword')"
+          clearable
           @keyup.enter="scanKey(false, false)"
           @click="handleKeywordClick"
           @blur="handleInputBlur">
@@ -1240,7 +1241,7 @@ function editDbName(db: number): void {
       display: flex;
       align-items: center;
       gap: 6px;
-      margin-right: 2px;
+      margin-left: 6px;
 
       // 与 suffix 图标同色，选中时用主题色
       :deep(.suffix-exact-checkbox) {
