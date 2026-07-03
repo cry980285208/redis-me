@@ -59,12 +59,7 @@ impl MeClient for MeCluster {
         if self.db.load(Relaxed) == db {
             return Ok(());
         }
-
-        self.db.store(db, Relaxed);
-        let mut conn = self.get_conn()?;
-        conn.set_db_index(db);
-        info!("集群模式下不支持切换DB");
-        Ok(())
+        bail!(AppError::ClusterDbSwitchNotSupported);
     }
 
     fn info(&self, node: Option<String>) -> AnyResult<RedisInfo> {
@@ -439,8 +434,9 @@ impl MeClient for MeCluster {
         Ok(clients)
     }
 
-    fn publish(&self, channel: &str, message: &str) -> AnyResult<()> {
-        publish0(self.get_conn()?, channel, message)
+    fn publish(&self, channel: &str, message: &str, msg_fmt: Option<BytesFormat>) -> AnyResult<()> {
+        let fmt = msg_fmt.unwrap_or_default();
+        publish0(self.get_conn()?, channel, message, &fmt)
     }
 
     fn subscribe(&self, channel: Option<String>) -> AnyResult<()> {
@@ -784,7 +780,7 @@ impl MeCluster {
         );
         set_client_name(&mut conn);
 
-        detect_server_capabilities(&mut conn, &mut base);
+        detect_server_capabilities(&mut conn, &mut base, true);
 
         let cluster_nodes: String = redis::cmd("cluster").arg("nodes").query(&mut conn)?;
         let node_list = Self::parse_node_list(cluster_nodes)?;

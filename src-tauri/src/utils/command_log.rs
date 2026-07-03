@@ -10,7 +10,7 @@
 use crate::utils::model::{CommandLogEntry, CommandLogEvent};
 use crate::utils::util::EVENT_COMMAND_LOG;
 use chrono::Local;
-use log::info;
+use log::debug;
 use parking_lot::RwLock;
 use redis::cluster::ClusterConnection;
 use redis::cluster_routing::RoutingInfo;
@@ -102,7 +102,7 @@ impl CommandLogger {
             error,
         };
 
-        info!("[{}] db={} {}", self.conn_name, db_index, entry.full_command);
+        debug!("[{}] db={} {}", self.conn_name, db_index, entry.full_command);
         self.emit_entry(&entry);
 
         let mut entries = self.entries.write();
@@ -229,10 +229,6 @@ impl LoggingClusterConnection {
 
     pub fn set_write_timeout(&mut self, timeout: Option<Duration>) -> RedisResult<()> {
         self.inner.set_write_timeout(timeout)
-    }
-
-    pub fn set_db_index(&mut self, db: u16) {
-        self.db_index = db;
     }
 
     pub fn route_command(&mut self, cmd: &Cmd, route: RoutingInfo) -> RedisResult<Value> {

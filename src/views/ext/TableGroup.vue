@@ -9,9 +9,7 @@ import { meCommands } from '@/utils/util'
 
 const { t } = useI18n()
 const share = inject(shareProvideKey)!
-withDefaults(defineProps<{ dataList?: XInfoGroup[] }>(), {
-  dataList: () => [],
-})
+withDefaults(defineProps<{ dataList?: XInfoGroup[] }>(), { dataList: () => [] })
 
 const table = useTemplateRef<TableInstance>('table')
 const consumerData = ref<XInfoConsumer[]>([])

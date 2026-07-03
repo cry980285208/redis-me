@@ -105,13 +105,7 @@ const showScan = ref(true)
 async function scanKey() {
   loading.value = true
   try {
-    const params = {
-      match: form.value.match,
-      type: '',
-      count: 0,
-      loadAll: true,
-      cursor: null,
-    }
+    const params = { match: form.value.match, type: '', count: 0, loadAll: true, cursor: null }
     const data = await meCommands.scan(share.conn!.id, params)
     form.value.keyList = data.keyList
     showScan.value = false

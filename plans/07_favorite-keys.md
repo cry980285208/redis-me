@@ -1,5 +1,9 @@
 # 收藏键功能 - 轻量版实现方案
 
+> **实现状态**：✅ 已实现（轻量版）  
+> **关键代码**：`src/utils/favorite.ts`、`KeyTree.vue`、`KeyMain.vue`、`RedisValue.vue`  
+> **实际实现**：右键收藏、`toggleFavoriteMode` 底部入口、收藏树与跳转；Phase 2/3 扩展（动画、跨 db 汇总、导入导出）未做。
+
 > 目标：查询键时右键收藏，后续通过"我的收藏"入口快速查看和跳转
 
 ---
@@ -34,7 +38,6 @@ export interface FavoriteKey {
   connId: string // 连接ID（区分不同连接）
   db: number // 数据库编号
   redisKey: RedisKey_Deserialize // 完整键信息（key + bytes）
-  type?: string // 键类型（缓存，方便展示）
   favoritedAt: number // 收藏时间戳
 }
 ```
@@ -45,10 +48,10 @@ export interface FavoriteKey {
 // src/utils/favorite.ts
 import { useStorage } from '@vueuse/core'
 
-const FAVORITE_STORAGE_KEY = 'redis-me:favorites'
+const FAVORITE_KEY = 'redis-me:favorites'
 
 export function useFavorites() {
-  return useStorage<FavoriteKey[]>(FAVORITE_STORAGE_KEY, [])
+  return useStorage<FavoriteKey[]>(FAVORITE_KEY, [])
 }
 ```
 
@@ -61,14 +64,12 @@ export function useFavorites() {
     "connId": "conn-xxx",
     "db": 0,
     "redisKey": { "key": "user:1001", "bytes": "dXNlcjoxMDAx" },
-    "type": "hash",
     "favoritedAt": 1719200000000
   },
   {
     "connId": "conn-xxx",
     "db": 0,
     "redisKey": { "key": "user:1002", "bytes": "dXNlcjoxMDAy" },
-    "type": "string",
     "favoritedAt": 1719200000001
   }
 ]
@@ -563,15 +564,15 @@ keyMain: {
 
 ### Phase 1：核心功能
 
-- [ ] 新建 `src/utils/favorite.ts` - 收藏数据结构和 CRUD
-- [ ] 修改 `src/views/key/KeyTree.vue` - 右键菜单增加收藏/取消收藏、键节点星标
-- [ ] 修改 `src/views/KeyMain.vue` - 底部状态栏增加收藏入口、收藏视图模式
-- [ ] 新增 i18n 文案
+- [x] 新建 `src/utils/favorite.ts` - 收藏数据结构和 CRUD
+- [x] 修改 `src/views/key/KeyTree.vue` - 右键菜单增加收藏/取消收藏、键节点星标
+- [x] 修改 `src/views/KeyMain.vue` - 底部收藏入口、收藏视图模式
+- [x] 新增 i18n 文案
 
 ### Phase 2：完善体验
 
 - [ ] 收藏数量动画（收藏/取消时的过渡效果）
-- [ ] 收藏列表支持搜索过滤
+- [x] 收藏列表支持搜索过滤（收藏视图 + 本地 filter）
 
 ### Phase 3：可选扩展
 

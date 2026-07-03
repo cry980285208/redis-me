@@ -52,7 +52,7 @@ export const commands = {
 	configGet: (id: string, pattern: string, node: string | null) => typedError<{ [key in string]: string }, string>(__TAURI_INVOKE("config_get", { id, pattern, node })),
 	configSet: (id: string, key: string, value: string, node: string | null) => typedError<null, string>(__TAURI_INVOKE("config_set", { id, key, value, node })),
 	clientList: (id: string, node: string | null, clientType: string | null) => typedError<RedisClientInfo[], string>(__TAURI_INVOKE("client_list", { id, node, clientType })),
-	publish: (id: string, channel: string, message: string) => typedError<null, string>(__TAURI_INVOKE("publish", { id, channel, message })),
+	publish: (id: string, channel: string, message: string, msgFmt: "utf8" | "base64" | null) => typedError<null, string>(__TAURI_INVOKE("publish", { id, channel, message, msgFmt })),
 	subscribe: (id: string, channel: string | null) => typedError<null, string>(__TAURI_INVOKE("subscribe", { id, channel })),
 	subscribeStop: (id: string) => typedError<null, string>(__TAURI_INVOKE("subscribe_stop", { id })),
 	monitor: (id: string, node: string) => typedError<null, string>(__TAURI_INVOKE("monitor", { id, node })),
@@ -515,6 +515,8 @@ export type ServerCapabilities = {
 	aclDryrunSupported: boolean,
 	aclSelectorSupported: boolean,
 	httlSupported: boolean,
+	/**  集群模式是否支持编号数据库（Valkey 9+） */
+	clusterDbSupported: boolean,
 };
 
 export type SshOption = {

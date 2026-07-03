@@ -1,5 +1,33 @@
 # 4.x Changelog
 
+## [v4.2.0](https://mp.weixin.qq.com/s/gREAYjVYH5V4KWpBNWFZVQ) (2026-07-04)
+
+### ✨ New Features
+
+- **Command parsing**: Aligned with redis-cli `sdssplitargs`; supports escapes inside quotes and binary arguments
+- **Value Tab**
+  - Added **"Copy as Command"**
+  - Added **"Create Duplicate"** (standalone COPY / cluster DUMP+RESTORE)
+  - Added **locate button** next to key name; scrolls key list to current key on click
+- **Import/Export**: Added **CMD command format** support
+- **Key Area**
+  - F5 to refresh key list; connection color for refresh and search icons
+  - Refresh button and footer text use connection color
+  - Improved scan progress estimation for cluster scenarios
+- **Connection**
+  - Connection editor: initial db input
+  - **Valkey 9+ cluster: specify initial db at connect time**
+- **Pub/Sub**: **Message encoding selectable** for sending binary messages
+- Other: Added Redisee to website footer links
+
+### 🐞 Bug Fixes
+
+- Fixed CodeMirror selection background too dark in dark mode #127
+
+## v4.1.1 (2026-06-29)
+
+- Fixed scan search stopping early in cluster mode
+
 ## [v4.1.0](https://mp.weixin.qq.com/s/pM545fZPNiy3gxCvpDvmlw) (2026-06-27)
 
 ### ✨ New Features

@@ -398,7 +398,9 @@ mod tests {
 
     #[test]
     fn test_publish() {
-        let result = client().publish("channel", "message").unwrap();
+        let result = client()
+            .publish("channel", "message", None)
+            .unwrap();
         println!("{result:?}");
     }
 

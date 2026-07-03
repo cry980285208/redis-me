@@ -31,10 +31,7 @@ const props = defineProps<{
   previewCommand: string
 }>()
 
-const emit = defineEmits<{
-  (e: 'save'): void
-  (e: 'generatePassword'): void
-}>()
+const emit = defineEmits<{ (e: 'save'): void; (e: 'generatePassword'): void }>()
 
 /** 规则/模式输入框草稿，未点「添加」前不入 form；打开对话框时清空 */
 const ruleInput = ref('')

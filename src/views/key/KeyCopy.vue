@@ -57,11 +57,7 @@ async function submit() {
 
   loading.value = true
   try {
-    const newKey = await meCommands.copy(conn.id, {
-      source: k,
-      destination,
-      db: conn.db,
-    })
+    const newKey = await meCommands.copy(conn.id, { source: k, destination, db: conn.db })
     meOk(t('actionOk'))
     visible.value = false
     emit('success', newKey)

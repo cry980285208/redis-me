@@ -58,7 +58,6 @@ import {
   meFormatDisplayValue,
   meJsonNormal,
   meOk,
-  meType,
   meWarn,
 } from '@/utils/util'
 import TableGroup from '@/views/ext/TableGroup.vue'
@@ -798,6 +797,12 @@ async function showLocation() {
   const msg = data.map(item => item.node + ' | ' + item.flags.toUpperCase()).join('<br>')
   meOk(msg, true, t('redisValue.locationTitle'), { dangerouslyUseHTMLString: true })
 }
+
+function locateKeyInTree(): void {
+  const rk = share.redisKey
+  if (!rk) return
+  connUi.scrollKeyToTree(rk)
+}
 // #endregion
 
 // #region 快捷键说明弹窗
@@ -837,17 +842,24 @@ onUnmounted(() => {
         <div class="value-header-main">
           <el-input type="text" v-model="showKey" readonly class="value-header-input">
             <template #prepend>
-              <el-text :type="meType(redisValue.type)">{{ redisValue.type.toUpperCase() }}</el-text>
+              <me-icon
+                icon="me-icon-location"
+                class="suffix-ttl icon-btn"
+                icon-left
+                :name="redisValue.type.toUpperCase()"
+                :info="t('redisValue.locateKeyHint')"
+                placement="top"
+                @click.stop="locateKeyInTree" />
             </template>
             <template #suffix>
-              <el-tooltip :content="ttlIconHint" placement="top" :show-after="500">
-                <me-icon
-                  icon="el-icon-timer"
-                  class="suffix-ttl icon-btn"
-                  icon-left
-                  :name="ttlDisplayText"
-                  @click.stop="updateTTL" />
-              </el-tooltip>
+              <me-icon
+                icon="el-icon-timer"
+                class="suffix-ttl icon-btn"
+                icon-left
+                :name="ttlDisplayText"
+                :info="ttlIconHint"
+                placement="top"
+                @click.stop="updateTTL" />
             </template>
           </el-input>
 
@@ -1277,7 +1289,7 @@ onUnmounted(() => {
 
   .value-header {
     :deep(.el-input-group__prepend) {
-      padding: 0 16px;
+      padding: 0 12px;
     }
 
     display: flex;
@@ -1306,14 +1318,9 @@ onUnmounted(() => {
       cursor: pointer;
       font-size: 13px;
       color: var(--el-text-color-secondary);
-      margin-right: 2px;
 
       &:hover {
         color: var(--el-color-primary);
-      }
-
-      :deep(span) {
-        font-size: 13px;
       }
     }
 

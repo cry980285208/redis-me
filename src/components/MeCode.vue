@@ -98,10 +98,7 @@ const props = withDefaults(
     mode?: string
     readOnly?: boolean
   }>(),
-  {
-    mode: 'json',
-    readOnly: false,
-  },
+  { mode: 'json', readOnly: false },
 )
 
 const dark = useDark()
@@ -115,9 +112,7 @@ const extensions = computed(() => {
   const list = [
     meBasicSetup,
     meCodePrecKeymap,
-    EditorView.theme({
-      '&': { fontSize: `${fontSizePx.value}px` },
-    }),
+    EditorView.theme({ '&': { fontSize: `${fontSizePx.value}px` } }),
   ]
 
   if (lineWrap.value) {
@@ -189,6 +184,11 @@ html.dark .vue-codemirror {
 
   :deep(.ͼ3 .cm-gutters) {
     background-color: #272822;
+  }
+
+  /* 默认选区 #233 与背景 #272822 过近，略提亮 */
+  :deep(.cm-selectionBackground) {
+    background-color: #4b6a3f !important;
   }
 
   /* JSON值在黑色模式下红色看着不舒服，因此改下 */

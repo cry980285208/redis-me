@@ -1,10 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 
-defineProps<{
-  name: string
-  icon: string
-}>()
+defineProps<{ name: string; icon: string }>()
 
 const { t } = useI18n()
 </script>

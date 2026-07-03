@@ -6,34 +6,16 @@ import { isZh } from '@/utils/util'
 
 /** 与 `<me-website to="…">`、DOC_PATHS 键一致（供外部 props） */
 const DOC_PATHS = {
-  info: {
-    redis: '/docs/latest/commands/info/',
-    valkey: '/commands/info/',
-  },
+  info: { redis: '/docs/latest/commands/info/', valkey: '/commands/info/' },
   config: {
     redis: '/docs/latest/operate/oss_and_stack/management/config/',
     valkey: '/topics/valkey.conf/',
   },
-  client: {
-    redis: '/docs/latest/commands/client-list/',
-    valkey: '/commands/client-list/',
-  },
-  command: {
-    redis: '/docs/latest/commands/',
-    valkey: '/commands/',
-  },
-  slowlog: {
-    redis: '/docs/latest/commands/slowlog-get/',
-    valkey: '/commands/slowlog-get/',
-  },
-  monitor: {
-    redis: '/docs/latest/commands/monitor/',
-    valkey: '/commands/monitor/',
-  },
-  pubsub: {
-    redis: '/docs/latest/commands/psubscribe/',
-    valkey: '/commands/psubscribe/',
-  },
+  client: { redis: '/docs/latest/commands/client-list/', valkey: '/commands/client-list/' },
+  command: { redis: '/docs/latest/commands/', valkey: '/commands/' },
+  slowlog: { redis: '/docs/latest/commands/slowlog-get/', valkey: '/commands/slowlog-get/' },
+  monitor: { redis: '/docs/latest/commands/monitor/', valkey: '/commands/monitor/' },
+  pubsub: { redis: '/docs/latest/commands/psubscribe/', valkey: '/commands/psubscribe/' },
   acl: {
     redis: '/docs/latest/operate/oss_and_stack/management/security/acl/',
     valkey: '/topics/acl/',
@@ -43,15 +25,8 @@ const DOC_PATHS = {
 type DocTopic = keyof typeof DOC_PATHS
 
 const props = withDefaults(
-  defineProps<{
-    to: DocTopic
-    placement?: string
-    marginLeft?: string
-  }>(),
-  {
-    placement: 'right',
-    marginLeft: '10px',
-  },
+  defineProps<{ to: DocTopic; placement?: string; marginLeft?: string }>(),
+  { placement: 'right', marginLeft: '10px' },
 )
 
 /** 下拉项 command，与模板中 el-dropdown-item 一致 */

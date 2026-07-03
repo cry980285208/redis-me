@@ -2,7 +2,7 @@ services:
   valkey9-9001:
     image: valkey/valkey:9
     container_name: valkey9-9001
-    command: redis-server --cluster-enabled yes --port 9001 --cluster-announce-ip 8.159.152.225 --requirepass hepengju --masterauth hepengju
+    command: redis-server --cluster-enabled yes --cluster-databases 16 --port 9001 --cluster-announce-ip 8.159.152.225 --requirepass hepengju --masterauth hepengju
     restart: always
     network_mode: 'host'
     environment:
@@ -10,7 +10,7 @@ services:
   valkey9-9002:
     image: valkey/valkey:9
     container_name: valkey9-9002
-    command: redis-server --cluster-enabled yes --port 9002 --cluster-announce-ip 8.159.152.225 --requirepass hepengju --masterauth hepengju
+    command: redis-server --cluster-enabled yes --cluster-databases 16 --port 9002 --cluster-announce-ip 8.159.152.225 --requirepass hepengju --masterauth hepengju
     restart: always
     network_mode: 'host'
     environment:
@@ -18,7 +18,7 @@ services:
   valkey9-9003:
     image: valkey/valkey:9
     container_name: valkey9-9003
-    command: redis-server --cluster-enabled yes --port 9003 --cluster-announce-ip 8.159.152.225 --requirepass hepengju --masterauth hepengju
+    command: redis-server --cluster-enabled yes --cluster-databases 16 --port 9003 --cluster-announce-ip 8.159.152.225 --requirepass hepengju --masterauth hepengju
     restart: always
     network_mode: 'host'
     environment:
@@ -26,7 +26,7 @@ services:
   valkey9-9004:
     image: valkey/valkey:9
     container_name: valkey9-9004
-    command: redis-server --cluster-enabled yes --port 9004 --cluster-announce-ip 8.159.152.225 --requirepass hepengju --masterauth hepengju
+    command: redis-server --cluster-enabled yes --cluster-databases 16 --port 9004 --cluster-announce-ip 8.159.152.225 --requirepass hepengju --masterauth hepengju
     restart: always
     network_mode: 'host'
     environment:
@@ -34,7 +34,7 @@ services:
   valkey9-9005:
     image: valkey/valkey:9
     container_name: valkey9-9005
-    command: redis-server --cluster-enabled yes --port 9005 --cluster-announce-ip 8.159.152.225 --requirepass hepengju --masterauth hepengju
+    command: redis-server --cluster-enabled yes --cluster-databases 16 --port 9005 --cluster-announce-ip 8.159.152.225 --requirepass hepengju --masterauth hepengju
     restart: always
     network_mode: 'host'
     environment:
@@ -42,7 +42,7 @@ services:
   valkey9-9006:
     image: valkey/valkey:9
     container_name: valkey9-9006
-    command: redis-server --cluster-enabled yes --port 9006 --cluster-announce-ip 8.159.152.225 --requirepass hepengju --masterauth hepengju
+    command: redis-server --cluster-enabled yes --cluster-databases 16 --port 9006 --cluster-announce-ip 8.159.152.225 --requirepass hepengju --masterauth hepengju
     restart: always
     network_mode: 'host'
     environment:

@@ -189,6 +189,7 @@ pub fn get_client_cluster(conf: &ConnConfig) -> AnyResult<ClusterClient> {
             builder = builder.certs(certs);
         };
     }
+    builder = builder.database_id(conf.db as i64);
     let client = builder.build()?;
     let cc = ClusterConfig::new().set_connection_timeout(CONNECTION_CHECK_TIMEOUT);
     let mut conn = client.get_connection_with_config(cc)?;

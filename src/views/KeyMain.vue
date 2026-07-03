@@ -235,14 +235,22 @@ const scanBatchSize = computed(() => {
   return stripped.length <= 1 ? 1000 : 10000
 })
 
+/** 当前库键总量：单机取 INFO dbN；集群为单 master 键数 × master 节点数 */
+const dbSize = computed(() => {
+  if (!share.conn) return 0
+  const perDb = Number(share.dbSizeMap['db' + share.conn.db] ?? 0)
+  if (!share.conn.cluster) return perDb
+  const masterCount = share.nodeList.filter(n => n.isMaster).length
+  return masterCount > 0 ? perDb * masterCount : perDb
+})
+
 // 扫描进度：按 SCAN 批次估算（与匹配结果数量无关，稀有键搜索时进度仍正常推进）
 const scanProgress = computed(() => {
   if (cursor.value?.finished) return 100
   if (!share.conn || scanBatchCount.value === 0) return 0
-  const dbSize = Number(share.dbSizeMap['db' + share.conn.db] ?? 0)
-  if (dbSize > 0) {
+  if (dbSize.value > 0) {
     const scanned = scanBatchCount.value * scanBatchSize.value
-    return Math.min(99, Math.round((scanned / dbSize) * 100))
+    return Math.min(99, Math.round((scanned / dbSize.value) * 100))
   }
   return Math.min(99, scanBatchCount.value * 5)
 })
@@ -416,6 +424,11 @@ const dbSelectWidth = computed(() => {
   return `${Math.min(136, Math.max(88, len * 7 + 28 + 16))}px`
 })
 
+/** 集群 Valkey 9+ 多库：el-select 位置仅展示当前 db，不支持切换 */
+const showClusterDbLabel = computed(() =>
+  Boolean(share.conn?.cluster && share.capabilities.clusterDbSupported),
+)
+
 // el-select 后缀：项目 upDown 图标
 const dbSelectSuffixIcon = defineComponent({
   name: 'DbSelectSuffixIcon',
@@ -512,6 +525,9 @@ onMounted(() => {
   window.addEventListener('keydown', onKeyListRefreshHotkey, true)
   connUi.openKeyCopy = (redisKey: RedisKey_Deserialize) => {
     keyCopyRef.value?.open({ redisKey })
+  }
+  connUi.scrollKeyToTree = (redisKey: RedisKey_Deserialize) => {
+    keyTreeRef.value?.setCurrentKey(redisKey)
   }
 })
 onUnmounted(() => {
@@ -699,10 +715,9 @@ async function mockData(): Promise<void> {
           await meCommands.mockData(share.conn!.id, count)
           remaining -= count
           share.exportImportingPercentage = Math.round(((total - remaining) / total) * 100)
-          await sleep(10) // 睡眠10ms以便其他动作可以获取到锁, 同时避免UI界面卡顿
+          await sleep(100) // 睡眠10ms以便其他动作可以获取到锁, 同时避免UI界面卡顿
         }
         meOk(t('keyHeader.mockOk'))
-        bus.emit(CONN_REFRESH)
         bus.emit(INFO_REFRESH)
       } finally {
         share.exportImporting = false
@@ -830,6 +845,7 @@ function editDbName(db: number): void {
           v-model="keyword"
           :readonly="loading"
           :placeholder="t('keyMain.keyword')"
+          clearable
           @keyup.enter="scanKey(false, false)"
           @click="handleKeywordClick"
           @blur="handleInputBlur">
@@ -870,7 +886,7 @@ function editDbName(db: number): void {
                 v-if="showScanControl"
                 :content="scanToggleTip"
                 placement="bottom"
-                :show-after="500">
+                :show-after="1000">
                 <div class="scan-control" @click.stop="onScanAction">
                   <el-progress
                     type="circle"
@@ -885,18 +901,18 @@ function editDbName(db: number): void {
                     class="scan-icon" />
                 </div>
               </el-tooltip>
-              <el-tooltip :content="t('keyMain.refreshKey')" placement="bottom" :show-after="500">
-                <me-icon
-                  icon="me-icon-search"
-                  class="suffix-icon-btn"
-                  :style="{ color: share.color }"
-                  @click.stop="onRefreshKey" />
-              </el-tooltip>
+              <me-icon
+                icon="me-icon-search"
+                class="suffix-icon-btn"
+                :style="{ color: share.color }"
+                :info="t('keyMain.refreshKey')"
+                placement="bottom"
+                @click.stop="onRefreshKey" />
               <el-tooltip
                 :content="t('keyMain.exactSearch')"
                 placement="bottom"
                 raw-content
-                :show-after="500">
+                :show-after="1000">
                 <el-checkbox size="small" v-model="exact" class="suffix-exact-checkbox" />
               </el-tooltip>
             </div>
@@ -960,17 +976,20 @@ function editDbName(db: number): void {
             @click="toggleFavoriteMode">
             <me-icon icon="el-icon-back" style="color: var(--el-color-warning)" />
             <el-text type="warning" style="font-weight: bold">
-              <div class="me-flex" style="gap: 5px; margin-left: 5px">
+              <div class="me-flex" style="gap: 10px; margin-left: 5px">
                 <div>{{ t('keyMain.exitFavoriteMode') }}</div>
                 <me-icon
                   icon="me-icon-db"
                   :name="'db' + share.conn.db"
-                  v-if="!share.conn.cluster" />
+                  v-if="!share.conn.cluster || share.capabilities.clusterDbSupported" />
               </div>
             </el-text>
           </div>
         </template>
         <template v-else>
+          <div v-if="showClusterDbLabel" class="cluster-db-label">
+            <me-icon icon="me-icon-db" :name="'db' + share.conn!.db" />
+          </div>
           <el-select
             v-model="share.conn.db"
             @change="selectDB"
@@ -978,7 +997,7 @@ function editDbName(db: number): void {
             :style="{ width: dbSelectWidth }"
             :suffix-icon="dbSelectSuffixIcon"
             filterable
-            v-if="!share.conn.cluster">
+            v-else-if="!share.conn.cluster">
             <template #header>
               <div
                 style="
@@ -1092,7 +1111,7 @@ function editDbName(db: number): void {
 
       <!-- 中间: 选中/过滤, 过滤/总数 -->
       <div class="center">
-        <el-text class="tip" size="large" type="primary">
+        <el-text class="tip" size="large" :style="{ color: share.color }">
           <span v-if="showCheckbox">{{ checkedKeyList.length }} / {{ filterKeyList.length }}</span>
           <span v-else-if="favoriteMode"
             >{{ filterKeyList.length }} / {{ currentFavorites.length }}</span
@@ -1222,7 +1241,7 @@ function editDbName(db: number): void {
       display: flex;
       align-items: center;
       gap: 6px;
-      margin-right: 2px;
+      margin-left: 6px;
 
       // 与 suffix 图标同色，选中时用主题色
       :deep(.suffix-exact-checkbox) {
@@ -1436,6 +1455,13 @@ function editDbName(db: number): void {
           white-space: nowrap;
         }
       }
+    }
+
+    .cluster-db-label {
+      flex-shrink: 0;
+      padding: 0 4px;
+      font-size: 14px;
+      color: var(--el-text-color-regular);
     }
 
     .db-option {

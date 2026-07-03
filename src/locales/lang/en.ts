@@ -218,6 +218,8 @@ export default {
     commandMapTip:
       'Matches rename-command in config file. When CONFIG is renamed, enter the mapped name',
     testConn: 'Test Conn',
+    dbTip:
+      'Initial database index<br/>• Standalone: switches while connected are auto-saved<br/>• Cluster: Valkey 9+ required; set at connect only, no switching',
     uiModeMinimal: 'Minimal',
     uiModeTip:
       'Minimal mode shows only Key-Value and Terminal for ACL users without INFO, CONFIG, etc.',
@@ -488,16 +490,16 @@ export default {
     limit: '(Data has reached limit：${limit})',
   },
 
-  keyList: { renameKey: 'Rename' },
+  keyList: { renameKey: 'Rename Key' },
 
   keyRename: { title: 'Rename Key', newKeyName: 'New key name' },
-  keyCopy: { title: 'Duplicate Key', newKeyName: 'New key name' },
+  keyCopy: { title: 'Create Duplicate', newKeyName: 'New key name' },
 
   keyTree: {
     noData: 'No Data',
     refreshKey: 'Refresh List',
     reloadKey: 'Reload',
-    copyKey: 'Copy',
+    copyKey: 'Copy Key',
     deleteKey: 'Delete',
     addKey: 'Add Key',
     copyFolder: 'Copy Folder',
@@ -812,12 +814,13 @@ export default {
     noKeySelected: 'No Key Selected',
     loadMore: 'Load More',
     loadAll: 'Load All',
-    renameKey: 'Rename',
-    duplicateKey: 'Duplicate',
+    renameKey: 'Rename Key',
+    duplicateKey: 'Create Duplicate',
     copyAsCommand: 'Copy as Command',
     copyCommandOk: 'Command copied',
     copyCommandEmpty: 'Empty key, nothing to copy',
-    refreshKey: 'Refresh',
+    refreshKey: 'Refresh Key',
+    locateKeyHint: 'Locate current key in key list',
 
     textMemory: 'Memory Usage: ',
     textLength: 'Bytes Length: ',
@@ -952,6 +955,8 @@ export default {
     connection_lock_timeout: 'Connection lock timeout, please try again later',
     sentinel_not_supported: 'SSH tunnel does not support sentinel mode',
     cluster_not_supported: 'SSH tunnel does not support cluster mode',
+    cluster_db_switch_not_supported:
+      'Cluster mode does not support switching DB; change the initial DB in connection settings and reconnect',
     key_not_found: 'Key "{key}" not found',
     key_node_not_found: 'Node not found for key "{key}"',
     key_already_exists: 'Key "{key}" already exists',

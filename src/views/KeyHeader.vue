@@ -16,12 +16,7 @@ const share = inject(shareProvideKey)!
 const connUi = inject(connUiProvideKey)!
 const { t } = useI18n()
 
-const dialog = reactive({
-  setting: false,
-  info: false,
-  social: false,
-  commandLog: false,
-})
+const dialog = reactive({ setting: false, info: false, social: false, commandLog: false })
 const keyShortVisible = ref(false)
 const globalShortcuts = computed(() => getConnGlobalShortcuts(t))
 const codeMirrorShortcuts = computed(() => getValueShortcuts(t))

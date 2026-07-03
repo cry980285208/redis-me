@@ -13,16 +13,10 @@ const props = withDefaults(
     /** 多列并排时紧凑布局，缩小标签与按键间距 */
     compact?: boolean
   }>(),
-  {
-    clickable: false,
-    width: 'min(400px, 100%)',
-    compact: false,
-  },
+  { clickable: false, width: 'min(400px, 100%)', compact: false },
 )
 
-const emit = defineEmits<{
-  action: [id: string]
-}>()
+const emit = defineEmits<{ action: [id: string] }>()
 
 const isMacOS = getOsType() === 'macos'
 

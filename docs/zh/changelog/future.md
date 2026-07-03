@@ -1,8 +1,12 @@
 ## Future
 
+- 集群模型下数据库的选择(Valkey9.0开始支持) ✅️
+- Redis 8.8 新类型 Array的支持
+- 复制为命令，支持列表查看中的单行数据
+- 键列表支持快速定位正在浏览的键 ✅️
+- 键类型: Vector Set，Time Series的支持
 - 收藏键功能 ✅️
 - 复制为命令及导出命令(已有方案) ✅️
-- 键类型: Vector Set，Time Series的支持
 - 官网升级，参考cc-switch的官网: https://www.ccswitch.io/zh/
 - RedisSearch的支持
 - 慢日志治理的微信公众号文章

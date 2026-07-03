@@ -14,9 +14,7 @@ const props = withDefaults(
   { showShortcuts: true },
 )
 
-const emit = defineEmits<{
-  action: [action: string]
-}>()
+const emit = defineEmits<{ action: [action: string] }>()
 
 const { t } = useI18n()
 

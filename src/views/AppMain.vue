@@ -79,6 +79,7 @@ const share = reactive<AppMainShare>({
     aclDryrunSupported: false,
     aclSelectorSupported: false,
     httlSupported: false,
+    clusterDbSupported: false,
   },
 })
 provide(shareProvideKey, share)
@@ -152,10 +153,7 @@ watch(
     meTauri.connList = connList as MeTauriGlobal['connList']
 
     await meCommands.connList(connList as ConnConfig[])
-    const payload: ConnListWindowsSyncPayload = {
-      connList,
-      label: tauriWindow.label,
-    }
+    const payload: ConnListWindowsSyncPayload = { connList, label: tauriWindow.label }
     await tauriWindow.emit(CONN_LIST_WINDOWS_SYNC, payload)
   },
   { immediate: true },
@@ -214,6 +212,8 @@ const connUi = reactive({
   openShortcuts(): void {},
   /** KeyMain onMounted 时注入，供键值页等打开创建副本弹窗 */
   openKeyCopy(_redisKey: RedisKey_Deserialize): void {},
+  /** KeyMain onMounted 时注入，供键值页定位当前键 */
+  scrollKeyToTree(_redisKey: RedisKey_Deserialize): void {},
   runConnAction(action: ConnShortcutAction): void {
     if (action === 'add') connUi.openConnSave('add')
     else if (action === 'import') connUi.openConnImport()

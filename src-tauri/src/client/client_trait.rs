@@ -90,7 +90,7 @@ pub trait MeClient: Send + Sync {
         client_type: Option<String>,
     ) -> AnyResult<Vec<RedisClientInfo>>;
 
-    fn publish(&self, channel: &str, message: &str) -> AnyResult<()>;
+    fn publish(&self, channel: &str, message: &str, msg_fmt: Option<BytesFormat>) -> AnyResult<()>;
 
     fn subscribe(&self, channel: Option<String>) -> AnyResult<()>;
     fn subscribe_stop(&self) -> AnyResult<()>;
@@ -821,8 +821,10 @@ pub fn publish0(
     mut conn: MutexGuard<impl Commands>,
     channel: &str,
     message: &str,
+    msg_fmt: &BytesFormat,
 ) -> AnyResult<()> {
-    let _: () = conn.publish(channel, message)?;
+    let bytes = parse_bytes(message, msg_fmt)?;
+    let _: () = conn.publish(channel, &bytes)?;
     Ok(())
 }
 
@@ -873,12 +875,12 @@ pub fn subscribe0(
         while running.load(Relaxed) {
             let response = conn.recv_response()?;
             if let Some(msg) = Msg::from_value(&response) {
-                let payload: String = msg.get_payload()?;
+                let payload: Vec<u8> = msg.get_payload()?;
                 let event = SubscribeEvent {
                     id: id.clone(),
                     datetime: Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
                     channel: msg.get_channel_name().to_string(),
-                    message: payload,
+                    message: vec8_to_display_string(&payload),
                 };
                 let _ = &app_handle.emit(EVENT_SUBSCRIBE, event);
             }
@@ -896,6 +898,7 @@ pub fn subscribe_stop0(conn: MutexGuard<impl Commands>, running: Arc<AtomicBool>
         conn,
         REDIS_ME_SUBSCRIBE_STOP_CHANNEL,
         REDIS_ME_SUBSCRIBE_STOP_CHANNEL,
+        &BytesFormat::UTF8,
     )
 }
 

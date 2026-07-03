@@ -1,5 +1,9 @@
 # RedisME 命令执行日志功能 - 实现方案
 
+> **实现状态**：✅ 已实现  
+> **关键代码**：`src-tauri/src/utils/command_log.rs`、`src/views/ext/CommandLog.vue`、`src/views/KeyHeader.vue`  
+> **实际实现**：单文件 `command_log.rs`；每连接 `MeBase.command_logger`；`command_logs(id)` / `command_logs_clear(id)`；Event `command-log` 实时推送；v1 无开关、统计与持久化。
+
 ## 一、需求分析
 
 实现一个命令执行日志功能，记录所有发送给 Redis 的命令，包括：
@@ -280,14 +284,14 @@ impl LoggingConnection {
 
 | 文件路径                              | 说明                                  |
 | ------------------------------------- | ------------------------------------- |
-| `src-tauri/src/utils/cmd_logger.rs`   | CommandLogger 和 CommandLogEntry 定义 |
+| `src-tauri/src/utils/command_log.rs`  | CommandLogger 和 CommandLogEntry 定义 |
 | `src-tauri/src/utils/logging_conn.rs` | LoggingConnection 包装器实现          |
 
 ### 4.2 修改文件
 
 | 文件路径                               | 修改内容                                                                | 预计行数 |
 | -------------------------------------- | ----------------------------------------------------------------------- | -------- |
-| `src-tauri/src/utils/mod.rs`           | 导出新模块 `pub mod cmd_logger; pub mod logging_conn;`                  | +2       |
+| `src-tauri/src/utils/mod.rs`           | 导出 `pub mod command_log;` 等                                          | +2       |
 | `src-tauri/src/client/state.rs`        | AppState 添加 `command_logger: Arc<CommandLogger>` 字段                 | +10      |
 | `src-tauri/src/client/impl_single.rs`  | 1. MeSingle.conn 类型改为 `LoggingConnection`<br>2. init() 方法包装连接 | ~20      |
 | `src-tauri/src/client/impl_cluster.rs` | 集群模式各方法添加日志（约10处 route_command 调用点）                   | ~50      |
@@ -539,23 +543,21 @@ listen('command-log', event => {
 
 ### Phase 1: 核心功能（优先级最高）
 
-- [ ] 新建 `cmd_logger.rs` - CommandLogger 实现
-- [ ] 新建 `logging_conn.rs` - LoggingConnection 包装器
-- [ ] 修改 `impl_single.rs` - 单机模式接入
-- [ ] 修改 `state.rs` - 全局状态管理
-- [ ] 修改 `api.rs` - 暴露基础 API
+- [x] 新建 `command_log.rs` - CommandLogger + LoggingConnection
+- [x] 修改 `impl_single.rs` - 单机模式接入
+- [x] 修改 `MeBase` - 每连接一份 logger（非全局 state）
+- [x] 修改 `api.rs` - `command_logs` / `command_logs_clear`
 
 ### Phase 2: 完善覆盖率
 
-- [ ] 修改 `impl_cluster.rs` - 集群模式添加 日志
-- [ ] 修改 `client_trait.rs` - Pipeline 汇总日志
+- [x] 修改 `impl_cluster.rs` - LoggingClusterConnection
+- [x] Pipeline 汇总日志（`log_pipeline_packed`）
 
 ### Phase 3: 前端界面
 
-- [ ] 新建 `CommandLog.vue` 组件
-- [ ] 实现实时轮询/推送
-- [ ] 实现过滤/搜索功能
-- [ ] 实现统计面板
+- [x] 新建 `CommandLog.vue` 组件（KeyHeader 下拉入口）
+- [x] Event 增量 + 打开面板拉快照
+- [x] 过滤/搜索（表格 + me-table 导出）
 
 ### Phase 4: 高级功能（可选）
 
@@ -575,7 +577,7 @@ listen('command-log', event => {
 
 ## 十一、注意事项
 
-1. **集群模式特殊**: ClusterConnection 没有实现 ConnectionLike，需单独处理
+1. **集群模式**：通过 `LoggingClusterConnection` 包装 `ClusterConnection`（含 `route_command` 拦截）
 2. **Pipeline 限制**: Pipeline::query() 只记录一次，子命令需业务层添加汇总日志
 3. **SUBSCRIBE/MONITOR**: 流式命令不适合记录到命令日志，保持现有事件机制
 4. **线程安全**: CommandLogger 使用 RwLock + Atomic 保证并发安全
@@ -605,24 +607,23 @@ listen('command-log', event => {
 
 ---
 
-## 十三、2026-06 代码对齐修订（相对原方案的变更）
+## 十三、实际实现补充
 
-> 对照当前仓库（Tauri 2 + redis-rs 1.x + specta 绑定）重新梳理。**入口位置**：`KeyHeader.vue` 连接区下拉菜单，「关闭连接」与「新窗口」之间（见截图），**不是** TabMain 新 Tab。
+> 对照当前仓库（Tauri 2 + redis-rs 1.x + specta）。**入口**：`KeyHeader.vue` 连接区下拉 → `CommandLog.vue` 弹窗（非 TabMain 新 Tab）。
 
-### 13.1 与原方案的主要差异
+### 13.1 架构要点
 
-| 项            | 原方案                          | 修订后                                                                                     |
-| ------------- | ------------------------------- | ------------------------------------------------------------------------------------------ |
-| 日志存储      | `AppState` 全局单例             | **`MeBase` 每连接一份** `Arc<CommandLogger>`，随 `disconnect`/客户端 Drop 释放             |
-| API 参数      | 全局 `get_command_logs(limit…)` | **`command_logs(id, …)` / `command_logs_clear(id)`**，与现有 `api_commands!` 风格一致      |
-| 前端形态      | 独立 Tab + 4 个子组件           | **`views/ext/CommandLog.vue` 弹窗**，对齐 `AclLog.vue`；菜单在 `KeyHeader.vue`             |
-| 响应序列化    | 自建 `value_to_string`          | **复用** `utils/util.rs` 的 `redis_value_to_string`                                        |
-| 命令解析      | 自建 `parse_cmd`                | **复用** `Cmd::arg_iter` + 现有 `parse_command`（终端场景）                                |
-| 类型导出      | 手写 Serialize                  | **`api_model!(CommandLogEntry { … })`** 写入 `model.rs`，specta 自动生成 TS                |
-| redis 版本    | 旧版假设                        | **redis 1.x**：`ConnectionLike` 实现者自动获得 `Commands`，包装器只需实现 `ConnectionLike` |
-| 统计/开关 API | Phase 1 包含 stats、toggle      | **v1 不做**；表格 + `me-table` 自带导出足够                                                |
+| 项       | 实现                                                                  |
+| -------- | --------------------------------------------------------------------- |
+| 日志存储 | **`MeBase` 每连接** `Arc<CommandLogger>`，随 disconnect 释放          |
+| API      | **`command_logs(id, limit)`** / **`command_logs_clear(id)`**          |
+| 前端     | **`CommandLog.vue` 弹窗**；`command-log` 事件推送 + 本地 keyword 过滤 |
+| 单机拦截 | `LoggingConnection` 包装 `ConnectionLike::req_packed_command`         |
+| 集群拦截 | `LoggingClusterConnection`（非逐点 route_logged）                     |
+| 响应字段 | 无 `response`/`status`；错误写入 `error`                              |
+| v1 未做  | 开关、统计 API、持久化、分页 offset                                   |
 
-### 13.2 后端架构（修订）
+### 13.2 后端架构
 
 ```
 MeBase.command_logger: Arc<CommandLogger>
@@ -631,7 +632,7 @@ LoggingConnection { inner: Connection, logger, conn_id, db }
         ↑ req_packed_command() 拦截
 MeSingle.conn: Mutex<LoggingConnection>   // 原 Mutex<Connection>
 
-MeCluster: 无 ConnectionLike → 在 impl_cluster 内集中封装 route_logged()
+MeCluster: LoggingClusterConnection 包装（`command_log.rs`、`impl_cluster.rs`）
 ```
 
 **CommandLogEntry** 建议字段（specta 导出）：
@@ -778,15 +779,15 @@ command_logs_clear(id: &str) -> ();
 **Phase 3 — 增强（可选）**
 
 7. 设置项：启用/禁用、缓冲上限、慢阈值
-8. Event 推送或导出格式对齐 `command-export-format.md`
+8. Event 推送或导出格式对齐 `09_command-export-format.md`
 
 ### 13.11 与「命令监控」Tab 的区分
 
-|      | 命令日志（本功能）          | 命令监控 Tab                       |
-| ---- | --------------------------- | ---------------------------------- |
-| 范围 | **本应用**发出的 Redis 命令 | Redis `MONITOR` 看到的**全服**命令 |
-| 触发 | 自动、常驻                  | 用户手动开启，有性能提示           |
-| 入口 | KeyHeader 菜单弹窗          | TabMain → 命令监控                 |
+|      | 命令日志（本功能）               | 命令监控 Tab                       |
+| ---- | -------------------------------- | ---------------------------------- |
+| 范围 | **本应用**发出的 Redis 命令      | Redis `MONITOR` 看到的**全服**命令 |
+| 触发 | 自动、常驻                       | 用户手动开启，有性能提示           |
+| 入口 | KeyHeader 菜单 → CommandLog 弹窗 | KeyHeader 菜单 → CommandLog 弹窗   |
 
 避免用户混淆：弹窗标题/空态文案写清「记录 RedisME 客户端执行的命令」。
 
