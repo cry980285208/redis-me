@@ -1,6 +1,6 @@
 # 4.x 更新日志
 
-## v4.2.0
+## [v4.2.0](https://mp.weixin.qq.com/s/gREAYjVYH5V4KWpBNWFZVQ) (2026-07-04)
 
 ### ✨ 新增优化
 
