@@ -186,6 +186,11 @@ html.dark .vue-codemirror {
     background-color: #272822;
   }
 
+  /* 默认选区 #233 与背景 #272822 过近，略提亮 */
+  :deep(.cm-selectionBackground) {
+    background-color: #4b6a3f !important;
+  }
+
   /* JSON值在黑色模式下红色看着不舒服，因此改下 */
   /* Json的字符串值 */
   :deep(.ͼe) {
