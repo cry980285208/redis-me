@@ -15,7 +15,7 @@
   - Refresh button and footer text use connection color
   - Improved scan progress estimation for cluster scenarios
 - **Connection**
-  - Connection editor: initial db input and color row layout adjustment
+  - Connection editor: initial db input
   - **Valkey 9+ cluster: specify initial db at connect time**
 - **Pub/Sub**: **Message encoding selectable** for sending binary messages
 - Other: Added Redisee to website footer links
