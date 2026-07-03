@@ -231,10 +231,6 @@ impl LoggingClusterConnection {
         self.inner.set_write_timeout(timeout)
     }
 
-    pub fn set_db_index(&mut self, db: u16) {
-        self.db_index = db;
-    }
-
     pub fn route_command(&mut self, cmd: &Cmd, route: RoutingInfo) -> RedisResult<Value> {
         let start = Instant::now();
         let result = self.inner.route_command(cmd, route);
