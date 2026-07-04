@@ -125,8 +125,6 @@ const hashType = computed(() => 'hash' === redisValue.value?.type)
 const stringType = computed(() => 'string' === redisValue.value?.type)
 const jsonType = computed(() => 'json' === redisValue.value?.type)
 const streamType = computed(() => 'stream' === redisValue.value?.type)
-/** Stream 无编辑，始终可查看；其他类型在连接只读时可查看 */
-const showFieldViewBtn = computed(() => streamType.value || share.readonly)
 const stringTypeOrWithHashKey = computed(
   () => 'string' === redisValue.value?.type || withHashKey.value,
 )
@@ -142,6 +140,11 @@ function supportsTableView(type: string | undefined) {
   return (
     type === 'hash' || type === 'list' || type === 'set' || type === 'zset' || type === 'stream'
   )
+}
+
+/** field_get 可单行刷新的表格类型 */
+function supportsFieldRowRefresh(type: string | undefined) {
+  return type === 'hash' || type === 'list' || type === 'zset'
 }
 
 /** 切换键或 reset 时，按 settings.fieldShow 决定默认视图 */
@@ -689,14 +692,62 @@ const fieldSetReadonly = ref(false)
 /** 单行刷新：list 在 value 数组中的下标；hash 为字段 wire key */
 const fieldEditIndex = ref(-1)
 const fieldEditKey = ref('')
+/** 行操作区：下拉/删除确认打开时保持可见（悬停由 CSS :hover 处理） */
+const pinnedRowIndex = ref(-1)
+/** 编辑面板当前行（分页下不能用 fieldSetIndex 索引 filterDataList） */
+const fieldSetRow = ref<ValueTableRow | null>(null)
 const fieldSetRef = useTemplateRef('fieldSetRef')
+
+function isRowActionsPinned(index: number) {
+  return fieldSetIndex.value === index || pinnedRowIndex.value === index
+}
+
+function onRowOverlayVisible(visible: boolean, index: number) {
+  if (visible) pinnedRowIndex.value = index
+  else if (pinnedRowIndex.value === index) pinnedRowIndex.value = -1
+}
+
+function pageRowIndexFromEvent(event: MouseEvent): number {
+  const tr = event.currentTarget as HTMLElement | null
+  if (!tr) return -1
+  for (const className of tr.classList) {
+    if (className.startsWith('table-row-index-')) {
+      return Number.parseInt(className.slice('table-row-index-'.length), 10)
+    }
+  }
+  return -1
+}
 
 function fieldSetInit() {
   fieldSetIndex.value = -1
   fieldSetReadonly.value = false
   fieldEditIndex.value = -1
   fieldEditKey.value = ''
+  fieldSetRow.value = null
   fieldSetRef.value?.close()
+}
+
+function prepareFieldRowContext(row: ValueTableRow) {
+  const rv = redisValue.value
+  fieldEditKey.value = row.key || ''
+  fieldEditIndex.value = -1
+  if (rv?.type === 'list') {
+    fieldEditIndex.value = fieldValueRows(rv.value).indexOf(row.value)
+  }
+}
+
+function formatFieldTtl(ttl: number | undefined): string {
+  if (ttl === undefined || ttl === null) return '-'
+  if (ttl === -1) return t('redisValue.ttlForever')
+  return String(meHumanSeconds(ttl))
+}
+
+function fieldRowDisplayValue(row: ValueTableRow): string {
+  return streamType.value ? JSON.stringify(row.value) : formatTableCell(row.value)
+}
+
+function copyFieldValue(row: ValueTableRow) {
+  meCopy(fieldRowDisplayValue(row))
 }
 
 function openFieldPanel(row: ValueTableRow, index: number, readonly: boolean) {
@@ -704,8 +755,8 @@ function openFieldPanel(row: ValueTableRow, index: number, readonly: boolean) {
   if (!rv) return
   fieldSetIndex.value = index
   fieldSetReadonly.value = readonly
-  fieldEditKey.value = row.key || ''
-  fieldEditIndex.value = -1
+  fieldSetRow.value = row
+  prepareFieldRowContext(row)
   const rowValWire =
     rv.type === 'stream' ? JSON.stringify(row.value ?? {}) : String(row.value ?? '')
   const params = {
@@ -719,11 +770,10 @@ function openFieldPanel(row: ValueTableRow, index: number, readonly: boolean) {
     type: rv.type,
     key: share.redisKey!,
     fieldIndex: -1,
+    streamId: row.id || '',
     readonly,
   }
   if (rv.type === 'list') {
-    // 表格可能被关键字过滤，list 索引需从完整 value 数组重算
-    fieldEditIndex.value = fieldValueRows(rv.value).indexOf(row.value)
     params.fieldIndex = fieldEditIndex.value
   }
   fieldSetRef.value?.open(params)
@@ -737,20 +787,24 @@ function fieldView(row: ValueTableRow, index: number) {
 }
 
 function rowClassName({ rowIndex }: { row: ValueTableRow; rowIndex: number }) {
-  return `table-row-index-${rowIndex}`
+  const classes = [`table-row-index-${rowIndex}`]
+  if (fieldSetIndex.value === rowIndex) classes.push('field-set-row')
+  return classes.join(' ')
+}
+
+function rowDblClick(row: ValueTableRow, _column: unknown, event: MouseEvent) {
+  if ((event.target as HTMLElement)?.closest('.field-value-cell__actions')) return
+  const rowIndex = pageRowIndexFromEvent(event)
+  if (rowIndex < 0) return
+  if (canEdit.value && !streamType.value) fieldSet(row, rowIndex)
+  else fieldView(row, rowIndex)
 }
 
 function rowClick(row: ValueTableRow, _column: unknown, event: MouseEvent) {
   if (fieldSetIndex.value === -1) return
-  const trElement = event.currentTarget as HTMLElement | null
-  if (!trElement) return
-  for (const className of trElement.classList) {
-    if (className.startsWith('table-row-index-')) {
-      const rowIndex = Number.parseInt(className.split('-')[3]!, 10)
-      openFieldPanel(row, rowIndex, fieldSetReadonly.value)
-      break
-    }
-  }
+  const rowIndex = pageRowIndexFromEvent(event)
+  if (rowIndex < 0) return
+  openFieldPanel(row, rowIndex, fieldSetReadonly.value)
 }
 
 /** 编辑面板打开时：点表格行切换内容；点面板外空白/表头等关闭 */
@@ -764,18 +818,63 @@ function onFieldPanelOutsideClick(e: MouseEvent) {
 }
 
 /** 将 field_get 结果写回表格对应行（就地更新，避免整表 fieldScan） */
-function applyFieldGetResult(rv: FieldScanViewState, data: RedisFieldValue) {
+function applyFieldGetResult(rv: FieldScanViewState, data: RedisFieldValue, row: ValueTableRow) {
   if (rv.type === 'hash') {
     const rows = fieldValueRows(rv.value) as ValueTableRow[]
-    const idx = rows.findIndex(r => r.key === fieldEditKey.value)
+    const idx = rows.findIndex(r => r.key === (row.key || fieldEditKey.value))
     if (idx >= 0) {
       rows[idx] = { key: data.fieldKey, value: data.fieldValue, ttl: data.fieldTtl }
     }
-  } else if (rv.type === 'list' && fieldEditIndex.value >= 0) {
+  } else if (rv.type === 'list') {
     const rows = fieldValueRows(rv.value)
-    if (fieldEditIndex.value < rows.length) {
-      rows[fieldEditIndex.value] = data.fieldValue
+    const idx =
+      fieldEditIndex.value >= 0 ? fieldEditIndex.value : fieldValueRows(rv.value).indexOf(row.value)
+    if (idx >= 0 && idx < rows.length) {
+      rows[idx] = data.fieldValue
     }
+  } else if (rv.type === 'zset') {
+    const rows = fieldValueRows(rv.value) as ValueTableRow[]
+    const idx = rows.findIndex(r => r.value === row.value)
+    if (idx >= 0) {
+      rows[idx] = { value: data.fieldValue, score: data.fieldScore ?? row.score }
+    }
+  }
+}
+
+/** 单行 field_get 刷新；不支持的类型回退 refreshKey */
+async function refreshFieldRow(row: ValueTableRow) {
+  const rv = redisValue.value
+  const conn = share.conn
+  if (!rv || !conn || !share.redisKey) return
+  prepareFieldRowContext(row)
+
+  if (rv.type === 'hash' || rv.type === 'list' || rv.type === 'zset') {
+    const fieldViewFmt = viewFmtForField(bytesFormat.value)
+    const param: RedisFieldGet_Deserialize = {
+      key: share.redisKey,
+      fieldIndex: fieldEditIndex.value,
+      fieldKey: fieldEditKey.value,
+      fieldValue: rv.type === 'zset' ? String(row.value ?? '') : '',
+      valFmt: toWireFormat(fieldViewFmt),
+    }
+    try {
+      const data = await meCommands.fieldGet(conn.id, param, false)
+      applyFieldGetResult(rv, data, row)
+      return
+    } catch {
+      // 回退整表刷新
+    }
+  }
+  await refreshKey(false)
+}
+
+function onFieldRowMoreCommand(command: string, row: ValueTableRow) {
+  if (command === 'refreshRow') {
+    void refreshFieldRow(row)
+  } else if (command === 'copyFieldValue') {
+    copyFieldValue(row)
+  } else if (command === 'copyAsCommand') {
+    void copyFieldAsCommand(row)
   }
 }
 
@@ -798,7 +897,8 @@ async function onFieldSetSuccess() {
   }
   try {
     const data = await meCommands.fieldGet(share.conn!.id, param, false)
-    applyFieldGetResult(rv, data)
+    const row = fieldSetRow.value
+    if (row) applyFieldGetResult(rv, data, row)
     fieldSetInit()
   } catch {
     await refreshKey(false)
@@ -1080,7 +1180,9 @@ onUnmounted(() => {
               height="100%"
               export-name="value"
               :row-class-name="rowClassName"
-              @row-click="rowClick">
+              @row-click="rowClick"
+              @row-dblclick="rowDblClick">
+              <!-- 索引 -->
               <el-table-column
                 label="#"
                 type="index"
@@ -1100,9 +1202,12 @@ onUnmounted(() => {
                 </template>
               </el-table-column>
 
+              <!-- Stream ID -->
               <el-table-column
                 :label="t('redisValue.id')"
                 prop="id"
+                width="310"
+                sortable
                 show-overflow-tooltip
                 v-if="redisValue.type === 'stream'">
                 <template #default="{ row }">
@@ -1114,82 +1219,111 @@ onUnmounted(() => {
                   </div>
                 </template>
               </el-table-column>
+
+              <!-- 分数 -->
+              <el-table-column
+                :label="t('redisValue.score')"
+                prop="score"
+                width="140"
+                sortable
+                show-overflow-tooltip
+                v-if="redisValue.type === 'zset'" />
+
+              <!-- 字段键 -->
               <el-table-column
                 :label="t('redisValue.key')"
                 prop="key"
+                sortable
                 show-overflow-tooltip
                 v-if="redisValue.type === 'hash'">
                 <template #default="scope">
                   {{ formatTableCell(scope.row.key) }}
                 </template>
               </el-table-column>
-              <el-table-column :label="t('redisValue.value')" prop="value" show-overflow-tooltip>
+
+              <!-- 字段值（悬停时在右侧显示行操作，flex 占位不遮挡文本） -->
+              <el-table-column
+                :label="t('redisValue.value')"
+                prop="value"
+                min-width="200"
+                show-overflow-tooltip>
                 <template #default="scope">
-                  {{
-                    streamType ? JSON.stringify(scope.row.value) : formatTableCell(scope.row.value)
-                  }}
+                  <div class="field-value-cell">
+                    <span class="field-value-cell__text">{{
+                      fieldRowDisplayValue(scope.row)
+                    }}</span>
+                    <div
+                      class="field-value-cell__actions"
+                      :class="{ 'is-pinned': isRowActionsPinned(scope.$index) }">
+                      <el-popconfirm
+                        v-if="canEdit"
+                        :hide-after="0"
+                        :title="t('redisValue.deleteConfirm')"
+                        @update:visible="(v: boolean) => onRowOverlayVisible(v, scope.$index)"
+                        @confirm.stop="fieldDel(scope.row)">
+                        <template #reference>
+                          <me-icon
+                            :info="t('delete')"
+                            icon="el-icon-delete"
+                            class="icon-btn"
+                            @click.stop />
+                        </template>
+                      </el-popconfirm>
+                      <me-icon
+                        v-if="canEdit && !streamType"
+                        :info="t('edit')"
+                        icon="el-icon-edit"
+                        class="icon-btn"
+                        @click.stop="fieldSet(scope.row, scope.$index)" />
+                      <me-icon
+                        v-else
+                        :info="t('view')"
+                        icon="el-icon-view"
+                        class="icon-btn"
+                        @click.stop="fieldView(scope.row, scope.$index)" />
+                      <el-dropdown
+                        trigger="hover"
+                        placement="bottom-end"
+                        :show-timeout="0"
+                        :hide-timeout="200"
+                        @visible-change="(v: boolean) => onRowOverlayVisible(v, scope.$index)"
+                        @command="(cmd: string) => onFieldRowMoreCommand(cmd, scope.row)">
+                        <me-icon icon="el-icon-more-filled" class="icon-btn" />
+                        <template #dropdown>
+                          <el-dropdown-menu>
+                            <el-dropdown-item
+                              v-if="supportsFieldRowRefresh(redisValue.type)"
+                              command="refreshRow">
+                              <me-icon
+                                icon="el-icon-refresh-right"
+                                :name="t('redisValue.refreshFieldRow')" />
+                            </el-dropdown-item>
+                            <el-dropdown-item command="copyFieldValue">
+                              <me-icon
+                                icon="el-icon-document-copy"
+                                :name="t('redisValue.copyFieldValue')" />
+                            </el-dropdown-item>
+                            <el-dropdown-item command="copyAsCommand">
+                              <me-icon
+                                icon="me-icon-copy-command"
+                                :name="t('redisValue.copyAsCommand')" />
+                            </el-dropdown-item>
+                          </el-dropdown-menu>
+                        </template>
+                      </el-dropdown>
+                    </div>
+                  </div>
                 </template>
               </el-table-column>
+
+              <!-- TTL -->
               <el-table-column
                 :label="t('redisValue.ttl')"
-                width="150"
+                width="140"
                 prop="ttl"
                 v-if="redisValue.type === 'hash' && share.capabilities.httlSupported">
                 <template #default="scope">
-                  {{ meHumanSeconds(scope.row.ttl) }}
-                </template>
-              </el-table-column>
-              <el-table-column
-                :label="t('redisValue.score')"
-                prop="score"
-                show-overflow-tooltip
-                v-if="redisValue.type === 'zset'" />
-
-              <el-table-column
-                :label="t('action')"
-                :width="canEdit ? 130 : 110"
-                fixed="right"
-                align="center">
-                <template #default="scope">
-                  <div class="me-flex" style="justify-content: space-around">
-                    <me-icon
-                      :info="t('copy')"
-                      icon="el-icon-document-copy"
-                      class="icon-btn"
-                      @click.stop="
-                        meCopy(
-                          streamType
-                            ? JSON.stringify(scope.row.value)
-                            : formatTableCell(scope.row.value),
-                        )
-                      " />
-                    <me-icon
-                      :info="t('redisValue.copyAsCommand')"
-                      icon="me-icon-copy-command"
-                      class="icon-btn"
-                      @click.stop="copyFieldAsCommand(scope.row)" />
-                    <me-icon
-                      :info="t('view')"
-                      icon="el-icon-view"
-                      class="icon-btn"
-                      @click.stop="fieldView(scope.row, scope.$index)"
-                      v-if="showFieldViewBtn" />
-                    <me-icon
-                      :info="t('edit')"
-                      icon="el-icon-edit"
-                      class="icon-btn"
-                      @click.stop="fieldSet(scope.row, scope.$index)"
-                      v-if="canEdit && !streamType" />
-                    <el-popconfirm
-                      :hide-after="0"
-                      :title="t('redisValue.deleteConfirm')"
-                      @confirm.stop="fieldDel(scope.row)"
-                      v-if="canEdit">
-                      <template #reference>
-                        <me-icon :info="t('delete')" icon="el-icon-delete" class="icon-btn" />
-                      </template>
-                    </el-popconfirm>
-                  </div>
+                  {{ formatFieldTtl(scope.row.ttl) }}
                 </template>
               </el-table-column>
             </me-table>
@@ -1218,7 +1352,7 @@ onUnmounted(() => {
 
           <me-icon
             style="font-size: 18px; margin-left: 5px"
-            :info="t('copy')"
+            :info="t('redisValue.copyValue')"
             class="icon-btn"
             icon="el-icon-document-copy"
             @click="meCopy(showValue)"
@@ -1472,6 +1606,52 @@ onUnmounted(() => {
           display: flex;
           align-items: center;
           justify-content: center;
+        }
+
+        // 值列：悬停时在右侧展开操作区（flex 收缩文本，不覆盖）
+        .field-value-cell {
+          display: flex;
+          align-items: center;
+          width: 100%;
+          min-width: 0;
+          gap: 6px;
+
+          &__text {
+            flex: 1 1 auto;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+          }
+
+          &__actions {
+            flex: 0 0 auto;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            max-width: 0;
+            overflow: hidden;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.12s ease;
+
+            :deep(.icon-btn) {
+              font-size: 16px;
+              flex-shrink: 0;
+            }
+
+            &.is-pinned {
+              max-width: 88px;
+              opacity: 1;
+              pointer-events: auto;
+            }
+          }
+        }
+
+        .el-table__body tr:hover .field-value-cell__actions {
+          max-width: 88px;
+          opacity: 1;
+          pointer-events: auto;
         }
       }
 
