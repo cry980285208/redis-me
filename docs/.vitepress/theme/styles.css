@@ -30,8 +30,13 @@
   );
   --vp-home-hero-image-filter: blur(64px);
 
-  /* 首页 Hero 环境光 / 网格（对齐 cc-switch-website） */
-  --vp-home-top-light: linear-gradient(to bottom, rgba(199, 91, 58, 0.06) 0%, transparent 42%);
+  /* 全页环境光 / 网格（顶略亮，向下渐弱至页底仍保留淡暖色） */
+  --vp-home-top-light: linear-gradient(
+    to bottom,
+    rgba(199, 91, 58, 0.08) 0%,
+    rgba(199, 91, 58, 0.05) 50%,
+    rgba(199, 91, 58, 0.03) 100%
+  );
   --vp-home-grid-opacity: 0.18;
   --vp-home-grid-color: rgba(45, 35, 25, 0.14);
 
@@ -67,7 +72,12 @@
     rgba(189, 52, 254, 0.08) 50%
   );
 
-  --vp-home-top-light: linear-gradient(to bottom, rgba(249, 115, 22, 0.1) 0%, transparent 45%);
+  --vp-home-top-light: linear-gradient(
+    to bottom,
+    rgba(249, 115, 22, 0.12) 0%,
+    rgba(249, 115, 22, 0.07) 50%,
+    rgba(249, 115, 22, 0.04) 100%
+  );
   --vp-home-grid-opacity: 0.1;
   --vp-home-grid-color: rgba(232, 226, 214, 0.1);
 }
@@ -84,26 +94,19 @@
   }
 }
 
-/* ── 首页 Hero：顶光 + 网格纹理（参考 cc-switch HeroSection） ── */
-.VPHero {
-  position: relative;
-  z-index: 2;
-  overflow-x: clip;
-  overflow-y: visible;
-}
-
-.VPHero::before {
+/* ── 全页环境光 + 网格（首页 / 文档页共用） ── */
+.Layout::before {
   content: '';
-  position: absolute;
+  position: fixed;
   inset: 0;
   z-index: 0;
   pointer-events: none;
   background: var(--vp-home-top-light);
 }
 
-.VPHero::after {
+.Layout::after {
   content: '';
-  position: absolute;
+  position: fixed;
   inset: 0;
   z-index: 0;
   pointer-events: none;
@@ -114,9 +117,24 @@
   background-size: 60px 60px;
 }
 
+.VPHero {
+  position: relative;
+  z-index: 2;
+  overflow-x: clip;
+  overflow-y: visible;
+}
+
 .VPHero .container {
   position: relative;
   z-index: 1;
+}
+
+/* 文档页侧栏透明，才能透出全页背景 */
+@media (min-width: 960px) {
+  .Layout:has(.VPContent:not(.is-home)) .VPSidebar,
+  .Layout:has(.VPContent:not(.is-home)) .VPSidebar .curtain {
+    background-color: transparent;
+  }
 }
 
 /* Logo 光晕：更大、更散、更淡 */
