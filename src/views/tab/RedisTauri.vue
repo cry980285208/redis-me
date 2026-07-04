@@ -12,6 +12,7 @@ import type {
   RedisExportCsv_Deserialize,
   RedisFieldAdd_Deserialize,
   RedisFieldDel_Deserialize,
+  RedisFieldGet_Deserialize,
   RedisFieldSet_Deserialize,
   RedisImportCsv,
   RedisKey_Deserialize,
@@ -121,6 +122,14 @@ const minimalFieldSet: RedisFieldSet_Deserialize = {
   valFmt: null,
 }
 
+const minimalFieldGet: RedisFieldGet_Deserialize = {
+  key: dummyKey,
+  fieldIndex: 0,
+  fieldKey: '',
+  fieldValue: '',
+  valFmt: null,
+}
+
 const minimalFieldDel: RedisFieldDel_Deserialize = {
   key: dummyKey,
   fieldIndex: 0,
@@ -205,6 +214,8 @@ function defaultPayload(cmd: CommandKey): Record<string, unknown> {
       return { id: connIdForDefaults(), param: { ...minimalFieldAdd } }
     case 'fieldSet':
       return { id: connIdForDefaults(), param: { ...minimalFieldSet } }
+    case 'fieldGet':
+      return { id: connIdForDefaults(), param: { ...minimalFieldGet } }
     case 'fieldDel':
       return { id: connIdForDefaults(), param: { ...minimalFieldDel } }
     case 'memoryUsage':

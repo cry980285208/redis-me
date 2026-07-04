@@ -233,6 +233,10 @@ impl MeClient for MeCluster {
         field_set0(self.get_conn()?, param, self.base().capabilities.httl_supported)
     }
 
+    fn field_get(&self, param: RedisFieldGet) -> AnyResult<RedisFieldValue> {
+        field_get0(self.get_conn()?, param, self.base().capabilities.httl_supported)
+    }
+
     fn field_del(&self, param: RedisFieldDel) -> AnyResult<()> {
         field_del0(self.get_conn()?, param)
     }

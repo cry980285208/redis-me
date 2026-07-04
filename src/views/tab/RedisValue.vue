@@ -23,6 +23,8 @@ import { shareProvideKey, connUiProvideKey } from '@/types/me-interface'
 import type {
   FieldScanResult,
   RedisFieldDel_Deserialize,
+  RedisFieldGet_Deserialize,
+  RedisFieldValue,
   RedisKey_Deserialize,
   ScanCursor,
   XInfoGroup,
@@ -647,11 +649,16 @@ function fieldAdd() {
 
 const fieldSetIndex = ref(-1)
 const fieldSetReadonly = ref(false)
+/** 单行刷新：list 在 value 数组中的下标；hash 为字段 wire key */
+const fieldEditIndex = ref(-1)
+const fieldEditKey = ref('')
 const fieldSetRef = useTemplateRef('fieldSetRef')
 
 function fieldSetInit() {
   fieldSetIndex.value = -1
   fieldSetReadonly.value = false
+  fieldEditIndex.value = -1
+  fieldEditKey.value = ''
   fieldSetRef.value?.close()
 }
 
@@ -660,6 +667,8 @@ function openFieldPanel(row: ValueTableRow, index: number, readonly: boolean) {
   if (!rv) return
   fieldSetIndex.value = index
   fieldSetReadonly.value = readonly
+  fieldEditKey.value = row.key || ''
+  fieldEditIndex.value = -1
   const rowValWire =
     rv.type === 'stream' ? JSON.stringify(row.value ?? {}) : String(row.value ?? '')
   const params = {
@@ -677,7 +686,8 @@ function openFieldPanel(row: ValueTableRow, index: number, readonly: boolean) {
   }
   if (rv.type === 'list') {
     // 表格可能被关键字过滤，list 索引需从完整 value 数组重算
-    params.fieldIndex = fieldValueRows(rv.value).indexOf(row.value)
+    fieldEditIndex.value = fieldValueRows(rv.value).indexOf(row.value)
+    params.fieldIndex = fieldEditIndex.value
   }
   fieldSetRef.value?.open(params)
 }
@@ -714,6 +724,49 @@ function onFieldPanelOutsideClick(e: MouseEvent) {
   if (el.closest('.field-set')) return
   if (el.closest('.el-table__body tbody tr')) return
   fieldSetInit()
+}
+
+/** 将 field_get 结果写回表格对应行（就地更新，避免整表 fieldScan） */
+function applyFieldGetResult(rv: FieldScanViewState, data: RedisFieldValue) {
+  if (rv.type === 'hash') {
+    const rows = fieldValueRows(rv.value) as ValueTableRow[]
+    const idx = rows.findIndex(r => r.key === fieldEditKey.value)
+    if (idx >= 0) {
+      rows[idx] = { key: data.fieldKey, value: data.fieldValue, ttl: data.fieldTtl }
+    }
+  } else if (rv.type === 'list' && fieldEditIndex.value >= 0) {
+    const rows = fieldValueRows(rv.value)
+    if (fieldEditIndex.value < rows.length) {
+      rows[fieldEditIndex.value] = data.fieldValue
+    }
+  }
+}
+
+/** 字段保存成功后优先 field_get 刷新单行；不支持或失败时回退整表 refreshKey */
+async function onFieldSetSuccess() {
+  const rv = redisValue.value
+  if (!rv || !share.redisKey || (rv.type !== 'hash' && rv.type !== 'list')) {
+    await refreshKey(false)
+    fieldSetInit()
+    return
+  }
+
+  const fieldViewFmt = viewFmtForField(bytesFormat.value)
+  const param: RedisFieldGet_Deserialize = {
+    key: share.redisKey,
+    fieldIndex: fieldEditIndex.value,
+    fieldKey: fieldEditKey.value,
+    fieldValue: '',
+    valFmt: toWireFormat(fieldViewFmt),
+  }
+  try {
+    const data = await meCommands.fieldGet(share.conn!.id, param, false)
+    applyFieldGetResult(rv, data)
+    fieldSetInit()
+  } catch {
+    await refreshKey(false)
+    fieldSetInit()
+  }
 }
 
 async function fieldDel(row: ValueTableRow) {
@@ -1099,7 +1152,7 @@ onUnmounted(() => {
             <FieldSet
               ref="fieldSetRef"
               :pretty="isPretty"
-              @success="refreshKey"
+              @success="onFieldSetSuccess"
               @closed="fieldSetInit"
               class="field-set" />
           </div>

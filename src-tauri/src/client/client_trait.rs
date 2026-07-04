@@ -71,6 +71,8 @@ pub trait MeClient: Send + Sync {
 
     fn field_set(&self, param: RedisFieldSet) -> AnyResult<()>;
 
+    fn field_get(&self, param: RedisFieldGet) -> AnyResult<RedisFieldValue>;
+
     fn field_del(&self, param: RedisFieldDel) -> AnyResult<()>;
 
     fn execute_command(&self, param: RedisCommand) -> AnyResult<String>;
@@ -783,6 +785,75 @@ pub fn field_set0(
         }
     };
     Ok(())
+}
+
+/// 单条字段读取：Hash→HGET+HTTL，List→LINDEX，ZSet→ZSCORE；Set/Stream 等不支持
+pub fn field_get0(
+    mut conn: MutexGuard<impl Commands>,
+    param: RedisFieldGet,
+    httl_supported: bool,
+) -> AnyResult<RedisFieldValue> {
+    let key: RedisKey = param.key;
+    let key_type: ValueType = conn.key_type(&key)?;
+    let val_fmt = param.val_fmt.as_ref().cloned().unwrap_or_default();
+
+    match key_type {
+        ValueType::Hash => {
+            let field_bytes = parse_bytes(&param.field_key, &val_fmt)?;
+            let value: Option<Vec<u8>> = conn.hget(&key, &field_bytes)?;
+            let value_bytes = value.ok_or_else(|| AppError::FieldNotFound {
+                hash_key: param.field_key.clone(),
+            })?;
+            let mut field_ttl = -1i64;
+            if httl_supported {
+                if let Ok(ttl_values) =
+                    conn.httl::<_, _, Vec<IntegerReplyOrNoOp>>(&key, &[&field_bytes])
+                {
+                    field_ttl = match ttl_values.first() {
+                        Some(IntegerReplyOrNoOp::IntegerReply(ttl)) => *ttl as i64,
+                        Some(IntegerReplyOrNoOp::NotExists) => -2,
+                        Some(IntegerReplyOrNoOp::ExistsButNotRelevant) | None => -1,
+                        _ => -1,
+                    };
+                }
+            }
+            Ok(RedisFieldValue {
+                field_key: format_bytes(&field_bytes, &val_fmt),
+                field_value: format_bytes(&value_bytes, &val_fmt),
+                field_score: 0.0,
+                field_ttl,
+            })
+        }
+        ValueType::List => {
+            let value: Option<Vec<u8>> = conn.lindex(&key, param.field_index)?;
+            let value_bytes = value.ok_or_else(|| AppError::FieldNotFound {
+                hash_key: param.field_index.to_string(),
+            })?;
+            Ok(RedisFieldValue {
+                field_key: String::new(),
+                field_value: format_bytes(&value_bytes, &val_fmt),
+                field_score: 0.0,
+                field_ttl: -1,
+            })
+        }
+        ValueType::ZSet => {
+            let member_bytes = parse_bytes(&param.field_value, &val_fmt)?;
+            let score: Option<f64> = conn.zscore(&key, &member_bytes)?;
+            let score = score.ok_or_else(|| AppError::FieldNotFound {
+                hash_key: param.field_value.clone(),
+            })?;
+            Ok(RedisFieldValue {
+                field_key: String::new(),
+                field_value: format_bytes(&member_bytes, &val_fmt),
+                field_score: score,
+                field_ttl: -1,
+            })
+        }
+        _ => {
+            handle_other_value_type(&key_type, &key)?;
+            unreachable!()
+        }
+    }
 }
 
 pub fn field_del0(mut conn: MutexGuard<impl Commands>, param: RedisFieldDel) -> AnyResult<()> {

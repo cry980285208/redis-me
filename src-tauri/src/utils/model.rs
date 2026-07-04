@@ -549,6 +549,16 @@ api_model!(RedisFieldSet {
     val_fmt: Option<BytesFormat>,
 });
 
+// 字段单条读取（HGET / LINDEX / ZSCORE 等，供前端刷新表格单行）
+api_model!(RedisFieldGet {
+    key: RedisKey,
+    field_index: isize,
+    field_key: String,
+    /// ZSet 成员定位；Hash 用 field_key、List 用 field_index
+    field_value: String,
+    val_fmt: Option<BytesFormat>,
+});
+
 // 字段值
 api_model!(RedisFieldValue {
     field_key: String,
