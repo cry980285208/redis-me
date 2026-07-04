@@ -122,6 +122,8 @@ const hashType = computed(() => 'hash' === redisValue.value?.type)
 const stringType = computed(() => 'string' === redisValue.value?.type)
 const jsonType = computed(() => 'json' === redisValue.value?.type)
 const streamType = computed(() => 'stream' === redisValue.value?.type)
+/** Stream 无编辑，始终可查看；其他类型在连接只读时可查看 */
+const showFieldViewBtn = computed(() => streamType.value || share.readonly)
 const stringTypeOrWithHashKey = computed(
   () => 'string' === redisValue.value?.type || withHashKey.value,
 )
@@ -658,7 +660,8 @@ function openFieldPanel(row: ValueTableRow, index: number, readonly: boolean) {
   if (!rv) return
   fieldSetIndex.value = index
   fieldSetReadonly.value = readonly
-  const rowValWire = String(row.value ?? '')
+  const rowValWire =
+    rv.type === 'stream' ? JSON.stringify(row.value ?? {}) : String(row.value ?? '')
   const params = {
     fieldKey: row.key || '',
     fieldScore: row.score || 0,
@@ -742,9 +745,10 @@ async function fieldDel(row: ValueTableRow) {
 function streamIdToDate(id: string) {
   try {
     const timestamp = Number.parseInt(id.split('-')[0]!, 10)
-    return dayjs(timestamp).format('YYYY-MM-DD HH:mm:ss')
+    if (!Number.isFinite(timestamp)) return ''
+    return dayjs(timestamp).format('YYYY-MM-DD HH:mm:ss.SSS')
   } catch {
-    return 'format err'
+    return ''
   }
 }
 
@@ -1008,10 +1012,13 @@ onUnmounted(() => {
                 prop="id"
                 show-overflow-tooltip
                 v-if="redisValue.type === 'stream'">
-                <template #default="scope">
-                  <el-tooltip :content="streamIdToDate(scope.row.id)" placement="right">
-                    {{ scope.row.id }}
-                  </el-tooltip>
+                <template #default="{ row }">
+                  <div class="me-flex" style="width: 100%">
+                    <span>{{ row.id }}</span>
+                    <span v-if="streamIdToDate(row.id)" style="color: var(--el-color-info)">
+                      {{ streamIdToDate(row.id) }}
+                    </span>
+                  </div>
                 </template>
               </el-table-column>
               <el-table-column
@@ -1047,7 +1054,7 @@ onUnmounted(() => {
 
               <el-table-column
                 :label="t('action')"
-                :width="canEdit ? (streamType ? 80 : 100) : 80"
+                :width="canEdit ? 100 : 80"
                 fixed="right"
                 align="center">
                 <template #default="scope">
@@ -1068,7 +1075,7 @@ onUnmounted(() => {
                       icon="el-icon-view"
                       class="icon-btn"
                       @click.stop="fieldView(scope.row, scope.$index)"
-                      v-if="!canEdit && !streamType" />
+                      v-if="showFieldViewBtn" />
                     <me-icon
                       :info="t('edit')"
                       icon="el-icon-edit"
