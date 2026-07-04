@@ -190,7 +190,7 @@ const exportFormatTip = computed(() =>
       <el-form-item
         :label="t('keyBatch.impactKeys', { count: form.keyList.length }, form.keyList.length)"
         v-if="!showScan">
-        <div v-bind="containerProps" :style="{ height: '250px', width: '100%' }">
+        <div v-bind="containerProps" :style="{ height: '150px', width: '100%' }">
           <div v-bind="wrapperProps">
             <div v-for="item in list" :key="item.index" class="key single-line-ellipsis">
               {{ item.data.key }}
