@@ -155,37 +155,37 @@
   filter: blur(56px);
 }
 
-/* 顶栏：首页顶部透明无分割线，滚动后毛玻璃 + 分割线（对齐 cc-switch SiteNavbar） */
-.VPNavBar.home.top {
+/* 顶栏：任意页面顶部透明无分割线，滚动后毛玻璃 + 分割线（VPNavBar.top = y===0） */
+.VPNavBar.top {
   background-color: transparent !important;
   backdrop-filter: none;
 }
 
-.VPNavBar.home.top .divider-line {
+.VPNavBar.top .divider-line {
   background-color: transparent !important;
 }
 
-.VPNavBar.home.top .content-body {
+.VPNavBar.top .content-body {
   background-color: transparent !important;
 }
 
-.VPNavBar:not(.home.top),
+.VPNavBar:not(.top),
 .VPNavBar.screen-open {
   background-color: color-mix(in srgb, var(--vp-c-bg) 82%, transparent) !important;
   backdrop-filter: blur(14px);
 }
 
-.VPNavBar:not(.home.top) .divider-line,
+.VPNavBar:not(.top) .divider-line,
 .VPNavBar.screen-open .divider-line {
   background-color: var(--vp-c-divider) !important;
 }
 
 @media (min-width: 960px) {
-  .VPNavBar.home.top .content-body {
+  .VPNavBar.top .content-body {
     background-color: transparent !important;
   }
 
-  .VPNavBar:not(.home.top) .content-body {
+  .VPNavBar:not(.top) .content-body {
     background-color: color-mix(in srgb, var(--vp-c-bg) 82%, transparent) !important;
   }
 }
