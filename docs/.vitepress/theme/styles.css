@@ -87,7 +87,9 @@
 /* ── 首页 Hero：顶光 + 网格纹理（参考 cc-switch HeroSection） ── */
 .VPHero {
   position: relative;
-  overflow: hidden;
+  z-index: 2;
+  overflow-x: clip;
+  overflow-y: visible;
 }
 
 .VPHero::before {
@@ -153,6 +155,15 @@
 .dark .preview-wrapper::before {
   background: linear-gradient(to bottom right, rgba(249, 115, 22, 0.16), rgba(189, 52, 254, 0.1));
   filter: blur(56px);
+}
+
+/* 首页 features 与 footer 间距 */
+.Layout .VPContent.is-home {
+  flex-grow: 0;
+}
+
+.Layout .VPContent.is-home .VPHome {
+  margin-bottom: 32px;
 }
 
 /* 顶栏：任意页面顶部透明无分割线，滚动后毛玻璃 + 分割线（VPNavBar.top = y===0） */

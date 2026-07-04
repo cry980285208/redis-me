@@ -174,6 +174,8 @@ const otherPlatformsLabel = computed(() =>
 
 <style scoped>
 .actions {
+  position: relative;
+  z-index: 30;
   display: flex;
   flex-wrap: wrap;
 }
@@ -226,6 +228,7 @@ const otherPlatformsLabel = computed(() =>
 
 .download-action {
   position: relative;
+  z-index: 31;
 }
 
 .split-button {
@@ -297,7 +300,7 @@ const otherPlatformsLabel = computed(() =>
   border: 1px solid var(--vp-c-divider);
   background-color: var(--vp-c-bg-soft);
   box-shadow: var(--vp-shadow-2);
-  z-index: 10;
+  z-index: 100;
   display: none;
 }
 
