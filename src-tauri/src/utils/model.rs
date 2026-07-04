@@ -559,6 +559,16 @@ api_model!(RedisFieldGet {
     val_fmt: Option<BytesFormat>,
 });
 
+// 表格单行 → redis-cli 命令（与 RedisFieldDel 相同的行定位字段）
+api_model!(RedisFieldAsCommand {
+    key: RedisKey,
+    field_index: isize,
+    field_key: String,
+    field_value: String,
+    stream_id: String,
+    val_fmt: Option<BytesFormat>,
+});
+
 // 字段值
 api_model!(RedisFieldValue {
     field_key: String,

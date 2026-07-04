@@ -109,6 +109,7 @@ pub trait MeClient: Send + Sync {
     fn mock_data(&self, count: u64) -> AnyResult<()>;
     fn key_type(&self, key: RedisKey) -> AnyResult<String>;
     fn get_key_as_command(&self, key: RedisKey) -> AnyResult<String>;
+    fn get_field_as_command(&self, param: RedisFieldAsCommand) -> AnyResult<String>;
     fn xinfo_groups(&self, key: RedisKey) -> AnyResult<Vec<XInfoGroup>>;
     fn xinfo_consumers(&self, key: RedisKey, group: String) -> AnyResult<Vec<XInfoConsumer>>;
     fn key_slot(&self, key: RedisKey) -> AnyResult<u64>;
@@ -1547,6 +1548,86 @@ pub fn get_key_as_command0(
     key: RedisKey,
 ) -> AnyResult<String> {
     Ok(key_as_command_lines(&mut conn, &key)?.join("\n"))
+}
+
+/// 表格单行 → redis-cli 可执行命令（Hash HSET / List RPUSH / Set SADD / ZSet ZADD / Stream XADD）
+pub fn get_field_as_command0(
+    mut conn: MutexGuard<impl Commands>,
+    param: RedisFieldAsCommand,
+) -> AnyResult<String> {
+    let key: RedisKey = param.key;
+    let key_type: ValueType = conn.key_type(&key)?;
+    if key_type == ValueType::None {
+        bail!(AppError::KeyNotFound {
+            key: vec8_to_display_string(key.to_bytes())
+        });
+    }
+
+    let key_bytes = key.to_bytes();
+    let val_fmt = param.val_fmt.as_ref().cloned().unwrap_or_default();
+
+    let line = match key_type {
+        ValueType::Hash => {
+            let field_bytes = parse_bytes(&param.field_key, &val_fmt)?;
+            let value: Option<Vec<u8>> = conn.hget(&key, &field_bytes)?;
+            let value_bytes = value.ok_or_else(|| AppError::FieldNotFound {
+                hash_key: param.field_key.clone(),
+            })?;
+            format_hset_command(key_bytes, &field_bytes, &value_bytes)
+        }
+        ValueType::List => {
+            let value: Option<Vec<u8>> = conn.lindex(&key, param.field_index)?;
+            let value_bytes = value.ok_or_else(|| AppError::FieldNotFound {
+                hash_key: param.field_index.to_string(),
+            })?;
+            format_rpush_command(key_bytes, std::slice::from_ref(&value_bytes)).ok_or_else(|| {
+                AppError::Internal {
+                    message: "empty list element".into(),
+                }
+            })?
+        }
+        ValueType::Set => {
+            let member_bytes = parse_bytes(&param.field_value, &val_fmt)?;
+            format_sadd_command(key_bytes, std::slice::from_ref(&member_bytes)).ok_or_else(|| {
+                AppError::Internal {
+                    message: "empty set member".into(),
+                }
+            })?
+        }
+        ValueType::ZSet => {
+            let member_bytes = parse_bytes(&param.field_value, &val_fmt)?;
+            let score: Option<f64> = conn.zscore(&key, &member_bytes)?;
+            let score = score.ok_or_else(|| AppError::FieldNotFound {
+                hash_key: param.field_value.clone(),
+            })?;
+            format_zadd_command(key_bytes, &[(member_bytes, score)]).ok_or_else(|| {
+                AppError::Internal {
+                    message: "empty zset member".into(),
+                }
+            })?
+        }
+        ValueType::Stream => {
+            if param.stream_id.is_empty() {
+                bail!(AppError::FieldNotFoundStream {
+                    stream_id: param.stream_id
+                });
+            }
+            let raw: Value = redis::cmd("XRANGE")
+                .arg(&key)
+                .arg(&param.stream_id)
+                .arg(&param.stream_id)
+                .query(&mut conn)?;
+            let entries = parse_xrange_ordered(raw)?;
+            let (id, fields) = entries.first().ok_or_else(|| AppError::FieldNotFoundStream {
+                stream_id: param.stream_id.clone(),
+            })?;
+            format_xadd_command(key_bytes, id, fields)
+        }
+        other => bail!(AppError::KeyTypeUnsupported {
+            value_type: ui_key_type(other)
+        }),
+    };
+    Ok(line)
 }
 
 pub fn xinfo_groups0(

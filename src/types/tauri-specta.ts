@@ -66,6 +66,7 @@ export const commands = {
 	mockData: (id: string, count: number) => typedError<null, string>(__TAURI_INVOKE("mock_data", { id, count })),
 	keyType: (id: string, key: RedisKey_Deserialize) => typedError<string, string>(__TAURI_INVOKE("key_type", { id, key })),
 	getKeyAsCommand: (id: string, key: RedisKey_Deserialize) => typedError<string, string>(__TAURI_INVOKE("get_key_as_command", { id, key })),
+	getFieldAsCommand: (id: string, param: RedisFieldAsCommand_Deserialize) => typedError<string, string>(__TAURI_INVOKE("get_field_as_command", { id, param })),
 	xinfoGroups: (id: string, key: RedisKey_Deserialize) => typedError<XInfoGroup[], string>(__TAURI_INVOKE("xinfo_groups", { id, key })),
 	xinfoConsumers: (id: string, key: RedisKey_Deserialize, group: string) => typedError<XInfoConsumer[], string>(__TAURI_INVOKE("xinfo_consumers", { id, key, group })),
 	keySlot: (id: string, key: RedisKey_Deserialize) => typedError<number, string>(__TAURI_INVOKE("key_slot", { id, key })),
@@ -334,6 +335,26 @@ export type RedisFieldAdd_Serialize = {
 	/**  仅 Redis 顶层键名（`key`）如何解码为字节；不含 Hash/Stream 的字段名 */
 	keyFmt: BytesFormat | null,
 	/**  除 Redis 键名外的输入：String 值、Hash 字段名与值、List/Set/ZSet 成员、Stream 字段名与值等 */
+	valFmt: BytesFormat | null,
+};
+
+export type RedisFieldAsCommand = RedisFieldAsCommand_Serialize | RedisFieldAsCommand_Deserialize;
+
+export type RedisFieldAsCommand_Deserialize = {
+	key: RedisKey_Deserialize,
+	fieldIndex: number,
+	fieldKey: string,
+	fieldValue: string,
+	streamId: string,
+	valFmt: BytesFormat | null,
+};
+
+export type RedisFieldAsCommand_Serialize = {
+	key: RedisKey_Serialize,
+	fieldIndex: number,
+	fieldKey: string,
+	fieldValue: string,
+	streamId: string,
 	valFmt: BytesFormat | null,
 };
 
