@@ -25,7 +25,7 @@ const imgSrc = computed(() => {
 <style scoped>
 .preview-wrapper {
   margin-top: -30px;
-  padding: 0 24px 24px;
+  padding: 0 24px 32px;
   text-align: center;
   display: flex;
   flex-direction: row;
@@ -39,13 +39,13 @@ const imgSrc = computed(() => {
 
 @media (min-width: 640px) {
   .preview-wrapper {
-    padding: 0 48px 24px;
+    padding: 0 48px 32px;
   }
 }
 
 @media (min-width: 960px) {
   .preview-wrapper {
-    padding: 0 64px 24px;
+    padding: 0 64px 32px;
   }
 
   .preview-inner {
