@@ -1,12 +1,13 @@
 # RedisME
 
-RedisME is a modern lightweight cross-platform Redis desktop manager
+A modern, lightweight, cross-platform Redis desktop manager
 
 ## Features
 
-- Super Lightweight: Based on Webview2, no embedded browser (Thanks to [Tauri](https://tauri.app))
-- Pretty UI: Provides light/dark themes(Thanks to [ElementPlus](https://element-plus.org), [CodeMirror](https://codemirror.net/), [VueWebTerminal](https://tzfun.github.io/vue-web-terminal/))
-- Multi-language support: English, Chinese, more languages coming soon
+- Super Lightweight: Based on Webview, no embedded browser (Thanks to [Tauri](https://tauri.app))
+- Pretty UI: Provides light/dark themes (Thanks to [ElementPlus](https://element-plus.org), [CodeMirror](https://codemirror.net/), [VueWebTerminal](https://tzfun.github.io/vue-web-terminal/))
+- Cross-platform: Supports Windows/Mac/Linux
+- Multi-language: English, Chinese, more languages coming soon
 - Rich functionality: info, value, terminal, memory analysis, slow logs, command monitoring, pub/sub etc
 
 ## Special Features
@@ -21,6 +22,6 @@ RedisME is a modern lightweight cross-platform Redis desktop manager
 
 ## WeChat Official Account
 
-Regularly share the special features and update logs of RedisME, as well as other technical issues and solutions.
+Regularly shares RedisME special features and update logs, as well as other technical issues and solutions.
 
 <img src="../../../public/images/wechat.png" alt="wechat" width="400" />
