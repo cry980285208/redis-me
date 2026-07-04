@@ -1,30 +1,25 @@
 <div align="center">
-<a href="https://github.com/hepengju/redis-me/"><img src="docs/public/images/logo.svg" width="100"/></a>
-</div>
-<h1 align="center">RedisME</h1>
-<h4 align="center">
-  English 
-| <a href="/README_zh.md">简体中文</a> 
-| <a href="/docs/en/guide/intro/screenshots.md">Screenshots</a>
-</h4>
-<div align="center">
+
+# RedisME
+
+### A modern, lightweight, cross-platform Redis desktop manager
+
+English | <a href="/README_zh.md">简体中文</a> | <a href="/docs/en/guide/intro/screenshots.md">Screenshots</a>
 
 [![License](https://img.shields.io/github/license/hepengju/redis-me)](https://github.com/hepengju/redis-me/blob/main/LICENSE)
 [![GitHub release](https://img.shields.io/github/release/hepengju/redis-me)](https://github.com/hepengju/redis-me/releases)
-![GitHub All Releases](https://img.shields.io/github/downloads/hepengju/redis-me/total)
-
-<strong>RedisME is a modern lightweight cross-platform Redis desktop manager </strong>
+[![GitHub All Releases](https://img.shields.io/github/downloads/hepengju/redis-me/total)](https://github.com/hepengju/redis-me/releases)
 
 </div>
 
-![empty.png](docs/public/images/empty.png)
-![light.png](docs/public/images/light.png)
-![dark.png](docs/public/images/dark.png)
+![Connection list empty state](docs/public/images/empty.png)
+![Light theme](docs/public/images/light.png)
+![Dark theme](docs/public/images/dark.png)
 
 ## Features
 
-- Super Lightweight: Based on Webview2, no embedded browser (Thanks to [Tauri](https://tauri.app))
-- Pretty UI: Provides light/dark themes(Thanks to [ElementPlus](https://element-plus.org), [CodeMirror](https://codemirror.net/), [VueWebTerminal](https://tzfun.github.io/vue-web-terminal/))
+- Super Lightweight: Based on Webview, no embedded browser (Thanks to [Tauri](https://tauri.app))
+- Pretty UI: Provides light/dark themes (Thanks to [ElementPlus](https://element-plus.org), [CodeMirror](https://codemirror.net/), [VueWebTerminal](https://tzfun.github.io/vue-web-terminal/))
 - Cross-platform: Supports Windows/Mac/Linux
 - Multi-language: English, Chinese, more languages coming soon
 - Rich functionality: info, value, terminal, memory analysis, slow logs, command monitoring, pub/sub etc
@@ -58,7 +53,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 curl -fsSL https://vite.plus | bash
 
 # clone
-git clone https://github.com/hepengju/redis-me.git --depth=1
+git clone https://github.com/hepengju/redis-me.git
 
 # install package.json and start dev
 vp install
@@ -67,6 +62,6 @@ vp run tauri dev
 
 ## WeChat Official Account
 
-Regularly share the special features and update logs of RedisME, as well as other technical issues and solutions.
+Regularly shares RedisME special features and update logs, as well as other technical issues and solutions.
 
 <img src="src/assets/images/wechat.png" alt="wechat" width="400" />
