@@ -807,6 +807,7 @@ export default {
     copyFieldValue: '复制字段值',
     copyAsCommand: '复制为命令',
     refreshFieldRow: '刷新行',
+    refreshFieldRowOk: '行已刷新',
     deleteFieldRow: '删除行',
     rowMore: '更多操作',
     copyCommandOk: '命令已复制',

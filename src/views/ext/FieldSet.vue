@@ -7,7 +7,9 @@ import { shareProvideKey } from '@/types/me-interface'
 import type {
   BytesFormat,
   RedisFieldAsCommand_Deserialize,
+  RedisFieldGet_Deserialize,
   RedisFieldSet_Deserialize,
+  RedisFieldValue,
 } from '@/types/tauri-specta'
 import {
   customFormatName,
@@ -21,6 +23,7 @@ import {
   meViewToWireAsync,
   needsJsonNormalize,
   toWireFormat,
+  viewFmtForField,
   type ViewBytesFormat,
 } from '@/utils/format'
 import {
@@ -56,7 +59,7 @@ const props = withDefaults(
 )
 
 const { t } = useI18n()
-const emit = defineEmits(['success', 'closed'])
+const emit = defineEmits(['success', 'closed', 'refreshed'])
 defineExpose({ open, close })
 
 const share = inject(shareProvideKey)!
@@ -81,9 +84,12 @@ const form = ref<FieldSetForm>(cloneDeep(initForm))
 const srcFieldWire = ref('')
 const fieldStreamId = ref('')
 const keyWireFmt = ref<BytesFormat>('utf8')
+/** 键级 view 编码，field_get 与值页表格刷新一致 */
+const keyViewFmt = ref<ViewBytesFormat>('utf8')
 const fieldViewFmt = ref<ViewBytesFormat>('utf8')
 const fieldPretty = ref(true)
 const editorLoading = ref(false)
+const isRefreshing = ref(false)
 const decodeFailed = ref(false)
 const codeRemountKey = ref(0)
 
@@ -92,6 +98,11 @@ const fieldViewOptionList = computed(() => fieldViewOptions(keyWireFmt.value, cu
 const prettyEnabled = computed(
   () => fieldViewFmt.value === 'utf8' || fieldViewFmt.value === 'strjson',
 )
+/** hash/list/zset 支持 field_get 单行刷新 */
+const supportsFieldRefresh = computed(() => {
+  const type = form.value.type
+  return type === 'hash' || type === 'list' || type === 'zset'
+})
 
 /** wire + 字段 view → 编辑区文本 */
 async function syncFieldEditor() {
@@ -133,6 +144,7 @@ function open(data: FieldSetOpen) {
   srcFieldWire.value = String(data.srcFieldValue ?? '')
   fieldStreamId.value = data.streamId ?? ''
   keyWireFmt.value = data.keyWireFmt ?? 'utf8'
+  keyViewFmt.value = data.keyViewFmt ?? 'utf8'
   fieldViewFmt.value = defaultFieldViewFmt(data.keyViewFmt ?? 'utf8', keyWireFmt.value)
   fieldPretty.value = props.pretty
   void syncFieldEditor()
@@ -249,6 +261,50 @@ async function copyFieldAsCommand() {
   }
   meCopy(text, t('redisValue.copyCommandOk'))
 }
+
+function buildFieldGetParam(): RedisFieldGet_Deserialize | null {
+  if (!form.value.key?.key) return null
+  const type = form.value.type
+  if (type !== 'hash' && type !== 'list' && type !== 'zset') return null
+  return {
+    key: form.value.key,
+    fieldIndex: form.value.fieldIndex,
+    fieldKey:
+      type === 'hash' && form.value.wireFieldKey ? form.value.wireFieldKey : form.value.fieldKey,
+    fieldValue: type === 'zset' ? srcFieldWire.value : '',
+    valFmt: toWireFormat(viewFmtForField(keyViewFmt.value)),
+  }
+}
+
+function applyFieldGetToForm(data: RedisFieldValue) {
+  const type = form.value.type
+  srcFieldWire.value = data.fieldValue
+  if (type === 'hash') {
+    form.value.fieldKey = data.fieldKey
+    form.value.fieldTtl = data.fieldTtl
+  } else if (type === 'zset' && data.fieldScore != null) {
+    form.value.fieldScore = data.fieldScore
+  }
+}
+
+async function refreshField() {
+  const conn = share.conn
+  const param = buildFieldGetParam()
+  if (!conn || !param || isRefreshing.value) return
+  isRefreshing.value = true
+  try {
+    const data = await meCommands.fieldGet(conn.id, param, false)
+    applyFieldGetToForm(data)
+    await syncFieldEditor()
+    codeRemountKey.value++
+    emit('refreshed', data)
+    meOk(t('redisValue.refreshFieldRowOk'))
+  } catch (e) {
+    meErr(e instanceof Error ? e.message : String(e))
+  } finally {
+    isRefreshing.value = false
+  }
+}
 </script>
 
 <template>
@@ -317,6 +373,15 @@ async function copyFieldAsCommand() {
             style="font-size: 18px; margin-left: 5px"
             icon="me-icon-copy-command"
             @click="copyFieldAsCommand" />
+          <me-icon
+            v-if="supportsFieldRefresh"
+            placement="top-start"
+            :info="t('redisValue.refreshFieldRow')"
+            class="icon-btn"
+            style="font-size: 18px; margin-left: 5px"
+            icon="el-icon-refresh-right"
+            :style="{ opacity: isRefreshing ? 0.5 : 1, cursor: isRefreshing ? 'wait' : 'pointer' }"
+            @click="refreshField" />
           <el-select
             v-model="fieldViewFmt"
             size="small"

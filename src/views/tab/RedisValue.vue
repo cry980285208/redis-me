@@ -860,6 +860,7 @@ async function refreshFieldRow(row: ValueTableRow) {
     try {
       const data = await meCommands.fieldGet(conn.id, param, false)
       applyFieldGetResult(rv, data, row)
+      meOk(t('redisValue.refreshFieldRowOk'))
       return
     } catch {
       // 回退整表刷新
@@ -876,6 +877,13 @@ function onFieldRowMoreCommand(command: string, row: ValueTableRow) {
   } else if (command === 'copyAsCommand') {
     void copyFieldAsCommand(row)
   }
+}
+
+function onFieldSetRefreshed(data: RedisFieldValue) {
+  const rv = redisValue.value
+  const row = fieldSetRow.value
+  if (!rv || !row) return
+  applyFieldGetResult(rv, data, row)
 }
 
 /** 字段保存成功后优先 field_get 刷新单行；不支持或失败时回退整表 refreshKey */
@@ -1332,6 +1340,7 @@ onUnmounted(() => {
               ref="fieldSetRef"
               :pretty="isPretty"
               @success="onFieldSetSuccess"
+              @refreshed="onFieldSetRefreshed"
               @closed="fieldSetInit"
               class="field-set" />
           </div>

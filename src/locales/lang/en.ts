@@ -820,6 +820,7 @@ export default {
     copyFieldValue: 'Copy Field Value',
     copyAsCommand: 'Copy as Command',
     refreshFieldRow: 'Refresh Row',
+    refreshFieldRowOk: 'Row refreshed',
     deleteFieldRow: 'Delete Row',
     rowMore: 'More actions',
     copyCommandOk: 'Command copied',
