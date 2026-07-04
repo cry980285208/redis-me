@@ -816,6 +816,7 @@ export default {
     loadAll: 'Load All',
     renameKey: 'Rename Key',
     duplicateKey: 'Create Duplicate',
+    copyValue: 'Copy Value',
     copyAsCommand: 'Copy as Command',
     copyCommandOk: 'Command copied',
     copyCommandEmpty: 'Empty key, nothing to copy',

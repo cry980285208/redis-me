@@ -11,6 +11,7 @@ import type {
   RedisCommand,
   RedisExportCsv_Deserialize,
   RedisFieldAdd_Deserialize,
+  RedisFieldAsCommand_Deserialize,
   RedisFieldDel_Deserialize,
   RedisFieldGet_Deserialize,
   RedisFieldSet_Deserialize,
@@ -139,6 +140,15 @@ const minimalFieldDel: RedisFieldDel_Deserialize = {
   valFmt: null,
 }
 
+const minimalFieldAsCommand: RedisFieldAsCommand_Deserialize = {
+  key: dummyKey,
+  fieldIndex: 0,
+  fieldKey: '',
+  fieldValue: '',
+  streamId: '',
+  valFmt: null,
+}
+
 const minimalRedisCmd: RedisCommand = { command: 'PING', node: null, autoBroadcast: null }
 
 const minimalMemoryParam: RedisMemoryParam = {
@@ -218,6 +228,8 @@ function defaultPayload(cmd: CommandKey): Record<string, unknown> {
       return { id: connIdForDefaults(), param: { ...minimalFieldGet } }
     case 'fieldDel':
       return { id: connIdForDefaults(), param: { ...minimalFieldDel } }
+    case 'getFieldAsCommand':
+      return { id: connIdForDefaults(), param: { ...minimalFieldAsCommand } }
     case 'memoryUsage':
       return { id: connIdForDefaults(), param: { ...minimalMemoryParam } }
     case 'batchDel':

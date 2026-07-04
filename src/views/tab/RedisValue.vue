@@ -22,6 +22,7 @@ import MeShortcut from '@/components/MeShortcut.vue'
 import { shareProvideKey, connUiProvideKey } from '@/types/me-interface'
 import type {
   FieldScanResult,
+  RedisFieldAsCommand_Deserialize,
   RedisFieldDel_Deserialize,
   RedisFieldGet_Deserialize,
   RedisFieldValue,
@@ -554,6 +555,40 @@ async function copyAsCommand() {
   }
 }
 
+function buildFieldAsCommandParam(row: ValueTableRow): RedisFieldAsCommand_Deserialize | null {
+  const rv = redisValue.value
+  const rk = share.redisKey
+  if (!rv || !rk) return null
+  const fieldViewFmt = viewFmtForField(bytesFormat.value)
+  const param: RedisFieldAsCommand_Deserialize = {
+    key: rk,
+    fieldKey: row.key || '',
+    fieldValue: String(row.value ?? ''),
+    streamId: row.id || '',
+    fieldIndex: -1,
+    valFmt: toWireFormat(fieldViewFmt),
+  }
+  if (rv.type === 'list') {
+    param.fieldIndex = fieldValueRows(rv.value).indexOf(row.value)
+  }
+  if (rv.type === 'stream') {
+    param.fieldValue = ''
+  }
+  return param
+}
+
+async function copyFieldAsCommand(row: ValueTableRow) {
+  const conn = share.conn
+  const param = buildFieldAsCommandParam(row)
+  if (!conn || !param) return
+  const text = await meCommands.getFieldAsCommand(conn.id, param)
+  if (!text.trim()) {
+    meWarn(t('redisValue.copyCommandEmpty'))
+    return
+  }
+  meCopy(text, t('redisValue.copyCommandOk'))
+}
+
 // 收藏（与 KeyTree 右键菜单一致）
 const favorites = useFavorites()
 const isCurrentKeyFavorited = computed(() => {
@@ -581,12 +616,14 @@ function onKeyMoreCommand(command: string) {
     void refreshKey(false)
   } else if (command === 'copyKey') {
     meCopy(showKey.value)
+  } else if (command === 'copyValue') {
+    meCopy(showValue.value)
+  } else if (command === 'copyAsCommand') {
+    void copyAsCommand()
   } else if (command === 'renameKey') {
     renameKey()
   } else if (command === 'duplicateKey') {
     duplicateKey()
-  } else if (command === 'copyAsCommand') {
-    void copyAsCommand()
   }
 }
 // #endregion
@@ -960,14 +997,17 @@ onUnmounted(() => {
                 <el-dropdown-item command="copyKey">
                   <me-icon icon="el-icon-document-copy" :name="t('keyTree.copyKey')" />
                 </el-dropdown-item>
+                <el-dropdown-item command="copyValue">
+                  <me-icon icon="el-icon-document-copy" :name="t('redisValue.copyValue')" />
+                </el-dropdown-item>
+                <el-dropdown-item command="copyAsCommand" :disabled="copyAsCommandLoading">
+                  <me-icon icon="me-icon-copy-command" :name="t('redisValue.copyAsCommand')" />
+                </el-dropdown-item>
                 <el-dropdown-item v-if="canEdit" command="renameKey">
                   <me-icon icon="el-icon-edit" :name="t('redisValue.renameKey')" />
                 </el-dropdown-item>
                 <el-dropdown-item v-if="canEdit" command="duplicateKey">
                   <me-icon icon="el-icon-copy-document" :name="t('redisValue.duplicateKey')" />
-                </el-dropdown-item>
-                <el-dropdown-item command="copyAsCommand" :disabled="copyAsCommandLoading">
-                  <me-icon icon="me-icon-terminal" :name="t('redisValue.copyAsCommand')" />
                 </el-dropdown-item>
               </el-dropdown-menu>
             </template>
@@ -1107,7 +1147,7 @@ onUnmounted(() => {
 
               <el-table-column
                 :label="t('action')"
-                :width="canEdit ? 100 : 80"
+                :width="canEdit ? 130 : 110"
                 fixed="right"
                 align="center">
                 <template #default="scope">
@@ -1123,6 +1163,11 @@ onUnmounted(() => {
                             : formatTableCell(scope.row.value),
                         )
                       " />
+                    <me-icon
+                      :info="t('redisValue.copyAsCommand')"
+                      icon="me-icon-copy-command"
+                      class="icon-btn"
+                      @click.stop="copyFieldAsCommand(scope.row)" />
                     <me-icon
                       :info="t('view')"
                       icon="el-icon-view"
