@@ -917,11 +917,10 @@ function editDbName(db: number): void {
               </el-tooltip>
             </div>
           </template>
-          <template #append>
+          <template v-if="canEdit" #append>
             <me-button
               :info="t('keyMain.addKey')"
               @click="addKey()"
-              v-if="canEdit"
               icon="el-icon-plus"
               placement="bottom" />
           </template>
