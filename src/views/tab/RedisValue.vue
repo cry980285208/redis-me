@@ -558,6 +558,12 @@ async function copyAsCommand() {
   }
 }
 
+async function onFooterRefreshKey() {
+  if (loading.value) return
+  await refreshKey(false)
+  meOk(t('redisValue.refreshKeyOk'))
+}
+
 function buildFieldAsCommandParam(row: ValueTableRow): RedisFieldAsCommand_Deserialize | null {
   const rv = redisValue.value
   const rk = share.redisKey
@@ -1342,6 +1348,28 @@ onUnmounted(() => {
             placement="top-start" />
 
           <me-icon
+            placement="top-start"
+            :info="t('redisValue.copyAsCommand')"
+            class="icon-btn"
+            style="font-size: 18px; margin-left: 5px"
+            icon="me-icon-copy-command"
+            :style="{
+              opacity: copyAsCommandLoading ? 0.5 : 1,
+              cursor: copyAsCommandLoading ? 'wait' : 'pointer',
+            }"
+            @click="copyAsCommand" />
+
+          <me-icon
+            placement="top-start"
+            :info="t('redisValue.refreshKey')"
+            class="icon-btn"
+            style="font-size: 18px; margin-left: 5px"
+            icon="el-icon-refresh-right"
+            :style="{ opacity: loading ? 0.5 : 1, cursor: loading ? 'wait' : 'pointer' }"
+            @click="onFooterRefreshKey" />
+
+          <me-icon
+            v-if="viewType === 'json'"
             class="icon-btn"
             icon="me-icon-keyshort"
             :info="t('redisValue.keyShortHint')"

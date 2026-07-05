@@ -808,6 +808,7 @@ export default {
     copyAsCommand: '复制为命令',
     refreshFieldRow: '刷新行',
     refreshFieldRowOk: '行已刷新',
+    refreshKeyOk: '已刷新',
     copyCommandOk: '命令已复制',
     copyCommandEmpty: '空键，无可复制命令',
     refreshKey: '刷新键',
