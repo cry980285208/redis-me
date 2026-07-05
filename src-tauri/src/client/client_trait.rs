@@ -152,17 +152,14 @@ pub fn scan_0_batch_count(pattern: &str) -> u64 {
     }
 }
 
-/// 判断 pattern 是否为 Redis glob 风格（包含 *、?、[] 等通配符）
-pub fn is_redis_glob(pattern: &str) -> bool {
-    pattern.contains('*') || pattern.contains('?') || pattern.contains('[')
-}
-
-/// 精确查询优化：非 glob 模式时直接使用 EXISTS 代替 SCAN
+/// 完全匹配时用 EXISTS 判断键是否存在；否则返回 None 走 SCAN
+/// 注意：EXISTS 路径不校验 scan_type，精确查完整键名时更符合实际使用场景
 pub fn scan_0_exact<C: redis::ConnectionLike>(
     conn: &mut C,
     pattern: &str,
+    exact: bool,
 ) -> AnyResult<Option<ScanResult>> {
-    if is_redis_glob(pattern) {
+    if !exact {
         return Ok(None);
     }
     let exists: bool = redis::cmd("EXISTS").arg(pattern).query(conn)?;

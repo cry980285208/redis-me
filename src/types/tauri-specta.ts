@@ -529,6 +529,8 @@ export type ScanParam = {
 	match: string,
 	type: string | null,
 	cursor: ScanCursor | null,
+	/**  完全匹配：true 时后端 EXISTS；false 时 SCAN */
+	exact: boolean,
 };
 
 export type ScanResult = ScanResult_Serialize | ScanResult_Deserialize;

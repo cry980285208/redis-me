@@ -873,7 +873,7 @@ export default {
   keyMain: {
     keyword: 'Enter to Search',
     exactSearch:
-      'Exact Match<br/>• Off: input app → auto add * before/after, scan *app*<br/>• On: input app* → query keys starting with app; input app → use EXISTS to check if key exists',
+      '<b>Scan</b> (unchecked)<br/>app: contains app<br/>app*: starts with app<br/>*app: ends with app<br/>With * ? [: use pattern as typed<br/><br/><b>Exact</b> (checked)<br/>Check if key name exactly matches input',
     refreshKey: 'Refresh List (F5)',
     scanning: 'Scanning...',
     pauseScan: 'Pause Scan',

@@ -860,7 +860,7 @@ export default {
   keyMain: {
     keyword: 'Enter 键进行搜索',
     exactSearch:
-      '精确匹配<br/>• 关闭时：输入 app → 自动前后追加*，扫描 *app*<br/>• 开启时：输入 app* → 查询 app 开头的键；输入 app → 使用 EXISTS 判断键是否存在',
+      '<b>扫描</b>（未勾选）<br/>app: 包含 app<br/>app*: 以 app 开头<br/>*app: 以 app 结尾<br/>含 * ? [ 时原样作为模式<br/><br/><b>精确</b>（勾选）<br/>判断键名与输入完全一致是否存在',
     refreshKey: '刷新键列表 (F5)',
     scanning: '扫描中...',
     pauseScan: '暂停扫描',

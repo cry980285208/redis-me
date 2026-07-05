@@ -286,6 +286,9 @@ api_model!(ScanParam {
     scan_type: Option<String>,
 
     cursor: Option<ScanCursor>,
+
+    /// 完全匹配：true 时后端 EXISTS；false 时 SCAN
+    exact: bool,
 });
 
 impl ScanParam {
@@ -294,6 +297,7 @@ impl ScanParam {
             pattern,
             scan_type: None,
             cursor: None,
+            exact: false,
         }
     }
 }
