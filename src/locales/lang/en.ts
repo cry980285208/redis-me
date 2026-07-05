@@ -821,8 +821,6 @@ export default {
     copyAsCommand: 'Copy as Command',
     refreshFieldRow: 'Refresh Row',
     refreshFieldRowOk: 'Row refreshed',
-    deleteFieldRow: 'Delete Row',
-    rowMore: 'More actions',
     copyCommandOk: 'Command copied',
     copyCommandEmpty: 'Empty key, nothing to copy',
     refreshKey: 'Refresh Key',

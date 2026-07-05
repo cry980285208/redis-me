@@ -692,20 +692,9 @@ const fieldSetReadonly = ref(false)
 /** 单行刷新：list 在 value 数组中的下标；hash 为字段 wire key */
 const fieldEditIndex = ref(-1)
 const fieldEditKey = ref('')
-/** 行操作区：下拉/删除确认打开时保持可见（悬停由 CSS :hover 处理） */
-const pinnedRowIndex = ref(-1)
 /** 编辑面板当前行（分页下不能用 fieldSetIndex 索引 filterDataList） */
 const fieldSetRow = ref<ValueTableRow | null>(null)
 const fieldSetRef = useTemplateRef('fieldSetRef')
-
-function isRowActionsPinned(index: number) {
-  return fieldSetIndex.value === index || pinnedRowIndex.value === index
-}
-
-function onRowOverlayVisible(visible: boolean, index: number) {
-  if (visible) pinnedRowIndex.value = index
-  else if (pinnedRowIndex.value === index) pinnedRowIndex.value = -1
-}
 
 function pageRowIndexFromEvent(event: MouseEvent): number {
   const tr = event.currentTarget as HTMLElement | null
@@ -742,12 +731,21 @@ function formatFieldTtl(ttl: number | undefined): string {
   return String(meHumanSeconds(ttl))
 }
 
-function fieldRowDisplayValue(row: ValueTableRow): string {
-  return streamType.value ? JSON.stringify(row.value) : formatTableCell(row.value)
+function buildFieldGetParam(row?: ValueTableRow): RedisFieldGet_Deserialize | null {
+  const rv = redisValue.value
+  const rk = share.redisKey
+  if (!rv || !rk) return null
+  return {
+    key: rk,
+    fieldIndex: fieldEditIndex.value,
+    fieldKey: fieldEditKey.value,
+    fieldValue: rv.type === 'zset' && row ? String(row.value ?? '') : '',
+    valFmt: toWireFormat(viewFmtForField(bytesFormat.value)),
+  }
 }
 
-function copyFieldValue(row: ValueTableRow) {
-  meCopy(fieldRowDisplayValue(row))
+function fieldRowDisplayValue(row: ValueTableRow): string {
+  return streamType.value ? JSON.stringify(row.value) : formatTableCell(row.value)
 }
 
 function openFieldPanel(row: ValueTableRow, index: number, readonly: boolean) {
@@ -779,13 +777,6 @@ function openFieldPanel(row: ValueTableRow, index: number, readonly: boolean) {
   fieldSetRef.value?.open(params)
 }
 
-function fieldSet(row: ValueTableRow, index: number) {
-  openFieldPanel(row, index, false)
-}
-function fieldView(row: ValueTableRow, index: number) {
-  openFieldPanel(row, index, true)
-}
-
 function rowClassName({ rowIndex }: { row: ValueTableRow; rowIndex: number }) {
   const classes = [`table-row-index-${rowIndex}`]
   if (fieldSetIndex.value === rowIndex) classes.push('field-set-row')
@@ -793,11 +784,10 @@ function rowClassName({ rowIndex }: { row: ValueTableRow; rowIndex: number }) {
 }
 
 function rowDblClick(row: ValueTableRow, _column: unknown, event: MouseEvent) {
-  if ((event.target as HTMLElement)?.closest('.field-value-cell__actions')) return
+  if ((event.target as HTMLElement)?.closest('.field-row-actions')) return
   const rowIndex = pageRowIndexFromEvent(event)
   if (rowIndex < 0) return
-  if (canEdit.value && !streamType.value) fieldSet(row, rowIndex)
-  else fieldView(row, rowIndex)
+  openFieldPanel(row, rowIndex, !(canEdit.value && !streamType.value))
 }
 
 function rowClick(row: ValueTableRow, _column: unknown, event: MouseEvent) {
@@ -849,14 +839,8 @@ async function refreshFieldRow(row: ValueTableRow) {
   prepareFieldRowContext(row)
 
   if (rv.type === 'hash' || rv.type === 'list' || rv.type === 'zset') {
-    const fieldViewFmt = viewFmtForField(bytesFormat.value)
-    const param: RedisFieldGet_Deserialize = {
-      key: share.redisKey,
-      fieldIndex: fieldEditIndex.value,
-      fieldKey: fieldEditKey.value,
-      fieldValue: rv.type === 'zset' ? String(row.value ?? '') : '',
-      valFmt: toWireFormat(fieldViewFmt),
-    }
+    const param = buildFieldGetParam(row)
+    if (!param) return
     try {
       const data = await meCommands.fieldGet(conn.id, param, false)
       applyFieldGetResult(rv, data, row)
@@ -873,7 +857,7 @@ function onFieldRowMoreCommand(command: string, row: ValueTableRow) {
   if (command === 'refreshRow') {
     void refreshFieldRow(row)
   } else if (command === 'copyFieldValue') {
-    copyFieldValue(row)
+    meCopy(fieldRowDisplayValue(row))
   } else if (command === 'copyAsCommand') {
     void copyFieldAsCommand(row)
   }
@@ -895,13 +879,11 @@ async function onFieldSetSuccess() {
     return
   }
 
-  const fieldViewFmt = viewFmtForField(bytesFormat.value)
-  const param: RedisFieldGet_Deserialize = {
-    key: share.redisKey,
-    fieldIndex: fieldEditIndex.value,
-    fieldKey: fieldEditKey.value,
-    fieldValue: '',
-    valFmt: toWireFormat(fieldViewFmt),
+  const param = buildFieldGetParam()
+  if (!param) {
+    await refreshKey(false)
+    fieldSetInit()
+    return
   }
   try {
     const data = await meCommands.fieldGet(share.conn!.id, param, false)
@@ -1249,78 +1231,14 @@ onUnmounted(() => {
                 </template>
               </el-table-column>
 
-              <!-- 字段值（悬停时在右侧显示行操作，flex 占位不遮挡文本） -->
+              <!-- 字段值 -->
               <el-table-column
                 :label="t('redisValue.value')"
                 prop="value"
                 min-width="200"
                 show-overflow-tooltip>
                 <template #default="scope">
-                  <div class="field-value-cell">
-                    <span class="field-value-cell__text">{{
-                      fieldRowDisplayValue(scope.row)
-                    }}</span>
-                    <div
-                      class="field-value-cell__actions"
-                      :class="{ 'is-pinned': isRowActionsPinned(scope.$index) }">
-                      <el-popconfirm
-                        v-if="canEdit"
-                        :hide-after="0"
-                        :title="t('redisValue.deleteConfirm')"
-                        @update:visible="(v: boolean) => onRowOverlayVisible(v, scope.$index)"
-                        @confirm.stop="fieldDel(scope.row)">
-                        <template #reference>
-                          <me-icon
-                            :info="t('delete')"
-                            icon="el-icon-delete"
-                            class="icon-btn"
-                            @click.stop />
-                        </template>
-                      </el-popconfirm>
-                      <me-icon
-                        v-if="canEdit && !streamType"
-                        :info="t('edit')"
-                        icon="el-icon-edit"
-                        class="icon-btn"
-                        @click.stop="fieldSet(scope.row, scope.$index)" />
-                      <me-icon
-                        v-else
-                        :info="t('view')"
-                        icon="el-icon-view"
-                        class="icon-btn"
-                        @click.stop="fieldView(scope.row, scope.$index)" />
-                      <el-dropdown
-                        trigger="hover"
-                        placement="bottom-end"
-                        :show-timeout="0"
-                        :hide-timeout="200"
-                        @visible-change="(v: boolean) => onRowOverlayVisible(v, scope.$index)"
-                        @command="(cmd: string) => onFieldRowMoreCommand(cmd, scope.row)">
-                        <me-icon icon="el-icon-more-filled" class="icon-btn" />
-                        <template #dropdown>
-                          <el-dropdown-menu>
-                            <el-dropdown-item
-                              v-if="supportsFieldRowRefresh(redisValue.type)"
-                              command="refreshRow">
-                              <me-icon
-                                icon="el-icon-refresh-right"
-                                :name="t('redisValue.refreshFieldRow')" />
-                            </el-dropdown-item>
-                            <el-dropdown-item command="copyFieldValue">
-                              <me-icon
-                                icon="el-icon-document-copy"
-                                :name="t('redisValue.copyFieldValue')" />
-                            </el-dropdown-item>
-                            <el-dropdown-item command="copyAsCommand">
-                              <me-icon
-                                icon="me-icon-copy-command"
-                                :name="t('redisValue.copyAsCommand')" />
-                            </el-dropdown-item>
-                          </el-dropdown-menu>
-                        </template>
-                      </el-dropdown>
-                    </div>
-                  </div>
+                  {{ fieldRowDisplayValue(scope.row) }}
                 </template>
               </el-table-column>
 
@@ -1332,6 +1250,62 @@ onUnmounted(() => {
                 v-if="redisValue.type === 'hash' && share.capabilities.httlSupported">
                 <template #default="scope">
                   {{ formatFieldTtl(scope.row.ttl) }}
+                </template>
+              </el-table-column>
+
+              <!-- 操作 -->
+              <el-table-column :label="t('action')" width="80" fixed="right" align="center">
+                <template #default="scope">
+                  <div class="field-row-actions me-flex" style="justify-content: center; gap: 8px">
+                    <me-icon
+                      v-if="canEdit && !streamType"
+                      :info="t('edit')"
+                      icon="el-icon-edit"
+                      class="icon-btn"
+                      @click.stop="openFieldPanel(scope.row, scope.$index, false)" />
+                    <me-icon
+                      v-else
+                      :info="t('view')"
+                      icon="el-icon-view"
+                      class="icon-btn"
+                      @click.stop="openFieldPanel(scope.row, scope.$index, true)" />
+                    <el-popconfirm
+                      v-if="canEdit"
+                      :hide-after="0"
+                      :title="t('redisValue.deleteConfirm')"
+                      @confirm.stop="fieldDel(scope.row)">
+                      <template #reference>
+                        <me-icon :info="t('delete')" icon="el-icon-delete" class="icon-btn" />
+                      </template>
+                    </el-popconfirm>
+                    <el-dropdown
+                      trigger="click"
+                      placement="bottom-end"
+                      @command="(cmd: string) => onFieldRowMoreCommand(cmd, scope.row)">
+                      <me-icon icon="el-icon-more-filled" class="icon-btn" />
+                      <template #dropdown>
+                        <el-dropdown-menu>
+                          <el-dropdown-item
+                            v-if="supportsFieldRowRefresh(redisValue.type)"
+                            command="refreshRow">
+                            <me-icon
+                              icon="el-icon-refresh-right"
+                              :name="t('redisValue.refreshFieldRow')" />
+                          </el-dropdown-item>
+                          <el-dropdown-item command="copyFieldValue">
+                            <me-icon
+                              icon="el-icon-document-copy"
+                              :name="t('redisValue.copyFieldValue')" />
+                          </el-dropdown-item>
+                          <el-dropdown-item command="copyAsCommand">
+                            <me-icon
+                              icon="me-icon-copy-command"
+                              :name="t('redisValue.copyAsCommand')" />
+                          </el-dropdown-item>
+                        </el-dropdown-menu>
+                      </template>
+                    </el-dropdown>
+                  </div>
                 </template>
               </el-table-column>
             </me-table>
@@ -1606,10 +1580,6 @@ onUnmounted(() => {
           --el-table-tr-bg-color: var(--el-color-warning-light-9);
         }
 
-        .field-setting {
-          cursor: pointer;
-        }
-
         // 序号列：编辑态图标与行号均居中
         .index-cell {
           display: flex;
@@ -1617,50 +1587,10 @@ onUnmounted(() => {
           justify-content: center;
         }
 
-        // 值列：悬停时在右侧展开操作区（flex 收缩文本，不覆盖）
-        .field-value-cell {
-          display: flex;
-          align-items: center;
-          width: 100%;
-          min-width: 0;
-          gap: 6px;
-
-          &__text {
-            flex: 1 1 auto;
-            min-width: 0;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
+        .field-row-actions {
+          :deep(.icon-btn) {
+            font-size: 16px;
           }
-
-          &__actions {
-            flex: 0 0 auto;
-            display: flex;
-            align-items: center;
-            gap: 5px;
-            max-width: 0;
-            overflow: hidden;
-            opacity: 0;
-            pointer-events: none;
-            transition: opacity 0.12s ease;
-
-            :deep(.icon-btn) {
-              font-size: 16px;
-              flex-shrink: 0;
-            }
-
-            &.is-pinned {
-              max-width: 88px;
-              opacity: 1;
-              pointer-events: auto;
-            }
-          }
-        }
-
-        .el-table__body tr:hover .field-value-cell__actions {
-          max-width: 88px;
-          opacity: 1;
-          pointer-events: auto;
         }
       }
 
