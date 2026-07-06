@@ -26,7 +26,12 @@ import {
   type UiConn,
 } from '@/types/me-interface'
 import type { ConnConfig, RedisKey_Deserialize } from '@/types/tauri-specta'
-import { isConnMinimalMode, mergeConnGroupsFromList } from '@/utils/conn'
+import {
+  collapseImportedConnGroups,
+  collectKnownConnGroupNames,
+  isConnMinimalMode,
+  mergeConnGroupsFromList,
+} from '@/utils/conn'
 import { clearKeyTypeCacheForConn } from '@/utils/key-type-cache'
 import { mergeImportedConnList } from '@/utils/rdm'
 import {
@@ -239,9 +244,15 @@ function onGlobalConnHotkey(e: KeyboardEvent): void {
 }
 
 function onConnImported(impConnList: UiConn[]): void {
-  share.connList = mergeImportedConnList(share.connList, impConnList)
   if (!Array.isArray(meTauri.settings.connGroups)) meTauri.settings.connGroups = []
+  const knownGroups = collectKnownConnGroupNames(meTauri.settings.connGroups, share.connList)
+  share.connList = mergeImportedConnList(share.connList, impConnList)
   mergeConnGroupsFromList(share.connList, meTauri.settings.connGroups)
+  collapseImportedConnGroups(
+    impConnList,
+    knownGroups,
+    meTauri.settings.connGroupExpanded as Record<string, boolean>,
+  )
   meOk(t('conn.importOk'))
 }
 

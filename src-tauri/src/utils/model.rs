@@ -286,6 +286,9 @@ api_model!(ScanParam {
     scan_type: Option<String>,
 
     cursor: Option<ScanCursor>,
+
+    /// 完全匹配：true 时后端 EXISTS；false 时 SCAN
+    exact: bool,
 });
 
 impl ScanParam {
@@ -294,6 +297,7 @@ impl ScanParam {
             pattern,
             scan_type: None,
             cursor: None,
+            exact: false,
         }
     }
 }
@@ -546,6 +550,26 @@ api_model!(RedisFieldSet {
     field_score: f64,
     field_ttl: i64, // 字段 TTL（秒），仅 Redis/Valkey >= 7.4
     /// 编辑字段时解析用户输入（含 Hash 字段名）；Redis 键由 `key` 承载，不再经此格式解析
+    val_fmt: Option<BytesFormat>,
+});
+
+// 字段单条读取（HGET / LINDEX / ZSCORE 等，供前端刷新表格单行）
+api_model!(RedisFieldGet {
+    key: RedisKey,
+    field_index: isize,
+    field_key: String,
+    /// ZSet 成员定位；Hash 用 field_key、List 用 field_index
+    field_value: String,
+    val_fmt: Option<BytesFormat>,
+});
+
+// 表格单行 → redis-cli 命令（与 RedisFieldDel 相同的行定位字段）
+api_model!(RedisFieldAsCommand {
+    key: RedisKey,
+    field_index: isize,
+    field_key: String,
+    field_value: String,
+    stream_id: String,
     val_fmt: Option<BytesFormat>,
 });
 

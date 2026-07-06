@@ -100,6 +100,15 @@ pub fn format_hmset_command(key: &[u8], pairs: &[(Vec<u8>, Vec<u8>)]) -> Option<
     Some(parts.join(" "))
 }
 
+pub fn format_hset_command(key: &[u8], field: &[u8], value: &[u8]) -> String {
+    format!(
+        "HSET {} {} {}",
+        format_quoted(key),
+        format_quoted(field),
+        format_quoted(value)
+    )
+}
+
 pub fn format_rpush_command(key: &[u8], items: &[Vec<u8>]) -> Option<String> {
     if items.is_empty() {
         return None;
@@ -186,6 +195,16 @@ mod tests {
         assert!(!cmd.contains("\\xe4"));
         let args = split_redis_args(&cmd).unwrap();
         assert_eq!(args[2], value);
+    }
+
+    #[test]
+    fn test_format_hset_single_field() {
+        let cmd = format_hset_command(b"user:1", b"name", b"\xe5\xbc\xa0\xe4\xb8\x89");
+        assert_eq!(cmd, r#"HSET "user:1" "name" "张三""#);
+        let args = split_redis_args(&cmd).unwrap();
+        assert_eq!(args[1], b"user:1");
+        assert_eq!(args[2], b"name");
+        assert_eq!(args[3], b"\xe5\xbc\xa0\xe4\xb8\x89");
     }
 
     #[test]

@@ -1,5 +1,9 @@
 # 4.x Changelog
 
+## 4.2.1 (2026-07-06)
+
+- Fixed charts not redrawing after data updates #132
+
 ## [v4.2.0](https://mp.weixin.qq.com/s/gREAYjVYH5V4KWpBNWFZVQ) (2026-07-04)
 
 ### ✨ New Features

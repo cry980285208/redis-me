@@ -16,10 +16,12 @@ import { cloneDeep, merge } from 'lodash'
 import {
   computed,
   inject,
+  nextTick,
   onMounted,
   onUnmounted,
   ref,
   shallowRef,
+  unref,
   useTemplateRef,
   watch,
 } from 'vue'
@@ -86,8 +88,8 @@ watch(
 )
 
 // 图表实例，手动刷新
-/** vue-chartjs Line 暴露的 chart 实例（避免 useTemplateRef 推断为 never） */
-type LineChartExposed = { chart: { update: () => void } }
+/** vue-chartjs Line 经 reforwardRef 暴露的 chart（可能是 Ref，需 unref） */
+type LineChartExposed = { chart: unknown }
 const commandRef = useTemplateRef<LineChartExposed>('command')
 const memoryRef = useTemplateRef<LineChartExposed>('memory')
 const networkRef = useTemplateRef<LineChartExposed>('network')
@@ -98,16 +100,21 @@ const totalConnectionsReceivedRef = useTemplateRef<LineChartExposed>('totalConne
 const totalCommandsProcessedRef = useTemplateRef<LineChartExposed>('totalCommandsProcessed')
 const chartsRoot = useTemplateRef<HTMLElement>('charts')
 
-function refreshInstance() {
-  commandRef.value?.chart.update()
-  memoryRef.value?.chart.update()
-  networkRef.value?.chart.update()
+function updateLineChart(lineRef: LineChartExposed | null | undefined) {
+  const chart = unref(lineRef?.chart) as { update?: () => void } | null | undefined
+  chart?.update?.()
+}
 
-  keyTotalRef.value?.chart.update()
-  connectedClientsRef.value?.chart.update()
-  cacheHitRatioRef.value?.chart.update()
-  totalConnectionsReceivedRef.value?.chart.update()
-  totalCommandsProcessedRef.value?.chart.update()
+function refreshInstance() {
+  updateLineChart(commandRef.value)
+  updateLineChart(memoryRef.value)
+  updateLineChart(networkRef.value)
+
+  updateLineChart(keyTotalRef.value)
+  updateLineChart(connectedClientsRef.value)
+  updateLineChart(cacheHitRatioRef.value)
+  updateLineChart(totalConnectionsReceivedRef.value)
+  updateLineChart(totalCommandsProcessedRef.value)
 }
 
 let chartsFullscreenWasOurs = false
@@ -145,6 +152,12 @@ function onChartsFullscreenChange() {
 onMounted(() => {
   window.addEventListener('keydown', onChartsFullscreenKey, true)
   document.addEventListener('fullscreenchange', onChartsFullscreenChange)
+  // 等 Line 子组件 onMounted 创建 chart 后再拉数并 refresh（setup 阶段 chart 仍为 null）
+  void nextTick(() => {
+    if (!share.conn?.cluster) {
+      void getData()
+    }
+  })
 })
 onUnmounted(() => {
   window.removeEventListener('keydown', onChartsFullscreenKey, true)
@@ -153,11 +166,6 @@ onUnmounted(() => {
     void document.exitFullscreen()
   }
 })
-
-// 单机节点上来就获取1次数据（注: 集群节点由于watch node的存在上来会自动获取1次数据)
-if (!share.conn?.cluster) {
-  getData()
-}
 
 // 从后台获取原始数据
 async function getData() {
@@ -186,10 +194,10 @@ async function getData() {
       cutChartData(indexes, 'cacheHitRatio')
       cutChartData(indexes, 'totalConnectionsReceived')
       cutChartData(indexes, 'totalCommandsProcessed')
-      chartData.value = cloneDeep(chartData.value) // 直接更新时图表没有重新渲染，因此克隆1份，让vue进行重新渲染
-      nowPointCount.value = chartData.value.command.labels.length
     }
-    refreshInstance()
+    // shallowRef 原地 push 不会触发 vue-chartjs，克隆后 :data 引用变化才能重绘
+    chartData.value = cloneDeep(chartData.value)
+    nowPointCount.value = chartData.value.command.labels.length
   } catch (e: unknown) {
     meLog('get chart data error', e)
   }

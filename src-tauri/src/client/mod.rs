@@ -137,6 +137,7 @@ mod tests {
             pattern: "*".into(),
             scan_type: None,
             cursor: Some(ScanCursor::default()),
+            exact: false,
         };
         let result1 = client().scan(param).unwrap();
         println!("{result1:#?}");
@@ -145,6 +146,7 @@ mod tests {
             pattern: "*".into(),
             scan_type: None,
             cursor: Some(result1.cursor),
+            exact: false,
         };
         let result2 = client().scan(param2).unwrap();
         println!("{result2:#?}");

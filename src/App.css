@@ -111,10 +111,11 @@ svg {
 }
 
 /* 输入库的前缀和后缀去掉特殊颜色 */
-.el-input-group__append,
+/* .el-input-group__append,
 .el-input-group__prepend {
   background-color: unset;
-}
+} 
+*/
 
 /* 下拉框头部文字居中对齐 */
 .el-select-dropdown__header {

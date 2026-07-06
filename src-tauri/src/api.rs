@@ -140,6 +140,7 @@ api_commands!(
     copy(param: RedisCopyParam) -> RedisKey;                      // 复制键
     field_add(param: RedisFieldAdd) -> RedisKey;                  // 新增字段
     field_set(param: RedisFieldSet) -> ();                        // 编辑字段
+    field_get(param: RedisFieldGet) -> RedisFieldValue;           // 读取单条字段
     field_del(param: RedisFieldDel) -> ();                        // 删除字段
     execute_command(param: RedisCommand) -> String;               // 执行命令
     config_get(pattern: &str, node: Option<String>) -> HashMap<String, String>; // 获取配置
@@ -155,6 +156,7 @@ api_commands!(
     mock_data(count: u64) -> ();                    // 模拟数据
     key_type(key: RedisKey) -> String;              // 获取键类型
     get_key_as_command(key: RedisKey) -> String;    // 复制为 redis-cli 命令
+    get_field_as_command(param: RedisFieldAsCommand) -> String; // 表格单行复制为命令
     xinfo_groups(key: RedisKey) -> Vec<XInfoGroup>; // 获取Stream类型的组信息
     xinfo_consumers(key: RedisKey, group: String) -> Vec<XInfoConsumer>; // 获取Stream类型的消费者信息
     key_slot(key: RedisKey) -> u64;                           // 获取键的槽位

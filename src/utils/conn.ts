@@ -222,6 +222,31 @@ export function mergeConnGroupsFromList(connList: UiConn[], connGroups: string[]
   }
 }
 
+/** 导入前已存在的分组名：connGroups 登记项 + 既有连接的 meta.group */
+export function collectKnownConnGroupNames(connGroups: string[], connList: UiConn[]): Set<string> {
+  const known = new Set(connGroups.map(normalizeGroupName).filter(Boolean))
+  for (const c of connList) {
+    const g = getConnGroup(c)
+    if (g) known.add(g)
+  }
+  return known
+}
+
+/** 导入批次中新出现的分组设为折叠，避免 ConnGroup 对未登记键默认展开 */
+export function collapseImportedConnGroups(
+  imported: UiConn[],
+  knownGroups: Set<string>,
+  expanded: Record<string, boolean>,
+): void {
+  for (const c of imported) {
+    const g = getConnGroup(c)
+    if (g && !knownGroups.has(g)) {
+      expanded[g] = false
+      knownGroups.add(g)
+    }
+  }
+}
+
 /** 重命名分组：同步 conn.meta、connGroups 与折叠状态键名 */
 export function renameConnGroup(
   connList: UiConn[],

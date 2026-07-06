@@ -32,6 +32,7 @@ export const commands = {
 	copy: (id: string, param: RedisCopyParam_Deserialize) => typedError<RedisKey_Serialize, string>(__TAURI_INVOKE("copy", { id, param })),
 	fieldAdd: (id: string, param: RedisFieldAdd_Deserialize) => typedError<RedisKey_Serialize, string>(__TAURI_INVOKE("field_add", { id, param })),
 	fieldSet: (id: string, param: RedisFieldSet_Deserialize) => typedError<null, string>(__TAURI_INVOKE("field_set", { id, param })),
+	fieldGet: (id: string, param: RedisFieldGet_Deserialize) => typedError<RedisFieldValue, string>(__TAURI_INVOKE("field_get", { id, param })),
 	fieldDel: (id: string, param: RedisFieldDel_Deserialize) => typedError<null, string>(__TAURI_INVOKE("field_del", { id, param })),
 	executeCommand: (id: string, param: RedisCommand) => typedError<string, string>(__TAURI_INVOKE("execute_command", { id, param })),
 	aclUsers: (id: string) => typedError<string[], string>(__TAURI_INVOKE("acl_users", { id })),
@@ -65,6 +66,7 @@ export const commands = {
 	mockData: (id: string, count: number) => typedError<null, string>(__TAURI_INVOKE("mock_data", { id, count })),
 	keyType: (id: string, key: RedisKey_Deserialize) => typedError<string, string>(__TAURI_INVOKE("key_type", { id, key })),
 	getKeyAsCommand: (id: string, key: RedisKey_Deserialize) => typedError<string, string>(__TAURI_INVOKE("get_key_as_command", { id, key })),
+	getFieldAsCommand: (id: string, param: RedisFieldAsCommand_Deserialize) => typedError<string, string>(__TAURI_INVOKE("get_field_as_command", { id, param })),
 	xinfoGroups: (id: string, key: RedisKey_Deserialize) => typedError<XInfoGroup[], string>(__TAURI_INVOKE("xinfo_groups", { id, key })),
 	xinfoConsumers: (id: string, key: RedisKey_Deserialize, group: string) => typedError<XInfoConsumer[], string>(__TAURI_INVOKE("xinfo_consumers", { id, key, group })),
 	keySlot: (id: string, key: RedisKey_Deserialize) => typedError<number, string>(__TAURI_INVOKE("key_slot", { id, key })),
@@ -336,6 +338,26 @@ export type RedisFieldAdd_Serialize = {
 	valFmt: BytesFormat | null,
 };
 
+export type RedisFieldAsCommand = RedisFieldAsCommand_Serialize | RedisFieldAsCommand_Deserialize;
+
+export type RedisFieldAsCommand_Deserialize = {
+	key: RedisKey_Deserialize,
+	fieldIndex: number,
+	fieldKey: string,
+	fieldValue: string,
+	streamId: string,
+	valFmt: BytesFormat | null,
+};
+
+export type RedisFieldAsCommand_Serialize = {
+	key: RedisKey_Serialize,
+	fieldIndex: number,
+	fieldKey: string,
+	fieldValue: string,
+	streamId: string,
+	valFmt: BytesFormat | null,
+};
+
 export type RedisFieldDel = RedisFieldDel_Serialize | RedisFieldDel_Deserialize;
 
 export type RedisFieldDel_Deserialize = {
@@ -353,6 +375,26 @@ export type RedisFieldDel_Serialize = {
 	fieldKey: string,
 	fieldValue: string,
 	streamId: string,
+	valFmt: BytesFormat | null,
+};
+
+export type RedisFieldGet = RedisFieldGet_Serialize | RedisFieldGet_Deserialize;
+
+export type RedisFieldGet_Deserialize = {
+	key: RedisKey_Deserialize,
+	fieldIndex: number,
+	fieldKey: string,
+	/**  ZSet 成员定位；Hash 用 field_key、List 用 field_index */
+	fieldValue: string,
+	valFmt: BytesFormat | null,
+};
+
+export type RedisFieldGet_Serialize = {
+	key: RedisKey_Serialize,
+	fieldIndex: number,
+	fieldKey: string,
+	/**  ZSet 成员定位；Hash 用 field_key、List 用 field_index */
+	fieldValue: string,
 	valFmt: BytesFormat | null,
 };
 
@@ -487,6 +529,8 @@ export type ScanParam = {
 	match: string,
 	type: string | null,
 	cursor: ScanCursor | null,
+	/**  完全匹配：true 时后端 EXISTS；false 时 SCAN */
+	exact: boolean,
 };
 
 export type ScanResult = ScanResult_Serialize | ScanResult_Deserialize;
