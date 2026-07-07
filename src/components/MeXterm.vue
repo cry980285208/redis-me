@@ -136,4 +136,10 @@ code,
 .t-crude-font {
   font-family: var(--code-font) !important;
 }
+
+/* 保留空格等空白字符，避免 GET 仅空白值时看起来无输出 */
+.t-window p,
+.t-window div {
+  white-space: pre-wrap;
+}
 </style>

@@ -242,15 +242,15 @@ impl MeClient for MeCluster {
     }
 
     fn execute_command(&self, param: RedisCommand) -> AnyResult<String> {
-        let (cmd, args) = parse_command(param.command.as_str())?;
-        if cmd.is_empty() {
+        let (cmd_name, args) = parse_command(param.command.as_str())?;
+        if cmd_name.is_empty() {
             return Ok("".into());
         };
 
         let mut conn = self.get_conn()?;
 
-        let mut cmd = redis::cmd(cmd.as_str());
-        cmd.arg(args);
+        let mut cmd = redis::cmd(cmd_name.as_str());
+        cmd.arg(&args);
 
         let value = if param.node.as_deref().unwrap_or("").is_empty()
             && param.auto_broadcast.unwrap_or(false)
@@ -260,7 +260,12 @@ impl MeClient for MeCluster {
             let (route, _) = self.get_node_route(param.node)?;
             conn.route_command(&cmd, route)?
         };
-        Ok(redis_value_to_string(value, "\n"))
+        Ok(redis_value_to_cli_display(
+            value,
+            param.output_mode,
+            &cmd_name,
+            &args,
+        ))
     }
 
     fn config_get(

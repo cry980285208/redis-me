@@ -149,7 +149,12 @@ const minimalFieldAsCommand: RedisFieldAsCommand_Deserialize = {
   valFmt: null,
 }
 
-const minimalRedisCmd: RedisCommand = { command: 'PING', node: null, autoBroadcast: null }
+const minimalRedisCmd: RedisCommand = {
+  command: 'PING',
+  node: null,
+  autoBroadcast: null,
+  outputMode: null,
+}
 
 const minimalMemoryParam: RedisMemoryParam = {
   match: null,

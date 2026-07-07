@@ -24,7 +24,7 @@ fn read_utf8_char(bytes: &[u8], i: usize) -> Option<(char, usize)> {
     Some((ch, len))
 }
 
-/// 双引号包裹 + C 风格转义（与 redis-cli 一致：UTF-8 可打印字符原样，控制/二进制用 `\xHH`）
+/// 双引号包裹 + C 风格转义（与 redis-cli `sdscatrepr` 一致）
 pub fn format_quoted(bytes: &[u8]) -> String {
     let mut s = String::from('"');
     let mut i = 0;
@@ -49,6 +49,14 @@ pub fn format_quoted(bytes: &[u8]) -> String {
             }
             b'\t' => {
                 s.push_str("\\t");
+                i += 1;
+            }
+            b'\x07' => {
+                s.push_str("\\a");
+                i += 1;
+            }
+            b'\x08' => {
+                s.push_str("\\b");
                 i += 1;
             }
             0x20..=0x7e => {
@@ -173,6 +181,7 @@ mod tests {
     fn test_format_quoted_newline_and_binary() {
         assert_eq!(format_quoted(b"Line01\nLine02"), "\"Line01\\nLine02\"");
         assert_eq!(format_quoted(b"\x00\x01\xff"), "\"\\x00\\x01\\xff\"");
+        assert_eq!(format_quoted(b"\x07\x08"), "\"\\a\\b\"");
     }
 
     #[test]

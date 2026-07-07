@@ -121,6 +121,9 @@ export type AppSettings = {
 /**  前后端 IPC 字节格式：utf8 文本或 base64 原始字节（hex/binary/msgpack 等视图格式在前端处理） */
 export type BytesFormat = "utf8" | "base64";
 
+/**  终端输出格式，对应 redis-cli `--raw` / `--csv` / `--json`；默认 TTY */
+export type CliOutputMode = "standard" | "raw" | "json" | "csv";
+
 export type CommandLogEntry = {
 	id: number,
 	timestamp: string,
@@ -265,6 +268,8 @@ export type RedisCommand = {
 	command: string,
 	node: string | null,
 	autoBroadcast: boolean | null,
+	/**  终端输出格式；`None` 等同 `standard`（TTY） */
+	outputMode: CliOutputMode | null,
 };
 
 export type RedisCopyParam = RedisCopyParam_Serialize | RedisCopyParam_Deserialize;

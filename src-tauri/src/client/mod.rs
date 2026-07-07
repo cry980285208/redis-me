@@ -304,6 +304,7 @@ mod tests {
             command: command.into(),
             node: None,
             auto_broadcast: Some(true),
+            output_mode: None,
         });
         println!("{result:#?}");
     }
