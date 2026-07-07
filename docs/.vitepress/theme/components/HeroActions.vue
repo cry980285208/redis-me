@@ -12,6 +12,9 @@ const isZh = computed(() => lang.value.startsWith('zh'))
 const viewText = computed(() => (isZh.value ? '进入Github' : 'View on GitHub'))
 const gitHost = computed(() => (isZh.value ? 'gitee' : 'github'))
 
+/** 与安装帮助文档一致 */
+const MS_STORE_URL = 'https://apps.microsoft.com/detail/9NG9X1RCMW4P'
+
 /** 客户端检测 OS；SSR 与 Android 等未知平台默认 Windows */
 const detectedOs = ref('Windows')
 
@@ -70,6 +73,7 @@ const downloadMenu = computed(() => {
     {
       os: 'Windows',
       icon: Windows,
+      leadItem: { text: isZh.value ? '微软应用商店' : 'Microsoft Store', link: MS_STORE_URL },
       items: [
         winItem('x64', 'exe', `RedisME_${version}_x64-setup.exe`),
         winItem('x64', 'zip', `RedisME_${version}_portable_x64.zip`),
@@ -130,6 +134,15 @@ const otherPlatformsLabel = computed(() =>
           </a>
           <ul class="dropdown-menu">
             <li
+              v-if="currentOsGroup.leadItem"
+              :key="currentOsGroup.leadItem.link"
+              class="group-item"
+              style="font-size: 14px">
+              <a :href="currentOsGroup.leadItem.link" rel="noreferrer" target="_blank">{{
+                currentOsGroup.leadItem.text
+              }}</a>
+            </li>
+            <li
               v-for="item in currentOsGroup.items"
               :key="item.link"
               class="group-item"
@@ -146,6 +159,15 @@ const otherPlatformsLabel = computed(() =>
               <li class="group-title" :class="{ 'group-title-first': i === 0 }">
                 <component :is="group.icon" />
                 <span>{{ group.os }}</span>
+              </li>
+              <li
+                v-if="group.leadItem"
+                :key="group.leadItem.link"
+                class="group-item"
+                style="font-size: 14px">
+                <a :href="group.leadItem.link" rel="noreferrer" target="_blank">{{
+                  group.leadItem.text
+                }}</a>
               </li>
               <li
                 v-for="item in group.items"
