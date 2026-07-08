@@ -166,6 +166,10 @@ export type FieldScanParam_Deserialize = {
 	loadAll: boolean,
 	meta: FiledScanMeta | null,
 	bytesFormat: BytesFormat | null,
+	/**  STRING 全量加载字节上限；超过且未 force 时仅 GETRANGE 预览前 value_preview_bytes */
+	valueByteLimit: number | null,
+	valuePreviewBytes: number | null,
+	forceFullValue: boolean | null,
 };
 
 export type FieldScanParam_Serialize = {
@@ -176,6 +180,10 @@ export type FieldScanParam_Serialize = {
 	loadAll: boolean,
 	meta: FiledScanMeta | null,
 	bytesFormat: BytesFormat | null,
+	/**  STRING 全量加载字节上限；超过且未 force 时仅 GETRANGE 预览前 value_preview_bytes */
+	valueByteLimit: number | null,
+	valuePreviewBytes: number | null,
+	forceFullValue: boolean | null,
 };
 
 export type FieldScanResult = {
@@ -185,6 +193,8 @@ export type FieldScanResult = {
 	value: any,
 	cursor: ScanCursor,
 	length: number,
+	/**  STRING 因超过 value_byte_limit 仅返回预览片段时为 true */
+	valueTruncated: boolean,
 };
 
 export type FiledScanMeta = {

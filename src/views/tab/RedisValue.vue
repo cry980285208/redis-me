@@ -99,7 +99,6 @@ const { t } = useI18n()
 const share = inject(shareProvideKey)!
 const connUi = inject(connUiProvideKey)!
 const canEdit = computed(() => !share.readonly)
-const canSave = computed(() => canEdit.value && (stringType.value || jsonType.value))
 // #endregion
 
 // #region 核心状态（fieldScan 结果 / 游标 / 编辑）
@@ -116,6 +115,17 @@ const valueEditorRemountKey = ref(0)
 /** 手动控制「加载更多」按钮，避免 cursor 变化导致按钮闪现 */
 const showMore = ref(false)
 
+/** 临时：STRING 全量加载阈值与预览长度，后期迁至 settings */
+const VALUE_BYTE_LIMIT = 1024 * 1024
+const VALUE_PREVIEW_BYTES = 1000
+/** 用户确认「仍要加载全部」后为 true，fieldScan 走 GET 全量 */
+const forceFullValue = ref(false)
+const valueTruncatedDismissed = ref(false)
+const valueTruncated = computed(() => redisValue.value?.valueTruncated ?? false)
+const showValueTruncatedAlert = computed(
+  () => stringType.value && valueTruncated.value && !valueTruncatedDismissed.value,
+)
+
 /** Stream 扫描范围（meta 传给 fieldScan） */
 const meta = ref({ maxId: '', minId: '' })
 // #endregion
@@ -127,6 +137,12 @@ const jsonType = computed(() => 'json' === redisValue.value?.type)
 const streamType = computed(() => 'stream' === redisValue.value?.type)
 const stringTypeOrWithHashKey = computed(
   () => 'string' === redisValue.value?.type || withHashKey.value,
+)
+const canSave = computed(
+  () =>
+    canEdit.value &&
+    (stringType.value || jsonType.value) &&
+    !(valueTruncated.value && !forceFullValue.value),
 )
 // #endregion
 
@@ -379,7 +395,25 @@ function buildFieldScanParam(loadAll: boolean) {
     loadAll,
     meta: meta.value,
     bytesFormat: toWireFormat(bytesFormat.value),
+    valueByteLimit: VALUE_BYTE_LIMIT,
+    valuePreviewBytes: VALUE_PREVIEW_BYTES,
+    forceFullValue: forceFullValue.value,
   }
+}
+
+function dismissValueTruncated() {
+  valueTruncatedDismissed.value = true
+}
+
+/** 用户主动刷新键时重新展示大值预览提示（与切换键时的 reset 不同，保留 forceFullValue） */
+function prepareManualKeyRefresh() {
+  valueTruncatedDismissed.value = false
+}
+
+async function loadFullValue() {
+  if (loading.value) return
+  forceFullValue.value = true
+  await refreshKey(false)
 }
 
 /**
@@ -451,7 +485,11 @@ async function refreshKey(
   // 刷新过程中 me-code 的 modelValue 会变，避免误写入 newValue
   suppressCodeUpdate.value = true
 
-  if (reset) resetParam()
+  if (reset) {
+    resetParam()
+    forceFullValue.value = false
+    valueTruncatedDismissed.value = false
+  }
   // 非「加载更多」时从第一页重新 scan
   if (!useCursor) cursor.value = null
 
@@ -560,6 +598,7 @@ async function copyAsCommand() {
 
 async function onFooterRefreshKey() {
   if (loading.value) return
+  prepareManualKeyRefresh()
   await refreshKey(false)
   meOk(t('redisValue.refreshKeyOk'))
 }
@@ -622,6 +661,7 @@ function toggleFavorite() {
 
 function onKeyMoreCommand(command: string) {
   if (command === 'refreshKey') {
+    prepareManualKeyRefresh()
     void refreshKey(false)
   } else if (command === 'copyKey') {
     meCopy(showKey.value)
@@ -1113,6 +1153,31 @@ onUnmounted(() => {
 
       <!-- 中间值 -->
       <div class="value-main">
+        <el-alert
+          v-if="showValueTruncatedAlert"
+          type="warning"
+          :title="t('redisValue.valueTruncatedTitle')"
+          show-icon
+          :closable="false"
+          class="value-truncated-alert">
+          <p class="value-truncated-desc">
+            {{
+              t('redisValue.valueTruncatedDesc', {
+                size: meHumanSize(redisValue?.length ?? 0),
+                limit: meHumanSize(VALUE_BYTE_LIMIT),
+                preview: VALUE_PREVIEW_BYTES,
+              })
+            }}
+          </p>
+          <div class="value-truncated-actions">
+            <el-button size="small" @click="dismissValueTruncated">
+              {{ t('redisValue.valueTruncatedDismiss') }}
+            </el-button>
+            <el-button size="small" type="warning" plain :disabled="loading" @click="loadFullValue">
+              {{ t('redisValue.valueTruncatedLoadAll') }}
+            </el-button>
+          </div>
+        </el-alert>
         <!-- json显示 -->
         <me-code
           v-if="viewType === 'json'"
@@ -1595,6 +1660,20 @@ onUnmounted(() => {
     position: relative;
     flex-grow: 1;
     overflow: hidden;
+
+    .value-truncated-alert {
+      margin-bottom: 8px;
+
+      .value-truncated-desc {
+        margin: 0 0 8px;
+        line-height: 1.5;
+      }
+
+      .value-truncated-actions {
+        display: flex;
+        gap: 8px;
+      }
+    }
 
     .table-view {
       margin-top: 10px;

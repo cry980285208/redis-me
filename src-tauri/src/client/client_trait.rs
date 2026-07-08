@@ -205,7 +205,8 @@ pub fn field_scan0(
     let bytes_format = param.bytes_format.as_ref().cloned().unwrap_or_default();
 
     // String, Json, List, Hash(WithKey), Stream(WithKey), Stream 直接获取得到值
-    let (mut value, key_type, mut cc, length) = field_scan_0_get(&mut conn, &param, &bytes_format)?;
+    let (mut value, key_type, mut cc, length, value_truncated) =
+        field_scan_0_get(&mut conn, &param, &bytes_format)?;
     // Hash, Set, Zset 进行扫描(hscan, sscan, zscan)
     let key = param.key;
     if value.is_none() {
@@ -261,14 +262,37 @@ pub fn field_scan0(
         cc,
         length,
         with_field_key,
+        value_truncated,
     )
+}
+
+/// STRING 按阈值决定 GET 全量或 GETRANGE 预览；返回 (bytes, strlen, truncated)
+fn load_string_bytes(
+    conn: &mut MutexGuard<impl Commands>,
+    key: &RedisKey,
+    param: &FieldScanParam,
+) -> AnyResult<(Vec<u8>, usize, bool)> {
+    let strlen: usize = conn.strlen(key)?;
+    let force_full = param.force_full_value.unwrap_or(false);
+    if !force_full {
+        if let Some(limit) = param.value_byte_limit {
+            if strlen > limit as usize {
+                let preview = param.value_preview_bytes.unwrap_or(1000) as usize;
+                let end = preview.saturating_sub(1) as isize;
+                let value: Vec<u8> = conn.getrange(key, 0, end)?;
+                return Ok((value, strlen, true));
+            }
+        }
+    }
+    let value: Vec<u8> = conn.get(key)?;
+    Ok((value, strlen, false))
 }
 
 pub fn field_scan_0_get(
     mut conn: &mut MutexGuard<impl Commands>,
     param: &FieldScanParam,
     bytes_format: &BytesFormat,
-) -> AnyResult<(Option<serde_json::Value>, ValueType, ScanCursor, usize)> {
+) -> AnyResult<(Option<serde_json::Value>, ValueType, ScanCursor, usize, bool)> {
     let key = &param.key;
     let hash_key = param.hash_key.clone();
 
@@ -277,6 +301,7 @@ pub fn field_scan_0_get(
 
     // String类型的bytes长度
     let mut length = 0;
+    let mut value_truncated = false;
 
     let value: Option<serde_json::Value> = match key_type {
         ValueType::None => {
@@ -285,8 +310,9 @@ pub fn field_scan_0_get(
             })
         }
         ValueType::String => {
-            let value: Vec<u8> = conn.get(key)?;
-            length = value.len();
+            let (value, strlen, truncated) = load_string_bytes(&mut conn, key, param)?;
+            length = strlen;
+            value_truncated = truncated;
             let value: String = format_bytes(&value, bytes_format);
             cc.finished = true;
             Some(serde_json::to_value(value)?)
@@ -408,7 +434,7 @@ pub fn field_scan_0_get(
         }
         _ => None,
     };
-    Ok((value, key_type, cc, length))
+    Ok((value, key_type, cc, length, value_truncated))
 }
 
 pub fn field_scan_1_cmd(
@@ -534,6 +560,7 @@ pub fn field_scan_4_return(
     cursor: ScanCursor,
     length: usize,
     with_field_key: bool,
+    value_truncated: bool,
 ) -> AnyResult<FieldScanResult> {
     let ttl: i64 = conn.ttl(&key)?;
     let size: u64 = redis::cmd("memory")
@@ -551,6 +578,7 @@ pub fn field_scan_4_return(
         value,
         cursor,
         length,
+        value_truncated,
     })
 }
 

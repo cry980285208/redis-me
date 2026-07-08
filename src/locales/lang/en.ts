@@ -836,6 +836,11 @@ export default {
     textLength: 'Bytes Length: ',
     textEntries: 'Scanned: ',
     totalCount: 'Total: ',
+    valueTruncatedTitle: 'Value too large — showing preview',
+    valueTruncatedDesc:
+      'This key is about {size}, exceeding the {limit} limit. Only the first {preview} bytes are shown to keep the UI responsive.',
+    valueTruncatedDismiss: 'Keep Preview',
+    valueTruncatedLoadAll: 'Load Full Value',
     viewCodec: 'Codec',
     keyShortHint: 'View KeyShort',
     keyShort: {

@@ -823,6 +823,11 @@ export default {
     textLength: '字节长度：',
     textEntries: '已扫描：',
     totalCount: '总数：',
+    valueTruncatedTitle: '值过大，已切换为预览模式',
+    valueTruncatedDesc:
+      '该键约 {size}，超过 {limit} 安全阈值。为避免卡顿，当前仅展示前 {preview} 字节。',
+    valueTruncatedDismiss: '继续使用预览',
+    valueTruncatedLoadAll: '仍要加载全部',
     viewCodec: '数据编码',
     keyShortHint: '查看快捷键',
     keyShort: {

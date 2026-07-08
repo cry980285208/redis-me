@@ -321,6 +321,10 @@ api_model!(FieldScanParam {
     load_all: bool,
     meta: Option<FiledScanMeta>, // 扩展参数
     bytes_format: Option<BytesFormat>, // 扫描/展示用字节格式
+    /// STRING 全量加载字节上限；超过且未 force 时仅 GETRANGE 预览前 value_preview_bytes
+    value_byte_limit: Option<u64>,
+    value_preview_bytes: Option<u64>,
+    force_full_value: Option<bool>,
 });
 
 api_model!(FiledScanMeta {
@@ -377,6 +381,8 @@ api_model!(FieldScanResult {
     value: serde_json::Value,
     cursor: ScanCursor,
     length: usize, // String/Hash字段：原始 bytes 长度；集合类型：元素总数(HLEN/LLEN/SCARD/ZCARD/XLEN)
+    /// STRING 因超过 value_byte_limit 仅返回预览片段时为 true
+    value_truncated: bool,
 });
 
 // Redis键: 由于键是字节存储的，考虑转换为utf-8字符串显示后可能会丢失信息，因此封装为对象
