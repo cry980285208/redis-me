@@ -336,6 +336,8 @@ export default {
     checkUpdateErr: 'Check Update Fail',
     invalidHexString: 'Invalid hex string: odd number of characters',
     invalidHexCharacter: 'Invalid hex character',
+    invalidBinaryString: 'Invalid binary string: length not multiple of 8',
+    invalidBinaryCharacter: 'Invalid binary character',
   },
 
   tabMain: {

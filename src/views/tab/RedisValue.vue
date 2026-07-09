@@ -239,7 +239,7 @@ const formatOptions = computed(() => {
 const viewDecodeFailed = computed(() => {
   if (!stringType.value) return false
   const fmt = displayBytesFormat.value
-  if (fmt === 'utf8' || fmt === 'hex' || fmt === 'base64') return false
+  if (fmt === 'utf8' || fmt === 'hex' || fmt === 'binary' || fmt === 'base64') return false
   const wire = displayWire.value
   if (!wire) return false
   if (isCustomView(fmt)) return customCodecFailed.value

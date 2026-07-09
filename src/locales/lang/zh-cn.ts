@@ -326,6 +326,8 @@ export default {
     checkUpdateErr: '检查更新失败',
     invalidHexString: '无效的十六进制字符串：长度为奇数',
     invalidHexCharacter: '无效的十六进制字符',
+    invalidBinaryString: '无效的二进制字符串：长度不是 8 的倍数',
+    invalidBinaryCharacter: '无效的二进制字符',
   },
 
   tabMain: {
