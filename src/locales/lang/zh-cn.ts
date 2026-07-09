@@ -818,6 +818,7 @@ export default {
     locateKeyHint: '在键列表中定位当前键',
 
     textMemory: '内存占用：',
+    textMemoryEstimate: '内存占用（估算）：',
     textLength: '字节长度：',
     textEntries: '已扫描：',
     totalCount: '总数：',

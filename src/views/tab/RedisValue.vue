@@ -57,6 +57,7 @@ import {
   meDeleteKey,
   meErr,
   meHumanSeconds,
+  estimateStringMemory,
   meHumanSize,
   meFormatDisplayValue,
   meJsonNormal,
@@ -1002,8 +1003,19 @@ async function showGroups() {
 
 // #region 底部信息栏（内存 / 条数 / 槽位）
 const textMemory = computed(() => {
-  const sz = redisValue.value?.size
-  return sz != null && sz > 0 ? t('redisValue.textMemory') + meHumanSize(sz) : ''
+  const rv = redisValue.value
+  if (!rv) return ''
+  let sz = rv.size
+  let estimated = false
+  // 兼容不支持 MEMORY USAGE 的 Redis 变体：String 按键名+值长度粗估
+  if (sz <= 0 && stringType.value) {
+    const key = share.redisKey?.key ?? ''
+    sz = estimateStringMemory(key, rv.length)
+    estimated = true
+  }
+  if (sz <= 0) return ''
+  const label = estimated ? t('redisValue.textMemoryEstimate') : t('redisValue.textMemory')
+  return label + meHumanSize(sz)
 })
 
 /** 与 textLength 同一位置：String/单字段为字节长度，集合类型为总数 */

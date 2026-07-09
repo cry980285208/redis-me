@@ -831,6 +831,7 @@ export default {
     locateKeyHint: 'Locate current key in key list',
 
     textMemory: 'Memory Usage: ',
+    textMemoryEstimate: 'Memory Usage (est.): ',
     textLength: 'Bytes Length: ',
     textEntries: 'Scanned: ',
     totalCount: 'Total: ',

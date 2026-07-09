@@ -10,7 +10,7 @@
 - RedisSearch的支持
 - 慢日志治理的微信公众号文章
 - 解析剪贴板URL
-- Memory Usage命令不支持时前端显示大小
+- Memory Usage命令不支持时前端显示大小 ✅️
 - 内存分析参考键扫描改为实时显示
 - 旧版SSH证书的支持
 - RedisInsight和TinyRDM都有的自动数据解压缩是什么
