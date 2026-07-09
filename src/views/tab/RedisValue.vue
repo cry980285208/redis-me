@@ -1440,18 +1440,6 @@ onUnmounted(() => {
 
           <me-icon
             placement="top-start"
-            :info="t('redisValue.copyAsCommand')"
-            class="icon-btn"
-            style="font-size: 18px; margin-left: 5px"
-            icon="me-icon-copy-command"
-            :style="{
-              opacity: copyAsCommandLoading ? 0.5 : 1,
-              cursor: copyAsCommandLoading ? 'wait' : 'pointer',
-            }"
-            @click="copyAsCommand" />
-
-          <me-icon
-            placement="top-start"
             :info="t('redisValue.refreshKey')"
             class="icon-btn"
             style="font-size: 18px; margin-left: 5px"

@@ -6,7 +6,6 @@ import { useI18n } from 'vue-i18n'
 import { shareProvideKey } from '@/types/me-interface'
 import type {
   BytesFormat,
-  RedisFieldAsCommand_Deserialize,
   RedisFieldGet_Deserialize,
   RedisFieldSet_Deserialize,
   RedisFieldValue,
@@ -26,15 +25,7 @@ import {
   viewFmtForField,
   type ViewBytesFormat,
 } from '@/utils/format'
-import {
-  meCommands,
-  meCopy,
-  meErr,
-  meFormatDisplayValue,
-  meJsonNormal,
-  meOk,
-  meWarn,
-} from '@/utils/util'
+import { meCommands, meCopy, meErr, meFormatDisplayValue, meJsonNormal, meOk } from '@/utils/util'
 
 /** 含 UI 用 type / wireFieldKey，提交时剔除 */
 type FieldSetForm = RedisFieldSet_Deserialize & { type: string; wireFieldKey?: string }
@@ -44,7 +35,7 @@ type FieldSetOpen = Partial<FieldSetForm> & {
   keyWireFmt?: BytesFormat
   /** 键级数据编码，用于默认字段 view */
   keyViewFmt?: ViewBytesFormat
-  /** Stream 条目 ID（复制为命令等） */
+  /** Stream 条目 ID */
   streamId?: string
   /** 查看模式：表单只读，隐藏保存 */
   readonly?: boolean
@@ -82,7 +73,6 @@ const form = ref<FieldSetForm>(cloneDeep(initForm))
 
 /** fieldScan 原始 wire，切换字段编码时始终以此为源 */
 const srcFieldWire = ref('')
-const fieldStreamId = ref('')
 const keyWireFmt = ref<BytesFormat>('utf8')
 /** 键级 view 编码，field_get 与值页表格刷新一致 */
 const keyViewFmt = ref<ViewBytesFormat>('utf8')
@@ -142,7 +132,6 @@ function open(data: FieldSetOpen) {
   Object.assign(form.value, cloneDeep(initForm))
   Object.assign(form.value, data)
   srcFieldWire.value = String(data.srcFieldValue ?? '')
-  fieldStreamId.value = data.streamId ?? ''
   keyWireFmt.value = data.keyWireFmt ?? 'utf8'
   keyViewFmt.value = data.keyViewFmt ?? 'utf8'
   fieldViewFmt.value = defaultFieldViewFmt(data.keyViewFmt ?? 'utf8', keyWireFmt.value)
@@ -230,35 +219,6 @@ function submit() {
       isSaving.value = false
     }
   })
-}
-
-function buildFieldAsCommandParam(): RedisFieldAsCommand_Deserialize | null {
-  if (!share.conn || !form.value.key?.key) return null
-  const type = form.value.type
-  const fmt = fieldViewFmt.value
-  const param: RedisFieldAsCommand_Deserialize = {
-    key: form.value.key,
-    fieldKey:
-      type === 'hash' && form.value.wireFieldKey ? form.value.wireFieldKey : form.value.fieldKey,
-    fieldIndex: form.value.fieldIndex,
-    fieldValue: type === 'zset' || type === 'set' ? srcFieldWire.value : '',
-    streamId: fieldStreamId.value,
-    valFmt: toWireFormat(fmt),
-  }
-  if (type === 'stream') param.fieldValue = ''
-  return param
-}
-
-async function copyFieldAsCommand() {
-  const conn = share.conn
-  const param = buildFieldAsCommandParam()
-  if (!conn || !param) return
-  const text = await meCommands.getFieldAsCommand(conn.id, param)
-  if (!text.trim()) {
-    meWarn(t('redisValue.copyCommandEmpty'))
-    return
-  }
-  meCopy(text, t('redisValue.copyCommandOk'))
 }
 
 function buildFieldGetParam(): RedisFieldGet_Deserialize | null {
@@ -365,13 +325,6 @@ async function refreshField() {
             style="font-size: 18px; margin-left: 5px"
             icon="el-icon-document-copy"
             @click="meCopy(form.fieldValue)" />
-          <me-icon
-            placement="top-start"
-            :info="t('redisValue.copyAsCommand')"
-            class="icon-btn"
-            style="font-size: 18px; margin-left: 5px"
-            icon="me-icon-copy-command"
-            @click="copyFieldAsCommand" />
           <me-icon
             v-if="supportsFieldRefresh"
             placement="top-start"
