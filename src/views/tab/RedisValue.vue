@@ -73,7 +73,8 @@ import FieldSet from '../ext/FieldSet.vue'
 // #endregion
 
 // #region 类型与本地工具
-type FieldScanViewState = FieldScanResult & { newValue: string }
+/** newValue：null 未编辑，'' 表示用户主动保存空串 */
+type FieldScanViewState = FieldScanResult & { newValue: string | null }
 
 /** fieldScan 的 `value` 在 Specta 中为 serde 联合类型，表格/拼接按行数组处理 */
 function fieldValueRows(v: unknown): unknown[] {
@@ -81,7 +82,7 @@ function fieldValueRows(v: unknown): unknown[] {
 }
 
 function toViewState(data: FieldScanResult): FieldScanViewState {
-  return { ...data, newValue: '' }
+  return { ...data, newValue: null }
 }
 
 /** 值表格行（fieldScan 各类型字段混合） */
@@ -346,6 +347,13 @@ function onCodeUpdate(newValue: string) {
   if (suppressCodeUpdate.value || !redisValue.value) return
   redisValue.value.newValue = newValue
 }
+
+/** 值区有未保存修改（含改为空串；null 表示未编辑） */
+const valueDirty = computed(() => {
+  const rv = redisValue.value
+  if (!rv || rv.newValue === null) return false
+  return rv.newValue !== showValue.value
+})
 // #endregion
 
 // #region 表格行数据与筛选
@@ -442,7 +450,7 @@ async function finalizeAfterFieldScan(reset: boolean, replaceData?: FieldScanRes
   }
   // 清空未保存编辑；fieldScan 结果即当前权威内容
   if (redisValue.value) {
-    redisValue.value.newValue = ''
+    redisValue.value.newValue = null
   }
   suppressCodeUpdate.value = false
   if (reset) applyDefaultViewType()
@@ -680,15 +688,21 @@ function onKeyMoreCommand(command: string) {
 // #region 保存整键值（STRING / JSON）
 async function setValue() {
   const rv = redisValue.value
-  if (!rv) return
+  if (!rv || rv.newValue === null) return
   let value = rv.newValue
 
   try {
-    if (
-      jsonType.value ||
-      (stringType.value && (bytesFormat.value === 'msgpack' || bytesFormat.value === 'strjson'))
-    ) {
+    if (jsonType.value) {
+      if (value === '') {
+        meErr(t('fieldAdd.jsonValidator'))
+        return
+      }
       value = meJsonNormal(value)
+    } else if (
+      stringType.value &&
+      (bytesFormat.value === 'msgpack' || bytesFormat.value === 'strjson')
+    ) {
+      value = value === '' ? '' : meJsonNormal(value)
     }
     if (stringType.value && isCustomView(bytesFormat.value)) {
       value = await meViewToWireAsync(value, bytesFormat.value)
@@ -699,7 +713,7 @@ async function setValue() {
     const msg = e instanceof Error ? e.message : String(e)
     if (stringType.value && isCustomView(bytesFormat.value)) {
       setCustomCodecError(msg)
-      rv.newValue = ''
+      rv.newValue = null
       valueEditorRemountKey.value++
       return
     }
@@ -1533,7 +1547,7 @@ onUnmounted(() => {
           <!-- 保存 -->
           <me-button
             style="margin-left: 10px"
-            :disabled="viewDecodeFailed || !redisValue?.newValue"
+            :disabled="viewDecodeFailed || !valueDirty"
             v-if="canSave"
             :info="t('save')"
             type="primary"

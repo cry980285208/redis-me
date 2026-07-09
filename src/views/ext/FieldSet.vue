@@ -177,7 +177,6 @@ watch(customNames, names => {
 })
 
 const rules = computed(() => ({
-  fieldValue: [{ required: true, message: t('fieldSet.fieldValueRequired') }],
   fieldScore: [{ required: true, message: t('fieldSet.fieldScoreRequired') }],
 }))
 
@@ -209,7 +208,7 @@ function submit() {
       const fmt = fieldViewFmt.value
       let fieldValue = form.value.fieldValue
       if (needsJsonNormalize(fmt)) {
-        fieldValue = meJsonNormal(fieldValue)
+        fieldValue = fieldValue === '' ? '' : meJsonNormal(fieldValue)
       }
       if (isCustomView(fmt)) {
         fieldValue = await meViewToWireAsync(fieldValue, fmt)
@@ -338,7 +337,7 @@ async function refreshField() {
           align="left"
           style="width: 100%" />
       </el-form-item>
-      <el-form-item :label="t('fieldSet.value')" prop="fieldValue" class="field-value-item">
+      <el-form-item :label="t('fieldSet.value')" class="field-value-item">
         <me-code
           :key="codeRemountKey"
           v-model="form.fieldValue"

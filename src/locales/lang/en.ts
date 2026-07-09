@@ -393,10 +393,7 @@ export default {
     typeRequired: 'Type required',
     ttlRequired: 'TTL required',
     ttlValidator: '-1 (Forever) or positive integer',
-    valueRequired: 'Value required',
     jsonValidator: 'Value must be in a valid JSON format',
-    hashValidator: 'HashKey and hashValue required',
-    streamValidator: 'Field and value required',
     hashHint: '(HashKey: HashValue)',
     hashHintTtl: '(HashKey: HashValue: TTL Seconds)',
     zsetHint: '(Value: Score)',
@@ -418,7 +415,6 @@ export default {
   },
 
   fieldSet: {
-    fieldValueRequired: 'Value Required',
     fieldScoreRequired: 'Score Required',
     editField: 'Edit Field',
     viewField: 'View Field',

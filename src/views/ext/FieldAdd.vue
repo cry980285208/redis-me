@@ -73,54 +73,30 @@ const rules = computed(() => ({
       ) => {
         if (!(form.value.ttl === -1 || form.value.ttl > 0)) {
           callback(new Error(t('fieldAdd.ttlValidator')))
+          return
         }
         callback()
       },
     },
   ],
   value: [
-    { required: true, message: t('fieldAdd.valueRequired') },
     {
       validator: (
         _rule: FormItemRule,
         value: unknown,
         callback: (error?: string | Error) => void,
       ) => {
+        // string 等类型允许空串；json 类型空串与非法 JSON 均不通过
         if (form.value.type === 'json') {
+          if (value === '') {
+            callback(new Error(t('fieldAdd.jsonValidator')))
+            return
+          }
           try {
             meJsonParse(String(value)) // json 输入支持 json5 格式，此处转换为正常 json 字符串
           } catch {
             callback(new Error(t('fieldAdd.jsonValidator')))
-          }
-        }
-        callback()
-      },
-    },
-  ],
-  fieldValueList: [
-    {
-      validator: (
-        _rule: FormItemRule,
-        _value: unknown,
-        callback: (error?: string | Error) => void,
-      ) => {
-        if (form.value.type === 'hash' || form.value.type === 'stream') {
-          const count = form.value.fieldValueList.filter(
-            d => d.fieldKey === '' || d.fieldValue === '',
-          ).length
-          if (count > 0) {
-            callback(
-              new Error(
-                form.value.type === 'hash'
-                  ? t('fieldAdd.hashValidator')
-                  : t('fieldAdd.streamValidator'),
-              ),
-            )
-          }
-        } else {
-          const count = form.value.fieldValueList.filter(d => d.fieldValue === '').length
-          if (count > 0) {
-            callback(new Error(t('fieldAdd.valueRequired')))
+            return
           }
         }
         callback()
@@ -136,7 +112,7 @@ const rules = computed(() => ({
       ) => {
         if (form.value.type === 'stream') {
           if (value) return callback()
-          callback(new Error(t('fieldAdd.streamIdRequired')))
+          return callback(new Error(t('fieldAdd.streamIdRequired')))
         }
         callback()
       },
@@ -305,10 +281,7 @@ function handleKeyTypeChange() {
       </el-form-item>
 
       <!-- key, value, score: 非 string 和 json 类型 -->
-      <el-form-item
-        :label="t('fieldAdd.element') + ' ' + hint"
-        prop="fieldValueList"
-        v-if="!stringOrJsonType">
+      <el-form-item :label="t('fieldAdd.element') + ' ' + hint" v-if="!stringOrJsonType">
         <div
           v-for="(item, index) in form.fieldValueList"
           class="me-flex"

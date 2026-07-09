@@ -384,10 +384,7 @@ export default {
     typeRequired: '请选择类型',
     ttlRequired: '请输入TTL',
     ttlValidator: '只允许-1(永久) 或 正整数',
-    valueRequired: '值不允许为空',
     jsonValidator: '值必须为有效的JSON格式',
-    hashValidator: '哈希键和值不允许为空',
-    streamValidator: '字段和值不允许为空',
     hashHint: '(哈希键：值)',
     hashHintTtl: '(哈希键：值：过期秒)',
     zsetHint: '(值：分数)',
@@ -409,7 +406,6 @@ export default {
   },
 
   fieldSet: {
-    fieldValueRequired: '值不能为空',
     fieldScoreRequired: '请输入分数',
     editField: '编辑字段',
     viewField: '查看字段',
