@@ -682,6 +682,10 @@ function onKeyMoreCommand(command: string) {
     renameKey()
   } else if (command === 'duplicateKey') {
     duplicateKey()
+  } else if (command === 'showSlot') {
+    void showSlot()
+  } else if (command === 'showLocation') {
+    void showLocation()
   }
 }
 // #endregion
@@ -1171,6 +1175,12 @@ onUnmounted(() => {
                 <el-dropdown-item v-if="canEdit" command="duplicateKey">
                   <me-icon icon="el-icon-copy-document" :name="t('redisValue.duplicateKey')" />
                 </el-dropdown-item>
+                <el-dropdown-item v-if="share.conn?.cluster" command="showSlot" divided>
+                  <me-icon icon="me-icon-slot" :name="t('redisValue.slotTitle')" />
+                </el-dropdown-item>
+                <el-dropdown-item v-if="share.conn?.cluster" command="showLocation">
+                  <me-icon icon="el-icon-location" :name="t('redisValue.locationTitle')" />
+                </el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
@@ -1455,25 +1465,6 @@ onUnmounted(() => {
             placement="top-start"
             @click="openKeyShortDialog"
             style="margin-left: 5px; font-size: 20px" />
-
-          <!-- 键所在槽位和节点信息 -->
-          <me-icon
-            v-if="share.conn?.cluster"
-            style="margin-left: 5px"
-            :info="t('redisValue.slotHint')"
-            class="icon-btn"
-            icon="me-icon-slot"
-            @click="showSlot"
-            placement="top-start" />
-
-          <me-icon
-            v-if="share.conn?.cluster"
-            style="margin-left: 5px"
-            :info="t('redisValue.locationHint')"
-            class="icon-btn"
-            icon="el-icon-location"
-            @click="showLocation"
-            placement="top-start" />
 
           <el-divider direction="vertical" v-if="textMemory" />
 
