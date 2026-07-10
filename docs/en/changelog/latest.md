@@ -4,7 +4,7 @@
 
 ### ✨ New Features
 
-- Terminal: **Output aligned with redis-cli** TTY/Raw/JSON/CSV formats
+- Terminal: **Output aligned with redis-cli** TTY/Raw/JSON/CSV formats #134
 - Empty values: Key creation, value editing, and field editing all support saving empty strings
 - Value Tab
   - Table supports **per-row refresh and per-row "Copy as Command"**
