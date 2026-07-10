@@ -89,6 +89,9 @@ const minimalFieldScan: FieldScanParam_Deserialize = {
   loadAll: false,
   meta: null,
   bytesFormat: null,
+  valueByteLimit: null,
+  valuePreviewBytes: null,
+  forceFullValue: null,
 }
 
 const minimalSetParam: RedisSetParam_Deserialize = {
@@ -149,7 +152,12 @@ const minimalFieldAsCommand: RedisFieldAsCommand_Deserialize = {
   valFmt: null,
 }
 
-const minimalRedisCmd: RedisCommand = { command: 'PING', node: null, autoBroadcast: null }
+const minimalRedisCmd: RedisCommand = {
+  command: 'PING',
+  node: null,
+  autoBroadcast: null,
+  outputMode: null,
+}
 
 const minimalMemoryParam: RedisMemoryParam = {
   match: null,

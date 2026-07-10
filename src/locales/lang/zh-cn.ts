@@ -326,6 +326,8 @@ export default {
     checkUpdateErr: '检查更新失败',
     invalidHexString: '无效的十六进制字符串：长度为奇数',
     invalidHexCharacter: '无效的十六进制字符',
+    invalidBinaryString: '无效的二进制字符串：长度不是 8 的倍数',
+    invalidBinaryCharacter: '无效的二进制字符',
   },
 
   tabMain: {
@@ -384,10 +386,7 @@ export default {
     typeRequired: '请选择类型',
     ttlRequired: '请输入TTL',
     ttlValidator: '只允许-1(永久) 或 正整数',
-    valueRequired: '值不允许为空',
     jsonValidator: '值必须为有效的JSON格式',
-    hashValidator: '哈希键和值不允许为空',
-    streamValidator: '字段和值不允许为空',
     hashHint: '(哈希键：值)',
     hashHintTtl: '(哈希键：值：过期秒)',
     zsetHint: '(值：分数)',
@@ -409,7 +408,6 @@ export default {
   },
 
   fieldSet: {
-    fieldValueRequired: '值不能为空',
     fieldScoreRequired: '请输入分数',
     editField: '编辑字段',
     viewField: '查看字段',
@@ -748,6 +746,11 @@ export default {
     readonlyHint: '只读模式下暂不支持执行命令',
     readonlyWriteHint: '只读模式下不允许执行写入或非只读命令',
     autoCopyHint: '自动复制命令结果',
+    outputModeHint: '输出格式，对齐 redis-cli 的 TTY / --raw / --json / --csv',
+    outputStandard: 'TTY',
+    outputRaw: 'Raw',
+    outputJson: 'JSON',
+    outputCsv: 'CSV',
     commandHint: '查看命令列表',
     commandTitle: '命令列表',
     keywordHint: '命令或概述模糊筛选',
@@ -815,9 +818,15 @@ export default {
     locateKeyHint: '在键列表中定位当前键',
 
     textMemory: '内存占用：',
+    textMemoryEstimate: '内存占用（估算）：',
     textLength: '字节长度：',
     textEntries: '已扫描：',
     totalCount: '总数：',
+    valueTruncatedTitle: '值过大，已切换为预览模式',
+    valueTruncatedDesc:
+      '该键约 {size}，超过 {limit} 安全阈值。为避免卡顿，当前仅展示前 {preview} 字节。',
+    valueTruncatedDismiss: '继续使用预览',
+    valueTruncatedLoadAll: '仍要加载全部',
     viewCodec: '数据编码',
     keyShortHint: '查看快捷键',
     keyShort: {

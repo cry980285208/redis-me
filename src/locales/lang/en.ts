@@ -336,6 +336,8 @@ export default {
     checkUpdateErr: 'Check Update Fail',
     invalidHexString: 'Invalid hex string: odd number of characters',
     invalidHexCharacter: 'Invalid hex character',
+    invalidBinaryString: 'Invalid binary string: length not multiple of 8',
+    invalidBinaryCharacter: 'Invalid binary character',
   },
 
   tabMain: {
@@ -393,10 +395,7 @@ export default {
     typeRequired: 'Type required',
     ttlRequired: 'TTL required',
     ttlValidator: '-1 (Forever) or positive integer',
-    valueRequired: 'Value required',
     jsonValidator: 'Value must be in a valid JSON format',
-    hashValidator: 'HashKey and hashValue required',
-    streamValidator: 'Field and value required',
     hashHint: '(HashKey: HashValue)',
     hashHintTtl: '(HashKey: HashValue: TTL Seconds)',
     zsetHint: '(Value: Score)',
@@ -418,7 +417,6 @@ export default {
   },
 
   fieldSet: {
-    fieldValueRequired: 'Value Required',
     fieldScoreRequired: 'Score Required',
     editField: 'Edit Field',
     viewField: 'View Field',
@@ -759,6 +757,11 @@ export default {
     readonlyHint: 'Executing commands is temporarily not supported in read-only mode',
     readonlyWriteHint: 'Write or non-readonly commands are not allowed in read-only mode',
     autoCopyHint: 'Auto Copy Command Result',
+    outputModeHint: 'Output format: redis-cli TTY / --raw / --json / --csv',
+    outputStandard: 'TTY',
+    outputRaw: 'Raw',
+    outputJson: 'JSON',
+    outputCsv: 'CSV',
 
     commandHint: 'View Command List',
     commandTitle: 'Commands',
@@ -828,9 +831,15 @@ export default {
     locateKeyHint: 'Locate current key in key list',
 
     textMemory: 'Memory Usage: ',
+    textMemoryEstimate: 'Memory Usage (est.): ',
     textLength: 'Bytes Length: ',
     textEntries: 'Scanned: ',
     totalCount: 'Total: ',
+    valueTruncatedTitle: 'Value too large — showing preview',
+    valueTruncatedDesc:
+      'This key is about {size}, exceeding the {limit} limit. Only the first {preview} bytes are shown to keep the UI responsive.',
+    valueTruncatedDismiss: 'Keep Preview',
+    valueTruncatedLoadAll: 'Load Full Value',
     viewCodec: 'Codec',
     keyShortHint: 'View KeyShort',
     keyShort: {

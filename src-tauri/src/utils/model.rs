@@ -18,6 +18,17 @@ use std::time::Duration;
 use parking_lot::RwLock;
 use tauri::AppHandle;
 
+/// 终端输出格式，对应 redis-cli `--raw` / `--csv` / `--json`；默认 TTY
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, Type, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum CliOutputMode {
+    #[default]
+    Standard,
+    Raw,
+    Json,
+    Csv,
+}
+
 /// 前后端 IPC 字节格式：utf8 文本或 base64 原始字节（hex/binary/msgpack 等视图格式在前端处理）
 #[derive(Debug, Clone, Default, Serialize, Deserialize, Type)]
 #[serde(rename_all = "lowercase")]
@@ -310,6 +321,10 @@ api_model!(FieldScanParam {
     load_all: bool,
     meta: Option<FiledScanMeta>, // 扩展参数
     bytes_format: Option<BytesFormat>, // 扫描/展示用字节格式
+    /// STRING 全量加载字节上限；超过且未 force 时仅 GETRANGE 预览前 value_preview_bytes
+    value_byte_limit: Option<u64>,
+    value_preview_bytes: Option<u64>,
+    force_full_value: Option<bool>,
 });
 
 api_model!(FiledScanMeta {
@@ -366,6 +381,8 @@ api_model!(FieldScanResult {
     value: serde_json::Value,
     cursor: ScanCursor,
     length: usize, // String/Hash字段：原始 bytes 长度；集合类型：元素总数(HLEN/LLEN/SCARD/ZCARD/XLEN)
+    /// STRING 因超过 value_byte_limit 仅返回预览片段时为 true
+    value_truncated: bool,
 });
 
 // Redis键: 由于键是字节存储的，考虑转换为utf-8字符串显示后可能会丢失信息，因此封装为对象
@@ -605,6 +622,8 @@ api_model!(RedisCommand {
     command: String,
     node: Option<String>,
     auto_broadcast: Option<bool>,
+    /// 终端输出格式；`None` 等同 `standard`（TTY）
+    output_mode: Option<CliOutputMode>,
 });
 
 // 命令执行日志条目

@@ -244,10 +244,17 @@ export async function testCodec(
 // #region 视图格式与 wire 转换
 
 /** 键重命名等基础字节视图；KeyRename、FieldAdd */
-export const BYTES_FORMAT = ['UTF8', 'Hex', 'Base64'] as const
+export const BYTES_FORMAT = ['UTF8', 'Hex', 'Binary', 'Base64'] as const
 
 /** 前端值/键展示格式；RedisValue 数据编码下拉 */
-export type ViewBytesFormat = 'utf8' | 'hex' | 'base64' | 'msgpack' | 'strjson' | `custom:${string}`
+export type ViewBytesFormat =
+  | 'utf8'
+  | 'hex'
+  | 'binary'
+  | 'base64'
+  | 'msgpack'
+  | 'strjson'
+  | `custom:${string}`
 
 export const CUSTOM_FORMAT_PREFIX = 'custom:' as const
 
@@ -342,7 +349,7 @@ export function needsJsonNormalize(view: ViewBytesFormat): boolean {
 export function meFormatViewValue(wire: string, view: ViewBytesFormat): string {
   if (!wire || view === 'utf8') return wire
   if (view === 'base64') return wire
-  if (view === 'hex') return meFormatBytes(wire, view)
+  if (view === 'hex' || view === 'binary') return meFormatBytes(wire, view)
   if (view === 'msgpack') return meMsgpackBase64ToJson(wire)
   if (view === 'strjson') return meStrJsonWireToDisplay(wire)
   if (isCustomView(view)) {
@@ -364,7 +371,7 @@ export async function meFormatViewValueAsync(wire: string, view: ViewBytesFormat
 export function meViewToWire(text: string, view: ViewBytesFormat): string {
   if (!text || view === 'utf8') return text
   if (view === 'base64') return text
-  if (view === 'hex') return meToBase64(text, view)
+  if (view === 'hex' || view === 'binary') return meToBase64(text, view)
   if (view === 'msgpack') return meJsonToMsgpackBase64(text)
   if (view === 'strjson') return meDisplayToStrJsonWire(text)
   if (isCustomView(view)) {
@@ -386,6 +393,7 @@ export async function meViewToWireAsync(text: string, view: ViewBytesFormat): Pr
 export function meFormatBytes(base64: string, bytesFormat: string): string {
   if (bytesFormat === 'base64') return base64
   if (bytesFormat === 'hex') return base64ToHex(base64)
+  if (bytesFormat === 'binary') return base64ToBinary(base64)
   return 'Unknown bytesFormat: ' + bytesFormat
 }
 
@@ -393,6 +401,7 @@ export function meFormatBytes(base64: string, bytesFormat: string): string {
 export function meToBase64(bytes: string, encoding: string): string {
   if (encoding === 'base64') return bytes
   if (encoding === 'hex') return hexToBase64(bytes)
+  if (encoding === 'binary') return binaryToBase64(bytes)
   return 'Unknown encoding: ' + encoding
 }
 
@@ -401,6 +410,14 @@ function base64ToHex(base64: string): string {
   const binary = atob(base64)
   return Array.from(binary)
     .map(char => char.charCodeAt(0).toString(16).padStart(2, '0'))
+    .join('')
+}
+
+function base64ToBinary(base64: string): string {
+  if (!base64) return ''
+  const binary = atob(base64)
+  return Array.from(binary)
+    .map(char => char.charCodeAt(0).toString(2).padStart(8, '0'))
     .join('')
 }
 
@@ -422,6 +439,26 @@ function hexToBase64(hex: string): string {
   }
   const binary = bytes.map(b => String.fromCharCode(b)).join('')
   return btoa(binary)
+}
+
+function binaryToBase64(binary: string): string {
+  if (!binary) return ''
+  if (binary.length % 8 !== 0) {
+    throw new Error(t('util.invalidBinaryString'))
+  }
+  if (!/^[01]+$/.test(binary)) {
+    throw new Error(t('util.invalidBinaryCharacter'))
+  }
+  const bytes: number[] = []
+  for (let i = 0; i < binary.length; i += 8) {
+    const byte = Number.parseInt(binary.slice(i, i + 8), 2)
+    if (Number.isNaN(byte)) {
+      throw new Error(t('util.invalidBinaryCharacter'))
+    }
+    bytes.push(byte)
+  }
+  const binaryStr = bytes.map(b => String.fromCharCode(b)).join('')
+  return btoa(binaryStr)
 }
 
 function base64ToUint8Array(base64: string): Uint8Array {

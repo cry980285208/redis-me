@@ -63,6 +63,7 @@ async function killClient(row: RedisClientListRow) {
       command: `client kill ${row.addr}`,
       node: node.value,
       autoBroadcast: null,
+      outputMode: null,
     }
     await meCommands.executeCommand(share.conn!.id, param)
     meOk(t('redisClient.killClientOk'))

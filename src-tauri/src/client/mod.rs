@@ -215,6 +215,9 @@ mod tests {
             load_all: false,
             meta: None,
             bytes_format: Some(BytesFormat::Base64),
+            value_byte_limit: None,
+            value_preview_bytes: None,
+            force_full_value: None,
         }
     }
 
@@ -304,6 +307,7 @@ mod tests {
             command: command.into(),
             node: None,
             auto_broadcast: Some(true),
+            output_mode: None,
         });
         println!("{result:#?}");
     }

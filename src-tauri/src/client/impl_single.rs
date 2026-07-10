@@ -188,8 +188,8 @@ impl MeClient for MeSingle {
         };
 
         let mut conn = self.get_conn()?;
-        let value = redis::cmd(cmd.as_str()).arg(args).query(&mut conn)?;
-        Ok(redis_value_to_string(value, "\n"))
+        let value = redis::cmd(cmd.as_str()).arg(&args).query(&mut conn)?;
+        Ok(redis_value_to_cli_display(value, param.output_mode, &cmd, &args))
     }
 
     fn config_get(

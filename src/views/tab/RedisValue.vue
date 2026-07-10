@@ -57,6 +57,7 @@ import {
   meDeleteKey,
   meErr,
   meHumanSeconds,
+  estimateStringMemory,
   meHumanSize,
   meFormatDisplayValue,
   meJsonNormal,
@@ -73,7 +74,8 @@ import FieldSet from '../ext/FieldSet.vue'
 // #endregion
 
 // #region 类型与本地工具
-type FieldScanViewState = FieldScanResult & { newValue: string }
+/** newValue：null 未编辑，'' 表示用户主动保存空串 */
+type FieldScanViewState = FieldScanResult & { newValue: string | null }
 
 /** fieldScan 的 `value` 在 Specta 中为 serde 联合类型，表格/拼接按行数组处理 */
 function fieldValueRows(v: unknown): unknown[] {
@@ -81,7 +83,7 @@ function fieldValueRows(v: unknown): unknown[] {
 }
 
 function toViewState(data: FieldScanResult): FieldScanViewState {
-  return { ...data, newValue: '' }
+  return { ...data, newValue: null }
 }
 
 /** 值表格行（fieldScan 各类型字段混合） */
@@ -99,7 +101,6 @@ const { t } = useI18n()
 const share = inject(shareProvideKey)!
 const connUi = inject(connUiProvideKey)!
 const canEdit = computed(() => !share.readonly)
-const canSave = computed(() => canEdit.value && (stringType.value || jsonType.value))
 // #endregion
 
 // #region 核心状态（fieldScan 结果 / 游标 / 编辑）
@@ -116,6 +117,17 @@ const valueEditorRemountKey = ref(0)
 /** 手动控制「加载更多」按钮，避免 cursor 变化导致按钮闪现 */
 const showMore = ref(false)
 
+/** 临时：STRING 全量加载阈值与预览长度，后期迁至 settings */
+const VALUE_BYTE_LIMIT = 1024 * 1024
+const VALUE_PREVIEW_BYTES = 1000
+/** 用户确认「仍要加载全部」后为 true，fieldScan 走 GET 全量 */
+const forceFullValue = ref(false)
+const valueTruncatedDismissed = ref(false)
+const valueTruncated = computed(() => redisValue.value?.valueTruncated ?? false)
+const showValueTruncatedAlert = computed(
+  () => stringType.value && valueTruncated.value && !valueTruncatedDismissed.value,
+)
+
 /** Stream 扫描范围（meta 传给 fieldScan） */
 const meta = ref({ maxId: '', minId: '' })
 // #endregion
@@ -127,6 +139,12 @@ const jsonType = computed(() => 'json' === redisValue.value?.type)
 const streamType = computed(() => 'stream' === redisValue.value?.type)
 const stringTypeOrWithHashKey = computed(
   () => 'string' === redisValue.value?.type || withHashKey.value,
+)
+const canSave = computed(
+  () =>
+    canEdit.value &&
+    (stringType.value || jsonType.value) &&
+    !(valueTruncated.value && !forceFullValue.value),
 )
 // #endregion
 
@@ -222,7 +240,7 @@ const formatOptions = computed(() => {
 const viewDecodeFailed = computed(() => {
   if (!stringType.value) return false
   const fmt = displayBytesFormat.value
-  if (fmt === 'utf8' || fmt === 'hex' || fmt === 'base64') return false
+  if (fmt === 'utf8' || fmt === 'hex' || fmt === 'binary' || fmt === 'base64') return false
   const wire = displayWire.value
   if (!wire) return false
   if (isCustomView(fmt)) return customCodecFailed.value
@@ -330,6 +348,13 @@ function onCodeUpdate(newValue: string) {
   if (suppressCodeUpdate.value || !redisValue.value) return
   redisValue.value.newValue = newValue
 }
+
+/** 值区有未保存修改（含改为空串；null 表示未编辑） */
+const valueDirty = computed(() => {
+  const rv = redisValue.value
+  if (!rv || rv.newValue === null) return false
+  return rv.newValue !== showValue.value
+})
 // #endregion
 
 // #region 表格行数据与筛选
@@ -379,7 +404,25 @@ function buildFieldScanParam(loadAll: boolean) {
     loadAll,
     meta: meta.value,
     bytesFormat: toWireFormat(bytesFormat.value),
+    valueByteLimit: VALUE_BYTE_LIMIT,
+    valuePreviewBytes: VALUE_PREVIEW_BYTES,
+    forceFullValue: forceFullValue.value,
   }
+}
+
+function dismissValueTruncated() {
+  valueTruncatedDismissed.value = true
+}
+
+/** 用户主动刷新键时重新展示大值预览提示（与切换键时的 reset 不同，保留 forceFullValue） */
+function prepareManualKeyRefresh() {
+  valueTruncatedDismissed.value = false
+}
+
+async function loadFullValue() {
+  if (loading.value) return
+  forceFullValue.value = true
+  await refreshKey(false)
 }
 
 /**
@@ -408,7 +451,7 @@ async function finalizeAfterFieldScan(reset: boolean, replaceData?: FieldScanRes
   }
   // 清空未保存编辑；fieldScan 结果即当前权威内容
   if (redisValue.value) {
-    redisValue.value.newValue = ''
+    redisValue.value.newValue = null
   }
   suppressCodeUpdate.value = false
   if (reset) applyDefaultViewType()
@@ -451,7 +494,11 @@ async function refreshKey(
   // 刷新过程中 me-code 的 modelValue 会变，避免误写入 newValue
   suppressCodeUpdate.value = true
 
-  if (reset) resetParam()
+  if (reset) {
+    resetParam()
+    forceFullValue.value = false
+    valueTruncatedDismissed.value = false
+  }
   // 非「加载更多」时从第一页重新 scan
   if (!useCursor) cursor.value = null
 
@@ -560,6 +607,7 @@ async function copyAsCommand() {
 
 async function onFooterRefreshKey() {
   if (loading.value) return
+  prepareManualKeyRefresh()
   await refreshKey(false)
   meOk(t('redisValue.refreshKeyOk'))
 }
@@ -622,6 +670,7 @@ function toggleFavorite() {
 
 function onKeyMoreCommand(command: string) {
   if (command === 'refreshKey') {
+    prepareManualKeyRefresh()
     void refreshKey(false)
   } else if (command === 'copyKey') {
     meCopy(showKey.value)
@@ -633,6 +682,10 @@ function onKeyMoreCommand(command: string) {
     renameKey()
   } else if (command === 'duplicateKey') {
     duplicateKey()
+  } else if (command === 'showSlot') {
+    void showSlot()
+  } else if (command === 'showLocation') {
+    void showLocation()
   }
 }
 // #endregion
@@ -640,15 +693,21 @@ function onKeyMoreCommand(command: string) {
 // #region 保存整键值（STRING / JSON）
 async function setValue() {
   const rv = redisValue.value
-  if (!rv) return
+  if (!rv || rv.newValue === null) return
   let value = rv.newValue
 
   try {
-    if (
-      jsonType.value ||
-      (stringType.value && (bytesFormat.value === 'msgpack' || bytesFormat.value === 'strjson'))
-    ) {
+    if (jsonType.value) {
+      if (value === '') {
+        meErr(t('fieldAdd.jsonValidator'))
+        return
+      }
       value = meJsonNormal(value)
+    } else if (
+      stringType.value &&
+      (bytesFormat.value === 'msgpack' || bytesFormat.value === 'strjson')
+    ) {
+      value = value === '' ? '' : meJsonNormal(value)
     }
     if (stringType.value && isCustomView(bytesFormat.value)) {
       value = await meViewToWireAsync(value, bytesFormat.value)
@@ -659,7 +718,7 @@ async function setValue() {
     const msg = e instanceof Error ? e.message : String(e)
     if (stringType.value && isCustomView(bytesFormat.value)) {
       setCustomCodecError(msg)
-      rv.newValue = ''
+      rv.newValue = null
       valueEditorRemountKey.value++
       return
     }
@@ -948,8 +1007,19 @@ async function showGroups() {
 
 // #region 底部信息栏（内存 / 条数 / 槽位）
 const textMemory = computed(() => {
-  const sz = redisValue.value?.size
-  return sz != null && sz > 0 ? t('redisValue.textMemory') + meHumanSize(sz) : ''
+  const rv = redisValue.value
+  if (!rv) return ''
+  let sz = rv.size
+  let estimated = false
+  // 兼容不支持 MEMORY USAGE 的 Redis 变体：String 按键名+值长度粗估
+  if (sz <= 0 && stringType.value) {
+    const key = share.redisKey?.key ?? ''
+    sz = estimateStringMemory(key, rv.length)
+    estimated = true
+  }
+  if (sz <= 0) return ''
+  const label = estimated ? t('redisValue.textMemoryEstimate') : t('redisValue.textMemory')
+  return label + meHumanSize(sz)
 })
 
 /** 与 textLength 同一位置：String/单字段为字节长度，集合类型为总数 */
@@ -1105,6 +1175,12 @@ onUnmounted(() => {
                 <el-dropdown-item v-if="canEdit" command="duplicateKey">
                   <me-icon icon="el-icon-copy-document" :name="t('redisValue.duplicateKey')" />
                 </el-dropdown-item>
+                <el-dropdown-item v-if="share.conn?.cluster" command="showSlot" divided>
+                  <me-icon icon="me-icon-slot" :name="t('redisValue.slotTitle')" />
+                </el-dropdown-item>
+                <el-dropdown-item v-if="share.conn?.cluster" command="showLocation">
+                  <me-icon icon="el-icon-location" :name="t('redisValue.locationTitle')" />
+                </el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
@@ -1113,6 +1189,31 @@ onUnmounted(() => {
 
       <!-- 中间值 -->
       <div class="value-main">
+        <el-alert
+          v-if="showValueTruncatedAlert"
+          type="warning"
+          :title="t('redisValue.valueTruncatedTitle')"
+          show-icon
+          :closable="false"
+          class="value-truncated-alert">
+          <p class="value-truncated-desc">
+            {{
+              t('redisValue.valueTruncatedDesc', {
+                size: meHumanSize(redisValue?.length ?? 0),
+                limit: meHumanSize(VALUE_BYTE_LIMIT),
+                preview: VALUE_PREVIEW_BYTES,
+              })
+            }}
+          </p>
+          <div class="value-truncated-actions">
+            <el-button size="small" @click="dismissValueTruncated">
+              {{ t('redisValue.valueTruncatedDismiss') }}
+            </el-button>
+            <el-button size="small" type="warning" plain :disabled="loading" @click="loadFullValue">
+              {{ t('redisValue.valueTruncatedLoadAll') }}
+            </el-button>
+          </div>
+        </el-alert>
         <!-- json显示 -->
         <me-code
           v-if="viewType === 'json'"
@@ -1349,18 +1450,6 @@ onUnmounted(() => {
 
           <me-icon
             placement="top-start"
-            :info="t('redisValue.copyAsCommand')"
-            class="icon-btn"
-            style="font-size: 18px; margin-left: 5px"
-            icon="me-icon-copy-command"
-            :style="{
-              opacity: copyAsCommandLoading ? 0.5 : 1,
-              cursor: copyAsCommandLoading ? 'wait' : 'pointer',
-            }"
-            @click="copyAsCommand" />
-
-          <me-icon
-            placement="top-start"
             :info="t('redisValue.refreshKey')"
             class="icon-btn"
             style="font-size: 18px; margin-left: 5px"
@@ -1376,25 +1465,6 @@ onUnmounted(() => {
             placement="top-start"
             @click="openKeyShortDialog"
             style="margin-left: 5px; font-size: 20px" />
-
-          <!-- 键所在槽位和节点信息 -->
-          <me-icon
-            v-if="share.conn?.cluster"
-            style="margin-left: 5px"
-            :info="t('redisValue.slotHint')"
-            class="icon-btn"
-            icon="me-icon-slot"
-            @click="showSlot"
-            placement="top-start" />
-
-          <me-icon
-            v-if="share.conn?.cluster"
-            style="margin-left: 5px"
-            :info="t('redisValue.locationHint')"
-            class="icon-btn"
-            icon="el-icon-location"
-            @click="showLocation"
-            placement="top-start" />
 
           <el-divider direction="vertical" v-if="textMemory" />
 
@@ -1468,7 +1538,7 @@ onUnmounted(() => {
           <!-- 保存 -->
           <me-button
             style="margin-left: 10px"
-            :disabled="viewDecodeFailed || !redisValue?.newValue"
+            :disabled="viewDecodeFailed || !valueDirty"
             v-if="canSave"
             :info="t('save')"
             type="primary"
@@ -1595,6 +1665,20 @@ onUnmounted(() => {
     position: relative;
     flex-grow: 1;
     overflow: hidden;
+
+    .value-truncated-alert {
+      margin-bottom: 8px;
+
+      .value-truncated-desc {
+        margin: 0 0 8px;
+        line-height: 1.5;
+      }
+
+      .value-truncated-actions {
+        display: flex;
+        gap: 8px;
+      }
+    }
 
     .table-view {
       margin-top: 10px;

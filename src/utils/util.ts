@@ -359,6 +359,13 @@ const humanUnits = [
   { threshold: 1024 ** 4, symbol: 'T' },
 ] as const
 
+/** MEMORY USAGE 不可用时的 String 键内存粗估：键名 + 值字节 + Redis 对象/SDS 固定开销 */
+export function estimateStringMemory(key: string, valueByteLen: number): number {
+  const keyBytes = new TextEncoder().encode(key).length
+  const OVERHEAD = 56
+  return keyBytes + valueByteLen + OVERHEAD
+}
+
 export function meHumanSize(size: number, zeroShow = '0B', fractionDigits = 2): string {
   if (!size) return zeroShow || ''
 

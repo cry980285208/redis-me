@@ -1,5 +1,7 @@
 ## Future
 
+- String类型阈值保护 ✅️
+- Binary格式恢复支持（setbit等场景还是需要的）✅️
 - Hash/Set/ZSet的扫描模式支持
 - Hash仅查询键的支持
 - List/Stream支持正序倒序查询
@@ -8,7 +10,7 @@
 - RedisSearch的支持
 - 慢日志治理的微信公众号文章
 - 解析剪贴板URL
-- Memory Usage命令不支持时前端显示大小
+- Memory Usage命令不支持时前端显示大小 ✅️
 - 内存分析参考键扫描改为实时显示
 - 旧版SSH证书的支持
 - RedisInsight和TinyRDM都有的自动数据解压缩是什么
@@ -50,3 +52,4 @@
 - 发布订阅的编码支持 ✅️
 - 键输入框的提示 ✅️
 - 集群模式下的多数据库(valkey9.0支持) ✅️
+- 空值保存（新增键、保存值、保存字段值等场景）✅️

@@ -1,5 +1,28 @@
 # 4.x Changelog
 
+## [v4.3.0](https://mp.weixin.qq.com/s/k3KMigBxg3fJraezIMdP5Q) (2026-07-11)
+
+### ✨ New Features
+
+- Terminal: **Output aligned with redis-cli** TTY/Raw/JSON/CSV formats #134
+- Empty values: Key creation, value editing, and field editing all support saving empty strings
+- Value Tab
+  - Table supports **per-row refresh and per-row "Copy as Command"**
+  - Restored **Binary encoding format** (required for setbit and similar scenarios)
+  - Large STRING values load on preview when over threshold #136
+  - Improved Stream value table ID display
+  - String keys show estimated memory when MEMORY USAGE is unavailable
+  - Cluster slot and node entries moved to the extended menu
+  - Shortcuts visible only in the editor
+- Website
+  - Windows download: added Microsoft Store entry
+  - Warm and dark theme visual improvements; unified ambient light and grid background
+  - Auto-redirect to Chinese homepage when browser language is Chinese
+- Details
+  - Read-only mode hides the append section for new keys
+  - New group folders collapsed by default when importing connections
+  - Export preview key name height adjusted to avoid scrollbars
+
 ## 4.2.1 (2026-07-06)
 
 - Fixed charts not redrawing after data updates #132
@@ -8,20 +31,20 @@
 
 ### ✨ New Features
 
-- **Command parsing**: Aligned with redis-cli `sdssplitargs`; supports escapes inside quotes and binary arguments
-- **Value Tab**
-  - Added **"Copy as Command"**
-  - Added **"Create Duplicate"** (standalone COPY / cluster DUMP+RESTORE)
-  - Added **locate button** next to key name; scrolls key list to current key on click
-- **Import/Export**: Added **CMD command format** support
-- **Key Area**
+- Command parsing: Aligned with redis-cli `sdssplitargs`; supports escapes inside quotes and binary arguments
+- Value Tab
+  - Added "Copy as Command"
+  - Added "Create Duplicate" (standalone COPY / cluster DUMP+RESTORE)
+  - Added locate button next to key name; scrolls key list to current key on click
+- Import/Export: Added CMD command format support
+- Key Area
   - F5 to refresh key list; connection color for refresh and search icons
   - Refresh button and footer text use connection color
   - Improved scan progress estimation for cluster scenarios
-- **Connection**
+- Connection
   - Connection editor: initial db input
-  - **Valkey 9+ cluster: specify initial db at connect time**
-- **Pub/Sub**: **Message encoding selectable** for sending binary messages
+  - Valkey 9+ cluster: specify initial db at connect time
+- Pub/Sub: Message encoding selectable for sending binary messages
 - Other: Added Redisee to website footer links
 
 ### 🐞 Bug Fixes

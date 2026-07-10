@@ -6,6 +6,7 @@ import MeIcon from '@/components/MeIcon.vue'
 import MeShortcut from '@/components/MeShortcut.vue'
 import { commandHelp, isReadonlyCommand } from '@/locales/cmd'
 import { shareProvideKey } from '@/types/me-interface'
+import type { CliOutputMode } from '@/types/tauri-specta'
 import { getTerminalShortcuts } from '@/utils/shortcut'
 import { meCopy, meCommands, isZh } from '@/utils/util'
 
@@ -17,6 +18,15 @@ const share = inject(shareProvideKey)!
 const canEdit = computed(() => !share.readonly)
 /** 只读列表头：英文 Read-only 较宽，中文只读可窄一些 */
 const readonlyColWidth = computed(() => (isZh.value ? 88 : 120))
+
+/** 终端输出格式（对齐 redis-cli --raw / --json / --csv；每次进入默认 TTY） */
+const outputModeOptions: { value: CliOutputMode; labelKey: string }[] = [
+  { value: 'standard', labelKey: 'redisTerminal.outputStandard' },
+  { value: 'raw', labelKey: 'redisTerminal.outputRaw' },
+  { value: 'json', labelKey: 'redisTerminal.outputJson' },
+  { value: 'csv', labelKey: 'redisTerminal.outputCsv' },
+]
+const outputMode = ref<CliOutputMode>('standard')
 
 // 待颜色的文本
 function colorText(color: string, text: string, bold = false): string {
@@ -32,6 +42,15 @@ const welcome = computed(() =>
   t('redisTerminal.welcome', { RedisME: colorText(share.color, 'RedisME', true) }),
 )
 
+// 成功输出统一绿色；raw 空结果保留空行占位
+function formatCommandResult(data: string): string {
+  if (outputMode.value === 'raw' && data === '') {
+    return colorText('var(--el-color-success)', '<br/>')
+  }
+  const html = data.split(/\r?\n/).join('<br/>')
+  return colorText('var(--el-color-success)', html)
+}
+
 // 定制化执行命令
 async function execCommand(command: string): Promise<string> {
   if (!canEdit.value && !isReadonlyCommand(command)) {
@@ -39,11 +58,15 @@ async function execCommand(command: string): Promise<string> {
   }
 
   try {
-    const param = { command, node: node.value, autoBroadcast: autoBroadcast.value }
+    const param = {
+      command,
+      node: node.value,
+      autoBroadcast: autoBroadcast.value,
+      outputMode: outputMode.value,
+    }
     const data = await meCommands.executeCommand(share.conn!.id, param, false)
     autoCopyIfNeed(data)
-    const html = data.split(/\r?\n/).join('<br/>')
-    return colorText('var(--el-color-success)', html)
+    return formatCommandResult(data)
   } catch (e: unknown) {
     autoCopyIfNeed(e)
     return colorText('var(--el-color-error)', `(error) ${String(e)}`)
@@ -144,8 +167,17 @@ const keyShortcuts = computed(() => getTerminalShortcuts(t))
 
     <!-- 工具栏 -->
     <div class="tool me-flex">
+      <el-tooltip :content="t('redisTerminal.outputModeHint')" placement="top-end">
+        <el-select v-model="outputMode" size="small" style="width: 70px">
+          <el-option
+            v-for="item in outputModeOptions"
+            :key="item.value"
+            :label="t(item.labelKey)"
+            :value="item.value" />
+        </el-select>
+      </el-tooltip>
       <el-tooltip :content="t('redisTerminal.autoCopyHint')" placement="top-end">
-        <el-checkbox v-model="autoCopy" />
+        <el-checkbox v-model="autoCopy" style="margin-left: 10px" />
       </el-tooltip>
       <me-icon
         class="icon-btn"
@@ -281,6 +313,7 @@ const keyShortcuts = computed(() => getTerminalShortcuts(t))
     right: 10px;
     bottom: 0;
     z-index: 10;
+    align-items: center;
   }
 }
 </style>

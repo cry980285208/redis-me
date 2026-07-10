@@ -1,5 +1,7 @@
 use crate::utils::error::AppError;
 use crate::utils::model::*;
+
+pub use crate::utils::redis_cli_tty::redis_value_to_cli_display;
 use anyhow::bail;
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
