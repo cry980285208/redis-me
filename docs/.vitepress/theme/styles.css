@@ -120,8 +120,6 @@
 .VPHero {
   position: relative;
   z-index: 2;
-  overflow-x: clip;
-  overflow-y: visible;
 }
 
 .VPHero .container {
