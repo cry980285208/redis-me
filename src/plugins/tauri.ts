@@ -48,7 +48,7 @@ const initSettings = {
 
   // 扩展设置
   keyScanCount: 1000,
-  fieldScanCount: 10,
+  fieldScanCount: 100,
   keyShow: 'tree',
   keySort: 'count',
   keyHeight: 20,

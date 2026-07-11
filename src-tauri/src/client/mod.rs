@@ -167,7 +167,7 @@ mod tests {
 
         pipe.set("field-scan:string", "字段扫描字符串类型 😄")
             .ignore();
-        for i in 0..600 {
+        for i in 0..9999 {
             // 大于512个
             pipe.hset("field-scan:hash", format!("k{i}"), format!("v{i}"))
                 .ignore();
@@ -190,7 +190,7 @@ mod tests {
 
         pipe.set("field-scan:string", "字段扫描字符串类型 😄")
             .ignore();
-        for i in 0..555 {
+        for i in 0..9999 {
             // 大于512个
             pipe.hset("field-scan:hash", format!("k{i}"), format!("v{i}"))
                 .ignore();

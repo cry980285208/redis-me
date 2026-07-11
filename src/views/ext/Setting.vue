@@ -114,7 +114,7 @@ const baseDefaultSettings = {
 
 const moreDefaultSettings = {
   keyScanCount: 1000,
-  fieldScanCount: 20,
+  fieldScanCount: 100,
   keyShow: 'tree',
   keySort: 'count',
   keyHeight: 20,
