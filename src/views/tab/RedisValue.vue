@@ -1158,8 +1158,14 @@ function showGroups() {
 }
 
 const hashKeysRef = useTemplateRef('hashKeysRef')
+function hashListValFmt() {
+  return toWireFormat(viewFmtForField(bytesFormat.value))
+}
 function showAllHashKeys() {
-  hashKeysRef.value?.open(toWireFormat(viewFmtForField(bytesFormat.value)))
+  hashKeysRef.value?.open(hashListValFmt(), 'keys')
+}
+function showAllHashValues() {
+  hashKeysRef.value?.open(hashListValFmt(), 'values')
 }
 // #endregion
 
@@ -1458,6 +1464,13 @@ onUnmounted(() => {
                 @click="showAllHashKeys"
                 style="margin-left: 10px">
                 {{ t('redisValue.allHashKeys') }}
+              </el-button>
+              <el-button
+                v-if="hashType"
+                icon="el-icon-document"
+                @click="showAllHashValues"
+                style="margin-left: 10px">
+                {{ t('redisValue.allHashValues') }}
               </el-button>
               <el-button icon="el-icon-plus" @click="fieldAdd" style="margin-left: 10px">{{
                 t('redisValue.insertRow')
@@ -1781,7 +1794,7 @@ onUnmounted(() => {
 
     <!-- Stream 消费者组 -->
     <TableGroup ref="tableGroupRef" />
-    <!-- Hash 全量字段名（HKEYS） -->
+    <!-- Hash 全量字段名/值（HKEYS/HVALS） -->
     <TableHashKeys ref="hashKeysRef" />
     <!-- 值编辑器快捷键说明 -->
     <ValueShortcut ref="valueShortcutRef" />

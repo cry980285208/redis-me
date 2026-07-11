@@ -244,6 +244,8 @@ function defaultPayload(cmd: CommandKey): Record<string, unknown> {
       return { id: connIdForDefaults(), param: { ...minimalFieldGet } }
     case 'hashKeys':
       return { id: connIdForDefaults(), param: { ...minimalHashKeys } }
+    case 'hashValues':
+      return { id: connIdForDefaults(), param: { ...minimalHashKeys } }
     case 'fieldDel':
       return { id: connIdForDefaults(), param: { ...minimalFieldDel } }
     case 'getFieldAsCommand':

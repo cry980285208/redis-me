@@ -181,6 +181,10 @@ impl MeClient for MeSingle {
         hash_keys0(self.get_conn()?, param)
     }
 
+    fn hash_values(&self, param: RedisHashKeys) -> AnyResult<Vec<String>> {
+        hash_values0(self.get_conn()?, param)
+    }
+
     fn field_del(&self, param: RedisFieldDel) -> AnyResult<()> {
         field_del0(self.get_conn()?, param)
     }

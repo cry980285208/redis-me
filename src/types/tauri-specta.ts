@@ -34,6 +34,7 @@ export const commands = {
 	fieldSet: (id: string, param: RedisFieldSet_Deserialize) => typedError<null, string>(__TAURI_INVOKE("field_set", { id, param })),
 	fieldGet: (id: string, param: RedisFieldGet_Deserialize) => typedError<RedisFieldValue, string>(__TAURI_INVOKE("field_get", { id, param })),
 	hashKeys: (id: string, param: RedisHashKeys_Deserialize) => typedError<string[], string>(__TAURI_INVOKE("hash_keys", { id, param })),
+	hashValues: (id: string, param: RedisHashKeys_Deserialize) => typedError<string[], string>(__TAURI_INVOKE("hash_values", { id, param })),
 	fieldDel: (id: string, param: RedisFieldDel_Deserialize) => typedError<null, string>(__TAURI_INVOKE("field_del", { id, param })),
 	executeCommand: (id: string, param: RedisCommand) => typedError<string, string>(__TAURI_INVOKE("execute_command", { id, param })),
 	aclUsers: (id: string) => typedError<string[], string>(__TAURI_INVOKE("acl_users", { id })),
@@ -472,13 +473,13 @@ export type RedisHashKeys = RedisHashKeys_Serialize | RedisHashKeys_Deserialize;
 
 export type RedisHashKeys_Deserialize = {
 	key: RedisKey_Deserialize,
-	/**  Hash 字段名解码格式，与 field_get / fieldScan 一致 */
+	/**  Hash 字段名/值解码格式，与 field_get / fieldScan 一致 */
 	valFmt: BytesFormat | null,
 };
 
 export type RedisHashKeys_Serialize = {
 	key: RedisKey_Serialize,
-	/**  Hash 字段名解码格式，与 field_get / fieldScan 一致 */
+	/**  Hash 字段名/值解码格式，与 field_get / fieldScan 一致 */
 	valFmt: BytesFormat | null,
 };
 

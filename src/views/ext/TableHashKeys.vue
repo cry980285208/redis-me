@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/** Hash 全量字段名（HKEYS）弹框：me-table 前端分页，避免万级字段卡顿 */
+/** Hash 全量字段名/值（HKEYS/HVALS）弹框：me-table 前端分页，避免万级卡顿 */
 import { computed, inject, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -7,36 +7,55 @@ import { shareProvideKey } from '@/types/me-interface'
 import type { BytesFormat } from '@/types/tauri-specta'
 import { meCommands, meErr } from '@/utils/util'
 
+type HashListMode = 'keys' | 'values'
+
 const { t } = useI18n()
 const share = inject(shareProvideKey)!
 
 const visible = ref(false)
 const loading = ref(false)
-const keyList = ref<string[]>([])
+const mode = ref<HashListMode>('keys')
+const itemList = ref<string[]>([])
 const keyword = ref('')
+
+const columnProp = computed(() => (mode.value === 'keys' ? 'key' : 'value'))
 
 const displayList = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
-  const rows = kw ? keyList.value.filter(k => k.toLowerCase().includes(kw)) : keyList.value
-  return rows.map(key => ({ key }))
+  const rows = kw ? itemList.value.filter(s => s.toLowerCase().includes(kw)) : itemList.value
+  const prop = columnProp.value
+  return rows.map(text => ({ [prop]: text }))
 })
 
 const dialogTitle = computed(() => {
-  const label = t('redisValue.allHashKeys')
+  const label = mode.value === 'keys' ? t('redisValue.allHashKeys') : t('redisValue.allHashValues')
   if (loading.value) return label
-  return `${label} (${keyList.value.length})`
+  return `${label} (${itemList.value.length})`
 })
 
-async function open(valFmt: BytesFormat | null) {
+const dialogIcon = computed(() => (mode.value === 'keys' ? 'el-icon-key' : 'el-icon-document'))
+
+const emptyText = computed(() =>
+  mode.value === 'keys' ? t('redisValue.hashKeysEmpty') : t('redisValue.hashValuesEmpty'),
+)
+
+const exportName = computed(() => (mode.value === 'keys' ? 'hash-keys' : 'hash-values'))
+
+async function open(valFmt: BytesFormat | null, listMode: HashListMode = 'keys') {
   const conn = share.conn
   const redisKey = share.redisKey
   if (!conn || !redisKey) return
 
+  mode.value = listMode
   visible.value = true
   loading.value = true
   keyword.value = ''
+  const param = { key: redisKey, valFmt }
   try {
-    keyList.value = await meCommands.hashKeys(conn.id, { key: redisKey, valFmt })
+    itemList.value =
+      listMode === 'keys'
+        ? await meCommands.hashKeys(conn.id, param)
+        : await meCommands.hashValues(conn.id, param)
   } catch (e) {
     visible.value = false
     meErr(e)
@@ -49,7 +68,7 @@ defineExpose({ open })
 </script>
 
 <template>
-  <me-dialog :title="dialogTitle" icon="el-icon-key" v-model="visible" width="700">
+  <me-dialog :title="dialogTitle" :icon="dialogIcon" v-model="visible" width="700">
     <div v-loading="loading" class="table-hash-keys">
       <el-input v-model="keyword" :placeholder="t('redisValue.tableKeyword')" clearable />
       <div class="table-hash-keys-main">
@@ -57,15 +76,19 @@ defineExpose({ open })
           v-if="displayList.length"
           layout="sizes, prev, pager, next, jumper"
           :data="displayList"
-          export-name="hash-keys"
+          :export-name="exportName"
           height="100%"
           stripe
           border
-          :default-sort="{ prop: 'key', order: 'ascending' }">
+          :default-sort="{ prop: columnProp, order: 'ascending' }">
           <el-table-column type="index" label="#" width="60" align="center" />
-          <el-table-column :label="t('redisValue.key')" prop="key" show-overflow-tooltip sortable />
+          <el-table-column
+            :label="mode === 'keys' ? t('redisValue.key') : t('redisValue.value')"
+            :prop="columnProp"
+            show-overflow-tooltip
+            sortable />
         </me-table>
-        <el-empty v-else-if="!loading" :description="t('redisValue.hashKeysEmpty')" />
+        <el-empty v-else-if="!loading" :description="emptyText" />
       </div>
     </div>
   </me-dialog>

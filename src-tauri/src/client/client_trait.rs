@@ -75,6 +75,8 @@ pub trait MeClient: Send + Sync {
 
     fn hash_keys(&self, param: RedisHashKeys) -> AnyResult<Vec<String>>;
 
+    fn hash_values(&self, param: RedisHashKeys) -> AnyResult<Vec<String>>;
+
     fn field_del(&self, param: RedisFieldDel) -> AnyResult<()>;
 
     fn execute_command(&self, param: RedisCommand) -> AnyResult<String>;
@@ -969,6 +971,25 @@ pub fn hash_keys0(
     Ok(fields
         .into_iter()
         .map(|f| format_bytes(&f, &val_fmt))
+        .collect())
+}
+
+/// Hash 全量字段值：HVALS，按 val_fmt 格式化后返回
+pub fn hash_values0(
+    mut conn: MutexGuard<impl Commands>,
+    param: RedisHashKeys,
+) -> AnyResult<Vec<String>> {
+    let key = param.key;
+    let key_type: ValueType = conn.key_type(&key)?;
+    if key_type != ValueType::Hash {
+        handle_other_value_type(&key_type, &key)?;
+        unreachable!()
+    }
+    let val_fmt = param.val_fmt.as_ref().cloned().unwrap_or_default();
+    let values: Vec<Vec<u8>> = redis::cmd("HVALS").arg(&key).query(&mut conn)?;
+    Ok(values
+        .into_iter()
+        .map(|v| format_bytes(&v, &val_fmt))
         .collect())
 }
 

@@ -583,10 +583,10 @@ api_model!(RedisFieldSet {
     val_fmt: Option<BytesFormat>,
 });
 
-// 字段单条读取（HGET / LINDEX / ZSCORE 等，供前端刷新表格单行）
+// Hash HKEYS / HVALS 共用参数
 api_model!(RedisHashKeys {
     key: RedisKey,
-    /// Hash 字段名解码格式，与 field_get / fieldScan 一致
+    /// Hash 字段名/值解码格式，与 field_get / fieldScan 一致
     val_fmt: Option<BytesFormat>,
 });
 
