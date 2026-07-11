@@ -812,6 +812,7 @@ export default {
     insertRow: 'Insert Row',
     allHashKeys: 'All Keys',
     hashKeysEmpty: 'No fields',
+    scanHashFieldTtlHint: 'On: show/edit field expiry; off: skip list fetch, preserve on save',
     id: 'ID',
     key: 'Key',
     ttl: 'TTL',

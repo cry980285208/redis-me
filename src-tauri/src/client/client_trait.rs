@@ -163,6 +163,32 @@ fn field_scan_include_meta(param: &FieldScanParam) -> bool {
     param.include_meta.unwrap_or(true)
 }
 
+fn field_scan_include_field_ttl(param: &FieldScanParam, httl_supported: bool) -> bool {
+    resolve_include_field_ttl(param.include_field_ttl, httl_supported)
+}
+
+/// 是否执行 HTTL/HEXPIRE：须同时满足服务端能力与调用方 opt（默认 false）
+fn resolve_include_field_ttl(opt: Option<bool>, httl_supported: bool) -> bool {
+    httl_supported && opt.unwrap_or(false)
+}
+
+/// HSET 前读取 Hash 字段剩余过期秒数；无字段级 TTL 或已永久则返回 None
+fn hash_field_ttl_to_preserve(
+    conn: &mut impl Commands,
+    key: &RedisKey,
+    field: &[u8],
+    httl_supported: bool,
+) -> AnyResult<Option<i64>> {
+    if !httl_supported {
+        return Ok(None);
+    }
+    let ttl_values = conn.httl::<_, _, Vec<IntegerReplyOrNoOp>>(key, &[field])?;
+    Ok(match ttl_values.first() {
+        Some(IntegerReplyOrNoOp::IntegerReply(ttl)) if *ttl > 0 => Some(*ttl as i64),
+        _ => None,
+    })
+}
+
 fn resolve_field_scan_key_type(
     conn: &mut MutexGuard<impl Commands>,
     key: &RedisKey,
@@ -228,7 +254,7 @@ pub fn field_scan_0_exact(
     key_type: &ValueType,
     param: &FieldScanParam,
     bytes_format: &BytesFormat,
-    httl_supported: bool,
+    include_field_ttl: bool,
 ) -> AnyResult<Option<(serde_json::Value, ScanCursor)>> {
     if !param.exact {
         return Ok(None);
@@ -245,7 +271,7 @@ pub fn field_scan_0_exact(
                 Some(bytes) => ui_hash_value(&[(member.as_bytes().to_vec(), bytes)], bytes_format),
                 None => Vec::new(),
             };
-            if httl_supported && !items.is_empty() {
+            if include_field_ttl && !items.is_empty() {
                 let field_bytes = member.as_bytes().to_vec();
                 if let Ok(ttl_values) =
                     conn.httl::<_, _, Vec<IntegerReplyOrNoOp>>(key, &[&field_bytes])
@@ -295,6 +321,7 @@ pub fn field_scan0(
     httl_supported: bool,
 ) -> AnyResult<FieldScanResult> {
     let bytes_format = param.bytes_format.as_ref().cloned().unwrap_or_default();
+    let include_field_ttl = field_scan_include_field_ttl(&param, httl_supported);
 
     // String, Json, List, Stream 直接获取；Hash/Set/ZSet 走 exact 或 *SCAN
     let (mut value, key_type, mut cc, length, value_truncated) =
@@ -306,7 +333,7 @@ pub fn field_scan0(
             &key_type,
             &param,
             &bytes_format,
-            httl_supported,
+            include_field_ttl,
         )? {
             value = Some(exact_value);
             cc = exact_cc;
@@ -329,7 +356,7 @@ pub fn field_scan0(
                 new_value,
                 &param.key,
                 &bytes_format,
-                httl_supported,
+                include_field_ttl,
             )?;
             cc.now_cursor = next_cursor;
             if next_cursor == 0 {
@@ -501,7 +528,7 @@ pub fn field_scan_2_value(
     new_value: Value,
     key: &RedisKey,
     bytes_format: &BytesFormat,
-    httl_supported: bool,
+    include_field_ttl: bool,
 ) -> AnyResult<usize> {
     let new_count = match key_type {
         ValueType::Hash => {
@@ -509,8 +536,7 @@ pub fn field_scan_2_value(
             let new_count = value.len();
             let mut new_value = ui_hash_value(&value, bytes_format);
 
-            // 补充hash字段ttl（Redis/Valkey >= 7.4）
-            if httl_supported {
+            if include_field_ttl {
                 let fields: Vec<&Vec<u8>> = value.iter().map(|(f, _)| f).collect();
                 if let Ok(ttl_values) = conn.httl::<_, _, Vec<IntegerReplyOrNoOp>>(key, &fields) {
                     for (item, ttl_reply) in new_value.iter_mut().zip(ttl_values) {
@@ -815,12 +841,23 @@ pub fn field_set0(
 
     match key_type {
         ValueType::Hash => {
-            // HSET 会清除字段级的 TTL，将其置为 -1（永久）。因此只需要处理>0的场景
+            // HSET 会清除字段级 TTL；UI 开启时用用户输入，未开启则写前 HTTL、写后 HEXPIRE 补回
             let key_bytes = parse_bytes(&param.field_key, &val_fmt)?;
             let value_bytes = parse_bytes(&param.field_value, &val_fmt)?;
+            let include_field_ttl = resolve_include_field_ttl(param.include_field_ttl, httl_supported);
+            let preserve_ttl = if httl_supported && !include_field_ttl {
+                hash_field_ttl_to_preserve(&mut conn, &key, &key_bytes, httl_supported)?
+            } else {
+                None
+            };
             let _: () = conn.hset(&key, &key_bytes, &value_bytes)?;
-            if httl_supported && param.field_ttl > 0 {
-                let _: () = conn.hexpire(&key, param.field_ttl, ExpireOption::NONE, &key_bytes)?;
+            if httl_supported {
+                if include_field_ttl && param.field_ttl > 0 {
+                    let _: () =
+                        conn.hexpire(&key, param.field_ttl, ExpireOption::NONE, &key_bytes)?;
+                } else if let Some(ttl) = preserve_ttl {
+                    let _: () = conn.hexpire(&key, ttl, ExpireOption::NONE, &key_bytes)?;
+                }
             }
         }
         ValueType::List => {
@@ -864,7 +901,8 @@ pub fn field_get0(
                 hash_key: param.field_key.clone(),
             })?;
             let mut field_ttl = -1i64;
-            if httl_supported {
+            let include_field_ttl = resolve_include_field_ttl(param.include_field_ttl, httl_supported);
+            if include_field_ttl {
                 if let Ok(ttl_values) =
                     conn.httl::<_, _, Vec<IntegerReplyOrNoOp>>(&key, &[&field_bytes])
                 {

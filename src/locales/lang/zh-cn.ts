@@ -799,6 +799,7 @@ export default {
     insertRow: '插入行',
     allHashKeys: '所有键',
     hashKeysEmpty: '暂无字段',
+    scanHashFieldTtlHint: '开：列表显示并可编辑字段过期；关：列表不拉取，保存仍保留原过期',
     id: 'ID',
     key: '键',
     ttl: '过期',

@@ -339,6 +339,8 @@ api_model!(FieldScanParam {
     include_meta: Option<bool>,
     /// 续扫时传入（include_meta=false），避免重复 TYPE
     key_type: Option<String>,
+    /// Hash 扫描是否附带 HTTL（默认 false 以提速）
+    include_field_ttl: Option<bool>,
 });
 
 api_model!(XInfoGroup{
@@ -575,6 +577,8 @@ api_model!(RedisFieldSet {
     field_value: String,
     field_score: f64,
     field_ttl: i64, // 字段 TTL（秒），仅 Redis/Valkey >= 7.4
+    /// true：界面展示/编辑字段 TTL；false：不拉取列表 TTL，保存时仍保留原有过期
+    include_field_ttl: Option<bool>,
     /// 编辑字段时解析用户输入（含 Hash 字段名）；Redis 键由 `key` 承载，不再经此格式解析
     val_fmt: Option<BytesFormat>,
 });
@@ -592,6 +596,8 @@ api_model!(RedisFieldGet {
     field_key: String,
     /// ZSet 成员定位；Hash 用 field_key、List 用 field_index
     field_value: String,
+    /// 为 true 时对 Hash 执行 HTTL；默认 false
+    include_field_ttl: Option<bool>,
     val_fmt: Option<BytesFormat>,
 });
 

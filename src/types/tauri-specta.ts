@@ -173,6 +173,8 @@ export type FieldScanParam_Deserialize = {
 	includeMeta: boolean | null,
 	/**  续扫时传入（include_meta=false），避免重复 TYPE */
 	keyType: string | null,
+	/**  Hash 扫描是否附带 HTTL（默认 false 以提速） */
+	includeFieldTtl: boolean | null,
 };
 
 export type FieldScanParam_Serialize = {
@@ -189,6 +191,8 @@ export type FieldScanParam_Serialize = {
 	includeMeta: boolean | null,
 	/**  续扫时传入（include_meta=false），避免重复 TYPE */
 	keyType: string | null,
+	/**  Hash 扫描是否附带 HTTL（默认 false 以提速） */
+	includeFieldTtl: boolean | null,
 };
 
 export type FieldScanResult = {
@@ -411,6 +415,8 @@ export type RedisFieldGet_Deserialize = {
 	fieldKey: string,
 	/**  ZSet 成员定位；Hash 用 field_key、List 用 field_index */
 	fieldValue: string,
+	/**  为 true 时对 Hash 执行 HTTL；默认 false */
+	includeFieldTtl: boolean | null,
 	valFmt: BytesFormat | null,
 };
 
@@ -420,6 +426,8 @@ export type RedisFieldGet_Serialize = {
 	fieldKey: string,
 	/**  ZSet 成员定位；Hash 用 field_key、List 用 field_index */
 	fieldValue: string,
+	/**  为 true 时对 Hash 执行 HTTL；默认 false */
+	includeFieldTtl: boolean | null,
 	valFmt: BytesFormat | null,
 };
 
@@ -433,6 +441,8 @@ export type RedisFieldSet_Deserialize = {
 	fieldValue: string,
 	fieldScore: number | null,
 	fieldTtl: number,
+	/**  true：界面展示/编辑字段 TTL；false：不拉取列表 TTL，保存时仍保留原有过期 */
+	includeFieldTtl: boolean | null,
 	/**  编辑字段时解析用户输入（含 Hash 字段名）；Redis 键由 `key` 承载，不再经此格式解析 */
 	valFmt: BytesFormat | null,
 };
@@ -445,6 +455,8 @@ export type RedisFieldSet_Serialize = {
 	fieldValue: string,
 	fieldScore: number | null,
 	fieldTtl: number,
+	/**  true：界面展示/编辑字段 TTL；false：不拉取列表 TTL，保存时仍保留原有过期 */
+	includeFieldTtl: boolean | null,
 	/**  编辑字段时解析用户输入（含 Hash 字段名）；Redis 键由 `key` 承载，不再经此格式解析 */
 	valFmt: BytesFormat | null,
 };

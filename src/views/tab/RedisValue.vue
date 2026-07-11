@@ -170,6 +170,9 @@ const stringType = computed(() => 'string' === redisValue.value?.type)
 const jsonType = computed(() => 'json' === redisValue.value?.type)
 const streamType = computed(() => 'stream' === redisValue.value?.type)
 const hashType = computed(() => 'hash' === redisValue.value?.type)
+/** 服务端支持 HTTL 时，可选是否在 fieldScan 中拉取 Hash 字段 TTL */
+const scanHashFieldTtl = ref(false)
+const showHashFieldTtlOption = computed(() => hashType.value && share.capabilities.httlSupported)
 const canSave = computed(
   () =>
     canEdit.value &&
@@ -472,6 +475,7 @@ function resetParam() {
   tableKeyword.value = ''
   fieldKeyword.value = ''
   fieldExact.value = false
+  scanHashFieldTtl.value = false
 }
 
 /** 续扫时 cursor 非空，跳过 TYPE/TTL/MEMORY/HLEN 等元数据命令 */
@@ -499,7 +503,13 @@ function buildFieldScanParam() {
     bytesFormat: toWireFormat(bytesFormat.value),
     includeMeta,
     keyType: includeMeta ? null : (type ?? null),
+    includeFieldTtl: scanHashFieldTtl.value,
   }
+}
+
+function toggleHashFieldTtl() {
+  scanHashFieldTtl.value = !scanHashFieldTtl.value
+  void restartFieldScan()
 }
 
 function dismissValueTruncated() {
@@ -946,6 +956,7 @@ function buildFieldGetParam(row?: ValueTableRow): RedisFieldGet_Deserialize | nu
     fieldKey: fieldEditKey.value,
     fieldValue: rv.type === 'zset' && row ? String(row.value ?? '') : '',
     valFmt: toWireFormat(viewFmtForField(bytesFormat.value)),
+    includeFieldTtl: rv.type === 'hash' ? scanHashFieldTtl.value : null,
   }
 }
 
@@ -1018,7 +1029,11 @@ function applyFieldGetResult(rv: FieldScanViewState, data: RedisFieldValue, row:
     const rows = fieldValueRows(rv.value) as ValueTableRow[]
     const idx = rows.findIndex(r => r.key === (row.key || fieldEditKey.value))
     if (idx >= 0) {
-      rows[idx] = { key: data.fieldKey, value: data.fieldValue, ttl: data.fieldTtl }
+      rows[idx] = {
+        key: data.fieldKey,
+        value: data.fieldValue,
+        ttl: scanHashFieldTtl.value ? data.fieldTtl : (rows[idx].ttl ?? row.ttl),
+      }
     }
   } else if (rv.type === 'list') {
     const rows = fieldValueRows(rv.value)
@@ -1420,6 +1435,16 @@ onUnmounted(() => {
 
             <!-- 右侧更多+插入行 -->
             <div class="table-toolbar-actions">
+              <me-button
+                v-if="showHashFieldTtlOption"
+                icon="el-icon-clock"
+                :info="t('redisValue.scanHashFieldTtlHint')"
+                placement="top"
+                :type="scanHashFieldTtl ? 'primary' : 'default'"
+                style="margin-left: 10px"
+                @click="toggleHashFieldTtl">
+                HTTL
+              </me-button>
               <el-button
                 icon="el-icon-grid"
                 @click="showGroups"
@@ -1526,7 +1551,7 @@ onUnmounted(() => {
                 :label="t('redisValue.ttl')"
                 width="140"
                 prop="ttl"
-                v-if="redisValue.type === 'hash' && share.capabilities.httlSupported">
+                v-if="showHashFieldTtlOption && scanHashFieldTtl">
                 <template #default="scope">
                   {{ formatFieldTtl(scope.row.ttl) }}
                 </template>
@@ -1592,6 +1617,7 @@ onUnmounted(() => {
             <FieldSet
               ref="fieldSetRef"
               :pretty="isPretty"
+              :hash-field-ttl-enabled="scanHashFieldTtl"
               @success="onFieldSetSuccess"
               @refreshed="onFieldSetRefreshed"
               @closed="fieldSetInit"
