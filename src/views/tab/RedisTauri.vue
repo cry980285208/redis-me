@@ -77,16 +77,21 @@ const emptyScanCursor: ScanCursor = {
   finished: false,
 }
 
-const minimalScanParam: ScanParam = { match: '*', type: null, cursor: emptyScanCursor }
+const minimalScanParam: ScanParam = {
+  match: '*',
+  type: null,
+  cursor: emptyScanCursor,
+  exact: false,
+}
 
 const dummyKey: RedisKey_Deserialize = { key: 'k', bytes: '' }
 
 const minimalFieldScan: FieldScanParam_Deserialize = {
   key: dummyKey,
-  hashKey: null,
   count: 100,
   cursor: null,
-  loadAll: false,
+  match: '*',
+  exact: false,
   meta: null,
   bytesFormat: null,
   valueByteLimit: null,

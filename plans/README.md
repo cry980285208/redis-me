@@ -24,6 +24,12 @@
 | 09   | [09_command-export-format.md](./09_command-export-format.md)           | 批量导出/导入 CSV 与 CMD         |
 | 10   | [10_cluster-numbered-databases.md](./10_cluster-numbered-databases.md) | 集群多库（Valkey 9，连接时指定） |
 
+## 待实现（编号）
+
+| 编号 | 文件                                                   | 概要                                      |
+| ---- | ------------------------------------------------------ | ----------------------------------------- |
+| 11   | [11_field-scan-pattern.md](./11_field-scan-pattern.md) | Hash/Set/ZSet 字段扫描 pattern + 前端循环 |
+
 ## 分析 / 参考
 
 | 文件                                                                                   | 说明         |

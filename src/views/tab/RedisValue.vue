@@ -5,6 +5,7 @@
  */
 // #region 导入
 import dayjs from 'dayjs'
+import { minimatch } from 'minimatch'
 import {
   computed,
   inject,
@@ -47,6 +48,12 @@ import {
   viewFmtForField,
   type ViewBytesFormat,
 } from '@/utils/format'
+import {
+  buildScanPattern,
+  buildLocalFilterPattern,
+  computeScanProgress,
+  MINIMATCH_SCAN_OPTS,
+} from '@/utils/redis-glob'
 import { getValueShortcuts } from '@/utils/shortcut'
 import {
   bus,
@@ -63,6 +70,7 @@ import {
   meJsonNormal,
   meOk,
   meWarn,
+  sleep,
 } from '@/utils/util'
 import TableGroup from '@/views/ext/TableGroup.vue'
 import TTLSet from '@/views/ext/TTLSet.vue'
@@ -107,10 +115,36 @@ const canEdit = computed(() => !share.readonly)
 const redisValue = ref<FieldScanViewState | null>(null)
 const cursor = ref<ScanCursor | null>(null) // list/hash/set/zset/stream 分页游标
 const loading = ref(false)
-const hashKey = ref('') // hash 子键 / stream 起始 ID
-const withHashKey = ref(false) // 是否处于「单字段」模式（hashKey 非空）
 const isPretty = ref(true)
 const tableKeyword = ref('')
+/** Hash/Set/ZSet 服务端 field 扫描关键词 */
+const fieldKeyword = ref('')
+const fieldExact = ref(false)
+const fieldMatch = computed(() => buildScanPattern(fieldKeyword.value, fieldExact.value))
+const scanCancelled = ref(false)
+const scanPaused = ref(false)
+const scanLoadAll = ref(false)
+const scanBatchCount = ref(0)
+const SCAN_CONTROL_MIN_BATCHES = 10
+const showScanControl = computed(
+  () =>
+    supportsFieldServerScan(redisValue.value?.type) &&
+    (scanPaused.value || (loading.value && scanBatchCount.value >= SCAN_CONTROL_MIN_BATCHES)),
+)
+const scanToggleTip = computed(() =>
+  loading.value ? t('keyMain.pauseScan') : t('keyMain.resumeScan'),
+)
+const FIELD_SCAN_FETCH_COUNT = computed(() => meTauri.settings.fieldScanCount as number)
+/** 进度环估算：与 settings.fieldScanCount 一致，不用键扫描的 scan_0_batch_count */
+const scanBatchSize = computed(() => FIELD_SCAN_FETCH_COUNT.value)
+const scanProgress = computed(() =>
+  computeScanProgress(
+    scanBatchCount.value,
+    scanBatchSize.value,
+    redisValue.value?.length ?? 0,
+    Boolean(cursor.value?.finished),
+  ),
+)
 const suppressCodeUpdate = ref(false)
 /** fieldScan 成功后递增，强制 me-code 与服务器同步（未保存时 modelValue 字符串可能不变） */
 const valueEditorRemountKey = ref(0)
@@ -133,13 +167,9 @@ const meta = ref({ maxId: '', minId: '' })
 // #endregion
 
 // #region 键类型（派生）
-const hashType = computed(() => 'hash' === redisValue.value?.type)
 const stringType = computed(() => 'string' === redisValue.value?.type)
 const jsonType = computed(() => 'json' === redisValue.value?.type)
 const streamType = computed(() => 'stream' === redisValue.value?.type)
-const stringTypeOrWithHashKey = computed(
-  () => 'string' === redisValue.value?.type || withHashKey.value,
-)
 const canSave = computed(
   () =>
     canEdit.value &&
@@ -152,6 +182,38 @@ const canSave = computed(
 type FieldViewType = 'json' | 'table'
 const viewTypeList: FieldViewType[] = ['json', 'table']
 const viewType = ref<FieldViewType>('json')
+
+function supportsFieldServerScan(type: string | undefined) {
+  return type === 'hash' || type === 'set' || type === 'zset'
+}
+
+function pauseFieldScan() {
+  scanCancelled.value = true
+  scanPaused.value = true
+}
+
+function onFieldScanAction() {
+  if (loading.value) pauseFieldScan()
+  else if (scanPaused.value) {
+    scanPaused.value = false
+    void refreshKey(false, true, scanLoadAll.value, false)
+  }
+}
+
+/** Enter / 搜索图标：保留 keyword，中断进行中的扫描后重扫（无 F5 快捷键） */
+function restartFieldScan() {
+  return refreshKey(false, false, false, true)
+}
+
+async function onFieldSearch() {
+  await restartFieldScan()
+}
+
+/** 菜单 / 底部按钮手动刷新：保留 fieldKeyword，可 restart 中断扫描 */
+function manualRefreshKey() {
+  prepareManualKeyRefresh()
+  return restartFieldScan()
+}
 
 /** 支持表格视图的类型（与底部 segmented 可见条件一致） */
 function supportsTableView(type: string | undefined) {
@@ -168,7 +230,7 @@ function supportsFieldRowRefresh(type: string | undefined) {
 /** 切换键或 reset 时，按 settings.fieldShow 决定默认视图 */
 function applyDefaultViewType() {
   const rv = redisValue.value
-  if (!rv || stringTypeOrWithHashKey.value || jsonType.value) {
+  if (!rv || stringType.value || jsonType.value) {
     viewType.value = 'json'
     return
   }
@@ -194,7 +256,7 @@ function onViewTypeChange(val: string | number | boolean) {
 
 // string / json 仅支持 JSON 视图，强制切回
 watchEffect(() => {
-  if (stringTypeOrWithHashKey.value || jsonType.value) {
+  if (stringType.value || jsonType.value) {
     viewType.value = 'json'
   }
 })
@@ -285,7 +347,7 @@ function syncDisplaySnapshot() {
 }
 
 async function refreshResolvedWireView() {
-  if (!stringTypeOrWithHashKey.value || !isCustomView(displayBytesFormat.value)) {
+  if (!stringType.value || !isCustomView(displayBytesFormat.value)) {
     resolvedWireView.value = ''
     customCodecFailed.value = false
     return
@@ -322,7 +384,7 @@ const showValue = computed(() => {
   if (obj === null || obj === undefined) return ''
 
   if (isPretty.value) {
-    if (stringTypeOrWithHashKey.value) {
+    if (stringType.value) {
       const str = stringWireDisplayText(displayWire.value)
       return meFormatDisplayValue(str, isPretty.value)
     }
@@ -330,14 +392,14 @@ const showValue = computed(() => {
   }
 
   if (
-    ('hash' === redisValue.value?.type && !withHashKey.value) ||
+    'hash' === redisValue.value?.type ||
     'zset' === redisValue.value?.type ||
     'json' === redisValue.value?.type ||
     'stream' === redisValue.value?.type
   ) {
     return JSON.stringify(obj)
   }
-  if (stringTypeOrWithHashKey.value) {
+  if (stringType.value) {
     return stringWireDisplayText(displayWire.value)
   }
   return obj.toString()
@@ -363,11 +425,10 @@ const dataList = computed(() => {
   if (rv === null || rv === undefined || rv.value === null || rv.value === undefined) return []
 
   const data: ValueTableRow[] = []
-  if (rv.type === 'list' || rv.type === 'set') {
-    fieldValueRows(rv.value).forEach(value => data.push({ value }))
-  } else if (rv.type === 'zset' || rv.type === 'stream' || rv.type === 'hash') {
-    fieldValueRows(rv.value).forEach(value => data.push(value as ValueTableRow))
-  }
+  fieldValueRows(rv.value).forEach(value => {
+    if (rv.type === 'list' || rv.type === 'set') data.push({ value })
+    else data.push(value as ValueTableRow)
+  })
   return data
 })
 
@@ -383,25 +444,46 @@ const filterDataList = computed(() => {
     return false
   })
 })
+
+/** 切换 exact 未 Enter 时本地 minimatch（与 KeyMain filterKeyList 一致） */
+const filterFieldPattern = computed(() =>
+  buildLocalFilterPattern(fieldKeyword.value, fieldExact.value, fieldMatch.value),
+)
+
+const filterFieldList = computed(() => {
+  if (!filterFieldPattern.value) return dataList.value
+  return dataList.value.filter(row => {
+    const name = row.key ? formatTableCell(row.key) : formatTableCell(row.value)
+    return minimatch(name, filterFieldPattern.value, MINIMATCH_SCAN_OPTS)
+  })
+})
+
+const tableDisplayList = computed(() => {
+  const type = redisValue.value?.type
+  if (type === 'hash' || type === 'set' || type === 'zset') return filterFieldList.value
+  return filterDataList.value
+})
 // #endregion
 
 // #region 键刷新 fieldScan
 
-/** 切换键或全量刷新时清空 hash 子键、表格筛选等 UI 状态 */
+/** 切换键或全量刷新时清空表格筛选等 UI 状态 */
 function resetParam() {
   tableKeyword.value = ''
-  hashKey.value = ''
-  withHashKey.value = false
+  fieldKeyword.value = ''
+  fieldExact.value = false
 }
 
-/** 组装 fieldScan 参数：游标分页、Stream 范围 meta、wire 字节格式 */
-function buildFieldScanParam(loadAll: boolean) {
+/** 组装 fieldScan 参数：count 来自 settings.fieldScanCount（HSCAN COUNT + 前端续扫阈值） */
+function buildFieldScanParam() {
+  const type = redisValue.value?.type
+  const serverScan = supportsFieldServerScan(type)
   return {
     key: share.redisKey!,
-    hashKey: hashKey.value,
     count: meTauri.settings.fieldScanCount ?? 10,
     cursor: cursor.value,
-    loadAll,
+    match: serverScan ? fieldMatch.value : '*',
+    exact: serverScan ? fieldExact.value : false,
     meta: meta.value,
     bytesFormat: toWireFormat(bytesFormat.value),
     valueByteLimit: VALUE_BYTE_LIMIT,
@@ -472,60 +554,104 @@ async function finalizeAfterFieldScan(reset: boolean, replaceData?: FieldScanRes
   loading.value = false
 }
 
+async function fieldScanCore(
+  useCursor: boolean,
+): Promise<{ count: number; replaceData?: FieldScanResult }> {
+  const data = await meCommands.fieldScan(share.conn!.id, buildFieldScanParam())
+  cursor.value = data.cursor
+  scanBatchCount.value++
+
+  if (useCursor) {
+    const prev = redisValue.value
+    if (prev && mergeFieldScanPage(prev, data)) {
+      return { count: fieldValueRows(data.value).length }
+    }
+  }
+  return { count: fieldValueRows(data.value).length, replaceData: data }
+}
+
+async function fieldScanAuto(fetchedCount = 0): Promise<void> {
+  if (!cursor.value || cursor.value.finished) return
+  if (scanCancelled.value) return
+  if (fetchedCount >= FIELD_SCAN_FETCH_COUNT.value) return
+
+  const { count } = await fieldScanCore(true)
+  await fieldScanAuto(fetchedCount + count)
+}
+
+async function fieldScanAll(): Promise<void> {
+  if (!cursor.value || cursor.value.finished) return
+  if (scanCancelled.value) return
+
+  await fieldScanCore(true)
+  await fieldScanAll()
+}
+
+function shouldFieldScanAuto(type: string | undefined, exact: boolean) {
+  if (exact || !type) return false
+  // Hash/Set/ZSet pattern 扫描、List/Stream 前端分页循环
+  return supportsFieldServerScan(type) || type === 'list' || type === 'stream'
+}
+
 /**
  * 拉取/刷新当前键（fieldScan → 更新 redisValue → 同步编辑器）。
- *
- * 典型调用：
- * - refreshKey() / refreshKey(true)：选中新键或切换 hashKey，从头 scan
- * - refreshKey(false)：同键刷新（改 bytesFormat、保存/删字段后）
- * - refreshKey(false, true)：加载更多（useCursor，追加一页）
- * - refreshKey(false, true, true)：加载全部
- *
- * @param reset 是否 resetParam + 重算 json/table 默认视图
- * @param useCursor 为 true 时保留 cursor，请求下一页并尝试 merge
- * @param loadAll 为 true 时后端一次返回剩余全部页（仍走 cursor 协议）
+ * - reset=true：切换键，清空 fieldKeyword / tableKeyword
+ * - restart=true：手动刷新 / Enter 搜索，保留 keyword 并中断进行中的扫描
+ * 值面板无 F5；F5 仅 KeyMain 刷新键列表。
  */
 async function refreshKey(
   reset: boolean = true,
   useCursor: boolean = false,
   loadAll: boolean = false,
+  restart: boolean = false,
 ) {
+  if (!share.conn || !share.redisKey) return
+
+  if (loading.value) {
+    if (!restart) return
+    scanCancelled.value = true
+    scanPaused.value = false
+    while (loading.value) {
+      await sleep(20)
+    }
+  }
+
   fieldSetInit()
-  // 刷新过程中 me-code 的 modelValue 会变，避免误写入 newValue
   suppressCodeUpdate.value = true
+  scanLoadAll.value = loadAll
 
   if (reset) {
     resetParam()
     forceFullValue.value = false
     valueTruncatedDismissed.value = false
   }
-  // 非「加载更多」时从第一页重新 scan
   if (!useCursor) cursor.value = null
 
   loading.value = true
-  // 有值则 finally 整包替换；undefined 表示 merge 成功或仅更新了 prev 字段
-  let replaceData: FieldScanResult | undefined
-  try {
-    const data = await meCommands.fieldScan(share.conn!.id, buildFieldScanParam(loadAll))
-    cursor.value = data.cursor
-    // hashKey 非空时进入「单字段」模式，UI 按 string 展示
-    withHashKey.value = !!hashKey.value
+  scanCancelled.value = false
+  if (!useCursor) scanPaused.value = false
 
-    if (useCursor) {
-      const prev = redisValue.value
-      if (!prev || !mergeFieldScanPage(prev, data)) {
-        replaceData = data
-      }
-    } else {
-      replaceData = data
+  try {
+    if (!useCursor) scanBatchCount.value = 0
+
+    const first = await fieldScanCore(useCursor)
+    if (first.replaceData) {
+      redisValue.value = toViewState(first.replaceData)
+    }
+
+    const scanType = redisValue.value?.type
+    if (loadAll) {
+      await fieldScanAll()
+    } else if (shouldFieldScanAuto(scanType, fieldExact.value)) {
+      await fieldScanAuto(first.count)
     }
 
     showMore.value = !cursor.value?.finished
-    // setTimer 用 ttl 启本地倒计时；merge 场景直接用 prev
-    const rvDone = replaceData ? toViewState(replaceData) : redisValue.value
+    const rvDone = redisValue.value
     if (rvDone) await setTimer(rvDone.ttl)
   } finally {
-    await finalizeAfterFieldScan(reset, replaceData)
+    await finalizeAfterFieldScan(reset)
+    if (cursor.value?.finished) scanPaused.value = false
   }
 }
 // #endregion
@@ -606,9 +732,7 @@ async function copyAsCommand() {
 }
 
 async function onFooterRefreshKey() {
-  if (loading.value) return
-  prepareManualKeyRefresh()
-  await refreshKey(false)
+  await manualRefreshKey()
   meOk(t('redisValue.refreshKeyOk'))
 }
 
@@ -670,8 +794,7 @@ function toggleFavorite() {
 
 function onKeyMoreCommand(command: string) {
   if (command === 'refreshKey') {
-    prepareManualKeyRefresh()
-    void refreshKey(false)
+    void manualRefreshKey()
   } else if (command === 'copyKey') {
     meCopy(showKey.value)
   } else if (command === 'copyValue') {
@@ -1025,8 +1148,8 @@ const textMemory = computed(() => {
 /** 与 textLength 同一位置：String/单字段为字节长度，集合类型为总数 */
 const textLength = computed(() => {
   const rv = redisValue.value
-  if (!rv || jsonType.value || (streamType.value && withHashKey.value)) return ''
-  if (stringTypeOrWithHashKey.value) {
+  if (!rv || jsonType.value) return ''
+  if (stringType.value) {
     return t('redisValue.textLength') + rv.length
   }
   if (rv.length <= 0) return ''
@@ -1035,8 +1158,8 @@ const textLength = computed(() => {
 
 const textEntries = computed(() => {
   const rv = redisValue.value
-  if (!rv || jsonType.value || stringTypeOrWithHashKey.value) return ''
-  const filtered = filterDataList.value.length
+  if (!rv || jsonType.value || stringType.value) return ''
+  const filtered = tableDisplayList.value.length
   const loaded = fieldValueRows(rv.value).length
   return t('redisValue.textEntries') + `${filtered} / ${loaded}`
 })
@@ -1075,6 +1198,7 @@ const keyShortcuts = computed(() => getValueShortcuts(t))
 // #endregion
 
 // #region 事件总线与生命周期
+/** 选中键时加载值（KEY_REFRESH）；与 KeyMain F5 刷新键列表无关 */
 const onKeyRefreshBus = () => {
   bytesFormat.value = 'utf8'
   void refreshKey()
@@ -1094,8 +1218,8 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <!-- 大部分Key都很快得到，element-loading-background设置为unset避免loading背景一闪而过，不友好  -->
-  <div class="redis-value" v-loading="loading" element-loading-background="unset">
+  <!-- 扫描进度由搜索框内的进度环展示，避免 loading 遮罩拦截暂停/继续操作 -->
+  <div class="redis-value">
     <template v-if="share.redisKey && redisValue">
       <!-- 上方键 -->
       <div class="value-header">
@@ -1121,19 +1245,6 @@ onUnmounted(() => {
                 placement="top"
                 @click.stop="updateTTL" />
             </template>
-          </el-input>
-
-          <el-input
-            type="text"
-            :placeholder="t('redisValue.optional')"
-            clearable
-            class="value-header-hash"
-            v-model="hashKey"
-            v-if="hashType || streamType"
-            @keyup.enter="refreshKey(false)">
-            <template #prepend>{{
-              streamType ? t('redisValue.streamId') : t('redisValue.hashKey')
-            }}</template>
           </el-input>
         </div>
 
@@ -1228,33 +1339,68 @@ onUnmounted(() => {
           style="flex-direction: column; height: 100%"
           v-else
           @click="onFieldPanelOutsideClick">
-          <div class="me-flex" style="width: 100%">
-            <!-- 左侧模糊筛选 -->
-            <div>
-              <el-input
-                v-model="tableKeyword"
-                :placeholder="t('redisValue.tableKeyword')"
-                clearable
-                :style="{ width: streamType ? '180px' : '300px' }" />
-            </div>
+          <div class="me-flex table-toolbar">
+            <el-input
+              v-if="supportsFieldServerScan(redisValue.type)"
+              v-model="fieldKeyword"
+              :placeholder="t('redisValue.fieldScanPlaceholder')"
+              :readonly="loading"
+              clearable
+              class="field-scan-input"
+              @keyup.enter="onFieldSearch">
+              <template #suffix>
+                <div class="keyword-suffix">
+                  <el-tooltip
+                    v-if="showScanControl"
+                    :content="scanToggleTip"
+                    placement="bottom"
+                    :show-after="1000">
+                    <div class="scan-control" @click.stop="onFieldScanAction">
+                      <el-progress
+                        type="circle"
+                        :percentage="scanProgress"
+                        :width="22"
+                        :stroke-width="2"
+                        :show-text="false"
+                        color="var(--el-color-danger)"
+                        class="scan-ring" />
+                      <me-icon
+                        :icon="loading ? 'el-icon-video-pause' : 'el-icon-video-play'"
+                        class="scan-icon" />
+                    </div>
+                  </el-tooltip>
+                  <el-tooltip
+                    :content="t('redisValue.fieldExactSearch')"
+                    placement="bottom"
+                    raw-content
+                    :show-after="1000">
+                    <el-checkbox size="small" v-model="fieldExact" class="suffix-exact-checkbox" />
+                  </el-tooltip>
+                </div>
+              </template>
+            </el-input>
+            <el-input
+              v-else
+              v-model="tableKeyword"
+              :placeholder="t('redisValue.tableKeyword')"
+              clearable
+              class="table-filter-input" />
 
-            <div v-if="streamType">
+            <div v-if="streamType" class="stream-range-inputs">
               <el-input
-                @keyup.enter="refreshKey(true)"
+                @keyup.enter="restartFieldScan()"
                 v-model.trim="meta.maxId"
                 placeholder="MaxId"
-                clearable
-                style="width: 180px" />
+                clearable />
               <el-input
-                @keyup.enter="refreshKey(true)"
+                @keyup.enter="restartFieldScan()"
                 v-model.trim="meta.minId"
                 placeholder="MinId"
-                clearable
-                style="width: 180px; margin-left: 10px" />
+                clearable />
             </div>
 
             <!-- 右侧更多+插入行 -->
-            <div>
+            <div class="table-toolbar-actions">
               <el-button
                 icon="el-icon-grid"
                 @click="showGroups"
@@ -1270,7 +1416,7 @@ onUnmounted(() => {
           <div class="table-view">
             <me-table
               layout="sizes, prev, pager, next, jumper"
-              :data="filterDataList"
+              :data="tableDisplayList"
               border
               stripe
               ref="table"
@@ -1546,13 +1692,13 @@ onUnmounted(() => {
             @click="setValue"
             placement="top" />
 
-          <!-- string类型不显示，带有hashKey不显示 -->
+          <!-- string / json 类型不显示 -->
           <el-segmented
             style="margin-left: 10px"
             v-model="viewType"
             :options="viewTypeList"
             @change="onViewTypeChange"
-            v-if="!(stringTypeOrWithHashKey || jsonType)">
+            v-if="!(stringType || jsonType)">
             <template #default="scope">
               <me-icon
                 :name="t('redisValue.jsonView')"
@@ -1677,6 +1823,95 @@ onUnmounted(() => {
       .value-truncated-actions {
         display: flex;
         gap: 8px;
+      }
+    }
+
+    .table-toolbar {
+      width: 100%;
+      align-items: center;
+
+      .stream-range-inputs {
+        display: flex;
+        gap: 10px;
+        margin-left: 10px;
+        flex-shrink: 0;
+
+        :deep(.el-input) {
+          width: 180px;
+        }
+      }
+
+      .table-filter-input {
+        width: 250px;
+        flex-shrink: 0;
+      }
+
+      .table-toolbar-actions {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        flex-shrink: 0;
+      }
+
+      .field-scan-input {
+        width: 250px;
+        flex-shrink: 0;
+
+        .keyword-suffix {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          margin-left: 6px;
+
+          :deep(.suffix-exact-checkbox) {
+            height: auto;
+
+            .el-checkbox__inner {
+              border-color: var(--el-text-color-secondary);
+              background-color: transparent;
+            }
+
+            &:hover .el-checkbox__inner {
+              border-color: var(--el-color-primary);
+            }
+
+            &.is-checked .el-checkbox__inner {
+              background-color: var(--el-color-primary);
+              border-color: var(--el-color-primary);
+            }
+          }
+        }
+
+        .scan-control {
+          position: relative;
+          width: 24px;
+          height: 24px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          flex-shrink: 0;
+
+          .scan-ring {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            line-height: 1;
+          }
+
+          .scan-icon {
+            position: relative;
+            z-index: 1;
+            font-size: 16px;
+
+            :deep(.icon),
+            :deep(svg) {
+              width: 16px;
+              height: 16px;
+            }
+          }
+        }
       }
     }
 

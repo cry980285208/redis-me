@@ -152,6 +152,11 @@ pub fn scan_0_batch_count(pattern: &str) -> u64 {
     }
 }
 
+/** fieldScan 单次 HSCAN/SSCAN/ZSCAN/LRANGE 的 COUNT，来自 settings.fieldScanCount */
+pub fn field_scan_batch_count(count: u64) -> u64 {
+    if count == 0 { 20 } else { count }
+}
+
 /// 完全匹配时用 EXISTS 判断键是否存在；否则返回 None 走 SCAN
 /// 注意：EXISTS 路径不校验 scan_type，精确查完整键名时更符合实际使用场景
 pub fn scan_0_exact<C: redis::ConnectionLike>(
@@ -197,6 +202,73 @@ pub fn scan_1_cmd(cursor: u64, pattern: &str, batch_count: u64, scan_type: Optio
     cmd
 }
 
+pub fn field_scan_0_exact(
+    conn: &mut impl Commands,
+    key: &RedisKey,
+    key_type: &ValueType,
+    param: &FieldScanParam,
+    bytes_format: &BytesFormat,
+    httl_supported: bool,
+) -> AnyResult<Option<(serde_json::Value, ScanCursor)>> {
+    if !param.exact {
+        return Ok(None);
+    }
+    let cc = ScanCursor {
+        finished: true,
+        ..Default::default()
+    };
+    let member = &param.pattern;
+    let json = match key_type {
+        ValueType::Hash => {
+            let value: Option<Vec<u8>> = conn.hget(key, member)?;
+            let mut items = match value {
+                Some(bytes) => ui_hash_value(&[(member.as_bytes().to_vec(), bytes)], bytes_format),
+                None => Vec::new(),
+            };
+            if httl_supported && !items.is_empty() {
+                let field_bytes = member.as_bytes().to_vec();
+                if let Ok(ttl_values) =
+                    conn.httl::<_, _, Vec<IntegerReplyOrNoOp>>(key, &[&field_bytes])
+                {
+                    if let (Some(item), Some(ttl_reply)) = (items.first_mut(), ttl_values.first())
+                    {
+                        item.ttl = match ttl_reply {
+                            IntegerReplyOrNoOp::IntegerReply(ttl) => Some(*ttl as i64),
+                            IntegerReplyOrNoOp::NotExists => Some(-2),
+                            IntegerReplyOrNoOp::ExistsButNotRelevant => Some(-1),
+                            _ => None,
+                        };
+                    }
+                }
+            }
+            serde_json::to_value(items)?
+        }
+        ValueType::Set => {
+            let exists: bool = conn.sismember(key, member)?;
+            let set = if exists {
+                ui_set_value(
+                    HashSet::from([member.as_bytes().to_vec()]),
+                    bytes_format,
+                )
+            } else {
+                Vec::new()
+            };
+            serde_json::to_value(set)?
+        }
+        ValueType::ZSet => {
+            let score: Option<f64> = conn.zscore(key, member)?;
+            let zset = score
+                .map(|score| {
+                    ui_zset_value(vec![(member.as_bytes().to_vec(), score)], bytes_format)
+                })
+                .unwrap_or_default();
+            serde_json::to_value(zset)?
+        }
+        _ => return Ok(None),
+    };
+    Ok(Some((json, cc)))
+}
+
 pub fn field_scan0(
     mut conn: MutexGuard<impl Commands>,
     param: FieldScanParam,
@@ -204,64 +276,56 @@ pub fn field_scan0(
 ) -> AnyResult<FieldScanResult> {
     let bytes_format = param.bytes_format.as_ref().cloned().unwrap_or_default();
 
-    // String, Json, List, Hash(WithKey), Stream(WithKey), Stream 直接获取得到值
+    // String, Json, List, Stream 直接获取；Hash/Set/ZSet 走 exact 或 *SCAN
     let (mut value, key_type, mut cc, length, value_truncated) =
         field_scan_0_get(&mut conn, &param, &bytes_format)?;
-    // Hash, Set, Zset 进行扫描(hscan, sscan, zscan)
-    let key = param.key;
     if value.is_none() {
-        let mut scan_value = FieldScanValue::default();
-        let mut ready_count = 0;
-        loop {
-            // 优化字段扫描个数
-            let count = if param.load_all {
-                1000
-            } else if param.count == 0 {
-                20
-            } else {
-                param.count
-            };
-
-            let cmd = field_scan_1_cmd(&key_type, &key, cc.now_cursor, count)?;
+        if let Some((exact_value, exact_cc)) = field_scan_0_exact(
+            &mut conn,
+            &param.key,
+            &key_type,
+            &param,
+            &bytes_format,
+            httl_supported,
+        )? {
+            value = Some(exact_value);
+            cc = exact_cc;
+        } else {
+            // 每次 API 只执行一轮 HSCAN/SSCAN/ZSCAN，循环由前端控制；COUNT 用 fieldScanCount，非键扫描 batch
+            let batch_count = field_scan_batch_count(param.count);
+            let cmd = field_scan_1_cmd(
+                &key_type,
+                &param.key,
+                cc.now_cursor,
+                &param.pattern,
+                batch_count,
+            )?;
             let (next_cursor, new_value): (u64, Value) = cmd.query(&mut conn)?;
-            let new_count = field_scan_2_value(
+            let mut scan_value = FieldScanValue::default();
+            field_scan_2_value(
                 &mut conn,
                 &key_type,
                 &mut scan_value,
                 new_value,
-                &key,
+                &param.key,
                 &bytes_format,
                 httl_supported,
             )?;
-
-            ready_count += new_count;
             cc.now_cursor = next_cursor;
-
             if next_cursor == 0 {
                 cc.finished = true;
-                break;
             }
-
-            if !param.load_all && ready_count >= param.count as usize {
-                break;
-            }
+            value = Some(field_scan_3_json(&key_type, &scan_value)?);
         }
-        value = Some(field_scan_3_json(&key_type, &scan_value)?)
     }
 
-    let with_field_key = param
-        .hash_key
-        .as_ref()
-        .is_some_and(|k| !k.is_empty());
-    // 返回值添加 TTL、内存占用与元素总数
     field_scan_4_return(
         conn,
-        key,
+        param.key,
         key_type,
         value.unwrap_or_default(),
         cc,
         length,
-        with_field_key,
         value_truncated,
     )
 }
@@ -294,7 +358,6 @@ pub fn field_scan_0_get(
     bytes_format: &BytesFormat,
 ) -> AnyResult<(Option<serde_json::Value>, ValueType, ScanCursor, usize, bool)> {
     let key = &param.key;
-    let hash_key = param.hash_key.clone();
 
     let key_type: ValueType = conn.key_type(key)?;
     let mut cc = param.cursor.clone().unwrap_or_default();
@@ -320,41 +383,18 @@ pub fn field_scan_0_get(
         ValueType::JSON => {
             let value: Value = redis::cmd("JSON.GET").arg(key).query(&mut conn)?;
             cc.finished = true;
-            //Some(serde_json::to_value(redis_value_to_string(value, "\n"))?)
             Some(serde_json::from_str(&redis_value_to_string(value, "\n"))?)
         }
-        ValueType::Hash => {
-            if let Some(hash_key) = hash_key
-                && !hash_key.is_empty()
-            {
-                let value: Option<Vec<u8>> = conn.hget(key, &hash_key)?;
-                match value {
-                    Some(str) => {
-                        length = str.len();
-                        cc.finished = true;
-                        Some(serde_json::to_value(format_bytes(&str, bytes_format))?)
-                    }
-                    None => bail!(AppError::FieldNotFound { hash_key }),
-                }
-            } else {
-                None
-            }
-        }
+        ValueType::Hash => None,
         ValueType::List => {
-            // 如果你有一个从 0 到 100 的数字列表，LRANGE list 0 10 将返回 11 个元素，也就是说，最右边的项是包含在内的
-            // 超出范围的索引不会产生错误。如果 start 大于列表的末尾，将返回一个空列表。如果 stop 大于列表的实际末尾，Redis 会将其视为列表的最后一个元素。
-            let end_index: isize = if param.load_all {
-                -1
-            } else {
-                (cc.now_cursor + param.count) as isize
-            };
+            let count = field_scan_batch_count(param.count);
+            let end_index: isize = (cc.now_cursor + count) as isize;
             let value: Vec<Vec<u8>> = conn.lrange(key, cc.now_cursor as isize, end_index)?;
 
-            // 0 ~ 10 获取到11元素, 表示还没有获取到全部数据。序号为10的元素本次不取
-            let value: Vec<String> = if !param.load_all && value.len() > param.count as usize {
+            let value: Vec<String> = if value.len() > count as usize {
                 cc.finished = false;
-                cc.now_cursor += param.count;
-                ui_list_value(&value[0..param.count as usize], bytes_format)
+                cc.now_cursor += count;
+                ui_list_value(&value[0..count as usize], bytes_format)
             } else {
                 cc.finished = true;
                 ui_list_value(&value, bytes_format)
@@ -362,72 +402,41 @@ pub fn field_scan_0_get(
             Some(serde_json::to_value(value)?)
         }
         ValueType::Stream => {
-            // stream的id, 复用hash_key字段
-            if let Some(hash_key) = hash_key
-                && !hash_key.is_empty()
-            {
-                let mut reply: StreamRangeReply = conn.xrange(key, &hash_key, &hash_key)?;
-                match reply.ids.pop() {
-                    Some(entry) => {
-                        cc.finished = true;
-                        Some(serde_json::to_value(ui_stream_id(entry.map))?)
-                    }
-                    None => bail!(AppError::FieldNotFoundStream {
-                        stream_id: hash_key
-                    }),
+            let count = field_scan_batch_count(param.count);
+            let end = if cc.stream_cursor.is_empty() {
+                match param.meta.as_ref() {
+                    Some(meta) if !meta.max_id.is_empty() => &meta.max_id,
+                    _ => "+",
                 }
             } else {
-                // https://redis.ac.cn/docs/latest/commands/xrange/
-                // XRANGE key start end [COUNT count]   注意start/end是包含在内的
-                // 起始参数: - 表示最小值, 游标有值则取值
-                // 结束参数: + 表示最大值
-                // 加载所有: 不追加count参数，否则追加count + 1参数，多获取1个用于判断是否已扫描结束
-                //let start = if cc.stream_cursor.is_empty() { "-" } else { &cc.stream_cursor };
-                //let end = "+";
-                //let count = if cc.stream_cursor.is_empty() { param.count + 1 } else { param.count };
-                //let mut cmd = redis::cmd("XRANGE");
-                //cmd.arg(key).arg(start).arg(end);
+                &cc.stream_cursor
+            };
 
-                // 倒序: 更符合实际的使用习惯, 即查看最新的消息。TinyRDM/AnotherRDM都是倒序的
-                // XREVRANGE key end start [COUNT count]
-                let end = if cc.stream_cursor.is_empty() {
-                    match param.meta.as_ref() {
-                        Some(meta) if !meta.max_id.is_empty() => &meta.max_id,
-                        _ => "+",
-                    }
-                } else {
-                    &cc.stream_cursor
-                };
+            let start = match param.meta.as_ref() {
+                Some(meta) if !meta.min_id.is_empty() => &meta.min_id,
+                _ => "-",
+            };
 
-                let start = match param.meta.as_ref() {
-                    Some(meta) if !meta.min_id.is_empty() => &meta.min_id,
-                    _ => "-",
-                };
+            let scan_count = if cc.stream_cursor.is_empty() {
+                count + 1
+            } else {
+                count
+            };
 
-                let count = if cc.stream_cursor.is_empty() {
-                    param.count + 1
-                } else {
-                    param.count
-                };
+            let mut cmd = redis::cmd("XREVRANGE");
+            cmd.arg(key).arg(end).arg(start);
+            cmd.arg("COUNT").arg(scan_count);
+            let reply: StreamRangeReply = cmd.query(&mut conn)?;
+            let mut value = ui_stream_value(reply);
 
-                let mut cmd = redis::cmd("XREVRANGE");
-                cmd.arg(key).arg(end).arg(start);
-                if !param.load_all {
-                    cmd.arg("COUNT").arg(count);
-                }
-                let reply: StreamRangeReply = cmd.query(&mut conn)?;
-                let mut value = ui_stream_value(reply);
-
-                if !param.load_all && value.len() > param.count as usize {
-                    cc.finished = false;
-                    cc.stream_cursor = value.pop().unwrap().id; // 弹出最后1个元素，作为下次游标
-                } else {
-                    cc.finished = true;
-                };
-                Some(serde_json::to_value(value)?)
-            }
+            if value.len() > count as usize {
+                cc.finished = false;
+                cc.stream_cursor = value.pop().unwrap().id;
+            } else {
+                cc.finished = true;
+            };
+            Some(serde_json::to_value(value)?)
         }
-        // 注意此处SET/ZSET等是支持的，只是需要进行扫描，不能直接使用通用的: handle_other_value_type
         ValueType::Unknown(_) => {
             handle_other_value_type(&key_type, key)?;
             None
@@ -441,7 +450,8 @@ pub fn field_scan_1_cmd(
     key_type: &ValueType,
     key: &RedisKey,
     cursor: u64,
-    count: u64,
+    pattern: &str,
+    batch_count: u64,
 ) -> AnyResult<Cmd> {
     let scan_command = match key_type {
         ValueType::Hash => "hscan",
@@ -452,12 +462,12 @@ pub fn field_scan_1_cmd(
         }),
     };
 
-    // SCAN cursor [MATCH pattern] [COUNT count] [TYPE type]
-    // HSCAN key cursor [MATCH pattern] [COUNT count] [NOVALUES]
-    // SSCAN key cursor [MATCH pattern] [COUNT count]
-    // ZSCAN key cursor [MATCH pattern] [COUNT count]
     let mut cmd = redis::cmd(scan_command);
-    cmd.arg(key).arg(cursor).arg("count").arg(count);
+    cmd.arg(key).arg(cursor);
+    if !pattern.is_empty() && pattern != "*" {
+        cmd.arg("MATCH").arg(pattern);
+    }
+    cmd.arg("COUNT").arg(batch_count);
     Ok(cmd)
 }
 
@@ -529,17 +539,13 @@ pub fn field_scan_3_json(
     Ok(value)
 }
 
-/// 集合类型用 HLEN/LLEN 等填充 length；String/单字段仍用已算好的 bytes 长度
+/// 集合类型用 HLEN/LLEN 等填充 length；String 仍用已算好的 bytes 长度
 fn resolve_field_scan_length(
     conn: &mut MutexGuard<impl Commands>,
     key: &RedisKey,
     key_type: &ValueType,
     field_byte_len: usize,
-    with_field_key: bool,
 ) -> AnyResult<usize> {
-    if with_field_key {
-        return Ok(field_byte_len);
-    }
     let len = match key_type {
         ValueType::String => field_byte_len,
         ValueType::Hash => conn.hlen(key)?,
@@ -559,7 +565,6 @@ pub fn field_scan_4_return(
     value: serde_json::Value,
     cursor: ScanCursor,
     length: usize,
-    with_field_key: bool,
     value_truncated: bool,
 ) -> AnyResult<FieldScanResult> {
     let ttl: i64 = conn.ttl(&key)?;
@@ -567,9 +572,8 @@ pub fn field_scan_4_return(
         .arg("usage")
         .arg(&key)
         .query(&mut conn)
-        // 兼容腾讯云Redis等不支持memory usage的第三方缓存数据库 #81
         .unwrap_or(0);
-    let length = resolve_field_scan_length(&mut conn, &key, &key_type, length, with_field_key)?;
+    let length = resolve_field_scan_length(&mut conn, &key, &key_type, length)?;
 
     Ok(FieldScanResult {
         key_type: ui_key_type(key_type),

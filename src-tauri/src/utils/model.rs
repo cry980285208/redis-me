@@ -315,11 +315,14 @@ impl ScanParam {
 
 api_model!(FieldScanParam {
     key: RedisKey,
-    hash_key: Option<String>, // Hash键 或 StreamId
     count: u64,
     cursor: Option<ScanCursor>,
-    load_all: bool,
-    meta: Option<FiledScanMeta>, // 扩展参数
+    /// HSCAN/SSCAN/ZSCAN 的 MATCH pattern（前端字段名 match）
+    #[serde(rename = "match")]
+    pattern: String,
+    /// 完全匹配：true 时走 HGET / SISMEMBER / ZSCORE
+    exact: bool,
+    meta: Option<FiledScanMeta>, // Stream 范围 min_id / max_id
     bytes_format: Option<BytesFormat>, // 扫描/展示用字节格式
     /// STRING 全量加载字节上限；超过且未 force 时仅 GETRANGE 预览前 value_preview_bytes
     value_byte_limit: Option<u64>,

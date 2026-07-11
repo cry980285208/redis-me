@@ -70,7 +70,8 @@ export default {
     keyScanCount: '键扫描',
     fieldScanCount: '字段扫描',
     keyScanCountTip: '键列表每次 SCAN 加载的数量；过大可能影响性能。范围 {min}–{max} 个',
-    fieldScanCountTip: '每次 HSCAN、SSCAN 加载的数量。范围 {min}~{max} 个',
+    fieldScanCountTip:
+      'HSCAN/SSCAN/ZSCAN 每次 COUNT；同时作为前端自动续扫的累积条数阈值。范围 {min}~{max} 个',
     commandTimeout: '命令超时',
     commandTimeoutTip: '单次 Redis 命令读写的最长等待时间；修改后需重连生效。范围 {min}–{max} 秒',
     scriptTimeout: '脚本超时',
@@ -791,7 +792,10 @@ export default {
     locationTitle: '集群节点',
     slotHint: '查看键所在集群槽位',
     slotTitle: '集群槽位',
-    tableKeyword: '模糊筛选',
+    tableKeyword: '本地过滤',
+    fieldScanPlaceholder: '扫描参数 / 本地过滤',
+    fieldExactSearch:
+      '<b>扫描</b>（未勾选）<br/>app: 包含 app<br/>app*: 以 app 开头<br/>*app: 以 app 结尾<br/>含 * ? [ 时原样作为模式<br/><br/><b>精确</b>（勾选）<br/>判断 field/member 与输入完全一致是否存在（Hash 仅匹配 field 名）',
     insertRow: '插入行',
     id: 'ID',
     key: '键',

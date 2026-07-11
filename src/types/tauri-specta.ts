@@ -160,10 +160,12 @@ export type FieldScanParam = FieldScanParam_Serialize | FieldScanParam_Deseriali
 
 export type FieldScanParam_Deserialize = {
 	key: RedisKey_Deserialize,
-	hashKey: string | null,
 	count: number,
 	cursor: ScanCursor | null,
-	loadAll: boolean,
+	/**  HSCAN/SSCAN/ZSCAN 的 MATCH pattern（前端字段名 match） */
+	match: string,
+	/**  完全匹配：true 时走 HGET / SISMEMBER / ZSCORE */
+	exact: boolean,
 	meta: FiledScanMeta | null,
 	bytesFormat: BytesFormat | null,
 	/**  STRING 全量加载字节上限；超过且未 force 时仅 GETRANGE 预览前 value_preview_bytes */
@@ -174,10 +176,12 @@ export type FieldScanParam_Deserialize = {
 
 export type FieldScanParam_Serialize = {
 	key: RedisKey_Serialize,
-	hashKey: string | null,
 	count: number,
 	cursor: ScanCursor | null,
-	loadAll: boolean,
+	/**  HSCAN/SSCAN/ZSCAN 的 MATCH pattern（前端字段名 match） */
+	match: string,
+	/**  完全匹配：true 时走 HGET / SISMEMBER / ZSCORE */
+	exact: boolean,
 	meta: FiledScanMeta | null,
 	bytesFormat: BytesFormat | null,
 	/**  STRING 全量加载字节上限；超过且未 force 时仅 GETRANGE 预览前 value_preview_bytes */

@@ -76,7 +76,8 @@ export default {
     fieldScanCount: 'Field Scan',
     keyScanCountTip:
       'Number of keys loaded per SCAN; too large may affect performance. Range {min}–{max}',
-    fieldScanCountTip: 'Fields loaded per HSCAN or SSCAN. Range {min}~{max}',
+    fieldScanCountTip:
+      'HSCAN/SSCAN/ZSCAN COUNT per request; also the cumulative threshold for frontend auto-load. Range {min}~{max}',
     commandTimeout: 'Cmd Timeout',
     commandTimeoutTip:
       'Max wait for one Redis command on an open connection; takes effect after reconnect. Range {min}–{max} s',
@@ -804,7 +805,10 @@ export default {
     locationTitle: 'Cluster Node',
     slotHint: 'View the cluster slot where the key is located',
     slotTitle: 'Cluster Slot',
-    tableKeyword: 'Fuzzy Filter',
+    tableKeyword: 'Local filter',
+    fieldScanPlaceholder: 'Scan params / local filter',
+    fieldExactSearch:
+      '<b>Scan</b> (unchecked)<br/>app: contains app<br/>app*: starts with app<br/>*app: ends with app<br/>Use * ? [ as glob when present<br/><br/><b>Exact</b> (checked)<br/>Whether a field/member exactly matches input (Hash matches field name only)',
     insertRow: 'Insert Row',
     id: 'ID',
     key: 'Key',
