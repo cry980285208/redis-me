@@ -801,7 +801,6 @@ export default {
     allHashValues: '所有值',
     hashKeysEmpty: '暂无字段',
     hashValuesEmpty: '暂无值',
-    scanHashFieldTtlHint: '开：列表显示并可编辑字段过期；关：列表不拉取，保存仍保留原过期',
     id: 'ID',
     key: '键',
     ttl: '过期',

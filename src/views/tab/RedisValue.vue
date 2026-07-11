@@ -1446,8 +1446,6 @@ onUnmounted(() => {
               <me-button
                 v-if="showHashFieldTtlOption"
                 icon="el-icon-clock"
-                :info="t('redisValue.scanHashFieldTtlHint')"
-                placement="top"
                 :type="scanHashFieldTtl ? 'primary' : 'default'"
                 style="margin-left: 10px"
                 @click="toggleHashFieldTtl">

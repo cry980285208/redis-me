@@ -814,7 +814,6 @@ export default {
     allHashValues: 'All Values',
     hashKeysEmpty: 'No fields',
     hashValuesEmpty: 'No values',
-    scanHashFieldTtlHint: 'On: show/edit field expiry; off: skip list fetch, preserve on save',
     id: 'ID',
     key: 'Key',
     ttl: 'TTL',
