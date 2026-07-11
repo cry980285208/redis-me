@@ -130,6 +130,7 @@ const minimalFieldSet: RedisFieldSet_Deserialize = {
   fieldValue: '',
   fieldScore: 0,
   fieldTtl: -1,
+  includeFieldTtl: false,
   valFmt: null,
 }
 
@@ -138,6 +139,7 @@ const minimalFieldGet: RedisFieldGet_Deserialize = {
   fieldIndex: 0,
   fieldKey: '',
   fieldValue: '',
+  includeFieldTtl: false,
   valFmt: null,
 }
 

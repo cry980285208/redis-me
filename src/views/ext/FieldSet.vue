@@ -69,6 +69,7 @@ const initForm: FieldSetForm = {
   fieldValue: '',
   fieldScore: 0,
   fieldTtl: -1,
+  includeFieldTtl: false,
   valFmt: 'utf8',
 }
 const form = ref<FieldSetForm>(cloneDeep(initForm))
