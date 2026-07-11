@@ -16,6 +16,7 @@ import type {
   RedisFieldGet_Deserialize,
   RedisFieldSet_Deserialize,
   RedisHashKeys_Deserialize,
+  RedisListPop_Deserialize,
   RedisImportCsv,
   RedisKey_Deserialize,
   RedisMemoryParam,
@@ -142,6 +143,8 @@ const minimalFieldGet: RedisFieldGet_Deserialize = {
 
 const minimalHashKeys: RedisHashKeys_Deserialize = { key: dummyKey, valFmt: null }
 
+const minimalListPop: RedisListPop_Deserialize = { key: dummyKey, side: 'left', valFmt: null }
+
 const minimalFieldDel: RedisFieldDel_Deserialize = {
   key: dummyKey,
   fieldIndex: 0,
@@ -246,6 +249,8 @@ function defaultPayload(cmd: CommandKey): Record<string, unknown> {
       return { id: connIdForDefaults(), param: { ...minimalHashKeys } }
     case 'hashValues':
       return { id: connIdForDefaults(), param: { ...minimalHashKeys } }
+    case 'listPop':
+      return { id: connIdForDefaults(), param: { ...minimalListPop } }
     case 'fieldDel':
       return { id: connIdForDefaults(), param: { ...minimalFieldDel } }
     case 'getFieldAsCommand':

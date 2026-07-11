@@ -77,6 +77,8 @@ pub trait MeClient: Send + Sync {
 
     fn hash_values(&self, param: RedisHashKeys) -> AnyResult<Vec<String>>;
 
+    fn list_pop(&self, param: RedisListPop) -> AnyResult<String>;
+
     fn field_del(&self, param: RedisFieldDel) -> AnyResult<()>;
 
     fn execute_command(&self, param: RedisCommand) -> AnyResult<String>;
@@ -404,6 +406,76 @@ fn load_string_bytes(
     Ok((value, strlen, false))
 }
 
+fn list_scan_desc(param: &FieldScanParam) -> bool {
+    param
+        .meta
+        .as_ref()
+        .and_then(|m| m.list_desc)
+        .unwrap_or(false)
+}
+
+fn resolve_list_scan_range(param: &FieldScanParam, list_len: usize) -> (i64, i64) {
+    let max_default = list_len.saturating_sub(1) as i64;
+    let meta = param.meta.as_ref();
+    let min = meta.and_then(|m| m.list_min_index).unwrap_or(0).max(0);
+    let max = meta
+        .and_then(|m| m.list_max_index)
+        .unwrap_or(max_default)
+        .clamp(min, max_default);
+    (min, max)
+}
+
+fn field_scan_list_page(
+    conn: &mut MutexGuard<impl Commands>,
+    key: &RedisKey,
+    param: &FieldScanParam,
+    bytes_format: &BytesFormat,
+    cc: &mut ScanCursor,
+) -> AnyResult<Vec<RedisListItem>> {
+    let count = field_scan_batch_count(param.count);
+    let list_len: usize = conn.llen(key)?;
+    if list_len == 0 {
+        cc.finished = true;
+        return Ok(Vec::new());
+    }
+    let (range_min, range_max) = resolve_list_scan_range(param, list_len);
+    let range_len = (range_max - range_min + 1).max(0) as u64;
+    if range_len == 0 {
+        cc.finished = true;
+        return Ok(Vec::new());
+    }
+
+    let fetched = cc.now_cursor;
+    if fetched >= range_len {
+        cc.finished = true;
+        return Ok(Vec::new());
+    }
+
+    let batch = count.min(range_len - fetched);
+    let desc = list_scan_desc(param);
+    let (start, end) = if desc {
+        let end = range_max - fetched as i64;
+        let start = end - batch as i64 + 1;
+        (start, end)
+    } else {
+        let start = range_min + fetched as i64;
+        let end = start + batch as i64 - 1;
+        (start, end)
+    };
+    let raw: Vec<Vec<u8>> = conn.lrange(key, start as isize, end as isize)?;
+    let mut items = ui_list_items(start, &raw, bytes_format);
+    // LRANGE 始终按索引升序返回；降序扫描时反转，使结果页从高索引到低索引
+    if desc {
+        items.reverse();
+    }
+
+    cc.now_cursor += items.len() as u64;
+    if cc.now_cursor >= range_len {
+        cc.finished = true;
+    }
+    Ok(items)
+}
+
 pub fn field_scan_0_get(
     mut conn: &mut MutexGuard<impl Commands>,
     param: &FieldScanParam,
@@ -439,19 +511,8 @@ pub fn field_scan_0_get(
         }
         ValueType::Hash => None,
         ValueType::List => {
-            let count = field_scan_batch_count(param.count);
-            let end_index: isize = (cc.now_cursor + count) as isize;
-            let value: Vec<Vec<u8>> = conn.lrange(key, cc.now_cursor as isize, end_index)?;
-
-            let value: Vec<String> = if value.len() > count as usize {
-                cc.finished = false;
-                cc.now_cursor += count;
-                ui_list_value(&value[0..count as usize], bytes_format)
-            } else {
-                cc.finished = true;
-                ui_list_value(&value, bytes_format)
-            };
-            Some(serde_json::to_value(value)?)
+            let items = field_scan_list_page(&mut conn, key, param, bytes_format, &mut cc)?;
+            Some(serde_json::to_value(items)?)
         }
         ValueType::Stream => {
             let count = field_scan_batch_count(param.count);
@@ -991,6 +1052,33 @@ pub fn hash_values0(
         .into_iter()
         .map(|v| format_bytes(&v, &val_fmt))
         .collect())
+}
+
+/// List 弹出元素：LPOP / RPOP，键与 fieldScan 一致走 RedisKey
+pub fn list_pop0(
+    mut conn: MutexGuard<impl Commands>,
+    param: RedisListPop,
+) -> AnyResult<String> {
+    let key = param.key;
+    let key_type: ValueType = conn.key_type(&key)?;
+    if key_type != ValueType::List {
+        handle_other_value_type(&key_type, &key)?;
+        unreachable!()
+    }
+    let cmd = match param.side.as_str() {
+        "left" | "lpop" | "LPOP" => "LPOP",
+        "right" | "rpop" | "RPOP" => "RPOP",
+        other => {
+            bail!(AppError::FieldOperationNotSupported {
+                mode: other.into()
+            })
+        }
+    };
+    let val_fmt = param.val_fmt.as_ref().cloned().unwrap_or_default();
+    let value: Option<Vec<u8>> = redis::cmd(cmd).arg(&key).query(&mut conn)?;
+    Ok(value
+        .map(|v| format_bytes(&v, &val_fmt))
+        .unwrap_or_default())
 }
 
 pub fn field_del0(mut conn: MutexGuard<impl Commands>, param: RedisFieldDel) -> AnyResult<()> {

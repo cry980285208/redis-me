@@ -322,6 +322,12 @@ api_model!(FiledScanMeta {
     value_byte_limit: Option<u64>,
     value_preview_bytes: Option<u64>,
     force_full_value: Option<bool>,
+    /// List LRANGE 下界；空则 0
+    list_min_index: Option<i64>,
+    /// List LRANGE 上界；空则 len-1
+    list_max_index: Option<i64>,
+    /// List 扫描方向：true 从 max 向 min，false 从 min 向 max
+    list_desc: Option<bool>,
 });
 
 api_model!(FieldScanParam {
@@ -534,6 +540,12 @@ api_model!(RedisHashItem{
     ttl: Option<i64>,
 });
 
+// List 条目（fieldScan 返回，index 为 Redis 列表下标）
+api_model!(RedisListItem {
+    index: i64,
+    value: String,
+});
+
 // Zset条目
 api_model!(RedisZetItem {
     value: String,
@@ -587,6 +599,15 @@ api_model!(RedisFieldSet {
 api_model!(RedisHashKeys {
     key: RedisKey,
     /// Hash 字段名/值解码格式，与 field_get / fieldScan 一致
+    val_fmt: Option<BytesFormat>,
+});
+
+// List LPOP / RPOP：键走 RedisKey.to_bytes()，支持二进制键
+api_model!(RedisListPop {
+    key: RedisKey,
+    /// left=LPOP，right=RPOP
+    side: String,
+    /// 弹出元素的展示格式
     val_fmt: Option<BytesFormat>,
 });
 

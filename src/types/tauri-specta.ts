@@ -35,6 +35,7 @@ export const commands = {
 	fieldGet: (id: string, param: RedisFieldGet_Deserialize) => typedError<RedisFieldValue, string>(__TAURI_INVOKE("field_get", { id, param })),
 	hashKeys: (id: string, param: RedisHashKeys_Deserialize) => typedError<string[], string>(__TAURI_INVOKE("hash_keys", { id, param })),
 	hashValues: (id: string, param: RedisHashKeys_Deserialize) => typedError<string[], string>(__TAURI_INVOKE("hash_values", { id, param })),
+	listPop: (id: string, param: RedisListPop_Deserialize) => typedError<string, string>(__TAURI_INVOKE("list_pop", { id, param })),
 	fieldDel: (id: string, param: RedisFieldDel_Deserialize) => typedError<null, string>(__TAURI_INVOKE("field_del", { id, param })),
 	executeCommand: (id: string, param: RedisCommand) => typedError<string, string>(__TAURI_INVOKE("execute_command", { id, param })),
 	aclUsers: (id: string) => typedError<string[], string>(__TAURI_INVOKE("acl_users", { id })),
@@ -215,6 +216,12 @@ export type FiledScanMeta = {
 	valueByteLimit: number | null,
 	valuePreviewBytes: number | null,
 	forceFullValue: boolean | null,
+	/**  List LRANGE 下界；空则 0 */
+	listMinIndex: number | null,
+	/**  List LRANGE 上界；空则 len-1 */
+	listMaxIndex: number | null,
+	/**  List 扫描方向：true 从 max 向 min，false 从 min 向 max */
+	listDesc: boolean | null,
 };
 
 export type RedisBatchKey = RedisBatchKey_Serialize | RedisBatchKey_Deserialize;
@@ -521,6 +528,24 @@ export type RedisKey_Deserialize = {
 export type RedisKey_Serialize = {
 	key: string,
 	bytes: string,
+};
+
+export type RedisListPop = RedisListPop_Serialize | RedisListPop_Deserialize;
+
+export type RedisListPop_Deserialize = {
+	key: RedisKey_Deserialize,
+	/**  left=LPOP，right=RPOP */
+	side: string,
+	/**  弹出元素的展示格式 */
+	valFmt: BytesFormat | null,
+};
+
+export type RedisListPop_Serialize = {
+	key: RedisKey_Serialize,
+	/**  left=LPOP，right=RPOP */
+	side: string,
+	/**  弹出元素的展示格式 */
+	valFmt: BytesFormat | null,
 };
 
 export type RedisMemoryParam = {

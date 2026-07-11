@@ -57,6 +57,7 @@ import {
   KEY_DELETE,
   KEY_REFRESH,
   meCommands,
+  meConfirm,
   meCopy,
   meDeleteKey,
   meErr,
@@ -100,6 +101,8 @@ type ValueTableRow = Record<string, unknown> & {
   id?: string
   score?: number
   ttl?: number
+  /** List 行的真实 Redis 索引（后端 fieldScan 返回） */
+  index?: number
 }
 // #endregion
 
@@ -170,6 +173,48 @@ const showValueTruncatedAlert = computed(
 
 /** Stream 扫描范围（meta 传给 fieldScan） */
 const meta = ref({ maxId: '', minId: '' })
+/** List 扫描范围与方向（经 meta 传给 fieldScan） */
+const listIndexMin = ref('')
+const listIndexMax = ref('')
+/** true=升序扫描；false=降序 */
+const listDescAsc = ref(true)
+
+function parseListIndexInput(raw: string): number | null {
+  const s = raw.trim()
+  if (!s) return null
+  const n = Number.parseInt(s, 10)
+  return Number.isFinite(n) ? n : null
+}
+
+function listRowRedisIndex(row: ValueTableRow): number {
+  return typeof row.index === 'number' ? row.index : -1
+}
+
+function toggleListSortOrder() {
+  listDescAsc.value = !listDescAsc.value
+  void restartFieldScan()
+}
+
+/** List LPOP/RPOP：走 list_pop API，键用 RedisKey.bytes，支持二进制键 */
+async function runListPop(command: string) {
+  const conn = share.conn
+  const key = share.redisKey
+  if (!conn || !key || !canEdit.value) return
+  const side = command === 'LPOP' ? 'left' : 'right'
+  const data = await meCommands.listPop(conn.id, {
+    key,
+    side,
+    valFmt: toWireFormat(viewFmtForField(bytesFormat.value)),
+  })
+  meOk(data || t('redisValue.listCommandEmpty'))
+  await restartFieldScan()
+}
+
+function onListCommand(command: string) {
+  const confirmKey =
+    command === 'LPOP' ? 'redisValue.listLpopConfirm' : 'redisValue.listRpopConfirm'
+  meConfirm(t(confirmKey), () => runListPop(command))
+}
 // #endregion
 
 // #region 键类型（派生）
@@ -177,6 +222,7 @@ const stringType = computed(() => 'string' === redisValue.value?.type)
 const jsonType = computed(() => 'json' === redisValue.value?.type)
 const streamType = computed(() => 'stream' === redisValue.value?.type)
 const hashType = computed(() => 'hash' === redisValue.value?.type)
+const listType = computed(() => 'list' === redisValue.value?.type)
 /** 服务端支持 HTTL 时，可选是否在 fieldScan 中拉取 Hash 字段 TTL */
 const scanHashFieldTtl = ref(false)
 const showHashFieldTtlOption = computed(() => hashType.value && share.capabilities.httlSupported)
@@ -436,7 +482,8 @@ const dataList = computed(() => {
 
   const data: ValueTableRow[] = []
   fieldValueRows(rv.value).forEach(value => {
-    if (rv.type === 'list' || rv.type === 'set') data.push({ value })
+    // set 为裸字符串；list/hash/zset/stream 已是对象（list 含 index）
+    if (rv.type === 'set') data.push({ value })
     else data.push(value as ValueTableRow)
   })
   return data
@@ -451,6 +498,7 @@ const filterDataList = computed(() => {
     const cell = streamType.value ? JSON.stringify(row.value) : formatTableCell(row.value)
     if (cell.toLowerCase().indexOf(key) > -1) return true
     if ((row.score?.toString() ?? '').indexOf(key) > -1) return true
+    if (String(row.index ?? '').indexOf(key) > -1) return true
     return false
   })
 })
@@ -474,7 +522,7 @@ const tableDisplayList = computed(() => {
   return filterDataList.value
 })
 
-/** 值表各类型默认排序列（与可见 sortable 列 prop 一致） */
+/** 值表各类型默认排序列（与可见 sortable 列 prop 一致）；List 不设 default-sort，保持 fieldScan 返回顺序（含升/降序扫描） */
 const tableDefaultSort = computed(
   (): { prop: string; order: 'ascending' | 'descending' } | undefined => {
     switch (redisValue.value?.type) {
@@ -484,7 +532,6 @@ const tableDefaultSort = computed(
         return { prop: 'score', order: 'ascending' }
       case 'stream':
         return { prop: 'id', order: 'ascending' }
-      case 'list':
       case 'set':
         return { prop: 'value', order: 'ascending' }
       default:
@@ -501,6 +548,9 @@ function resetParam() {
   fieldKeyword.value = ''
   fieldExact.value = false
   scanHashFieldTtl.value = false
+  listIndexMin.value = ''
+  listIndexMax.value = ''
+  listDescAsc.value = true
 }
 
 /** 续扫时 cursor 非空，跳过 TYPE/TTL/MEMORY/HLEN 等元数据命令 */
@@ -521,6 +571,9 @@ function buildFieldScanParam() {
     exact: serverScan ? fieldExact.value : false,
     meta: {
       ...meta.value,
+      listMinIndex: parseListIndexInput(listIndexMin.value),
+      listMaxIndex: parseListIndexInput(listIndexMax.value),
+      listDesc: listType.value ? !listDescAsc.value : null,
       valueByteLimit: VALUE_BYTE_LIMIT,
       valuePreviewBytes: VALUE_PREVIEW_BYTES,
       forceFullValue: forceFullValue.value,
@@ -802,7 +855,7 @@ function buildFieldAsCommandParam(row: ValueTableRow): RedisFieldAsCommand_Deser
     valFmt: toWireFormat(fieldViewFmt),
   }
   if (rv.type === 'list') {
-    param.fieldIndex = fieldValueRows(rv.value).indexOf(row.value)
+    param.fieldIndex = listRowRedisIndex(row)
   }
   if (rv.type === 'stream') {
     param.fieldValue = ''
@@ -961,7 +1014,7 @@ function prepareFieldRowContext(row: ValueTableRow) {
   fieldEditKey.value = row.key || ''
   fieldEditIndex.value = -1
   if (rv?.type === 'list') {
-    fieldEditIndex.value = fieldValueRows(rv.value).indexOf(row.value)
+    fieldEditIndex.value = listRowRedisIndex(row)
   }
 }
 
@@ -1069,11 +1122,11 @@ function applyFieldGetResult(rv: FieldScanViewState, data: RedisFieldValue, row:
       }
     }
   } else if (rv.type === 'list') {
-    const rows = fieldValueRows(rv.value)
-    const idx =
-      fieldEditIndex.value >= 0 ? fieldEditIndex.value : fieldValueRows(rv.value).indexOf(row.value)
-    if (idx >= 0 && idx < rows.length) {
-      rows[idx] = data.fieldValue
+    const rows = fieldValueRows(rv.value) as ValueTableRow[]
+    const redisIndex = fieldEditIndex.value >= 0 ? fieldEditIndex.value : listRowRedisIndex(row)
+    const idx = rows.findIndex(r => r.index === redisIndex)
+    if (idx >= 0) {
+      rows[idx] = { index: rows[idx].index, value: data.fieldValue }
     }
   } else if (rv.type === 'zset') {
     const rows = fieldValueRows(rv.value) as ValueTableRow[]
@@ -1164,7 +1217,7 @@ async function fieldDel(row: ValueTableRow) {
     valFmt: toWireFormat(fieldViewFmt),
   }
   if (rv.type === 'list') {
-    param.fieldIndex = fieldValueRows(rv.value).indexOf(row.value)
+    param.fieldIndex = listRowRedisIndex(row)
   }
   if (rv.type === 'stream') {
     param.fieldValue = ''
@@ -1468,6 +1521,20 @@ onUnmounted(() => {
                 clearable />
             </div>
 
+            <div v-if="listType" class="list-range-inputs">
+              <el-input
+                @keyup.enter="restartFieldScan()"
+                v-model.trim="listIndexMin"
+                :placeholder="t('redisValue.listIndexMin')"
+                clearable />
+              <span class="list-range-sep">-</span>
+              <el-input
+                @keyup.enter="restartFieldScan()"
+                v-model.trim="listIndexMax"
+                :placeholder="t('redisValue.listIndexMax')"
+                clearable />
+            </div>
+
             <!-- 右侧更多+插入行 -->
             <div class="table-toolbar-actions">
               <me-button
@@ -1499,6 +1566,28 @@ onUnmounted(() => {
                 style="margin-left: 10px">
                 {{ t('redisValue.allHashValues') }}
               </el-button>
+              <el-button
+                v-if="listType"
+                :icon="listDescAsc ? 'el-icon-sort-up' : 'el-icon-sort-down'"
+                @click="toggleListSortOrder"
+                style="margin-left: 10px">
+                {{ listDescAsc ? t('redisValue.listSortAsc') : t('redisValue.listSortDesc') }}
+              </el-button>
+              <el-dropdown
+                v-if="listType && canEdit"
+                placement="bottom-end"
+                @command="onListCommand"
+                style="margin-left: 10px">
+                <el-button icon="el-icon-arrow-down">
+                  {{ t('redisValue.listCommands') }}
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="LPOP">LPOP</el-dropdown-item>
+                    <el-dropdown-item command="RPOP">RPOP</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
               <el-button icon="el-icon-plus" @click="fieldAdd" style="margin-left: 10px">{{
                 t('redisValue.insertRow')
               }}</el-button>
@@ -1527,7 +1616,9 @@ onUnmounted(() => {
                 <template #default="scope">
                   <div class="index-cell">
                     <template v-if="fieldSetIndex !== scope.$index">{{
-                      scope.$index + 1
+                      listType && typeof scope.row.index === 'number'
+                        ? scope.row.index
+                        : scope.$index + 1
                     }}</template>
                     <me-icon
                       v-else
@@ -1938,6 +2029,23 @@ onUnmounted(() => {
         :deep(.el-input) {
           width: 180px;
         }
+      }
+
+      .list-range-inputs {
+        display: flex;
+        gap: 5px;
+        margin-left: 10px;
+        flex-shrink: 0;
+        align-items: center;
+
+        :deep(.el-input) {
+          width: 120px;
+        }
+      }
+
+      .list-range-sep {
+        color: var(--el-text-color-secondary);
+        flex-shrink: 0;
       }
 
       .table-toolbar-actions {

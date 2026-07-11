@@ -245,6 +245,10 @@ impl MeClient for MeCluster {
         hash_values0(self.get_conn()?, param)
     }
 
+    fn list_pop(&self, param: RedisListPop) -> AnyResult<String> {
+        list_pop0(self.get_conn()?, param)
+    }
+
     fn field_del(&self, param: RedisFieldDel) -> AnyResult<()> {
         field_del0(self.get_conn()?, param)
     }
