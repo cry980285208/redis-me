@@ -604,11 +604,12 @@ api_model!(RedisHashKeys {
     val_fmt: Option<BytesFormat>,
 });
 
-// List LPOP / RPOP：键走 RedisKey.to_bytes()，支持二进制键
-api_model!(RedisListPop {
+// List/Set/ZSet 通用弹出：LPOP/RPOP/SPOP/ZPOPMIN/ZPOPMAX
+// mode: LPOP/RPOP/SPOP/ZPOPMIN/ZPOPMAX
+api_model!(RedisPop {
     key: RedisKey,
-    /// left=LPOP，right=RPOP
-    side: String,
+    /// 操作模式（LPOP/RPOP/SPOP/ZPOPMIN/ZPOPMAX）
+    mode: String,
     /// 弹出元素的展示格式
     val_fmt: Option<BytesFormat>,
 });

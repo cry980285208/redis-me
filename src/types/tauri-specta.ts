@@ -35,7 +35,7 @@ export const commands = {
 	fieldGet: (id: string, param: RedisFieldGet_Deserialize) => typedError<RedisFieldValue, string>(__TAURI_INVOKE("field_get", { id, param })),
 	hashKeys: (id: string, param: RedisHashKeys_Deserialize) => typedError<string[], string>(__TAURI_INVOKE("hash_keys", { id, param })),
 	hashValues: (id: string, param: RedisHashKeys_Deserialize) => typedError<string[], string>(__TAURI_INVOKE("hash_values", { id, param })),
-	listPop: (id: string, param: RedisListPop_Deserialize) => typedError<string, string>(__TAURI_INVOKE("list_pop", { id, param })),
+	fieldPop: (id: string, param: RedisPop_Deserialize) => typedError<string, string>(__TAURI_INVOKE("field_pop", { id, param })),
 	fieldDel: (id: string, param: RedisFieldDel_Deserialize) => typedError<null, string>(__TAURI_INVOKE("field_del", { id, param })),
 	executeCommand: (id: string, param: RedisCommand) => typedError<string, string>(__TAURI_INVOKE("execute_command", { id, param })),
 	aclUsers: (id: string) => typedError<string[], string>(__TAURI_INVOKE("acl_users", { id })),
@@ -532,24 +532,6 @@ export type RedisKey_Serialize = {
 	bytes: string,
 };
 
-export type RedisListPop = RedisListPop_Serialize | RedisListPop_Deserialize;
-
-export type RedisListPop_Deserialize = {
-	key: RedisKey_Deserialize,
-	/**  left=LPOP，right=RPOP */
-	side: string,
-	/**  弹出元素的展示格式 */
-	valFmt: BytesFormat | null,
-};
-
-export type RedisListPop_Serialize = {
-	key: RedisKey_Serialize,
-	/**  left=LPOP，right=RPOP */
-	side: string,
-	/**  弹出元素的展示格式 */
-	valFmt: BytesFormat | null,
-};
-
 export type RedisMemoryParam = {
 	match: string | null,
 	sizeLimit: number,
@@ -566,6 +548,24 @@ export type RedisNode = {
 	flags: string,
 	slots: string | null,
 	slaveOfNode: string | null,
+};
+
+export type RedisPop = RedisPop_Serialize | RedisPop_Deserialize;
+
+export type RedisPop_Deserialize = {
+	key: RedisKey_Deserialize,
+	/**  操作模式（LPOP/RPOP/SPOP/ZPOPMIN/ZPOPMAX） */
+	mode: string,
+	/**  弹出元素的展示格式 */
+	valFmt: BytesFormat | null,
+};
+
+export type RedisPop_Serialize = {
+	key: RedisKey_Serialize,
+	/**  操作模式（LPOP/RPOP/SPOP/ZPOPMIN/ZPOPMAX） */
+	mode: string,
+	/**  弹出元素的展示格式 */
+	valFmt: BytesFormat | null,
 };
 
 export type RedisSetParam = RedisSetParam_Serialize | RedisSetParam_Deserialize;

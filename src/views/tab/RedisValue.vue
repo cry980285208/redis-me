@@ -202,25 +202,29 @@ function toggleStreamSortOrder() {
   void restartFieldScan()
 }
 
-/** List LPOP/RPOP：走 list_pop API，键用 RedisKey.bytes，支持二进制键 */
-async function runListPop(command: string) {
+/** List LPOP/RPOP / Set SPOP / ZSet ZPOPMIN/ZPOPMAX：统一走 field_pop API */
+async function runFieldPop(mode: string) {
   const conn = share.conn
   const key = share.redisKey
   if (!conn || !key || !canEdit.value) return
-  const side = command === 'LPOP' ? 'left' : 'right'
-  const data = await meCommands.listPop(conn.id, {
+  const data = await meCommands.fieldPop(conn.id, {
     key,
-    side,
+    mode,
     valFmt: toWireFormat(viewFmtForField(bytesFormat.value)),
   })
-  meOk(data || t('redisValue.listCommandEmpty'))
+  meOk(data)
   await restartFieldScan()
 }
 
-function onListCommand(command: string) {
-  const confirmKey =
-    command === 'LPOP' ? 'redisValue.listLpopConfirm' : 'redisValue.listRpopConfirm'
-  meConfirm(t(confirmKey), () => runListPop(command))
+function onPopCommand(command: string) {
+  const confirmMap: Record<string, string> = {
+    LPOP: 'redisValue.listLpopConfirm',
+    RPOP: 'redisValue.listRpopConfirm',
+    SPOP: 'redisValue.setPopConfirm',
+    ZPOPMIN: 'redisValue.zpopMinConfirm',
+    ZPOPMAX: 'redisValue.zpopMaxConfirm',
+  }
+  meConfirm(t(confirmMap[command]), () => runFieldPop(command))
 }
 // #endregion
 
@@ -230,6 +234,8 @@ const jsonType = computed(() => 'json' === redisValue.value?.type)
 const streamType = computed(() => 'stream' === redisValue.value?.type)
 const hashType = computed(() => 'hash' === redisValue.value?.type)
 const listType = computed(() => 'list' === redisValue.value?.type)
+const setType = computed(() => 'set' === redisValue.value?.type)
+const zsetType = computed(() => 'zset' === redisValue.value?.type)
 /** 服务端支持 HTTL 时，可选是否在 fieldScan 中拉取 Hash 字段 TTL */
 const scanHashFieldTtl = ref(false)
 const showHashFieldTtlOption = computed(() => hashType.value && share.capabilities.httlSupported)
@@ -1589,17 +1595,20 @@ onUnmounted(() => {
                 {{ listDescAsc ? t('redisValue.listSortAsc') : t('redisValue.listSortDesc') }}
               </el-button>
               <el-dropdown
-                v-if="listType && canEdit"
+                v-if="(listType || setType || zsetType) && canEdit"
                 placement="bottom-end"
-                @command="onListCommand"
+                @command="onPopCommand"
                 style="margin-left: 10px">
                 <el-button icon="el-icon-arrow-down">
-                  {{ t('redisValue.listCommands') }}
+                  {{ t('redisValue.fieldCommands') }}
                 </el-button>
                 <template #dropdown>
                   <el-dropdown-menu>
-                    <el-dropdown-item command="LPOP">LPOP</el-dropdown-item>
-                    <el-dropdown-item command="RPOP">RPOP</el-dropdown-item>
+                    <el-dropdown-item v-if="listType" command="LPOP">LPOP</el-dropdown-item>
+                    <el-dropdown-item v-if="listType" command="RPOP">RPOP</el-dropdown-item>
+                    <el-dropdown-item v-if="setType" command="SPOP">SPOP</el-dropdown-item>
+                    <el-dropdown-item v-if="zsetType" command="ZPOPMIN">ZPOPMIN</el-dropdown-item>
+                    <el-dropdown-item v-if="zsetType" command="ZPOPMAX">ZPOPMAX</el-dropdown-item>
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>

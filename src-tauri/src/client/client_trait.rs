@@ -77,7 +77,7 @@ pub trait MeClient: Send + Sync {
 
     fn hash_values(&self, param: RedisHashKeys) -> AnyResult<Vec<String>>;
 
-    fn list_pop(&self, param: RedisListPop) -> AnyResult<String>;
+    fn field_pop(&self, param: RedisPop) -> AnyResult<String>;
 
     fn field_del(&self, param: RedisFieldDel) -> AnyResult<()>;
 
@@ -1079,31 +1079,46 @@ pub fn hash_values0(
         .collect())
 }
 
-/// List 弹出元素：LPOP / RPOP，键与 fieldScan 一致走 RedisKey
-pub fn list_pop0(
+/// List/Set/ZSet 通用弹出：LPOP/RPOP/SPOP/ZPOPMIN/ZPOPMAX
+pub fn field_pop0(
     mut conn: MutexGuard<impl Commands>,
-    param: RedisListPop,
+    param: RedisPop,
 ) -> AnyResult<String> {
     let key = param.key;
     let key_type: ValueType = conn.key_type(&key)?;
-    if key_type != ValueType::List {
+    let cmd = param.mode.to_uppercase();
+    let val_fmt = param.val_fmt.as_ref().cloned().unwrap_or_default();
+
+    // 校验键类型
+    let expected = match cmd.as_str() {
+        "LPOP" | "RPOP" => ValueType::List,
+        "SPOP" => ValueType::Set,
+        "ZPOPMIN" | "ZPOPMAX" => ValueType::ZSet,
+        other => bail!(AppError::FieldOperationNotSupported {
+            mode: other.into()
+        }),
+    };
+    if key_type != expected {
         handle_other_value_type(&key_type, &key)?;
         unreachable!()
     }
-    let cmd = match param.side.as_str() {
-        "left" | "lpop" | "LPOP" => "LPOP",
-        "right" | "rpop" | "RPOP" => "RPOP",
-        other => {
-            bail!(AppError::FieldOperationNotSupported {
-                mode: other.into()
-            })
+
+    // 执行命令
+    match cmd.as_str() {
+        "LPOP" | "RPOP" | "SPOP" => {
+            let value: Option<Vec<u8>> = redis::cmd(&cmd).arg(&key).query(&mut conn)?;
+            Ok(value.map(|v| format_bytes(&v, &val_fmt)).unwrap_or_default())
         }
-    };
-    let val_fmt = param.val_fmt.as_ref().cloned().unwrap_or_default();
-    let value: Option<Vec<u8>> = redis::cmd(cmd).arg(&key).query(&mut conn)?;
-    Ok(value
-        .map(|v| format_bytes(&v, &val_fmt))
-        .unwrap_or_default())
+        "ZPOPMIN" | "ZPOPMAX" => {
+            let value: Option<Vec<(Vec<u8>, f64)>> = redis::cmd(&cmd).arg(&key).query(&mut conn)?;
+            let result = value.and_then(|mut v| v.pop()).map(|(member, score)| {
+                let member_str = format_bytes(&member, &val_fmt);
+                format!("{} (score: {})", member_str, score)
+            });
+            Ok(result.unwrap_or_default())
+        }
+        _ => unreachable!(),
+    }
 }
 
 pub fn field_del0(mut conn: MutexGuard<impl Commands>, param: RedisFieldDel) -> AnyResult<()> {
