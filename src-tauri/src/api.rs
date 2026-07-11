@@ -141,6 +141,7 @@ api_commands!(
     field_add(param: RedisFieldAdd) -> RedisKey;                  // 新增字段
     field_set(param: RedisFieldSet) -> ();                        // 编辑字段
     field_get(param: RedisFieldGet) -> RedisFieldValue;           // 读取单条字段
+    hash_keys(param: RedisHashKeys) -> Vec<String>;               // Hash 全量字段名（HKEYS）
     field_del(param: RedisFieldDel) -> ();                        // 删除字段
     execute_command(param: RedisCommand) -> String;               // 执行命令
     config_get(pattern: &str, node: Option<String>) -> HashMap<String, String>; // 获取配置

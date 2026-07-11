@@ -73,6 +73,8 @@ pub trait MeClient: Send + Sync {
 
     fn field_get(&self, param: RedisFieldGet) -> AnyResult<RedisFieldValue>;
 
+    fn hash_keys(&self, param: RedisHashKeys) -> AnyResult<Vec<String>>;
+
     fn field_del(&self, param: RedisFieldDel) -> AnyResult<()>;
 
     fn execute_command(&self, param: RedisCommand) -> AnyResult<String>;
@@ -885,6 +887,25 @@ pub fn field_get0(
             unreachable!()
         }
     }
+}
+
+/// Hash 全量字段名：HKEYS，按 val_fmt 格式化后返回
+pub fn hash_keys0(
+    mut conn: MutexGuard<impl Commands>,
+    param: RedisHashKeys,
+) -> AnyResult<Vec<String>> {
+    let key = param.key;
+    let key_type: ValueType = conn.key_type(&key)?;
+    if key_type != ValueType::Hash {
+        handle_other_value_type(&key_type, &key)?;
+        unreachable!()
+    }
+    let val_fmt = param.val_fmt.as_ref().cloned().unwrap_or_default();
+    let fields: Vec<Vec<u8>> = redis::cmd("HKEYS").arg(&key).query(&mut conn)?;
+    Ok(fields
+        .into_iter()
+        .map(|f| format_bytes(&f, &val_fmt))
+        .collect())
 }
 
 pub fn field_del0(mut conn: MutexGuard<impl Commands>, param: RedisFieldDel) -> AnyResult<()> {

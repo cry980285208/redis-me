@@ -797,6 +797,8 @@ export default {
     fieldExactSearch:
       '<b>扫描</b>（未勾选）<br/>app: 包含 app<br/>app*: 以 app 开头<br/>*app: 以 app 结尾<br/>含 * ? [ 时原样作为模式<br/><br/><b>精确</b>（勾选）<br/>判断 field/member 与输入完全一致是否存在（Hash 仅匹配 field 名）',
     insertRow: '插入行',
+    allHashKeys: '所有键',
+    hashKeysEmpty: '暂无字段',
     id: 'ID',
     key: '键',
     ttl: '过期',

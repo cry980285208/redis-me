@@ -315,9 +315,8 @@ impl ScanParam {
 
 // fieldScan 按类型的扩展参数：Stream 范围、STRING 大值预览阈值等
 api_model!(FiledScanMeta {
-    /// Stream XREVRANGE 上界
+    /// Stream XREVRANGE 上界和下界
     max_id: String,
-    /// Stream XREVRANGE 下界
     min_id: String,
     /// STRING 全量加载字节上限；超过且未 force 时仅 GETRANGE 预览前 value_preview_bytes
     value_byte_limit: Option<u64>,
@@ -577,6 +576,12 @@ api_model!(RedisFieldSet {
 });
 
 // 字段单条读取（HGET / LINDEX / ZSCORE 等，供前端刷新表格单行）
+api_model!(RedisHashKeys {
+    key: RedisKey,
+    /// Hash 字段名解码格式，与 field_get / fieldScan 一致
+    val_fmt: Option<BytesFormat>,
+});
+
 api_model!(RedisFieldGet {
     key: RedisKey,
     field_index: isize,

@@ -42,6 +42,7 @@ fn tauri_specta_commands() -> Commands<tauri::Wry> {
         field_add,
         field_set,
         field_get,
+        hash_keys,
         field_del,
         execute_command,
         acl_users,

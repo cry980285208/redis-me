@@ -19,7 +19,6 @@ import {
 } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import MeShortcut from '@/components/MeShortcut.vue'
 import { shareProvideKey, connUiProvideKey } from '@/types/me-interface'
 import type {
   FieldScanResult,
@@ -29,7 +28,6 @@ import type {
   RedisFieldValue,
   RedisKey_Deserialize,
   ScanCursor,
-  XInfoGroup,
 } from '@/types/tauri-specta'
 import { useFavorites, addFavorite, removeFavorite, isFavorited } from '@/utils/favorite'
 import {
@@ -54,7 +52,6 @@ import {
   computeScanProgress,
   MINIMATCH_SCAN_OPTS,
 } from '@/utils/redis-glob'
-import { getValueShortcuts } from '@/utils/shortcut'
 import {
   bus,
   KEY_DELETE,
@@ -73,7 +70,9 @@ import {
   sleep,
 } from '@/utils/util'
 import TableGroup from '@/views/ext/TableGroup.vue'
+import TableHashKeys from '@/views/ext/TableHashKeys.vue'
 import TTLSet from '@/views/ext/TTLSet.vue'
+import ValueShortcut from '@/views/ext/ValueShortcut.vue'
 import KeyRename from '@/views/key/KeyRename.vue'
 
 import CustomCodec from '../ext/CustomCodec.vue'
@@ -170,6 +169,7 @@ const meta = ref({ maxId: '', minId: '' })
 const stringType = computed(() => 'string' === redisValue.value?.type)
 const jsonType = computed(() => 'json' === redisValue.value?.type)
 const streamType = computed(() => 'stream' === redisValue.value?.type)
+const hashType = computed(() => 'hash' === redisValue.value?.type)
 const canSave = computed(
   () =>
     canEdit.value &&
@@ -1122,11 +1122,14 @@ function streamIdToDate(id: string) {
   }
 }
 
-const groupDataList = ref<XInfoGroup[]>([])
-const tableGroupVisible = ref(false)
-async function showGroups() {
-  groupDataList.value = await meCommands.xinfoGroups(share.conn!.id, share.redisKey!)
-  tableGroupVisible.value = true
+const tableGroupRef = useTemplateRef('tableGroupRef')
+function showGroups() {
+  tableGroupRef.value?.open()
+}
+
+const hashKeysRef = useTemplateRef('hashKeysRef')
+function showAllHashKeys() {
+  hashKeysRef.value?.open(toWireFormat(viewFmtForField(bytesFormat.value)))
 }
 // #endregion
 
@@ -1191,12 +1194,10 @@ function locateKeyInTree(): void {
 // #endregion
 
 // #region 快捷键说明弹窗
-const keyShortVisible = ref(false)
+const valueShortcutRef = useTemplateRef('valueShortcutRef')
 function openKeyShortDialog() {
-  keyShortVisible.value = true
+  valueShortcutRef.value?.open()
 }
-
-const keyShortcuts = computed(() => getValueShortcuts(t))
 // #endregion
 
 // #region 事件总线与生命周期
@@ -1410,6 +1411,13 @@ onUnmounted(() => {
                 style="margin-left: 10px"
                 v-if="streamType">
                 Groups
+              </el-button>
+              <el-button
+                v-if="hashType"
+                icon="el-icon-key"
+                @click="showAllHashKeys"
+                style="margin-left: 10px">
+                {{ t('redisValue.allHashKeys') }}
               </el-button>
               <el-button icon="el-icon-plus" @click="fieldAdd" style="margin-left: 10px">{{
                 t('redisValue.insertRow')
@@ -1730,21 +1738,12 @@ onUnmounted(() => {
     <KeyRename ref="keyRenameRef" />
     <CustomCodec v-model="customCodecVisible" />
 
-    <!-- Stream消费者组 -->
-    <me-dialog title="Groups" icon="el-icon-coin" v-model="tableGroupVisible" width="900">
-      <TableGroup :data-list="groupDataList" />
-    </me-dialog>
-
-    <!-- 值编辑器快捷键 -->
-    <el-dialog
-      v-model="keyShortVisible"
-      width="400"
-      align-center
-      draggable
-      :show-close="false"
-      header-class="me-shortcut-dialog__header">
-      <MeShortcut :items="keyShortcuts" />
-    </el-dialog>
+    <!-- Stream 消费者组 -->
+    <TableGroup ref="tableGroupRef" />
+    <!-- Hash 全量字段名（HKEYS） -->
+    <TableHashKeys ref="hashKeysRef" />
+    <!-- 值编辑器快捷键说明 -->
+    <ValueShortcut ref="valueShortcutRef" />
   </div>
 </template>
 
