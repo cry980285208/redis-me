@@ -466,6 +466,25 @@ const tableDisplayList = computed(() => {
   if (type === 'hash' || type === 'set' || type === 'zset') return filterFieldList.value
   return filterDataList.value
 })
+
+/** 值表各类型默认排序列（与可见 sortable 列 prop 一致） */
+const tableDefaultSort = computed(
+  (): { prop: string; order: 'ascending' | 'descending' } | undefined => {
+    switch (redisValue.value?.type) {
+      case 'hash':
+        return { prop: 'key', order: 'ascending' }
+      case 'zset':
+        return { prop: 'score', order: 'ascending' }
+      case 'stream':
+        return { prop: 'id', order: 'ascending' }
+      case 'list':
+      case 'set':
+        return { prop: 'value', order: 'ascending' }
+      default:
+        return undefined
+    }
+  },
+)
 // #endregion
 
 // #region 键刷新 fieldScan
@@ -962,6 +981,14 @@ function buildFieldGetParam(row?: ValueTableRow): RedisFieldGet_Deserialize | nu
 
 function fieldRowDisplayValue(row: ValueTableRow): string {
   return streamType.value ? JSON.stringify(row.value) : formatTableCell(row.value)
+}
+
+/** 值列排序：与单元格展示一致（Stream 等为 JSON 字符串） */
+function compareFieldRowValue(a: ValueTableRow, b: ValueTableRow): number {
+  return fieldRowDisplayValue(a).localeCompare(fieldRowDisplayValue(b), undefined, {
+    numeric: true,
+    sensitivity: 'base',
+  })
 }
 
 function openFieldPanel(row: ValueTableRow, index: number, readonly: boolean) {
@@ -1481,6 +1508,7 @@ onUnmounted(() => {
             <me-table
               layout="sizes, prev, pager, next, jumper"
               :data="tableDisplayList"
+              :default-sort="tableDefaultSort"
               border
               stripe
               ref="table"
@@ -1553,6 +1581,8 @@ onUnmounted(() => {
                 :label="t('redisValue.value')"
                 prop="value"
                 min-width="200"
+                sortable
+                :sort-method="compareFieldRowValue"
                 show-overflow-tooltip>
                 <template #default="scope">
                   {{ fieldRowDisplayValue(scope.row) }}
