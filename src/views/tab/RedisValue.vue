@@ -1238,6 +1238,7 @@ onUnmounted(() => {
                 @click.stop="locateKeyInTree" />
             </template>
             <template #suffix>
+              <span class="ttl-suffix-separator">|</span>
               <me-icon
                 icon="el-icon-timer"
                 class="suffix-ttl icon-btn"
@@ -1790,6 +1791,12 @@ onUnmounted(() => {
       &:hover {
         color: var(--el-color-primary);
       }
+    }
+
+    .ttl-suffix-separator {
+      margin-right: 6px;
+      color: var(--el-border-color);
+      user-select: none;
     }
 
     .value-header-actions {
