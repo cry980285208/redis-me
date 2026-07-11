@@ -794,6 +794,7 @@ export default {
     slotTitle: '集群槽位',
     tableKeyword: '本地过滤',
     fieldScanPlaceholder: '扫描参数 / 本地过滤',
+    listStreamFilterPlaceholder: '本地过滤',
     fieldExactSearch:
       '<b>扫描</b>（未勾选）<br/>app: 包含 app<br/>app*: 以 app 开头<br/>*app: 以 app 结尾<br/>含 * ? [ 时原样作为模式<br/><br/><b>精确</b>（勾选）<br/>判断 field/member 与输入完全一致是否存在（Hash 仅匹配 field 名）',
     insertRow: '插入行',

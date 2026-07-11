@@ -807,6 +807,7 @@ export default {
     slotTitle: 'Cluster Slot',
     tableKeyword: 'Local filter',
     fieldScanPlaceholder: 'Scan params / local filter',
+    listStreamFilterPlaceholder: 'Local filter',
     fieldExactSearch:
       '<b>Scan</b> (unchecked)<br/>app: contains app<br/>app*: starts with app<br/>*app: ends with app<br/>Use * ? [ as glob when present<br/><br/><b>Exact</b> (checked)<br/>Whether a field/member exactly matches input (Hash matches field name only)',
     insertRow: 'Insert Row',

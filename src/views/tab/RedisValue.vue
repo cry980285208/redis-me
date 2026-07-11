@@ -115,8 +115,7 @@ const redisValue = ref<FieldScanViewState | null>(null)
 const cursor = ref<ScanCursor | null>(null) // list/hash/set/zset/stream 分页游标
 const loading = ref(false)
 const isPretty = ref(true)
-const tableKeyword = ref('')
-/** Hash/Set/ZSet 服务端 field 扫描关键词 */
+/** 表格工具栏关键词：Hash/Set/ZSet 兼扫描参数与本地过滤，List/Stream 仅本地过滤 */
 const fieldKeyword = ref('')
 const fieldExact = ref(false)
 const fieldMatch = computed(() => buildScanPattern(fieldKeyword.value, fieldExact.value))
@@ -125,11 +124,19 @@ const scanPaused = ref(false)
 const scanLoadAll = ref(false)
 const scanBatchCount = ref(0)
 const SCAN_CONTROL_MIN_BATCHES = 10
-const showScanControl = computed(
-  () =>
-    supportsFieldServerScan(redisValue.value?.type) &&
-    (scanPaused.value || (loading.value && scanBatchCount.value >= SCAN_CONTROL_MIN_BATCHES)),
-)
+const showScanControl = computed(() => {
+  const type = redisValue.value?.type
+  if (!supportsTableView(type)) return false
+  return scanPaused.value || (loading.value && scanBatchCount.value >= SCAN_CONTROL_MIN_BATCHES)
+})
+const showFieldExactCheckbox = computed(() => supportsFieldServerScan(redisValue.value?.type))
+const fieldScanInputPlaceholder = computed(() => {
+  const type = redisValue.value?.type
+  if (type === 'list' || type === 'stream') {
+    return t('redisValue.listStreamFilterPlaceholder')
+  }
+  return t('redisValue.fieldScanPlaceholder')
+})
 const scanToggleTip = computed(() =>
   loading.value ? t('keyMain.pauseScan') : t('keyMain.resumeScan'),
 )
@@ -436,7 +443,7 @@ const dataList = computed(() => {
 })
 
 const filterDataList = computed(() => {
-  const key = tableKeyword.value.toLowerCase()
+  const key = fieldKeyword.value.toLowerCase()
   return dataList.value.filter(row => {
     if (!key) return true
     if ((formatTableCell(row.key).toLowerCase() ?? '').indexOf(key) > -1) return true
@@ -491,7 +498,6 @@ const tableDefaultSort = computed(
 
 /** 切换键或全量刷新时清空表格筛选等 UI 状态 */
 function resetParam() {
-  tableKeyword.value = ''
   fieldKeyword.value = ''
   fieldExact.value = false
   scanHashFieldTtl.value = false
@@ -641,7 +647,7 @@ function shouldFieldScanAuto(type: string | undefined, exact: boolean) {
 
 /**
  * 拉取/刷新当前键（fieldScan → 更新 redisValue → 同步编辑器）。
- * - reset=true：切换键，清空 fieldKeyword / tableKeyword
+ * - reset=true：切换键，清空 fieldKeyword
  * - restart=true：手动刷新 / Enter 搜索，保留 keyword 并中断进行中的扫描
  * 值面板无 F5；F5 仅 KeyMain 刷新键列表。
  */
@@ -1410,9 +1416,8 @@ onUnmounted(() => {
           @click="onFieldPanelOutsideClick">
           <div class="me-flex table-toolbar">
             <el-input
-              v-if="supportsFieldServerScan(redisValue.type)"
               v-model="fieldKeyword"
-              :placeholder="t('redisValue.fieldScanPlaceholder')"
+              :placeholder="fieldScanInputPlaceholder"
               :readonly="loading"
               clearable
               class="field-scan-input"
@@ -1439,6 +1444,7 @@ onUnmounted(() => {
                     </div>
                   </el-tooltip>
                   <el-tooltip
+                    v-if="showFieldExactCheckbox"
                     :content="t('redisValue.fieldExactSearch')"
                     placement="bottom"
                     raw-content
@@ -1448,12 +1454,6 @@ onUnmounted(() => {
                 </div>
               </template>
             </el-input>
-            <el-input
-              v-else
-              v-model="tableKeyword"
-              :placeholder="t('redisValue.tableKeyword')"
-              clearable
-              class="table-filter-input" />
 
             <div v-if="streamType" class="stream-range-inputs">
               <el-input
@@ -1938,11 +1938,6 @@ onUnmounted(() => {
         :deep(.el-input) {
           width: 180px;
         }
-      }
-
-      .table-filter-input {
-        width: 250px;
-        flex-shrink: 0;
       }
 
       .table-toolbar-actions {
