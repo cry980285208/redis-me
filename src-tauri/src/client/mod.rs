@@ -215,6 +215,8 @@ mod tests {
             exact: false,
             meta: None,
             bytes_format: Some(BytesFormat::Base64),
+            include_meta: None,
+            key_type: None,
         }
     }
 

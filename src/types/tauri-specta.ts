@@ -169,6 +169,10 @@ export type FieldScanParam_Deserialize = {
 	exact: boolean,
 	meta: FiledScanMeta | null,
 	bytesFormat: BytesFormat | null,
+	/**  是否拉取 TYPE/TTL/MEMORY/HLEN；前端续扫时为 false */
+	includeMeta: boolean | null,
+	/**  续扫时传入（include_meta=false），避免重复 TYPE */
+	keyType: string | null,
 };
 
 export type FieldScanParam_Serialize = {
@@ -181,6 +185,10 @@ export type FieldScanParam_Serialize = {
 	exact: boolean,
 	meta: FiledScanMeta | null,
 	bytesFormat: BytesFormat | null,
+	/**  是否拉取 TYPE/TTL/MEMORY/HLEN；前端续扫时为 false */
+	includeMeta: boolean | null,
+	/**  续扫时传入（include_meta=false），避免重复 TYPE */
+	keyType: string | null,
 };
 
 export type FieldScanResult = {

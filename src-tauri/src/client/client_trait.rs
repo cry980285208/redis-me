@@ -159,6 +159,24 @@ pub fn field_scan_batch_count(count: u64) -> u64 {
     if count == 0 { 20 } else { count }
 }
 
+fn field_scan_include_meta(param: &FieldScanParam) -> bool {
+    param.include_meta.unwrap_or(true)
+}
+
+fn resolve_field_scan_key_type(
+    conn: &mut MutexGuard<impl Commands>,
+    key: &RedisKey,
+    param: &FieldScanParam,
+) -> AnyResult<ValueType> {
+    if field_scan_include_meta(param) {
+        Ok(conn.key_type(key)?)
+    } else if let Some(ref t) = param.key_type {
+        Ok(to_key_type(t))
+    } else {
+        Ok(conn.key_type(key)?)
+    }
+}
+
 /// 完全匹配时用 EXISTS 判断键是否存在；否则返回 None 走 SCAN
 /// 注意：EXISTS 路径不校验 scan_type，精确查完整键名时更符合实际使用场景
 pub fn scan_0_exact<C: redis::ConnectionLike>(
@@ -321,6 +339,7 @@ pub fn field_scan0(
         }
     }
 
+    let include_meta = field_scan_include_meta(&param);
     field_scan_4_return(
         conn,
         param.key,
@@ -329,6 +348,7 @@ pub fn field_scan0(
         cc,
         length,
         value_truncated,
+        include_meta,
     )
 }
 
@@ -362,7 +382,7 @@ pub fn field_scan_0_get(
 ) -> AnyResult<(Option<serde_json::Value>, ValueType, ScanCursor, usize, bool)> {
     let key = &param.key;
 
-    let key_type: ValueType = conn.key_type(key)?;
+    let key_type = resolve_field_scan_key_type(&mut conn, key, param)?;
     let mut cc = param.cursor.clone().unwrap_or_default();
 
     // String类型的bytes长度
@@ -569,14 +589,20 @@ pub fn field_scan_4_return(
     cursor: ScanCursor,
     length: usize,
     value_truncated: bool,
+    include_meta: bool,
 ) -> AnyResult<FieldScanResult> {
-    let ttl: i64 = conn.ttl(&key)?;
-    let size: u64 = redis::cmd("memory")
-        .arg("usage")
-        .arg(&key)
-        .query(&mut conn)
-        .unwrap_or(0);
-    let length = resolve_field_scan_length(&mut conn, &key, &key_type, length)?;
+    let (ttl, size, length) = if include_meta {
+        let ttl: i64 = conn.ttl(&key)?;
+        let size: u64 = redis::cmd("memory")
+            .arg("usage")
+            .arg(&key)
+            .query(&mut conn)
+            .unwrap_or(0);
+        let length = resolve_field_scan_length(&mut conn, &key, &key_type, length)?;
+        (ttl, size, length)
+    } else {
+        (0, 0, length)
+    };
 
     Ok(FieldScanResult {
         key_type: ui_key_type(key_type),

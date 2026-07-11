@@ -335,6 +335,10 @@ api_model!(FieldScanParam {
     exact: bool,
     meta: Option<FiledScanMeta>,
     bytes_format: Option<BytesFormat>, // 扫描/展示用字节格式
+    /// 是否拉取 TYPE/TTL/MEMORY/HLEN；前端续扫时为 false
+    include_meta: Option<bool>,
+    /// 续扫时传入（include_meta=false），避免重复 TYPE
+    key_type: Option<String>,
 });
 
 api_model!(XInfoGroup{

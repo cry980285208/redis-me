@@ -474,10 +474,16 @@ function resetParam() {
   fieldExact.value = false
 }
 
+/** 续扫时 cursor 非空，跳过 TYPE/TTL/MEMORY/HLEN 等元数据命令 */
+function fieldScanIncludeMeta(): boolean {
+  return cursor.value == null
+}
+
 /** 组装 fieldScan 参数：count 来自 settings.fieldScanCount（HSCAN COUNT + 前端续扫阈值） */
 function buildFieldScanParam() {
   const type = redisValue.value?.type
   const serverScan = supportsFieldServerScan(type)
+  const includeMeta = fieldScanIncludeMeta()
   return {
     key: share.redisKey!,
     count: meTauri.settings.fieldScanCount ?? 10,
@@ -491,6 +497,8 @@ function buildFieldScanParam() {
       forceFullValue: forceFullValue.value,
     },
     bytesFormat: toWireFormat(bytesFormat.value),
+    includeMeta,
+    keyType: includeMeta ? null : (type ?? null),
   }
 }
 
@@ -514,14 +522,20 @@ async function loadFullValue() {
  * 仅 hash/list/set/zset/stream 的行数组可拼接；string/json 等走整包替换。
  * @returns true 已就地 merge；false 调用方应 set replaceData 整包换
  */
-function mergeFieldScanPage(prev: FieldScanViewState, data: FieldScanResult): boolean {
+function mergeFieldScanPage(
+  prev: FieldScanViewState,
+  data: FieldScanResult,
+  includeMeta: boolean,
+): boolean {
   if (!supportsTableView(data.type)) return false
   const merged: unknown[] = [...fieldValueRows(prev.value), ...fieldValueRows(data.value)]
   ;(prev as { value: unknown }).value = merged
-  // length/ttl/size 随服务端最新统计更新（length 为键内总条数，非当前已加载数）
-  prev.length = data.length
-  prev.ttl = data.ttl
-  prev.size = data.size
+  if (includeMeta) {
+    // length/ttl/size 随服务端最新统计更新（length 为键内总条数，非当前已加载数）
+    prev.length = data.length
+    prev.ttl = data.ttl
+    prev.size = data.size
+  }
   return true
 }
 
@@ -559,13 +573,14 @@ async function finalizeAfterFieldScan(reset: boolean, replaceData?: FieldScanRes
 async function fieldScanCore(
   useCursor: boolean,
 ): Promise<{ count: number; replaceData?: FieldScanResult }> {
+  const includeMeta = fieldScanIncludeMeta()
   const data = await meCommands.fieldScan(share.conn!.id, buildFieldScanParam())
   cursor.value = data.cursor
   scanBatchCount.value++
 
   if (useCursor) {
     const prev = redisValue.value
-    if (prev && mergeFieldScanPage(prev, data)) {
+    if (prev && mergeFieldScanPage(prev, data, includeMeta)) {
       return { count: fieldValueRows(data.value).length }
     }
   }
