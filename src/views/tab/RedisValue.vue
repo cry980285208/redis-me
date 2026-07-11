@@ -1756,6 +1756,8 @@ onUnmounted(() => {
   flex-direction: column;
 
   .value-header {
+    margin-right: 5px;
+
     :deep(.el-input-group__prepend) {
       padding: 0 12px;
     }
