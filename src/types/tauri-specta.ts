@@ -222,6 +222,8 @@ export type FiledScanMeta = {
 	listMaxIndex: number | null,
 	/**  List 扫描方向：true 从 max 向 min，false 从 min 向 max */
 	listDesc: boolean | null,
+	/**  Stream 扫描方向：true 从 max 向 min（XREVRANGE），false 从 min 向 max（XRANGE） */
+	streamDesc: boolean | null,
 };
 
 export type RedisBatchKey = RedisBatchKey_Serialize | RedisBatchKey_Deserialize;

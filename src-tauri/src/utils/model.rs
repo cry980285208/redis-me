@@ -328,6 +328,8 @@ api_model!(FiledScanMeta {
     list_max_index: Option<i64>,
     /// List 扫描方向：true 从 max 向 min，false 从 min 向 max
     list_desc: Option<bool>,
+    /// Stream 扫描方向：true 从 max 向 min（XREVRANGE），false 从 min 向 max（XRANGE）
+    stream_desc: Option<bool>,
 });
 
 api_model!(FieldScanParam {

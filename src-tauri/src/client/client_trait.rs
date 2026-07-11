@@ -516,18 +516,42 @@ pub fn field_scan_0_get(
         }
         ValueType::Stream => {
             let count = field_scan_batch_count(param.count);
-            let end = if cc.stream_cursor.is_empty() {
-                match param.meta.as_ref() {
+            let is_desc = param
+                .meta
+                .as_ref()
+                .and_then(|m| m.stream_desc)
+                .unwrap_or(true);
+
+            let (arg1, arg2) = if is_desc {
+                // XREVRANGE: (end, start)
+                let end = if cc.stream_cursor.is_empty() {
+                    match param.meta.as_ref() {
+                        Some(meta) if !meta.max_id.is_empty() => &meta.max_id,
+                        _ => "+",
+                    }
+                } else {
+                    &cc.stream_cursor
+                };
+                let start = match param.meta.as_ref() {
+                    Some(meta) if !meta.min_id.is_empty() => &meta.min_id,
+                    _ => "-",
+                };
+                (end, start)
+            } else {
+                // XRANGE: (start, end)
+                let start = if cc.stream_cursor.is_empty() {
+                    match param.meta.as_ref() {
+                        Some(meta) if !meta.min_id.is_empty() => &meta.min_id,
+                        _ => "-",
+                    }
+                } else {
+                    &cc.stream_cursor
+                };
+                let end = match param.meta.as_ref() {
                     Some(meta) if !meta.max_id.is_empty() => &meta.max_id,
                     _ => "+",
-                }
-            } else {
-                &cc.stream_cursor
-            };
-
-            let start = match param.meta.as_ref() {
-                Some(meta) if !meta.min_id.is_empty() => &meta.min_id,
-                _ => "-",
+                };
+                (start, end)
             };
 
             let scan_count = if cc.stream_cursor.is_empty() {
@@ -536,8 +560,9 @@ pub fn field_scan_0_get(
                 count
             };
 
-            let mut cmd = redis::cmd("XREVRANGE");
-            cmd.arg(key).arg(end).arg(start);
+            let cmd_name = if is_desc { "XREVRANGE" } else { "XRANGE" };
+            let mut cmd = redis::cmd(cmd_name);
+            cmd.arg(key).arg(arg1).arg(arg2);
             cmd.arg("COUNT").arg(scan_count);
             let reply: StreamRangeReply = cmd.query(&mut conn)?;
             let mut value = ui_stream_value(reply);

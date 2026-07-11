@@ -178,6 +178,8 @@ const listIndexMin = ref('')
 const listIndexMax = ref('')
 /** true=升序扫描；false=降序 */
 const listDescAsc = ref(true)
+/** Stream 扫描方向：true=升序（XRANGE），false=降序（XREVRANGE） */
+const streamDescAsc = ref(true)
 
 function parseListIndexInput(raw: string): number | null {
   const s = raw.trim()
@@ -192,6 +194,11 @@ function listRowRedisIndex(row: ValueTableRow): number {
 
 function toggleListSortOrder() {
   listDescAsc.value = !listDescAsc.value
+  void restartFieldScan()
+}
+
+function toggleStreamSortOrder() {
+  streamDescAsc.value = !streamDescAsc.value
   void restartFieldScan()
 }
 
@@ -530,8 +537,6 @@ const tableDefaultSort = computed(
         return { prop: 'key', order: 'ascending' }
       case 'zset':
         return { prop: 'score', order: 'ascending' }
-      case 'stream':
-        return { prop: 'id', order: 'ascending' }
       case 'set':
         return { prop: 'value', order: 'ascending' }
       default:
@@ -551,6 +556,7 @@ function resetParam() {
   listIndexMin.value = ''
   listIndexMax.value = ''
   listDescAsc.value = true
+  streamDescAsc.value = true
 }
 
 /** 续扫时 cursor 非空，跳过 TYPE/TTL/MEMORY/HLEN 等元数据命令 */
@@ -574,6 +580,7 @@ function buildFieldScanParam() {
       listMinIndex: parseListIndexInput(listIndexMin.value),
       listMaxIndex: parseListIndexInput(listIndexMax.value),
       listDesc: listType.value ? !listDescAsc.value : null,
+      streamDesc: streamType.value ? !streamDescAsc.value : null,
       valueByteLimit: VALUE_BYTE_LIMIT,
       valuePreviewBytes: VALUE_PREVIEW_BYTES,
       forceFullValue: forceFullValue.value,
@@ -1511,13 +1518,14 @@ onUnmounted(() => {
             <div v-if="streamType" class="stream-range-inputs">
               <el-input
                 @keyup.enter="restartFieldScan()"
-                v-model.trim="meta.maxId"
-                placeholder="MaxId"
-                clearable />
-              <el-input
-                @keyup.enter="restartFieldScan()"
                 v-model.trim="meta.minId"
                 placeholder="MinId"
+                clearable />
+              <span class="stream-range-sep">-</span>
+              <el-input
+                @keyup.enter="restartFieldScan()"
+                v-model.trim="meta.maxId"
+                placeholder="MaxId"
                 clearable />
             </div>
 
@@ -1545,6 +1553,13 @@ onUnmounted(() => {
                 @click="toggleHashFieldTtl">
                 HTTL
               </me-button>
+              <el-button
+                v-if="streamType"
+                :icon="streamDescAsc ? 'el-icon-sort-up' : 'el-icon-sort-down'"
+                @click="toggleStreamSortOrder"
+                style="margin-left: 10px">
+                {{ streamDescAsc ? t('redisValue.listSortAsc') : t('redisValue.listSortDesc') }}
+              </el-button>
               <el-button
                 icon="el-icon-grid"
                 @click="showGroups"
@@ -2022,12 +2037,13 @@ onUnmounted(() => {
 
       .stream-range-inputs {
         display: flex;
-        gap: 10px;
+        gap: 5px;
         margin-left: 10px;
         flex-shrink: 0;
+        align-items: center;
 
         :deep(.el-input) {
-          width: 180px;
+          width: 120px;
         }
       }
 
@@ -2044,6 +2060,11 @@ onUnmounted(() => {
       }
 
       .list-range-sep {
+        color: var(--el-text-color-secondary);
+        flex-shrink: 0;
+      }
+
+      .stream-range-sep {
         color: var(--el-text-color-secondary);
         flex-shrink: 0;
       }
