@@ -1076,6 +1076,8 @@ async function refreshFieldRow(row: ValueTableRow) {
 function onFieldRowMoreCommand(command: string, row: ValueTableRow) {
   if (command === 'refreshRow') {
     void refreshFieldRow(row)
+  } else if (command === 'copyHashKey') {
+    meCopy(String(row.key ?? ''))
   } else if (command === 'copyFieldValue') {
     meCopy(fieldRowDisplayValue(row))
   } else if (command === 'copyAsCommand') {
@@ -1608,6 +1610,11 @@ onUnmounted(() => {
                             <me-icon
                               icon="el-icon-refresh-right"
                               :name="t('redisValue.refreshFieldRow')" />
+                          </el-dropdown-item>
+                          <el-dropdown-item v-if="hashType" command="copyHashKey">
+                            <me-icon
+                              icon="el-icon-document-copy"
+                              :name="t('redisValue.copyHashKey')" />
                           </el-dropdown-item>
                           <el-dropdown-item command="copyFieldValue">
                             <me-icon

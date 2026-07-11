@@ -817,6 +817,7 @@ export default {
     duplicateKey: '创建副本',
     copyValue: '复制值',
     copyFieldValue: '复制字段值',
+    copyHashKey: '复制哈希键',
     copyAsCommand: '复制为命令',
     refreshFieldRow: '刷新行',
     refreshFieldRowOk: '行已刷新',

@@ -830,6 +830,7 @@ export default {
     duplicateKey: 'Create Duplicate',
     copyValue: 'Copy Value',
     copyFieldValue: 'Copy Field Value',
+    copyHashKey: 'Copy Hash Key',
     copyAsCommand: 'Copy as Command',
     refreshFieldRow: 'Refresh Row',
     refreshFieldRowOk: 'Row refreshed',
