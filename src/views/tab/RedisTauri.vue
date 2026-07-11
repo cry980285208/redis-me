@@ -94,9 +94,6 @@ const minimalFieldScan: FieldScanParam_Deserialize = {
   exact: false,
   meta: null,
   bytesFormat: null,
-  valueByteLimit: null,
-  valuePreviewBytes: null,
-  forceFullValue: null,
 }
 
 const minimalSetParam: RedisSetParam_Deserialize = {

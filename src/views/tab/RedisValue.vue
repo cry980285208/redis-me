@@ -484,11 +484,13 @@ function buildFieldScanParam() {
     cursor: cursor.value,
     match: serverScan ? fieldMatch.value : '*',
     exact: serverScan ? fieldExact.value : false,
-    meta: meta.value,
+    meta: {
+      ...meta.value,
+      valueByteLimit: VALUE_BYTE_LIMIT,
+      valuePreviewBytes: VALUE_PREVIEW_BYTES,
+      forceFullValue: forceFullValue.value,
+    },
     bytesFormat: toWireFormat(bytesFormat.value),
-    valueByteLimit: VALUE_BYTE_LIMIT,
-    valuePreviewBytes: VALUE_PREVIEW_BYTES,
-    forceFullValue: forceFullValue.value,
   }
 }
 

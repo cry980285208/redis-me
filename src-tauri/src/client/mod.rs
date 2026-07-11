@@ -215,9 +215,6 @@ mod tests {
             exact: false,
             meta: None,
             bytes_format: Some(BytesFormat::Base64),
-            value_byte_limit: None,
-            value_preview_bytes: None,
-            force_full_value: None,
         }
     }
 

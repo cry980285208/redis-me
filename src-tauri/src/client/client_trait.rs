@@ -337,11 +337,12 @@ fn load_string_bytes(
     param: &FieldScanParam,
 ) -> AnyResult<(Vec<u8>, usize, bool)> {
     let strlen: usize = conn.strlen(key)?;
-    let force_full = param.force_full_value.unwrap_or(false);
+    let meta = param.meta.as_ref();
+    let force_full = meta.and_then(|m| m.force_full_value).unwrap_or(false);
     if !force_full {
-        if let Some(limit) = param.value_byte_limit {
+        if let Some(limit) = meta.and_then(|m| m.value_byte_limit) {
             if strlen > limit as usize {
-                let preview = param.value_preview_bytes.unwrap_or(1000) as usize;
+                let preview = meta.and_then(|m| m.value_preview_bytes).unwrap_or(1000) as usize;
                 let end = preview.saturating_sub(1) as isize;
                 let value: Vec<u8> = conn.getrange(key, 0, end)?;
                 return Ok((value, strlen, true));

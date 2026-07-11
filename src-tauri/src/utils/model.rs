@@ -313,6 +313,18 @@ impl ScanParam {
     }
 }
 
+// fieldScan 按类型的扩展参数：Stream 范围、STRING 大值预览阈值等
+api_model!(FiledScanMeta {
+    /// Stream XREVRANGE 上界
+    max_id: String,
+    /// Stream XREVRANGE 下界
+    min_id: String,
+    /// STRING 全量加载字节上限；超过且未 force 时仅 GETRANGE 预览前 value_preview_bytes
+    value_byte_limit: Option<u64>,
+    value_preview_bytes: Option<u64>,
+    force_full_value: Option<bool>,
+});
+
 api_model!(FieldScanParam {
     key: RedisKey,
     count: u64,
@@ -322,17 +334,8 @@ api_model!(FieldScanParam {
     pattern: String,
     /// 完全匹配：true 时走 HGET / SISMEMBER / ZSCORE
     exact: bool,
-    meta: Option<FiledScanMeta>, // Stream 范围 min_id / max_id
+    meta: Option<FiledScanMeta>,
     bytes_format: Option<BytesFormat>, // 扫描/展示用字节格式
-    /// STRING 全量加载字节上限；超过且未 force 时仅 GETRANGE 预览前 value_preview_bytes
-    value_byte_limit: Option<u64>,
-    value_preview_bytes: Option<u64>,
-    force_full_value: Option<bool>,
-});
-
-api_model!(FiledScanMeta {
-    max_id: String,
-    min_id: String
 });
 
 api_model!(XInfoGroup{

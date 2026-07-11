@@ -168,10 +168,6 @@ export type FieldScanParam_Deserialize = {
 	exact: boolean,
 	meta: FiledScanMeta | null,
 	bytesFormat: BytesFormat | null,
-	/**  STRING 全量加载字节上限；超过且未 force 时仅 GETRANGE 预览前 value_preview_bytes */
-	valueByteLimit: number | null,
-	valuePreviewBytes: number | null,
-	forceFullValue: boolean | null,
 };
 
 export type FieldScanParam_Serialize = {
@@ -184,10 +180,6 @@ export type FieldScanParam_Serialize = {
 	exact: boolean,
 	meta: FiledScanMeta | null,
 	bytesFormat: BytesFormat | null,
-	/**  STRING 全量加载字节上限；超过且未 force 时仅 GETRANGE 预览前 value_preview_bytes */
-	valueByteLimit: number | null,
-	valuePreviewBytes: number | null,
-	forceFullValue: boolean | null,
 };
 
 export type FieldScanResult = {
@@ -202,8 +194,14 @@ export type FieldScanResult = {
 };
 
 export type FiledScanMeta = {
+	/**  Stream XREVRANGE 上界 */
 	maxId: string,
+	/**  Stream XREVRANGE 下界 */
 	minId: string,
+	/**  STRING 全量加载字节上限；超过且未 force 时仅 GETRANGE 预览前 value_preview_bytes */
+	valueByteLimit: number | null,
+	valuePreviewBytes: number | null,
+	forceFullValue: boolean | null,
 };
 
 export type RedisBatchKey = RedisBatchKey_Serialize | RedisBatchKey_Deserialize;
