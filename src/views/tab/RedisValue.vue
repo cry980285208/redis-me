@@ -76,6 +76,7 @@ import TTLSet from '@/views/ext/TTLSet.vue'
 import ValueShortcut from '@/views/ext/ValueShortcut.vue'
 import KeyRename from '@/views/key/KeyRename.vue'
 
+import CommandHelp from '../ext/CommandHelp.vue'
 import CustomCodec from '../ext/CustomCodec.vue'
 import FieldAdd from '../ext/FieldAdd.vue'
 import FieldSet from '../ext/FieldSet.vue'
@@ -931,6 +932,8 @@ function onKeyMoreCommand(command: string) {
     void showSlot()
   } else if (command === 'showLocation') {
     void showLocation()
+  } else if (command === 'commandHelp') {
+    openCommandHelp()
   }
 }
 // #endregion
@@ -1341,6 +1344,27 @@ function openKeyShortDialog() {
 }
 // #endregion
 
+// #region 命令帮助弹窗
+const commandHelpRef = useTemplateRef<InstanceType<typeof CommandHelp>>('commandHelpRef')
+
+/** 键类型到命令分组 group 的映射 */
+const KEY_TYPE_TO_GROUP: Record<string, string> = {
+  string: 'string',
+  hash: 'hash',
+  list: 'list',
+  set: 'set',
+  zset: 'sorted-set',
+  stream: 'stream',
+  json: 'json',
+}
+
+function openCommandHelp() {
+  const type = redisValue.value?.type
+  const group = type ? KEY_TYPE_TO_GROUP[type] : ''
+  commandHelpRef.value?.open({ group })
+}
+// #endregion
+
 // #region 事件总线与生命周期
 /** 选中键时加载值（KEY_REFRESH）；与 KeyMain F5 刷新键列表无关 */
 const onKeyRefreshBus = () => {
@@ -1436,6 +1460,9 @@ onUnmounted(() => {
                 </el-dropdown-item>
                 <el-dropdown-item v-if="share.conn?.cluster" command="showLocation">
                   <me-icon icon="el-icon-location" :name="t('redisValue.locationTitle')" />
+                </el-dropdown-item>
+                <el-dropdown-item command="commandHelp" divided>
+                  <me-icon icon="el-icon-help" :name="t('redisValue.commandHelp')" />
                 </el-dropdown-item>
               </el-dropdown-menu>
             </template>
@@ -1952,6 +1979,8 @@ onUnmounted(() => {
     <TableHashKeys ref="hashKeysRef" />
     <!-- 值编辑器快捷键说明 -->
     <ValueShortcut ref="valueShortcutRef" />
+    <!-- 命令帮助 -->
+    <CommandHelp ref="commandHelpRef" />
   </div>
 </template>
 

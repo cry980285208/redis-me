@@ -866,6 +866,7 @@ export default {
     valueTruncatedDismiss: 'Keep Preview',
     valueTruncatedLoadAll: 'Load Full Value',
     viewCodec: 'Codec',
+    commandHelp: 'Command Help',
     keyShortHint: 'View KeyShort',
     keyShort: {
       fullscreen: 'Fullscreen Editor',

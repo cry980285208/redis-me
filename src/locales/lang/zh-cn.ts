@@ -852,6 +852,7 @@ export default {
     valueTruncatedDismiss: '继续使用预览',
     valueTruncatedLoadAll: '仍要加载全部',
     viewCodec: '数据编码',
+    commandHelp: '命令帮助',
     keyShortHint: '查看快捷键',
     keyShort: {
       fullscreen: '全屏编辑器',
