@@ -31,6 +31,10 @@ declare global {
       codecExecTimeoutSec?: number
       /** Redis 命令读写超时（秒），同步至 Rust */
       commandTimeout?: number
+      /** STRING 类型值全量加载安全阈值（MB） */
+      valueByteLimitMB?: number
+      /** STRING 类型值超过安全阈值时的预览字节数 */
+      valuePreviewBytes?: number
     }
     systemTheme: string
     systemLanguage: string

@@ -128,6 +128,8 @@ const moreDefaultSettings = {
   fieldShowView: 'table',
   commandTimeout: 30,
   codecExecTimeoutSec: 5,
+  valueByteLimitMB: 1,
+  valuePreviewBytes: 2000,
 }
 
 /** 更多设置数字项 min/max，与表单项及 ? 提示共用 */
@@ -137,6 +139,8 @@ const MORE_SETTING_LIMITS = {
   commandTimeout: { min: 5, max: 300 },
   codecExecTimeoutSec: { min: 1, max: 120 },
   keyHeight: { min: 16, max: 28 },
+  valueByteLimitMB: { min: 1, max: 5 },
+  valuePreviewBytes: { min: 1000, max: 10000 },
 } as const
 
 type BaseSettingKey = keyof typeof baseDefaultSettings
@@ -426,6 +430,49 @@ async function resetWindowSize() {
                   style="width: 100px"
                   align="left">
                   <template #suffix>{{ t('setting.secUnit') }}</template>
+                </el-input-number>
+              </el-form-item>
+            </el-row>
+
+            <!-- 值限制、预览 -->
+            <el-row class="me-flex">
+              <el-form-item>
+                <template #label>
+                  <me-icon
+                    :name="t('setting.valueByteLimitMB')"
+                    icon="el-icon-question-filled"
+                    :info="t('setting.valueByteLimitMBTip', MORE_SETTING_LIMITS.valueByteLimitMB)"
+                    :icon-left="false"
+                    placement="top" />
+                </template>
+                <el-input-number
+                  v-model="settings.valueByteLimitMB"
+                  :min="MORE_SETTING_LIMITS.valueByteLimitMB.min"
+                  :max="MORE_SETTING_LIMITS.valueByteLimitMB.max"
+                  :controls="false"
+                  :step="1"
+                  style="width: 100px"
+                  align="left">
+                  <template #suffix>M</template>
+                </el-input-number>
+              </el-form-item>
+              <el-form-item>
+                <template #label>
+                  <me-icon
+                    :name="t('setting.valuePreviewBytes')"
+                    icon="el-icon-question-filled"
+                    :info="t('setting.valuePreviewBytesTip', MORE_SETTING_LIMITS.valuePreviewBytes)"
+                    :icon-left="false"
+                    placement="top" />
+                </template>
+                <el-input-number
+                  v-model="settings.valuePreviewBytes"
+                  :min="MORE_SETTING_LIMITS.valuePreviewBytes.min"
+                  :max="MORE_SETTING_LIMITS.valuePreviewBytes.max"
+                  :controls="false"
+                  style="width: 100px"
+                  align="left">
+                  <template #suffix>B</template>
                 </el-input-number>
               </el-form-item>
             </el-row>

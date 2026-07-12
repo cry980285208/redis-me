@@ -83,6 +83,11 @@ export default {
       'Max wait for one Redis command on an open connection; takes effect after reconnect. Range {min}–{max} s',
     scriptTimeout: 'Script Timeout',
     scriptTimeoutTip: 'Max runtime for custom codec scripts. Range {min}–{max} s',
+    valueByteLimitMB: 'Safe Limit',
+    valueByteLimitMBTip: 'STRING value size threshold to prompt full load. Range {min}–{max} M',
+    valuePreviewBytes: 'Preview Bytes',
+    valuePreviewBytesTip:
+      'Preview first N bytes when value exceeds safe limit. Range {min}–{max} B',
     secUnit: 's',
     countUnit: '',
     pxUnit: 'px',

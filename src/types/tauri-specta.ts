@@ -213,7 +213,7 @@ export type FiledScanMeta = {
 	maxId: string,
 	minId: string,
 	/**  STRING 全量加载字节上限；超过且未 force 时仅 GETRANGE 预览前 value_preview_bytes */
-	valueByteLimit: number | null,
+	valueByteLimitMB: number | null,
 	valuePreviewBytes: number | null,
 	forceFullValue: boolean | null,
 	/**  List LRANGE 下界；空则 0 */

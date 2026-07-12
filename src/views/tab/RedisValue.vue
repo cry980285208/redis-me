@@ -160,9 +160,13 @@ const valueEditorRemountKey = ref(0)
 /** 手动控制「加载更多」按钮，避免 cursor 变化导致按钮闪现 */
 const showMore = ref(false)
 
-/** 临时：STRING 全量加载阈值与预览长度，后期迁至 settings */
-const VALUE_BYTE_LIMIT = 1024 * 1024
-const VALUE_PREVIEW_BYTES = 1000
+/** STRING 全量加载阈值与预览长度，从 settings 读取 */
+const VALUE_BYTE_LIMIT = computed(
+  () => ((window.meTauri.settings.valueByteLimitMB as number) ?? 1) * 1024 * 1024,
+)
+const VALUE_PREVIEW_BYTES = computed(
+  () => (window.meTauri.settings.valuePreviewBytes as number) ?? 2000,
+)
 /** 用户确认「仍要加载全部」后为 true，fieldScan 走 GET 全量 */
 const forceFullValue = ref(false)
 const valueTruncatedDismissed = ref(false)
@@ -587,8 +591,8 @@ function buildFieldScanParam() {
       listMaxIndex: parseListIndexInput(listIndexMax.value),
       listDesc: listType.value ? !listDescAsc.value : null,
       streamDesc: streamType.value ? !streamDescAsc.value : null,
-      valueByteLimit: VALUE_BYTE_LIMIT,
-      valuePreviewBytes: VALUE_PREVIEW_BYTES,
+      valueByteLimit: VALUE_BYTE_LIMIT.value,
+      valuePreviewBytes: VALUE_PREVIEW_BYTES.value,
       forceFullValue: forceFullValue.value,
     },
     bytesFormat: toWireFormat(bytesFormat.value),

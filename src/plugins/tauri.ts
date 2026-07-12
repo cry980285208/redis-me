@@ -63,6 +63,10 @@ const initSettings = {
   codecExecTimeoutSec: 5,
   // Redis 命令读写超时（秒），同步至 Rust AppSettings
   commandTimeout: 30,
+  // STRING 类型值全量加载安全阈值（MB）
+  valueByteLimitMB: 1,
+  // STRING 类型值超过安全阈值时的预览字节数
+  valuePreviewBytes: 2000,
 }
 const settings = { ...initSettings, ...storeSettings }
 if (settings.fieldShow !== 'auto' && settings.fieldShow !== 'table') settings.fieldShow = 'auto'
