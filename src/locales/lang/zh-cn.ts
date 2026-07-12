@@ -64,7 +64,7 @@ export default {
     updateNow: '检查更新',
     updateAppStore: '应用商店控制更新',
 
-    baseSetting: '基础',
+    baseSetting: '通用',
     moreSetting: '更多',
     extLabelWidth: '100',
     keyScanCount: '键扫描',

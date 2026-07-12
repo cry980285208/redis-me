@@ -216,12 +216,15 @@ async function resetWindowSize() {
 </script>
 
 <template>
-  <el-dialog v-model="visible" width="700" align-center draggable>
+  <el-dialog v-model="visible" width="740" align-center draggable>
     <template #header>
       <me-icon icon="el-icon-setting" :name="t('setting.title')"></me-icon>
     </template>
     <el-tabs tab-position="left" style="height: 350px">
-      <el-tab-pane :label="t('setting.baseSetting')">
+      <el-tab-pane>
+        <template #label>
+          <me-icon icon="el-icon-tools" :name="t('setting.baseSetting')" />
+        </template>
         <div class="tab-content">
           <el-form inline label-position="right" :label-width="t('setting.labelWidth')">
             <!-- 主题、语言 -->
@@ -343,7 +346,10 @@ async function resetWindowSize() {
         </div>
       </el-tab-pane>
 
-      <el-tab-pane :label="t('setting.moreSetting')">
+      <el-tab-pane>
+        <template #label>
+          <me-icon icon="el-icon-grid" :name="t('setting.moreSetting')" />
+        </template>
         <div class="tab-content">
           <el-form
             inline
@@ -564,6 +570,10 @@ async function resetWindowSize() {
 
 :deep(.el-tabs__content) {
   height: 100%;
+}
+
+:deep(.el-tabs__item) {
+  justify-content: flex-start !important;
 }
 
 :deep(.el-tab-pane) {
