@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { getVersion } from '@tauri-apps/api/app'
-import { appConfigDir, appDataDir, appLogDir, resourceDir } from '@tauri-apps/api/path'
+import { appConfigDir, appLogDir } from '@tauri-apps/api/path'
 import { openPath } from '@tauri-apps/plugin-opener'
 import { getSystemFonts } from 'tauri-plugin-system-fonts-api'
 import { computed, inject, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import { appProvideKey, connUiProvideKey, type AppMainInject } from '@/types/me-interface'
+import { appProvideKey, connUiProvideKey } from '@/types/me-interface'
+import { defaultSettings } from '@/utils/settings-defaults'
 import {
   meCheckUpdate,
   meConfirm,
@@ -54,11 +55,8 @@ const loadFonts = async () => {
   // 取fullName作为显示, style过滤Regular去除粗体/斜体
   // 示例1: FontData {postscriptName: 'SimHei', fullName: '黑体', family: 'SimHei', style: 'Regular'}
   // 示例2: FontData {postscriptName: 'Arial-Black', fullName: 'Arial Black Normal', family: 'Arial', style: 'Black'}
-  let localFonts: LocalFontFace[] = []
-  if (window.queryLocalFonts) {
-    localFonts = [...(await window.queryLocalFonts())]
-    //console.log('localFonts:', localFonts)
-  }
+  const localFonts = window.queryLocalFonts ? [...(await window.queryLocalFonts())] : []
+  //console.log('localFonts:', localFonts)
 
   if (localFonts.length > 0) {
     fonts.value = localFonts
@@ -109,27 +107,27 @@ const fieldShowList = computed(() => [
   { value: 'table', label: t('setting.fieldShowTable') },
 ])
 
-// 默认设置
+// 默认设置（从 settings-defaults.ts 导入，避免修改时遗漏）
 const baseDefaultSettings = {
-  theme: 'system',
-  language: 'system',
-  uiFont: [] as string[],
-  codeFont: [] as string[],
-  autoUpdate: true,
+  theme: defaultSettings.theme,
+  language: defaultSettings.language,
+  uiFont: defaultSettings.uiFont,
+  codeFont: defaultSettings.codeFont,
+  autoUpdate: defaultSettings.autoUpdate,
 }
 
 const moreDefaultSettings = {
-  keyScanCount: 1000,
-  fieldScanCount: 100,
-  keyShow: 'tree',
-  keySort: 'count',
-  keyHeight: 20,
-  fieldShow: 'auto',
-  fieldShowView: 'table',
-  commandTimeout: 30,
-  codecExecTimeoutSec: 5,
-  valueByteLimitMB: 1,
-  valuePreviewBytes: 1000,
+  keyScanCount: defaultSettings.keyScanCount,
+  fieldScanCount: defaultSettings.fieldScanCount,
+  keyShow: defaultSettings.keyShow,
+  keySort: defaultSettings.keySort,
+  keyHeight: defaultSettings.keyHeight,
+  fieldShow: defaultSettings.fieldShow,
+  fieldShowView: defaultSettings.fieldShowView,
+  commandTimeout: defaultSettings.commandTimeout,
+  codecExecTimeoutSec: defaultSettings.codecExecTimeoutSec,
+  valueByteLimitMB: defaultSettings.valueByteLimitMB,
+  valuePreviewBytes: defaultSettings.valuePreviewBytes,
 }
 
 /** 更多设置数字项 min/max，与表单项及 ? 提示共用 */

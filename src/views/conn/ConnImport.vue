@@ -3,8 +3,8 @@ import { readTextFile } from '@tauri-apps/plugin-fs'
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import { checkConnList } from '@/plugins/tauri'
 import type { UiConn } from '@/types/me-interface'
+import { checkConnList } from '@/utils/conn-compat'
 import {
   ConnImportParseError,
   connImportFileSuffix,

@@ -1,0 +1,70 @@
+import type { ConnConfig } from '@/types/tauri-specta'
+
+/** 本地 store / 旧版数据：字段可能缺失，或含已迁移的扁平哨兵字段 */
+export type ConnFromStore = { [K in keyof ConnConfig]?: ConnConfig[K] } & Record<string, unknown>
+
+/**
+ * 连接数据兼容性处理（版本迁移）
+ * - v1.6.0: 补充哨兵模式属性，迁移 masterName/masterUsername/masterPassword → sentinelOption
+ * - v2.5.0: 补充 meta 属性，处理 group 字段
+ * - v2.7.0: 补充 SSH 属性
+ */
+export function checkConnList(connList: ConnFromStore[]): void {
+  connList.forEach(conn => {
+    // v1.6.0 兼容旧版本，补充哨兵模式属性;
+    // v2.7.0 属性移动到sentinelOption中
+    if (!('sentinel' in conn) || typeof conn.sentinel != 'boolean') conn.sentinel = false
+    if (!conn.sentinelOption)
+      conn.sentinelOption = { masterName: '', masterUsername: '', masterPassword: '' }
+    const so = conn.sentinelOption
+
+    const legacyMasterName = conn['masterName']
+    const legacyMasterUsername = conn['masterUsername']
+    const legacyMasterPassword = conn['masterPassword']
+    if (typeof legacyMasterName === 'string' && !so.masterName) so.masterName = legacyMasterName
+    if (typeof legacyMasterUsername === 'string' && !so.masterUsername)
+      so.masterUsername = legacyMasterUsername
+    if (typeof legacyMasterPassword === 'string' && !so.masterPassword)
+      so.masterPassword = legacyMasterPassword
+    if ('masterName' in conn) delete conn.masterName
+    if ('masterUsername' in conn) delete conn.masterUsername
+    if ('masterPassword' in conn) delete conn.masterPassword
+
+    // v2.5.0 兼容旧版本，补充meta属性
+    if (!('meta' in conn) || typeof conn.meta !== 'object' || conn.meta === null) conn.meta = {}
+    const meta = conn.meta as Record<string, unknown>
+    const group = meta['group']
+    if (group !== undefined && typeof group !== 'string') delete meta['group']
+    else if (typeof group === 'string') meta['group'] = group.trim()
+
+    // 命令映射：meta.commandMap 为 { 原命令小写: 映射名 }
+    const commandMap = meta['commandMap']
+    if (commandMap !== undefined) {
+      if (!commandMap || typeof commandMap !== 'object' || Array.isArray(commandMap)) {
+        delete meta['commandMap']
+      } else {
+        const cleaned: Record<string, string> = {}
+        for (const [k, v] of Object.entries(commandMap as Record<string, unknown>)) {
+          const cmd = typeof k === 'string' ? k.trim().toLowerCase() : ''
+          const mapped = typeof v === 'string' ? v.trim() : ''
+          if (cmd && mapped) cleaned[cmd] = mapped
+        }
+        if (Object.keys(cleaned).length) meta['commandMap'] = cleaned
+        else delete meta['commandMap']
+      }
+    }
+
+    // v2.7.0 兼容旧版本，补充SSH属性
+    if (!('ssh' in conn) || typeof conn.ssh != 'boolean') conn.ssh = false
+    if (!conn.sshOption)
+      conn.sshOption = {
+        host: '',
+        port: 22,
+        loginType: 'pwd', // pwd 用户名/密码, pkfile 私钥文件
+        username: '',
+        password: '',
+        pkfile: '', // 私钥文件
+        passphrase: '', // 私钥密码
+      }
+  })
+}
