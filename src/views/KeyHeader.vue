@@ -122,7 +122,7 @@ async function handleCommand(command: string): Promise<void> {
     </el-dropdown>
 
     <!--为了方便主题语言等初始化，组件一直存在；为了方便v-model直接绑定弹框是否显示直接传入dialog-->
-    <el-dialog v-model="dialog.setting" width="650" align-center draggable>
+    <el-dialog v-model="dialog.setting" width="700" align-center draggable>
       <template #header>
         <me-icon icon="el-icon-setting" :name="t('setting.title')"></me-icon>
       </template>

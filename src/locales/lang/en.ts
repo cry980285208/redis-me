@@ -69,8 +69,8 @@ export default {
     updateNow: 'Check Now',
     updateAppStore: 'Update By AppStore',
 
-    baseSetting: 'Base Setting',
-    moreSetting: 'More Setting',
+    baseSetting: 'Base',
+    moreSetting: 'More',
     extLabelWidth: '140px',
     keyScanCount: 'Key Scan',
     fieldScanCount: 'Field Scan',
