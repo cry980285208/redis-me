@@ -1660,7 +1660,7 @@ onUnmounted(() => {
               <el-table-column
                 :label="t('redisValue.id')"
                 prop="id"
-                width="310"
+                width="350"
                 sortable
                 show-overflow-tooltip
                 v-if="redisValue.type === 'stream'">

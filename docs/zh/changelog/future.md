@@ -2,9 +2,9 @@
 
 - String类型阈值保护 ✅️
 - Binary格式恢复支持（setbit等场景还是需要的）✅️
-- Hash/Set/ZSet的扫描模式支持
-- Hash仅查询键的支持
-- List/Stream支持正序倒序查询
+- Hash/Set/ZSet的扫描模式支持 ✅️
+- Hash仅查询键的支持 ✅️
+- List/Stream支持正序倒序查询 ✅️
 - Redis 8.8 新类型 Array的支持
 - 键类型: Vector Set，Time Series的支持
 - RedisSearch的支持

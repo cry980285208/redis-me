@@ -341,7 +341,7 @@ async function resetWindowSize() {
     </el-card>
 
     <!-- 更多设置 -->
-    <el-card style="margin-top: 20px">
+    <el-card style="margin-top: 10px">
       <template #header>
         <div class="me-flex" style="align-items: center">
           <div>{{ t('setting.moreSetting') }}</div>
@@ -602,6 +602,7 @@ async function resetWindowSize() {
   :deep(.el-form-item) {
     align-items: center;
     margin-right: 0;
+    margin-bottom: 10px;
   }
 
   :deep(.el-form-item__label) {
