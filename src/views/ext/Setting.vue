@@ -129,7 +129,7 @@ const moreDefaultSettings = {
   commandTimeout: 30,
   codecExecTimeoutSec: 5,
   valueByteLimitMB: 1,
-  valuePreviewBytes: 2000,
+  valuePreviewBytes: 1000,
 }
 
 /** 更多设置数字项 min/max，与表单项及 ? 提示共用 */
@@ -216,386 +216,350 @@ async function resetWindowSize() {
 </script>
 
 <template>
-  <el-dialog v-model="visible" width="740" align-center draggable>
+  <el-dialog v-model="visible" width="650" align-center draggable>
     <template #header>
       <me-icon icon="el-icon-setting" :name="t('setting.title')"></me-icon>
     </template>
-    <el-tabs tab-position="left" style="height: 350px">
-      <el-tab-pane>
-        <template #label>
-          <me-icon icon="el-icon-tools" :name="t('setting.baseSetting')" />
-        </template>
-        <div class="tab-content">
-          <el-form inline label-position="right" :label-width="t('setting.labelWidth')">
-            <!-- 主题、语言 -->
-            <el-row class="me-flex">
-              <el-form-item :label="t('setting.theme')">
-                <el-segmented v-model="settings.theme" :options="themeList" />
-              </el-form-item>
-              <el-form-item :label="t('setting.language')">
-                <el-select v-model="settings.language" style="width: 120px">
-                  <el-option
-                    v-for="item in langList"
-                    :label="item.label"
-                    :value="item.value"
-                    :key="item.value" />
-                </el-select>
-              </el-form-item>
-            </el-row>
-
-            <!-- 界面字体 -->
-            <el-row>
-              <el-form-item :label="t('setting.uiFont')" style="width: 100%">
-                <el-select
-                  v-model="settings.uiFont"
-                  :placeholder="t('setting.uiFontHint')"
-                  clearable
-                  multiple
-                  allow-create
-                  filterable
-                  :reserve-keyword="false">
-                  <el-option v-for="item in fonts" :label="item" :value="item" :key="item" />
-                </el-select>
-              </el-form-item>
-            </el-row>
-
-            <!-- 代码字体 -->
-            <el-row>
-              <el-form-item :label="t('setting.codeFont')" style="width: 100%">
-                <el-select
-                  v-model="settings.codeFont"
-                  :placeholder="t('setting.codeFontHint')"
-                  clearable
-                  multiple
-                  allow-create
-                  filterable
-                  :reserve-keyword="false">
-                  <el-option v-for="item in fonts" :label="item" :value="item" :key="item" />
-                </el-select>
-              </el-form-item>
-            </el-row>
-
-            <!-- 目录、快捷键 -->
-            <el-row class="me-flex setting-inline-row">
-              <el-form-item :label="t('setting.dir')">
-                <div class="me-flex">
-                  <el-select v-model="dirType" style="width: 100px">
-                    <el-option
-                      v-for="item in dirList"
-                      :label="item.label"
-                      :value="item.value"
-                      :key="item.value" />
-                  </el-select>
-                  <el-button style="margin-left: 8px" @click="openDir(dirType)">{{
-                    t('setting.openDir')
-                  }}</el-button>
-                </div>
-              </el-form-item>
-              <el-form-item>
-                <div class="setting-row-btns">
-                  <me-button plain icon="me-icon-keyshort" @click="connUi.openShortcuts()">{{
-                    t('setting.shortcuts')
-                  }}</me-button>
-                  <me-button
-                    plain
-                    icon="el-icon-full-screen"
-                    :info="t('setting.resetWindowTip')"
-                    @click="resetWindowSize"
-                    >{{ t('setting.resetWindow') }}</me-button
-                  >
-                </div>
-              </el-form-item>
-            </el-row>
-
-            <!-- 更新设置 -->
-            <el-row class="me-flex">
-              <el-form-item :label="t('setting.update')">
-                <el-tag v-if="isAppStore" type="info">{{ t('setting.updateAppStore') }}</el-tag>
-                <el-checkbox
-                  v-else
-                  v-model="settings.autoUpdate"
-                  :label="t('setting.updateAuto')" />
-              </el-form-item>
-
-              <el-form-item :label="t('setting.nowVersion')">
-                <span
-                  ><el-tag type="info">v{{ appVersion }}</el-tag></span
-                >
-                <el-button
-                  style="margin-left: 10px"
-                  plain
-                  @click="checkUpdate"
-                  :loading="loading"
-                  icon="el-icon-check"
-                  :disabled="app.downloading"
-                  v-if="!isAppStore"
-                  >{{ t('setting.updateNow') }}</el-button
-                >
-              </el-form-item>
-            </el-row>
-          </el-form>
-          <div class="me-flex restore-bar" style="justify-content: flex-end; padding-top: 10px">
-            <el-text
-              class="restore"
-              type="info"
-              @click="toDefault('baseSetting')"
-              v-if="isBaseDiff">
-              {{ t('setting.toDefault') }}
-            </el-text>
-          </div>
+    <!-- 基础设置 -->
+    <el-card>
+      <template #header>
+        <div class="me-flex" style="align-items: center">
+          <div>{{ t('setting.baseSetting') }}</div>
+          <el-text
+            class="restore"
+            type="info"
+            @click="toDefault('baseSetting')"
+            v-if="isBaseDiff"
+            >{{ t('setting.toDefault') }}</el-text
+          >
         </div>
-      </el-tab-pane>
+      </template>
+      <el-form inline label-position="right" :label-width="t('setting.labelWidth')">
+        <!-- 主题、语言 -->
+        <el-row class="me-flex">
+          <el-form-item :label="t('setting.theme')">
+            <el-segmented v-model="settings.theme" :options="themeList" />
+          </el-form-item>
+          <el-form-item :label="t('setting.language')">
+            <el-select v-model="settings.language" style="width: 120px">
+              <el-option
+                v-for="item in langList"
+                :label="item.label"
+                :value="item.value"
+                :key="item.value" />
+            </el-select>
+          </el-form-item>
+        </el-row>
 
-      <el-tab-pane>
-        <template #label>
-          <me-icon icon="el-icon-grid" :name="t('setting.moreSetting')" />
-        </template>
-        <div class="tab-content">
-          <el-form
-            inline
-            label-position="right"
-            class="setting-more-form"
-            :label-width="t('setting.extLabelWidth')">
-            <!-- 扫描数量 -->
-            <el-row class="me-flex">
-              <el-form-item>
-                <template #label>
-                  <me-icon
-                    :name="t('setting.keyScanCount')"
-                    icon="el-icon-question-filled"
-                    :info="t('setting.keyScanCountTip', MORE_SETTING_LIMITS.keyScanCount)"
-                    :icon-left="false"
-                    placement="top" />
-                </template>
-                <el-input-number
-                  v-model="settings.keyScanCount"
-                  :min="MORE_SETTING_LIMITS.keyScanCount.min"
-                  :max="MORE_SETTING_LIMITS.keyScanCount.max"
-                  :controls="false"
-                  style="width: 100px"
-                  align="left">
-                  <template #suffix>{{ t('setting.countUnit') }}</template>
-                </el-input-number>
-              </el-form-item>
-              <el-form-item>
-                <template #label>
-                  <me-icon
-                    :name="t('setting.fieldScanCount')"
-                    icon="el-icon-question-filled"
-                    :info="t('setting.fieldScanCountTip', MORE_SETTING_LIMITS.fieldScanCount)"
-                    :icon-left="false"
-                    placement="top" />
-                </template>
-                <el-input-number
-                  v-model.number="settings.fieldScanCount"
-                  :min="MORE_SETTING_LIMITS.fieldScanCount.min"
-                  :max="MORE_SETTING_LIMITS.fieldScanCount.max"
-                  :controls="false"
-                  style="width: 100px"
-                  align="left">
-                  <template #suffix>{{ t('setting.countUnit') }}</template>
-                </el-input-number>
-              </el-form-item>
-            </el-row>
+        <!-- 界面字体 -->
+        <el-row>
+          <el-form-item :label="t('setting.uiFont')" style="width: 100%">
+            <el-select
+              v-model="settings.uiFont"
+              :placeholder="t('setting.uiFontHint')"
+              clearable
+              multiple
+              allow-create
+              filterable
+              :reserve-keyword="false">
+              <el-option v-for="item in fonts" :label="item" :value="item" :key="item" />
+            </el-select>
+          </el-form-item>
+        </el-row>
 
-            <!-- 超时 -->
-            <el-row class="me-flex">
-              <el-form-item>
-                <template #label>
-                  <me-icon
-                    :name="t('setting.commandTimeout')"
-                    icon="el-icon-question-filled"
-                    :info="t('setting.commandTimeoutTip', MORE_SETTING_LIMITS.commandTimeout)"
-                    :icon-left="false"
-                    placement="top" />
-                </template>
-                <el-input-number
-                  v-model="settings.commandTimeout"
-                  :min="MORE_SETTING_LIMITS.commandTimeout.min"
-                  :max="MORE_SETTING_LIMITS.commandTimeout.max"
-                  :controls="false"
-                  style="width: 100px"
-                  align="left">
-                  <template #suffix>{{ t('setting.secUnit') }}</template>
-                </el-input-number>
-              </el-form-item>
-              <el-form-item>
-                <template #label>
-                  <me-icon
-                    :name="t('setting.scriptTimeout')"
-                    icon="el-icon-question-filled"
-                    :info="t('setting.scriptTimeoutTip', MORE_SETTING_LIMITS.codecExecTimeoutSec)"
-                    :icon-left="false"
-                    placement="top" />
-                </template>
-                <el-input-number
-                  v-model="settings.codecExecTimeoutSec"
-                  :min="MORE_SETTING_LIMITS.codecExecTimeoutSec.min"
-                  :max="MORE_SETTING_LIMITS.codecExecTimeoutSec.max"
-                  :controls="false"
-                  style="width: 100px"
-                  align="left">
-                  <template #suffix>{{ t('setting.secUnit') }}</template>
-                </el-input-number>
-              </el-form-item>
-            </el-row>
+        <!-- 代码字体 -->
+        <el-row>
+          <el-form-item :label="t('setting.codeFont')" style="width: 100%">
+            <el-select
+              v-model="settings.codeFont"
+              :placeholder="t('setting.codeFontHint')"
+              clearable
+              multiple
+              allow-create
+              filterable
+              :reserve-keyword="false">
+              <el-option v-for="item in fonts" :label="item" :value="item" :key="item" />
+            </el-select>
+          </el-form-item>
+        </el-row>
 
-            <!-- 值限制、预览 -->
-            <el-row class="me-flex">
-              <el-form-item>
-                <template #label>
-                  <me-icon
-                    :name="t('setting.valueByteLimitMB')"
-                    icon="el-icon-question-filled"
-                    :info="t('setting.valueByteLimitMBTip', MORE_SETTING_LIMITS.valueByteLimitMB)"
-                    :icon-left="false"
-                    placement="top" />
-                </template>
-                <el-input-number
-                  v-model="settings.valueByteLimitMB"
-                  :min="MORE_SETTING_LIMITS.valueByteLimitMB.min"
-                  :max="MORE_SETTING_LIMITS.valueByteLimitMB.max"
-                  :controls="false"
-                  :step="1"
-                  style="width: 100px"
-                  align="left">
-                  <template #suffix>M</template>
-                </el-input-number>
-              </el-form-item>
-              <el-form-item>
-                <template #label>
-                  <me-icon
-                    :name="t('setting.valuePreviewBytes')"
-                    icon="el-icon-question-filled"
-                    :info="t('setting.valuePreviewBytesTip', MORE_SETTING_LIMITS.valuePreviewBytes)"
-                    :icon-left="false"
-                    placement="top" />
-                </template>
-                <el-input-number
-                  v-model="settings.valuePreviewBytes"
-                  :min="MORE_SETTING_LIMITS.valuePreviewBytes.min"
-                  :max="MORE_SETTING_LIMITS.valuePreviewBytes.max"
-                  :controls="false"
-                  style="width: 100px"
-                  align="left">
-                  <template #suffix>B</template>
-                </el-input-number>
-              </el-form-item>
-            </el-row>
+        <!-- 目录、快捷键 -->
+        <el-row class="me-flex setting-inline-row">
+          <el-form-item :label="t('setting.dir')">
+            <div class="me-flex">
+              <el-select v-model="dirType" style="width: 100px">
+                <el-option
+                  v-for="item in dirList"
+                  :label="item.label"
+                  :value="item.value"
+                  :key="item.value" />
+              </el-select>
+              <el-button
+                style="margin-left: 8px"
+                icon="el-icon-folder-opened"
+                @click="openDir(dirType)" />
+            </div>
+          </el-form-item>
+          <el-form-item>
+            <div class="setting-row-btns">
+              <me-button plain icon="me-icon-keyshort" @click="connUi.openShortcuts()">{{
+                t('setting.shortcuts')
+              }}</me-button>
+              <me-button
+                plain
+                icon="el-icon-full-screen"
+                :info="t('setting.resetWindowTip')"
+                @click="resetWindowSize"
+                >{{ t('setting.resetWindow') }}</me-button
+              >
+            </div>
+          </el-form-item>
+        </el-row>
 
-            <!-- 键展示、键高度 -->
-            <el-row class="me-flex">
-              <el-form-item>
-                <template #label>
-                  <me-icon
-                    :name="t('setting.keyShow')"
-                    icon="el-icon-question-filled"
-                    :info="t('setting.keyShowTip')"
-                    :icon-left="false"
-                    placement="top" />
-                </template>
-                <el-segmented v-model="settings.keyShow" :options="keyShowList" />
-              </el-form-item>
+        <!-- 更新设置 -->
+        <el-row class="me-flex">
+          <el-form-item :label="t('setting.update')">
+            <el-tag v-if="isAppStore" type="info">{{ t('setting.updateAppStore') }}</el-tag>
+            <el-checkbox v-else v-model="settings.autoUpdate" :label="t('setting.updateAuto')" />
+          </el-form-item>
 
-              <el-form-item>
-                <template #label>
-                  <me-icon
-                    :name="t('setting.keyHeight')"
-                    icon="el-icon-question-filled"
-                    :info="t('setting.keyHeightTip', MORE_SETTING_LIMITS.keyHeight)"
-                    :icon-left="false"
-                    placement="top" />
-                </template>
-                <el-input-number
-                  v-model="settings.keyHeight"
-                  :min="MORE_SETTING_LIMITS.keyHeight.min"
-                  :max="MORE_SETTING_LIMITS.keyHeight.max"
-                  :controls="false"
-                  style="width: 100px"
-                  align="left"
-                  @blur="normalizeKeyHeight">
-                  <template #suffix>{{ t('setting.pxUnit') }}</template>
-                </el-input-number>
-              </el-form-item>
-            </el-row>
+          <el-form-item :label="t('setting.nowVersion')">
+            <span
+              ><el-tag type="info">v{{ appVersion }}</el-tag></span
+            >
+            <el-button
+              style="margin-left: 10px"
+              plain
+              @click="checkUpdate"
+              :loading="loading"
+              icon="el-icon-check"
+              :disabled="app.downloading"
+              v-if="!isAppStore"
+              >{{ t('setting.updateNow') }}</el-button
+            >
+          </el-form-item>
+        </el-row>
+      </el-form>
+    </el-card>
 
-            <!-- 字段展示、树形排序 -->
-            <el-row class="me-flex">
-              <el-form-item>
-                <template #label>
-                  <me-icon
-                    :name="t('setting.fieldShow')"
-                    icon="el-icon-question-filled"
-                    :info="t('setting.fieldShowTip')"
-                    :icon-left="false"
-                    placement="top" />
-                </template>
-                <el-segmented v-model="settings.fieldShow" :options="fieldShowList" />
-              </el-form-item>
-              <el-form-item>
-                <template #label>
-                  <me-icon
-                    :name="t('setting.keySort')"
-                    icon="el-icon-question-filled"
-                    :info="t('setting.keySortTip')"
-                    :icon-left="false"
-                    placement="top" />
-                </template>
-                <el-segmented
-                  v-model="settings.keySort"
-                  :options="keySortList"
-                  :disabled="settings.keyShow !== 'tree'" />
-              </el-form-item>
-            </el-row>
-          </el-form>
-          <div class="me-flex restore-bar" style="justify-content: flex-end; padding-top: 10px">
-            <el-text
-              class="restore"
-              type="info"
-              @click="toDefault('moreSetting')"
-              v-if="isMoreDiff">
-              {{ t('setting.toDefault') }}
-            </el-text>
-          </div>
+    <!-- 更多设置 -->
+    <el-card style="margin-top: 20px">
+      <template #header>
+        <div class="me-flex" style="align-items: center">
+          <div>{{ t('setting.moreSetting') }}</div>
+          <el-text
+            class="restore"
+            type="info"
+            @click="toDefault('moreSetting')"
+            v-if="isMoreDiff"
+            >{{ t('setting.toDefault') }}</el-text
+          >
         </div>
-      </el-tab-pane>
-    </el-tabs>
+      </template>
+      <el-form
+        inline
+        label-position="right"
+        class="setting-more-form"
+        :label-width="t('setting.extLabelWidth')">
+        <!-- 扫描数量 -->
+        <el-row class="me-flex">
+          <el-form-item>
+            <template #label>
+              <me-icon
+                :name="t('setting.keyScanCount')"
+                icon="el-icon-question-filled"
+                :info="t('setting.keyScanCountTip', MORE_SETTING_LIMITS.keyScanCount)"
+                :icon-left="false"
+                placement="top" />
+            </template>
+            <el-input-number
+              v-model="settings.keyScanCount"
+              :min="MORE_SETTING_LIMITS.keyScanCount.min"
+              :max="MORE_SETTING_LIMITS.keyScanCount.max"
+              :controls="false"
+              style="width: 100px"
+              align="left">
+              <template #suffix>{{ t('setting.countUnit') }}</template>
+            </el-input-number>
+          </el-form-item>
+          <el-form-item>
+            <template #label>
+              <me-icon
+                :name="t('setting.fieldScanCount')"
+                icon="el-icon-question-filled"
+                :info="t('setting.fieldScanCountTip', MORE_SETTING_LIMITS.fieldScanCount)"
+                :icon-left="false"
+                placement="top" />
+            </template>
+            <el-input-number
+              v-model.number="settings.fieldScanCount"
+              :min="MORE_SETTING_LIMITS.fieldScanCount.min"
+              :max="MORE_SETTING_LIMITS.fieldScanCount.max"
+              :controls="false"
+              style="width: 100px"
+              align="left">
+              <template #suffix>{{ t('setting.countUnit') }}</template>
+            </el-input-number>
+          </el-form-item>
+        </el-row>
+
+        <!-- 安全阈值、预览字节 -->
+        <el-row class="me-flex">
+          <el-form-item>
+            <template #label>
+              <me-icon
+                :name="t('setting.valueByteLimitMB')"
+                icon="el-icon-question-filled"
+                :info="t('setting.valueByteLimitMBTip', MORE_SETTING_LIMITS.valueByteLimitMB)"
+                :icon-left="false"
+                placement="top" />
+            </template>
+            <el-input-number
+              v-model="settings.valueByteLimitMB"
+              :min="MORE_SETTING_LIMITS.valueByteLimitMB.min"
+              :max="MORE_SETTING_LIMITS.valueByteLimitMB.max"
+              :controls="false"
+              :step="1"
+              style="width: 100px"
+              align="left">
+              <template #suffix>M</template>
+            </el-input-number>
+          </el-form-item>
+          <el-form-item>
+            <template #label>
+              <me-icon
+                :name="t('setting.valuePreviewBytes')"
+                icon="el-icon-question-filled"
+                :info="t('setting.valuePreviewBytesTip', MORE_SETTING_LIMITS.valuePreviewBytes)"
+                :icon-left="false"
+                placement="top" />
+            </template>
+            <el-input-number
+              v-model="settings.valuePreviewBytes"
+              :min="MORE_SETTING_LIMITS.valuePreviewBytes.min"
+              :max="MORE_SETTING_LIMITS.valuePreviewBytes.max"
+              :controls="false"
+              style="width: 100px"
+              align="left">
+              <template #suffix>B</template>
+            </el-input-number>
+          </el-form-item>
+        </el-row>
+
+        <!-- 键展示、键高度 -->
+        <el-row class="me-flex">
+          <el-form-item>
+            <template #label>
+              <me-icon
+                :name="t('setting.keyShow')"
+                icon="el-icon-question-filled"
+                :info="t('setting.keyShowTip')"
+                :icon-left="false"
+                placement="top" />
+            </template>
+            <el-segmented v-model="settings.keyShow" :options="keyShowList" />
+          </el-form-item>
+
+          <el-form-item>
+            <template #label>
+              <me-icon
+                :name="t('setting.keyHeight')"
+                icon="el-icon-question-filled"
+                :info="t('setting.keyHeightTip', MORE_SETTING_LIMITS.keyHeight)"
+                :icon-left="false"
+                placement="top" />
+            </template>
+            <el-input-number
+              v-model="settings.keyHeight"
+              :min="MORE_SETTING_LIMITS.keyHeight.min"
+              :max="MORE_SETTING_LIMITS.keyHeight.max"
+              :controls="false"
+              style="width: 100px"
+              align="left"
+              @blur="normalizeKeyHeight">
+              <template #suffix>{{ t('setting.pxUnit') }}</template>
+            </el-input-number>
+          </el-form-item>
+        </el-row>
+
+        <!-- 字段展示、树形排序 -->
+        <el-row class="me-flex">
+          <el-form-item>
+            <template #label>
+              <me-icon
+                :name="t('setting.fieldShow')"
+                icon="el-icon-question-filled"
+                :info="t('setting.fieldShowTip')"
+                :icon-left="false"
+                placement="top" />
+            </template>
+            <el-segmented v-model="settings.fieldShow" :options="fieldShowList" />
+          </el-form-item>
+          <el-form-item>
+            <template #label>
+              <me-icon
+                :name="t('setting.keySort')"
+                icon="el-icon-question-filled"
+                :info="t('setting.keySortTip')"
+                :icon-left="false"
+                placement="top" />
+            </template>
+            <el-segmented
+              v-model="settings.keySort"
+              :options="keySortList"
+              :disabled="settings.keyShow !== 'tree'" />
+          </el-form-item>
+        </el-row>
+
+        <!-- 超时 -->
+        <el-row class="me-flex">
+          <el-form-item>
+            <template #label>
+              <me-icon
+                :name="t('setting.commandTimeout')"
+                icon="el-icon-question-filled"
+                :info="t('setting.commandTimeoutTip', MORE_SETTING_LIMITS.commandTimeout)"
+                :icon-left="false"
+                placement="top" />
+            </template>
+            <el-input-number
+              v-model="settings.commandTimeout"
+              :min="MORE_SETTING_LIMITS.commandTimeout.min"
+              :max="MORE_SETTING_LIMITS.commandTimeout.max"
+              :controls="false"
+              style="width: 100px"
+              align="left">
+              <template #suffix>{{ t('setting.secUnit') }}</template>
+            </el-input-number>
+          </el-form-item>
+          <el-form-item>
+            <template #label>
+              <me-icon
+                :name="t('setting.scriptTimeout')"
+                icon="el-icon-question-filled"
+                :info="t('setting.scriptTimeoutTip', MORE_SETTING_LIMITS.codecExecTimeoutSec)"
+                :icon-left="false"
+                placement="top" />
+            </template>
+            <el-input-number
+              v-model="settings.codecExecTimeoutSec"
+              :min="MORE_SETTING_LIMITS.codecExecTimeoutSec.min"
+              :max="MORE_SETTING_LIMITS.codecExecTimeoutSec.max"
+              :controls="false"
+              style="width: 100px"
+              align="left">
+              <template #suffix>{{ t('setting.secUnit') }}</template>
+            </el-input-number>
+          </el-form-item>
+        </el-row>
+      </el-form>
+    </el-card>
   </el-dialog>
 </template>
 
 <style scoped lang="scss">
 :deep(.el-card__header) {
   font-weight: bold;
-}
-
-:deep(.el-tabs__content) {
-  height: 100%;
-}
-
-:deep(.el-tabs__item) {
-  justify-content: flex-start !important;
-}
-
-:deep(.el-tab-pane) {
-  height: 100%;
-}
-
-.tab-content {
-  display: flex;
-  flex-direction: column;
-  padding: 10px;
-  height: 100%;
-
-  > form {
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-  }
-}
-
-.restore-bar {
-  margin-top: auto;
-  min-height: 20px;
 }
 
 .restore {
@@ -613,6 +577,7 @@ async function resetWindowSize() {
 .setting-row-btns {
   display: flex;
   align-items: center;
+  gap: 8px;
 }
 
 .setting-more-form {
