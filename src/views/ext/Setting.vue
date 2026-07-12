@@ -446,6 +446,48 @@ async function resetWindowSize() {
           </el-form-item>
         </el-row>
 
+        <!-- 超时 -->
+        <el-row class="me-flex">
+          <el-form-item>
+            <template #label>
+              <me-icon
+                :name="t('setting.commandTimeout')"
+                icon="el-icon-question-filled"
+                :info="t('setting.commandTimeoutTip', MORE_SETTING_LIMITS.commandTimeout)"
+                :icon-left="false"
+                placement="top" />
+            </template>
+            <el-input-number
+              v-model="settings.commandTimeout"
+              :min="MORE_SETTING_LIMITS.commandTimeout.min"
+              :max="MORE_SETTING_LIMITS.commandTimeout.max"
+              :controls="false"
+              style="width: 100px"
+              align="left">
+              <template #suffix>{{ t('setting.secUnit') }}</template>
+            </el-input-number>
+          </el-form-item>
+          <el-form-item>
+            <template #label>
+              <me-icon
+                :name="t('setting.scriptTimeout')"
+                icon="el-icon-question-filled"
+                :info="t('setting.scriptTimeoutTip', MORE_SETTING_LIMITS.codecExecTimeoutSec)"
+                :icon-left="false"
+                placement="top" />
+            </template>
+            <el-input-number
+              v-model="settings.codecExecTimeoutSec"
+              :min="MORE_SETTING_LIMITS.codecExecTimeoutSec.min"
+              :max="MORE_SETTING_LIMITS.codecExecTimeoutSec.max"
+              :controls="false"
+              style="width: 100px"
+              align="left">
+              <template #suffix>{{ t('setting.secUnit') }}</template>
+            </el-input-number>
+          </el-form-item>
+        </el-row>
+
         <!-- 键展示、键高度 -->
         <el-row class="me-flex">
           <el-form-item>
@@ -510,48 +552,6 @@ async function resetWindowSize() {
               :disabled="settings.keyShow !== 'tree'" />
           </el-form-item>
         </el-row>
-
-        <!-- 超时 -->
-        <el-row class="me-flex">
-          <el-form-item>
-            <template #label>
-              <me-icon
-                :name="t('setting.commandTimeout')"
-                icon="el-icon-question-filled"
-                :info="t('setting.commandTimeoutTip', MORE_SETTING_LIMITS.commandTimeout)"
-                :icon-left="false"
-                placement="top" />
-            </template>
-            <el-input-number
-              v-model="settings.commandTimeout"
-              :min="MORE_SETTING_LIMITS.commandTimeout.min"
-              :max="MORE_SETTING_LIMITS.commandTimeout.max"
-              :controls="false"
-              style="width: 100px"
-              align="left">
-              <template #suffix>{{ t('setting.secUnit') }}</template>
-            </el-input-number>
-          </el-form-item>
-          <el-form-item>
-            <template #label>
-              <me-icon
-                :name="t('setting.scriptTimeout')"
-                icon="el-icon-question-filled"
-                :info="t('setting.scriptTimeoutTip', MORE_SETTING_LIMITS.codecExecTimeoutSec)"
-                :icon-left="false"
-                placement="top" />
-            </template>
-            <el-input-number
-              v-model="settings.codecExecTimeoutSec"
-              :min="MORE_SETTING_LIMITS.codecExecTimeoutSec.min"
-              :max="MORE_SETTING_LIMITS.codecExecTimeoutSec.max"
-              :controls="false"
-              style="width: 100px"
-              align="left">
-              <template #suffix>{{ t('setting.secUnit') }}</template>
-            </el-input-number>
-          </el-form-item>
-        </el-row>
       </el-form>
     </el-card>
   </el-dialog>
@@ -560,6 +560,10 @@ async function resetWindowSize() {
 <style scoped lang="scss">
 :deep(.el-card__header) {
   font-weight: bold;
+}
+
+:deep(.el-card__body) {
+  padding: 20px 20px 0 20px;
 }
 
 .restore {
