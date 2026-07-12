@@ -412,7 +412,7 @@ const dbSelectWidth = computed(() => {
   if (!share.conn) return '88px'
   const len = formatDbLabel(share.conn.db).length
   // +16 留给 upDown 后缀图标
-  return `${Math.min(136, Math.max(88, len * 7 + 28 + 16))}px`
+  return `${Math.min(136, Math.max(88, len * 7 + 35 + 16))}px`
 })
 
 /** 集群 Valkey 9+ 多库：el-select 位置仅展示当前 db，不支持切换 */
