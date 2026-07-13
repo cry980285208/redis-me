@@ -1187,6 +1187,8 @@ function onFieldRowMoreCommand(command: string, row: ValueTableRow) {
     meCopy(String(row.key ?? ''))
   } else if (command === 'copyValue') {
     meCopy(fieldRowDisplayValue(row))
+  } else if (command === 'copyIndex') {
+    meCopy(String(row.index ?? ''))
   } else if (command === 'copyStreamId') {
     meCopy(String(row.id ?? ''))
   } else if (command === 'copyScore') {
@@ -1699,9 +1701,7 @@ onUnmounted(() => {
                 <template #default="scope">
                   <div class="index-cell">
                     <template v-if="fieldSetIndex !== scope.$index">{{
-                      listType && typeof scope.row.index === 'number'
-                        ? scope.row.index
-                        : scope.$index + 1
+                      scope.$index + 1
                     }}</template>
                     <me-icon
                       v-else
@@ -1729,7 +1729,7 @@ onUnmounted(() => {
                 </template>
               </el-table-column>
 
-              <!-- 字段键 -->
+              <!-- 哈希键 -->
               <el-table-column
                 :label="t('redisValue.key')"
                 prop="key"
@@ -1740,6 +1740,15 @@ onUnmounted(() => {
                   {{ formatTableCell(scope.row.key) }}
                 </template>
               </el-table-column>
+
+              <!-- List 索引 -->
+              <el-table-column
+                :label="t('redisValue.index')"
+                prop="index"
+                width="100"
+                sortable
+                show-overflow-tooltip
+                v-if="redisValue.type === 'list'" />
 
               <!-- 字段值 -->
               <el-table-column
@@ -1815,6 +1824,11 @@ onUnmounted(() => {
                           </el-dropdown-item>
                           <el-dropdown-item v-if="hashType" command="copyKey">
                             <me-icon icon="el-icon-document-copy" :name="t('redisValue.copyKey')" />
+                          </el-dropdown-item>
+                          <el-dropdown-item v-if="listType" command="copyIndex">
+                            <me-icon
+                              icon="el-icon-document-copy"
+                              :name="t('redisValue.copyIndex')" />
                           </el-dropdown-item>
                           <el-dropdown-item command="copyValue">
                             <me-icon
