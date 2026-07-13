@@ -327,7 +327,7 @@ async function refreshField() {
             @click="togglePretty" />
           <me-icon
             placement="top-start"
-            :info="t('redisValue.copyFieldValue')"
+            :info="t('redisValue.copyValue')"
             class="icon-btn"
             style="font-size: 18px; margin-left: 5px"
             icon="el-icon-document-copy"

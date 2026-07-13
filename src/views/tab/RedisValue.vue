@@ -1182,10 +1182,14 @@ async function refreshFieldRow(row: ValueTableRow) {
 function onFieldRowMoreCommand(command: string, row: ValueTableRow) {
   if (command === 'refreshRow') {
     void refreshFieldRow(row)
-  } else if (command === 'copyHashKey') {
+  } else if (command === 'copyKey') {
     meCopy(String(row.key ?? ''))
-  } else if (command === 'copyFieldValue') {
+  } else if (command === 'copyValue') {
     meCopy(fieldRowDisplayValue(row))
+  } else if (command === 'copyStreamId') {
+    meCopy(String(row.id ?? ''))
+  } else if (command === 'copyScore') {
+    meCopy(String(row.score ?? ''))
   } else if (command === 'copyAsCommand') {
     void copyFieldAsCommand(row)
   }
@@ -1701,15 +1705,6 @@ onUnmounted(() => {
                 </template>
               </el-table-column>
 
-              <!-- 分数 -->
-              <el-table-column
-                :label="t('redisValue.score')"
-                prop="score"
-                width="140"
-                sortable
-                show-overflow-tooltip
-                v-if="redisValue.type === 'zset'" />
-
               <!-- 字段键 -->
               <el-table-column
                 :label="t('redisValue.key')"
@@ -1734,6 +1729,15 @@ onUnmounted(() => {
                   {{ fieldRowDisplayValue(scope.row) }}
                 </template>
               </el-table-column>
+
+              <!-- 分数 -->
+              <el-table-column
+                :label="t('redisValue.score')"
+                prop="score"
+                width="140"
+                sortable
+                show-overflow-tooltip
+                v-if="redisValue.type === 'zset'" />
 
               <!-- TTL -->
               <el-table-column
@@ -1785,15 +1789,23 @@ onUnmounted(() => {
                               icon="el-icon-refresh-right"
                               :name="t('redisValue.refreshFieldRow')" />
                           </el-dropdown-item>
-                          <el-dropdown-item v-if="hashType" command="copyHashKey">
-                            <me-icon
-                              icon="el-icon-document-copy"
-                              :name="t('redisValue.copyHashKey')" />
+                          <el-dropdown-item v-if="hashType" command="copyKey">
+                            <me-icon icon="el-icon-document-copy" :name="t('redisValue.copyKey')" />
                           </el-dropdown-item>
-                          <el-dropdown-item command="copyFieldValue">
+                          <el-dropdown-item command="copyValue">
                             <me-icon
                               icon="el-icon-document-copy"
-                              :name="t('redisValue.copyFieldValue')" />
+                              :name="t('redisValue.copyValue')" />
+                          </el-dropdown-item>
+                          <el-dropdown-item v-if="streamType" command="copyStreamId">
+                            <me-icon
+                              icon="el-icon-document-copy"
+                              :name="t('redisValue.copyStreamId')" />
+                          </el-dropdown-item>
+                          <el-dropdown-item v-if="zsetType" command="copyScore">
+                            <me-icon
+                              icon="el-icon-document-copy"
+                              :name="t('redisValue.copyScore')" />
                           </el-dropdown-item>
                           <el-dropdown-item command="copyAsCommand">
                             <me-icon
