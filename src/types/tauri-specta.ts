@@ -37,6 +37,7 @@ export const commands = {
 	hashValues: (id: string, param: RedisHashKeys_Deserialize) => typedError<string[], string>(__TAURI_INVOKE("hash_values", { id, param })),
 	fieldPop: (id: string, param: RedisPop_Deserialize) => typedError<string, string>(__TAURI_INVOKE("field_pop", { id, param })),
 	fieldDel: (id: string, param: RedisFieldDel_Deserialize) => typedError<null, string>(__TAURI_INVOKE("field_del", { id, param })),
+	zsetRank: (id: string, param: RedisZsetRank_Deserialize) => typedError<RedisZsetRankResult, string>(__TAURI_INVOKE("zset_rank", { id, param })),
 	executeCommand: (id: string, param: RedisCommand) => typedError<string, string>(__TAURI_INVOKE("execute_command", { id, param })),
 	aclUsers: (id: string) => typedError<string[], string>(__TAURI_INVOKE("acl_users", { id })),
 	aclListUsers: (id: string) => typedError<AclUserDetail[], string>(__TAURI_INVOKE("acl_list_users", { id })),
@@ -594,6 +595,25 @@ export type RedisSlowLog = {
 	command: string,
 	cost: number | null,
 	clientName: string,
+};
+
+export type RedisZsetRank = RedisZsetRank_Serialize | RedisZsetRank_Deserialize;
+
+export type RedisZsetRankResult = {
+	rank: number | null,
+	revRank: number | null,
+};
+
+export type RedisZsetRank_Deserialize = {
+	key: RedisKey_Deserialize,
+	member: string,
+	valFmt: BytesFormat | null,
+};
+
+export type RedisZsetRank_Serialize = {
+	key: RedisKey_Serialize,
+	member: string,
+	valFmt: BytesFormat | null,
 };
 
 export type ScanCursor = {

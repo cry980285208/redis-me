@@ -253,6 +253,10 @@ impl MeClient for MeCluster {
         field_del0(self.get_conn()?, param)
     }
 
+    fn zset_rank(&self, param: RedisZsetRank) -> AnyResult<RedisZsetRankResult> {
+        zset_rank0(self.get_conn()?, param)
+    }
+
     fn execute_command(&self, param: RedisCommand) -> AnyResult<String> {
         let (cmd_name, args) = parse_command(param.command.as_str())?;
         if cmd_name.is_empty() {

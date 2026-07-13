@@ -81,6 +81,8 @@ pub trait MeClient: Send + Sync {
 
     fn field_del(&self, param: RedisFieldDel) -> AnyResult<()>;
 
+    fn zset_rank(&self, param: RedisZsetRank) -> AnyResult<RedisZsetRankResult>;
+
     fn execute_command(&self, param: RedisCommand) -> AnyResult<String>;
 
     fn config_get(&self, pattern: &str, node: Option<String>)
@@ -1151,6 +1153,18 @@ pub fn field_del0(mut conn: MutexGuard<impl Commands>, param: RedisFieldDel) -> 
         }
     };
     Ok(())
+}
+
+pub fn zset_rank0(
+    mut conn: MutexGuard<impl Commands>,
+    param: RedisZsetRank,
+) -> AnyResult<RedisZsetRankResult> {
+    let key: RedisKey = param.key;
+    let val_fmt = param.val_fmt.as_ref().cloned().unwrap_or_default();
+    let member_bytes = parse_bytes(&param.member, &val_fmt)?;
+    let rank: Option<u64> = conn.zrank(&key, &member_bytes)?;
+    let rev_rank: Option<u64> = conn.zrevrank(&key, &member_bytes)?;
+    Ok(RedisZsetRankResult { rank, rev_rank })
 }
 
 pub fn publish0(

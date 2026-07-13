@@ -643,6 +643,18 @@ api_model!(RedisFieldValue {
     field_ttl: i64, // 字段 TTL（秒），仅 Redis/Valkey >= 7.4
 });
 
+// ZSet 排名查询
+api_model!(RedisZsetRank {
+    key: RedisKey,
+    member: String,
+    val_fmt: Option<BytesFormat>,
+});
+
+api_model!(RedisZsetRankResult {
+    rank: Option<u64>,
+    rev_rank: Option<u64>,
+});
+
 // 字段删除
 api_model!(RedisFieldDel {
     key: RedisKey,

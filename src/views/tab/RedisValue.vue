@@ -27,6 +27,7 @@ import type {
   RedisFieldGet_Deserialize,
   RedisFieldValue,
   RedisKey_Deserialize,
+  RedisZsetRankResult,
   ScanCursor,
 } from '@/types/tauri-specta'
 import { useFavorites, addFavorite, removeFavorite, isFavorited } from '@/utils/favorite'
@@ -1192,7 +1193,29 @@ function onFieldRowMoreCommand(command: string, row: ValueTableRow) {
     meCopy(String(row.score ?? ''))
   } else if (command === 'copyAsCommand') {
     void copyFieldAsCommand(row)
+  } else if (command === 'showZsetRank') {
+    void showZsetRank(row)
   }
+}
+
+async function showZsetRank(row: ValueTableRow) {
+  const conn = share.conn
+  const rk = share.redisKey
+  if (!conn || !rk) return
+  const member = fieldRowDisplayValue(row)
+  const data: RedisZsetRankResult = await meCommands.zsetRank(conn.id, {
+    key: rk,
+    member,
+    valFmt: toWireFormat(viewFmtForField(bytesFormat.value)),
+  })
+  const rankText = data.rank !== null ? String(data.rank) : t('redisValue.rankNotFound')
+  const revRankText = data.revRank !== null ? String(data.revRank) : t('redisValue.rankNotFound')
+  meOk(
+    `${t('redisValue.rank')}: ${rankText}<br>${t('redisValue.revRank')}: ${revRankText}`,
+    true,
+    t('redisValue.rankTitle'),
+    { dangerouslyUseHTMLString: true },
+  )
 }
 
 function onFieldSetRefreshed(data: RedisFieldValue) {
@@ -1812,6 +1835,9 @@ onUnmounted(() => {
                             <me-icon
                               icon="me-icon-copy-command"
                               :name="t('redisValue.copyAsCommand')" />
+                          </el-dropdown-item>
+                          <el-dropdown-item v-if="zsetType" command="showZsetRank">
+                            <me-icon icon="me-icon-rank" :name="t('redisValue.showZsetRank')" />
                           </el-dropdown-item>
                         </el-dropdown-menu>
                       </template>
