@@ -1654,6 +1654,7 @@ onUnmounted(() => {
           </div>
           <div class="table-view">
             <me-table
+              :key="redisValue?.type"
               layout="sizes, prev, pager, next, jumper"
               :data="tableDisplayList"
               :default-sort="tableDefaultSort"
