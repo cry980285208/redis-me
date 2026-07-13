@@ -915,9 +915,9 @@ function toggleFavorite() {
   }
 }
 
-function onKeyMoreCommand(command: string) {
+async function onKeyMoreCommand(command: string) {
   if (command === 'refreshKey') {
-    void manualRefreshKey()
+    await onFooterRefreshKey()
   } else if (command === 'copyKey') {
     meCopy(showKey.value)
   } else if (command === 'copyValue') {

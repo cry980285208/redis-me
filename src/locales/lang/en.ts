@@ -850,7 +850,7 @@ export default {
     copyAsCommand: 'Copy Command',
     refreshFieldRow: 'Refresh Row',
     refreshFieldRowOk: 'Row refreshed',
-    refreshKeyOk: 'Refreshed',
+    refreshKeyOk: 'Key refreshed',
     copyCommandOk: 'Command copied',
     copyCommandEmpty: 'Empty key, nothing to copy',
     refreshKey: 'Refresh Key',
