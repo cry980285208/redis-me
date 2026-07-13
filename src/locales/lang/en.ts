@@ -116,7 +116,7 @@ export default {
     openDir: 'Open',
     resetWindow: 'Reset Window',
     resetWindowTip: 'Restore default size and center',
-    resetWindowOk: 'Window restored to default size',
+    resetWindowOk: 'Window restored to default position and size',
     shortcuts: 'Shortcuts',
     appFullscreen: 'Fullscreen',
     shortcutTips: 'Shortcuts',

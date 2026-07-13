@@ -108,7 +108,7 @@ export default {
     openDir: '打开',
     resetWindow: '重置窗口',
     resetWindowTip: '恢复为默认大小并居中',
-    resetWindowOk: '窗口已恢复默认大小',
+    resetWindowOk: '窗口已恢复默认位置和大小',
     shortcuts: '快捷键',
     appFullscreen: '全屏应用',
     shortcutTips: '快捷键',
