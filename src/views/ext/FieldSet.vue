@@ -217,8 +217,6 @@ function submit() {
       visible.value = false
       emit('success')
       meOk(t('editOk'))
-    } catch (e) {
-      meErr(e instanceof Error ? e.message : String(e))
     } finally {
       isSaving.value = false
     }

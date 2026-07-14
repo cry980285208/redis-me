@@ -6,7 +6,7 @@ import { useI18n } from 'vue-i18n'
 
 import { shareProvideKey } from '@/types/me-interface'
 import type { XInfoConsumer, XInfoGroup } from '@/types/tauri-specta'
-import { meCommands, meErr } from '@/utils/util'
+import { meCommands } from '@/utils/util'
 
 const { t } = useI18n()
 const share = inject(shareProvideKey)!
@@ -28,9 +28,6 @@ async function open() {
   consumerData.value = []
   try {
     dataList.value = await meCommands.xinfoGroups(conn.id, redisKey)
-  } catch (e) {
-    visible.value = false
-    meErr(e)
   } finally {
     loading.value = false
   }

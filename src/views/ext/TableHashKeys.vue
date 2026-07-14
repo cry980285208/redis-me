@@ -5,7 +5,7 @@ import { useI18n } from 'vue-i18n'
 
 import { shareProvideKey } from '@/types/me-interface'
 import type { BytesFormat } from '@/types/tauri-specta'
-import { meCommands, meErr } from '@/utils/util'
+import { meCommands } from '@/utils/util'
 
 type HashListMode = 'keys' | 'values'
 
@@ -56,9 +56,6 @@ async function open(valFmt: BytesFormat | null, listMode: HashListMode = 'keys')
       listMode === 'keys'
         ? await meCommands.hashKeys(conn.id, param)
         : await meCommands.hashValues(conn.id, param)
-  } catch (e) {
-    visible.value = false
-    meErr(e)
   } finally {
     loading.value = false
   }
