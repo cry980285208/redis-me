@@ -419,11 +419,24 @@ fn list_scan_desc(param: &FieldScanParam) -> bool {
 fn resolve_list_scan_range(param: &FieldScanParam, list_len: usize) -> (i64, i64) {
     let max_default = list_len.saturating_sub(1) as i64;
     let meta = param.meta.as_ref();
-    let min = meta.and_then(|m| m.list_min_index).unwrap_or(0).max(0);
-    let max = meta
-        .and_then(|m| m.list_max_index)
-        .unwrap_or(max_default)
-        .clamp(min, max_default);
+    let raw_min = meta.and_then(|m| m.list_min_index);
+    let raw_max = meta.and_then(|m| m.list_max_index);
+
+    let min = raw_min.map_or(0, |v| {
+        if v < 0 {
+            (list_len as i64 + v).max(0)
+        } else {
+            v
+        }
+    });
+    let max = raw_max.map_or(max_default, |v| {
+        if v < 0 {
+            (list_len as i64 + v).max(0)
+        } else {
+            v
+        }
+    });
+
     (min, max)
 }
 
@@ -441,30 +454,32 @@ fn field_scan_list_page(
         return Ok(Vec::new());
     }
     let (range_min, range_max) = resolve_list_scan_range(param, list_len);
-    let range_len = (range_max - range_min + 1).max(0) as u64;
-    if range_len == 0 {
+
+    if range_min > range_max {
         cc.finished = true;
         return Ok(Vec::new());
     }
 
-    let fetched = cc.now_cursor;
-    if fetched >= range_len {
-        cc.finished = true;
-        return Ok(Vec::new());
-    }
-
-    let batch = count.min(range_len - fetched);
     let desc = list_scan_desc(param);
     let (start, end) = if desc {
-        let end = range_max - fetched as i64;
-        let start = end - batch as i64 + 1;
+        let potential_end = range_max - cc.now_cursor as i64;
+        if potential_end < range_min {
+            cc.finished = true;
+            return Ok(Vec::new());
+        }
+        let end = potential_end;
+        let start = (end - count as i64 + 1).max(range_min);
         (start, end)
     } else {
-        let start = range_min + fetched as i64;
-        let end = start + batch as i64 - 1;
+        let start = range_min + cc.now_cursor as i64;
+        let end = (start + count as i64 - 1).min(range_max);
         (start, end)
     };
     let raw: Vec<Vec<u8>> = conn.lrange(key, start as isize, end as isize)?;
+    if raw.is_empty() {
+        cc.finished = true;
+        return Ok(Vec::new());
+    }
     let mut items = ui_list_items(start, &raw, bytes_format);
     // LRANGE 始终按索引升序返回；降序扫描时反转，使结果页从高索引到低索引
     if desc {
@@ -472,9 +487,6 @@ fn field_scan_list_page(
     }
 
     cc.now_cursor += items.len() as u64;
-    if cc.now_cursor >= range_len {
-        cc.finished = true;
-    }
     Ok(items)
 }
 
