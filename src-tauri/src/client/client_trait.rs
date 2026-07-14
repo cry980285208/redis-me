@@ -83,6 +83,8 @@ pub trait MeClient: Send + Sync {
 
     fn zset_rank(&self, param: RedisZsetRank) -> AnyResult<RedisZsetRankResult>;
 
+    fn zset_range(&self, param: RedisZsetRange) -> AnyResult<Vec<RedisZsetRangeItem>>;
+
     fn execute_command(&self, param: RedisCommand) -> AnyResult<String>;
 
     fn config_get(&self, pattern: &str, node: Option<String>)
@@ -1177,6 +1179,30 @@ pub fn zset_rank0(
     let rank: Option<u64> = conn.zrank(&key, &member_bytes)?;
     let rev_rank: Option<u64> = conn.zrevrank(&key, &member_bytes)?;
     Ok(RedisZsetRankResult { rank, rev_rank })
+}
+
+/// ZSet Top/Bottom 范围查询：ZRANGE/ZREVRANGE ... WITHSCORES
+pub fn zset_range0(
+    mut conn: MutexGuard<impl Commands>,
+    param: RedisZsetRange,
+) -> AnyResult<Vec<RedisZsetRangeItem>> {
+    let key: RedisKey = param.key;
+    let val_fmt = param.val_fmt.as_ref().cloned().unwrap_or_default();
+    let cmd_name = if param.reverse { "ZREVRANGE" } else { "ZRANGE" };
+    let end = (param.count as isize).saturating_sub(1);
+    let values: Vec<(Vec<u8>, f64)> = redis::cmd(cmd_name)
+        .arg(&key)
+        .arg(0)
+        .arg(end)
+        .arg("WITHSCORES")
+        .query(&mut conn)?;
+    Ok(values
+        .into_iter()
+        .map(|(v, s)| RedisZsetRangeItem {
+            value: format_bytes(&v, &val_fmt),
+            score: s,
+        })
+        .collect())
 }
 
 pub fn publish0(

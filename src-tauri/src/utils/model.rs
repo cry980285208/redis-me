@@ -655,6 +655,22 @@ api_model!(RedisZsetRankResult {
     rev_rank: Option<u64>,
 });
 
+// ZSet Top/Bottom 范围查询
+api_model!(RedisZsetRange {
+    key: RedisKey,
+    /// true: ZREVRANGE (分数从高到低); false: ZRANGE (分数从低到高)
+    reverse: bool,
+    /// 返回数量限制
+    count: u64,
+    /// 值解码格式
+    val_fmt: Option<BytesFormat>,
+});
+
+api_model!(RedisZsetRangeItem {
+    value: String,
+    score: f64,
+});
+
 // 字段删除
 api_model!(RedisFieldDel {
     key: RedisKey,

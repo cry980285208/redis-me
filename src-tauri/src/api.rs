@@ -146,6 +146,7 @@ api_commands!(
     field_pop(param: RedisPop) -> String;                          // List/Set/ZSet 弹出元素（LPOP/RPOP/SPOP/ZPOPMIN/ZPOPMAX）
     field_del(param: RedisFieldDel) -> ();                        // 删除字段
     zset_rank(param: RedisZsetRank) -> RedisZsetRankResult;       // ZSet 排名查询（ZRANK/ZREVRANK）
+    zset_range(param: RedisZsetRange) -> Vec<RedisZsetRangeItem>;  // ZSet Top/Bottom 范围查询（ZRANGE/ZREVRANGE）
     execute_command(param: RedisCommand) -> String;               // 执行命令
     config_get(pattern: &str, node: Option<String>) -> HashMap<String, String>; // 获取配置
     config_set(key: &str, value: &str, node: Option<String>) -> ();             // 设置配置

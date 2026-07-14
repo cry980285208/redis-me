@@ -73,6 +73,7 @@ import {
 } from '@/utils/util'
 import TableGroup from '@/views/ext/TableGroup.vue'
 import TableHashKeys from '@/views/ext/TableHashKeys.vue'
+import TableZsetRange from '@/views/ext/TableZsetRange.vue'
 import TTLSet from '@/views/ext/TTLSet.vue'
 import ValueShortcut from '@/views/ext/ValueShortcut.vue'
 import KeyRename from '@/views/key/KeyRename.vue'
@@ -1304,6 +1305,11 @@ function showAllHashKeys() {
 function showAllHashValues() {
   hashKeysRef.value?.open(hashListValFmt(), 'values')
 }
+
+const zsetRangeRef = useTemplateRef('zsetRangeRef')
+function showZsetRange() {
+  zsetRangeRef.value?.open(hashListValFmt())
+}
 // #endregion
 
 // #region 底部信息栏（内存 / 条数 / 槽位）
@@ -1654,6 +1660,13 @@ onUnmounted(() => {
                 style="margin-left: 10px">
                 {{ listDescAsc ? t('redisValue.listSortAsc') : t('redisValue.listSortDesc') }}
               </el-button>
+              <me-button
+                v-if="zsetType"
+                icon="me-icon-rank"
+                @click="showZsetRange"
+                style="margin-left: 10px">
+                {{ t('redisValue.zsetRange') }}
+              </me-button>
               <el-dropdown
                 v-if="(listType || setType || zsetType) && canEdit"
                 placement="bottom-end"
@@ -2030,6 +2043,8 @@ onUnmounted(() => {
     <TableGroup ref="tableGroupRef" />
     <!-- Hash 全量字段名/值（HKEYS/HVALS） -->
     <TableHashKeys ref="hashKeysRef" />
+    <!-- ZSet TopN 范围查询 -->
+    <TableZsetRange ref="zsetRangeRef" />
     <!-- 值编辑器快捷键说明 -->
     <ValueShortcut ref="valueShortcutRef" />
     <!-- 命令帮助 -->

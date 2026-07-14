@@ -38,6 +38,7 @@ export const commands = {
 	fieldPop: (id: string, param: RedisPop_Deserialize) => typedError<string, string>(__TAURI_INVOKE("field_pop", { id, param })),
 	fieldDel: (id: string, param: RedisFieldDel_Deserialize) => typedError<null, string>(__TAURI_INVOKE("field_del", { id, param })),
 	zsetRank: (id: string, param: RedisZsetRank_Deserialize) => typedError<RedisZsetRankResult, string>(__TAURI_INVOKE("zset_rank", { id, param })),
+	zsetRange: (id: string, param: RedisZsetRange_Deserialize) => typedError<RedisZsetRangeItem[], string>(__TAURI_INVOKE("zset_range", { id, param })),
 	executeCommand: (id: string, param: RedisCommand) => typedError<string, string>(__TAURI_INVOKE("execute_command", { id, param })),
 	aclUsers: (id: string) => typedError<string[], string>(__TAURI_INVOKE("acl_users", { id })),
 	aclListUsers: (id: string) => typedError<AclUserDetail[], string>(__TAURI_INVOKE("acl_list_users", { id })),
@@ -595,6 +596,33 @@ export type RedisSlowLog = {
 	command: string,
 	cost: number | null,
 	clientName: string,
+};
+
+export type RedisZsetRange = RedisZsetRange_Serialize | RedisZsetRange_Deserialize;
+
+export type RedisZsetRangeItem = {
+	value: string,
+	score: number | null,
+};
+
+export type RedisZsetRange_Deserialize = {
+	key: RedisKey_Deserialize,
+	/**  true: ZREVRANGE (分数从高到低); false: ZRANGE (分数从低到高) */
+	reverse: boolean,
+	/**  返回数量限制 */
+	count: number,
+	/**  值解码格式 */
+	valFmt: BytesFormat | null,
+};
+
+export type RedisZsetRange_Serialize = {
+	key: RedisKey_Serialize,
+	/**  true: ZREVRANGE (分数从高到低); false: ZRANGE (分数从低到高) */
+	reverse: boolean,
+	/**  返回数量限制 */
+	count: number,
+	/**  值解码格式 */
+	valFmt: BytesFormat | null,
 };
 
 export type RedisZsetRank = RedisZsetRank_Serialize | RedisZsetRank_Deserialize;

@@ -197,6 +197,10 @@ impl MeClient for MeSingle {
         zset_rank0(self.get_conn()?, param)
     }
 
+    fn zset_range(&self, param: RedisZsetRange) -> AnyResult<Vec<RedisZsetRangeItem>> {
+        zset_range0(self.get_conn()?, param)
+    }
+
     fn execute_command(&self, param: RedisCommand) -> AnyResult<String> {
         let (cmd, args) = parse_command(param.command.as_str())?;
         if cmd.is_empty() {
