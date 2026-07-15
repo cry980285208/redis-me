@@ -1843,15 +1843,15 @@ onUnmounted(() => {
                               icon="el-icon-document-copy"
                               :name="t('redisValue.copyIndex')" />
                           </el-dropdown-item>
-                          <el-dropdown-item command="copyValue">
-                            <me-icon
-                              icon="el-icon-document-copy"
-                              :name="t('redisValue.copyValue')" />
-                          </el-dropdown-item>
                           <el-dropdown-item v-if="streamType" command="copyStreamId">
                             <me-icon
                               icon="el-icon-document-copy"
                               :name="t('redisValue.copyStreamId')" />
+                          </el-dropdown-item>
+                          <el-dropdown-item command="copyValue">
+                            <me-icon
+                              icon="el-icon-document-copy"
+                              :name="t('redisValue.copyValue')" />
                           </el-dropdown-item>
                           <el-dropdown-item v-if="zsetType" command="copyScore">
                             <me-icon
