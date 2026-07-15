@@ -8,7 +8,7 @@ import { bus, CONN_REFRESH, meCommands, meOk, openNewWindow } from '@/utils/util
 import About from '@/views/ext/About.vue'
 import AppShortcut from '@/views/ext/AppShortcut.vue'
 import CommandLog from '@/views/ext/CommandLog.vue'
-import Official from '@/views/ext/Official.vue'
+// import Official from '@/views/ext/Official.vue'
 import Setting from '@/views/ext/Setting.vue'
 
 const share = inject(shareProvideKey)!
@@ -19,7 +19,7 @@ const dialog = reactive({ commandLog: false })
 const settingRef = ref<InstanceType<typeof Setting>>()
 const shortcutRef = ref<InstanceType<typeof AppShortcut>>()
 const aboutRef = ref<InstanceType<typeof About>>()
-const officialRef = ref<InstanceType<typeof Official>>()
+// const officialRef = ref<InstanceType<typeof Official>>()
 
 function openSetting(): void {
   settingRef.value?.open()
@@ -57,8 +57,8 @@ async function handleCommand(command: string): Promise<void> {
     await openNewWindow()
   } else if ('info' === command) {
     aboutRef.value?.open()
-  } else if ('social' === command) {
-    officialRef.value?.open()
+    // } else if ('social' === command) {
+    //   officialRef.value?.open()
   } else {
     meOk(`TODO: ${command}`)
   }
@@ -110,9 +110,10 @@ async function handleCommand(command: string): Promise<void> {
           <el-dropdown-item command="setting" divided>
             <me-icon :name="t('keyHeader.setting')" icon="el-icon-setting" />
           </el-dropdown-item>
-          <el-dropdown-item command="social">
+          <!-- 社交入口暂隐藏；恢复时同步解开 Official 的 import / ref / 组件挂载 -->
+          <!-- <el-dropdown-item command="social">
             <me-icon :name="t('keyHeader.social')" icon="me-icon-social" />
-          </el-dropdown-item>
+          </el-dropdown-item> -->
           <el-dropdown-item command="info">
             <me-icon :name="t('keyHeader.about')" icon="me-icon-info" />
           </el-dropdown-item>
@@ -123,7 +124,7 @@ async function handleCommand(command: string): Promise<void> {
     <Setting ref="settingRef" />
     <AppShortcut ref="shortcutRef" />
     <About ref="aboutRef" />
-    <Official ref="officialRef" />
+    <!-- <Official ref="officialRef" /> -->
     <CommandLog v-model="dialog.commandLog" />
   </div>
 </template>
