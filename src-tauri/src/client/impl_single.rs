@@ -201,6 +201,10 @@ impl MeClient for MeSingle {
         zset_range0(self.get_conn()?, param)
     }
 
+    fn object_info(&self, key: RedisKey) -> AnyResult<RedisObjectInfo> {
+        object_info0(self.get_conn()?, key)
+    }
+
     fn execute_command(&self, param: RedisCommand) -> AnyResult<String> {
         let (cmd, args) = parse_command(param.command.as_str())?;
         if cmd.is_empty() {

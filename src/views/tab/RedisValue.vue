@@ -71,6 +71,7 @@ import {
   meWarn,
   sleep,
 } from '@/utils/util'
+import ObjectInfo from '@/views/ext/ObjectInfo.vue'
 import TableGroup from '@/views/ext/TableGroup.vue'
 import TableHashKeys from '@/views/ext/TableHashKeys.vue'
 import TableZsetRange from '@/views/ext/TableZsetRange.vue'
@@ -832,6 +833,8 @@ function renameKey() {
   keyRenameRef.value?.open({ redisKey: share.redisKey })
 }
 
+const objectInfoRef = useTemplateRef<InstanceType<typeof ObjectInfo>>('objectInfoRef')
+
 function duplicateKey() {
   if (!share.redisKey) return
   connUi.openKeyCopy(share.redisKey)
@@ -930,6 +933,8 @@ async function onKeyMoreCommand(command: string) {
     renameKey()
   } else if (command === 'duplicateKey') {
     duplicateKey()
+  } else if (command === 'objectInfo') {
+    objectInfoRef.value?.open()
   } else if (command === 'showSlot') {
     void showSlot()
   } else if (command === 'showLocation') {
@@ -1496,7 +1501,10 @@ onUnmounted(() => {
                 <el-dropdown-item v-if="share.conn?.cluster" command="showLocation">
                   <me-icon icon="el-icon-location" :name="t('redisValue.locationTitle')" />
                 </el-dropdown-item>
-                <el-dropdown-item command="commandHelp" divided>
+                <el-dropdown-item command="objectInfo" divided>
+                  <me-icon icon="el-icon-info-filled" :name="t('redisValue.objectInfo')" />
+                </el-dropdown-item>
+                <el-dropdown-item command="commandHelp">
                   <me-icon icon="el-icon-help" :name="t('redisValue.commandHelp')" />
                 </el-dropdown-item>
               </el-dropdown-menu>
@@ -2037,6 +2045,7 @@ onUnmounted(() => {
     <TTLSet ref="ttlSetRef" @success="setTimer" />
     <FieldAdd ref="fieldAddRef" @success="refreshKey" />
     <KeyRename ref="keyRenameRef" />
+    <ObjectInfo ref="objectInfoRef" />
     <CustomCodec v-model="customCodecVisible" />
 
     <!-- Stream 消费者组 -->

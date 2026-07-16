@@ -869,6 +869,43 @@ export default {
     valueTruncatedLoadAll: '仍要加载全部',
     viewCodec: '数据编码',
     commandHelp: '命令帮助',
+    objectInfo: '对象自省',
+    objectInfoCommand: '命令',
+    objectInfoItem: '项目',
+    objectInfoValue: '值',
+    objectEncoding: '内部编码',
+    objectIdleTime: '空闲时间',
+    objectRefcount: '引用计数',
+    objectFreq: '访问频率',
+    objectInfoNA: '不可用',
+    objectIdleTimeUnavailable: '当 maxmemory-policy 为 LFU 策略时，OBJECT IDLETIME 不可用',
+    objectFreqUnavailable: '当 maxmemory-policy 非 LFU 策略（含无淘汰策略）时，OBJECT FREQ 不可用',
+    objectEncodingTip: `Redis 对象可以使用不同的方式进行编码<br/><br/>
+<b>字符串</b><br/>
+• raw：普通字符串编码<br/>
+• int：表示 64 位有符号整数的字符串，以此方式编码以节省空间<br/>
+• embstr：嵌入式字符串；内部 SDS 与对象本身分配在同一内存块的不可变字符串，长度受 OBJ_ENCODING_EMBSTR_SIZE_LIMIT（44 字节）限制<br/><br/>
+<b>列表</b><br/>
+• linkedlist：简单列表编码（旧编码，已不再使用）<br/>
+• ziplist：（Redis ≤ 6.2）小列表的高效空间编码<br/>
+• listpack：（Redis ≥ 7.0）小列表的高效空间编码<br/>
+• quicklist：由 ziplist 或 listpack 编码的链表<br/><br/>
+<b>集合</b><br/>
+• hashtable：普通集合编码<br/>
+• intset：仅含整数的小集合的特殊编码<br/>
+• listpack：（Redis ≥ 7.2）小集合的高效空间编码<br/><br/>
+<b>哈希表</b><br/>
+• zipmap：旧哈希编码（已不再使用）<br/>
+• hashtable：普通哈希表编码<br/>
+• ziplist：（Redis ≤ 6.2）小哈希的高效空间编码<br/>
+• listpack：（Redis ≥ 7.0）小哈希的高效空间编码<br/><br/>
+<b>有序集合</b><br/>
+• skiplist：普通有序集合编码<br/>
+• ziplist：（Redis ≤ 6.2）小有序集合的高效空间编码<br/>
+• listpack：（Redis ≥ 7.0）小有序集合的高效空间编码<br/><br/>
+<b>流</b><br/>
+• stream：编码为 listpack 的基数树<br/><br/>
+一旦执行的操作导致 Redis 无法保留节省空间的编码，所有特殊编码类型都会自动转换为通用类型`,
     keyShortHint: '查看快捷键',
     keyShort: {
       fullscreen: '全屏编辑器',

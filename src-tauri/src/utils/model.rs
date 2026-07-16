@@ -655,6 +655,18 @@ api_model!(RedisZsetRankResult {
     rev_rank: Option<u64>,
 });
 
+// OBJECT 自省：ENCODING / IDLETIME / REFCOUNT / FREQ（*_error 为策略限制等原因）
+api_model!(RedisObjectInfo {
+    encoding: Option<String>,
+    idle_time: Option<u64>,
+    /// IDLETIME 因 maxmemory-policy 等不可用时的错误信息
+    idle_time_error: Option<String>,
+    refcount: Option<u64>,
+    freq: Option<u64>,
+    /// FREQ 因 maxmemory-policy 等不可用时的错误信息
+    freq_error: Option<String>,
+});
+
 // ZSet Top/Bottom 范围查询
 api_model!(RedisZsetRange {
     key: RedisKey,

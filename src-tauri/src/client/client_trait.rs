@@ -85,6 +85,8 @@ pub trait MeClient: Send + Sync {
 
     fn zset_range(&self, param: RedisZsetRange) -> AnyResult<Vec<RedisZsetRangeItem>>;
 
+    fn object_info(&self, key: RedisKey) -> AnyResult<RedisObjectInfo>;
+
     fn execute_command(&self, param: RedisCommand) -> AnyResult<String>;
 
     fn config_get(&self, pattern: &str, node: Option<String>)
@@ -1179,6 +1181,41 @@ pub fn zset_rank0(
     let rank: Option<u64> = conn.zrank(&key, &member_bytes)?;
     let rev_rank: Option<u64> = conn.zrevrank(&key, &member_bytes)?;
     Ok(RedisZsetRankResult { rank, rev_rank })
+}
+
+/// OBJECT ENCODING / IDLETIME / REFCOUNT / FREQ；IDLETIME/FREQ 受 maxmemory-policy 限制时写入 *_error
+pub fn object_info0(
+    mut conn: MutexGuard<impl Commands>,
+    key: RedisKey,
+) -> AnyResult<RedisObjectInfo> {
+    let encoding: Option<String> = conn.object_encoding(&key)?;
+    let refcount_raw: Option<usize> = conn.object_refcount(&key)?;
+    let refcount = refcount_raw.map(|n| n as u64);
+
+    // LFU 策略下 IDLETIME 报错；非 LFU 下 FREQ 报错 —— 记录原因供前端提示
+    let (idle_time, idle_time_error) = match conn.object_idletime(&key) {
+        Ok(v) => {
+            let n: Option<usize> = v;
+            (n.map(|x| x as u64), None)
+        }
+        Err(e) => (None, Some(e.to_string())),
+    };
+    let (freq, freq_error) = match conn.object_freq(&key) {
+        Ok(v) => {
+            let n: Option<usize> = v;
+            (n.map(|x| x as u64), None)
+        }
+        Err(e) => (None, Some(e.to_string())),
+    };
+
+    Ok(RedisObjectInfo {
+        encoding,
+        idle_time,
+        idle_time_error,
+        refcount,
+        freq,
+        freq_error,
+    })
 }
 
 /// ZSet Top/Bottom 范围查询：ZRANGE/ZREVRANGE ... WITHSCORES

@@ -39,6 +39,7 @@ export const commands = {
 	fieldDel: (id: string, param: RedisFieldDel_Deserialize) => typedError<null, string>(__TAURI_INVOKE("field_del", { id, param })),
 	zsetRank: (id: string, param: RedisZsetRank_Deserialize) => typedError<RedisZsetRankResult, string>(__TAURI_INVOKE("zset_rank", { id, param })),
 	zsetRange: (id: string, param: RedisZsetRange_Deserialize) => typedError<RedisZsetRangeItem[], string>(__TAURI_INVOKE("zset_range", { id, param })),
+	objectInfo: (id: string, key: RedisKey_Deserialize) => typedError<RedisObjectInfo, string>(__TAURI_INVOKE("object_info", { id, key })),
 	executeCommand: (id: string, param: RedisCommand) => typedError<string, string>(__TAURI_INVOKE("execute_command", { id, param })),
 	aclUsers: (id: string) => typedError<string[], string>(__TAURI_INVOKE("acl_users", { id })),
 	aclListUsers: (id: string) => typedError<AclUserDetail[], string>(__TAURI_INVOKE("acl_list_users", { id })),
@@ -550,6 +551,17 @@ export type RedisNode = {
 	flags: string,
 	slots: string | null,
 	slaveOfNode: string | null,
+};
+
+export type RedisObjectInfo = {
+	encoding: string | null,
+	idleTime: number | null,
+	/**  IDLETIME 因 maxmemory-policy 等不可用时的错误信息 */
+	idleTimeError: string | null,
+	refcount: number | null,
+	freq: number | null,
+	/**  FREQ 因 maxmemory-policy 等不可用时的错误信息 */
+	freqError: string | null,
 };
 
 export type RedisPop = RedisPop_Serialize | RedisPop_Deserialize;

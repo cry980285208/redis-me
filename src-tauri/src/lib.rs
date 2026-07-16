@@ -48,6 +48,7 @@ fn tauri_specta_commands() -> Commands<tauri::Wry> {
         field_del,
         zset_rank,
         zset_range,
+        object_info,
         execute_command,
         acl_users,
         acl_list_users,

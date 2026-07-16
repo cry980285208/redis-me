@@ -883,6 +883,44 @@ export default {
     valueTruncatedLoadAll: 'Load Full Value',
     viewCodec: 'Codec',
     commandHelp: 'Command Help',
+    objectInfo: 'Object Introspection',
+    objectInfoCommand: 'Command',
+    objectInfoItem: 'Item',
+    objectInfoValue: 'Value',
+    objectEncoding: 'Internal Encoding',
+    objectIdleTime: 'Idle Time',
+    objectRefcount: 'Reference Count',
+    objectFreq: 'Access Frequency',
+    objectInfoNA: 'N/A',
+    objectIdleTimeUnavailable: 'OBJECT IDLETIME is unavailable when maxmemory-policy is LFU-based',
+    objectFreqUnavailable:
+      'OBJECT FREQ is unavailable when maxmemory-policy is not LFU (including no eviction policy)',
+    objectEncodingTip: `Redis objects can be encoded in different ways<br/><br/>
+<b>Strings</b><br/>
+• raw: normal string encoding<br/>
+• int: a string representing a 64-bit signed integer, encoded this way to save space<br/>
+• embstr: embedded string; an object where the SDS is an immutable string allocated in the same memory block as the object itself; length limited by OBJ_ENCODING_EMBSTR_SIZE_LIMIT (44 bytes)<br/><br/>
+<b>Lists</b><br/>
+• linkedlist: simple list encoding (old, no longer used)<br/>
+• ziplist: (Redis ≤ 6.2) space-efficient encoding for small lists<br/>
+• listpack: (Redis ≥ 7.0) space-efficient encoding for small lists<br/>
+• quicklist: a linked list of ziplist or listpack<br/><br/>
+<b>Sets</b><br/>
+• hashtable: normal set encoding<br/>
+• intset: special encoding for small sets of integers only<br/>
+• listpack: (Redis ≥ 7.2) space-efficient encoding for small sets<br/><br/>
+<b>Hashes</b><br/>
+• zipmap: old hash encoding (no longer used)<br/>
+• hashtable: normal hash table encoding<br/>
+• ziplist: (Redis ≤ 6.2) space-efficient encoding for small hashes<br/>
+• listpack: (Redis ≥ 7.0) space-efficient encoding for small hashes<br/><br/>
+<b>Sorted Sets</b><br/>
+• skiplist: normal sorted set encoding<br/>
+• ziplist: (Redis ≤ 6.2) space-efficient encoding for small sorted sets<br/>
+• listpack: (Redis ≥ 7.0) space-efficient encoding for small sorted sets<br/><br/>
+<b>Streams</b><br/>
+• stream: a radix tree encoded as listpack<br/><br/>
+Once an operation prevents Redis from keeping the space-saving encoding, special encodings are automatically converted to the general type`,
     keyShortHint: 'View KeyShort',
     keyShort: {
       fullscreen: 'Fullscreen Editor',
