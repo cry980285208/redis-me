@@ -126,7 +126,12 @@ defineExpose({ open, close })
             prop="key"
             width="150"
             show-overflow-tooltip
-            sortable />
+            sortable>
+            <template #default="{ row }">
+              <!-- 悬停选站点，打开对应命令文档（路径统一为小写+空格转连字符） -->
+              <me-website to="command" :command="row.key" :label="row.key" margin-left="0" />
+            </template>
+          </el-table-column>
           <el-table-column :label="t('redisTerminal.usage')" prop="usage" show-overflow-tooltip />
           <el-table-column
             :label="t('redisTerminal.summary')"
