@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// 跳转到官网: Redis中英文/Valkey中英文
+// 跳转到官网: Redis中英文/Valkey中英文；可选 command 拼具体命令文档路径
 import { openUrl } from '@tauri-apps/plugin-opener'
 
 import { isZh } from '@/utils/util'
@@ -25,7 +25,15 @@ const DOC_PATHS = {
 type DocTopic = keyof typeof DOC_PATHS
 
 const props = withDefaults(
-  defineProps<{ to: DocTopic; placement?: string; marginLeft?: string }>(),
+  defineProps<{
+    to: DocTopic
+    /** 命令名（如 ACL CAT），拼到 to 对应路径后：acl-cat/ */
+    command?: string
+    /** 有值时用 el-link 展示文案，否则用外链图标 */
+    label?: string
+    placement?: string
+    marginLeft?: string
+  }>(),
   { placement: 'right', marginLeft: '10px' },
 )
 
@@ -41,18 +49,25 @@ type SiteCmd = keyof typeof WEB_ORIGIN
 
 type Vendor = keyof (typeof DOC_PATHS)['info']
 
+/** 官网路径统一：空格转连字符、小写，如 OBJECT ENCODING → object-encoding */
+function commandSlug(name: string): string {
+  return name.trim().toLowerCase().replace(/\s+/g, '-')
+}
+
 function handleCommand(cmd: string): void {
   const site = cmd as SiteCmd
   const vendor = (site.endsWith('Zh') ? site.slice(0, -2) : site) as Vendor
   const base = WEB_ORIGIN[site]
-  const paths = DOC_PATHS[props.to]
-  void openUrl(base + paths[vendor])
+  let path = DOC_PATHS[props.to][vendor]
+  if (props.command) path += `${commandSlug(props.command)}/`
+  void openUrl(base + path)
 }
 </script>
 
 <template>
   <el-dropdown @command="handleCommand" trigger="hover" :placement :style="{ marginLeft }">
-    <me-icon icon="me-icon-link" style="font-size: 14px; color: var(--el-color-success)" />
+    <el-link v-if="label" type="primary" :underline="false">{{ label }}</el-link>
+    <me-icon v-else icon="me-icon-link" style="font-size: 14px; color: var(--el-color-success)" />
     <template #dropdown>
       <el-dropdown-menu>
         <el-dropdown-item command="redis">

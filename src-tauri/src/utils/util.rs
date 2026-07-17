@@ -160,8 +160,19 @@ pub fn ui_key_list(keys: Vec<Vec<u8>>) -> Vec<RedisKey> {
         .collect()
 }
 
-pub fn ui_list_value(value: &[Vec<u8>], format: &BytesFormat) -> Vec<String> {
-    value.iter().map(|v| format_bytes(v, format)).collect()
+pub fn ui_list_items(
+    start_index: i64,
+    value: &[Vec<u8>],
+    format: &BytesFormat,
+) -> Vec<crate::utils::model::RedisListItem> {
+    value
+        .iter()
+        .enumerate()
+        .map(|(i, v)| crate::utils::model::RedisListItem {
+            index: start_index + i as i64,
+            value: format_bytes(v, format),
+        })
+        .collect()
 }
 
 pub fn ui_hash_value(value: &[(Vec<u8>, Vec<u8>)], format: &BytesFormat) -> Vec<RedisHashItem> {

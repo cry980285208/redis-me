@@ -1,33 +1,32 @@
 <script setup lang="ts">
-import { computed, inject, nextTick, onMounted, reactive, ref } from 'vue'
+import { inject, nextTick, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import MeShortcut from '@/components/MeShortcut.vue'
 import { shareProvideKey, connUiProvideKey } from '@/types/me-interface'
 import { getConnIcon } from '@/utils/conn'
-import { getConnGlobalShortcuts, getTerminalShortcuts, getValueShortcuts } from '@/utils/shortcut'
 import { bus, CONN_REFRESH, meCommands, meOk, openNewWindow } from '@/utils/util'
 import About from '@/views/ext/About.vue'
+import AppShortcut from '@/views/ext/AppShortcut.vue'
 import CommandLog from '@/views/ext/CommandLog.vue'
-import Official from '@/views/ext/Official.vue'
+// import Official from '@/views/ext/Official.vue'
 import Setting from '@/views/ext/Setting.vue'
 
 const share = inject(shareProvideKey)!
 const connUi = inject(connUiProvideKey)!
 const { t } = useI18n()
 
-const dialog = reactive({ setting: false, info: false, social: false, commandLog: false })
-const keyShortVisible = ref(false)
-const globalShortcuts = computed(() => getConnGlobalShortcuts(t))
-const codeMirrorShortcuts = computed(() => getValueShortcuts(t))
-const terminalShortcuts = computed(() => getTerminalShortcuts(t))
+const dialog = reactive({ commandLog: false })
+const settingRef = ref<InstanceType<typeof Setting>>()
+const shortcutRef = ref<InstanceType<typeof AppShortcut>>()
+const aboutRef = ref<InstanceType<typeof About>>()
+// const officialRef = ref<InstanceType<typeof Official>>()
 
 function openSetting(): void {
-  dialog.setting = !dialog.setting
+  settingRef.value?.open()
 }
 
 function openShortcuts(): void {
-  keyShortVisible.value = !keyShortVisible.value
+  shortcutRef.value?.open()
 }
 
 onMounted(() => {
@@ -57,9 +56,9 @@ async function handleCommand(command: string): Promise<void> {
   } else if ('window' === command) {
     await openNewWindow()
   } else if ('info' === command) {
-    dialog.info = true
-  } else if ('social' === command) {
-    dialog.social = true
+    aboutRef.value?.open()
+    // } else if ('social' === command) {
+    //   officialRef.value?.open()
   } else {
     meOk(`TODO: ${command}`)
   }
@@ -111,9 +110,10 @@ async function handleCommand(command: string): Promise<void> {
           <el-dropdown-item command="setting" divided>
             <me-icon :name="t('keyHeader.setting')" icon="el-icon-setting" />
           </el-dropdown-item>
-          <el-dropdown-item command="social">
+          <!-- 社交入口暂隐藏；恢复时同步解开 Official 的 import / ref / 组件挂载 -->
+          <!-- <el-dropdown-item command="social">
             <me-icon :name="t('keyHeader.social')" icon="me-icon-social" />
-          </el-dropdown-item>
+          </el-dropdown-item> -->
           <el-dropdown-item command="info">
             <me-icon :name="t('keyHeader.about')" icon="me-icon-info" />
           </el-dropdown-item>
@@ -121,47 +121,10 @@ async function handleCommand(command: string): Promise<void> {
       </template>
     </el-dropdown>
 
-    <!--为了方便主题语言等初始化，组件一直存在；为了方便v-model直接绑定弹框是否显示直接传入dialog-->
-    <el-dialog v-model="dialog.setting" width="650" align-center draggable>
-      <template #header>
-        <me-icon icon="el-icon-setting" :name="t('setting.title')"></me-icon>
-      </template>
-      <Setting />
-    </el-dialog>
-    <el-dialog
-      v-model="keyShortVisible"
-      width="900"
-      align-center
-      draggable
-      :show-close="false"
-      header-class="me-shortcut-dialog__header">
-      <div class="setting-shortcut-cols">
-        <div class="setting-shortcut-col">
-          <div class="setting-shortcut-col__title">{{ t('setting.shortcutGlobal') }}</div>
-          <MeShortcut :items="globalShortcuts" compact />
-        </div>
-        <div class="setting-shortcut-col">
-          <div class="setting-shortcut-col__title">{{ t('setting.shortcutCodeMirror') }}</div>
-          <MeShortcut :items="codeMirrorShortcuts" compact />
-        </div>
-        <div class="setting-shortcut-col">
-          <div class="setting-shortcut-col__title">{{ t('setting.shortcutTerminal') }}</div>
-          <MeShortcut :items="terminalShortcuts" compact />
-        </div>
-      </div>
-    </el-dialog>
-    <el-dialog v-model="dialog.info" width="400" align-center draggable>
-      <About />
-    </el-dialog>
-    <el-dialog
-      v-model="dialog.social"
-      width="430"
-      align-center
-      draggable
-      :show-close="false"
-      style="--el-dialog-bg-color: unset; box-shadow: unset">
-      <Official />
-    </el-dialog>
+    <Setting ref="settingRef" />
+    <AppShortcut ref="shortcutRef" />
+    <About ref="aboutRef" />
+    <!-- <Official ref="officialRef" /> -->
     <CommandLog v-model="dialog.commandLog" />
   </div>
 </template>
@@ -169,37 +132,5 @@ async function handleCommand(command: string): Promise<void> {
 <style scoped lang="scss">
 .key-header {
   display: flex;
-}
-
-.setting-shortcut-cols {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 20px;
-  align-items: start;
-}
-
-.setting-shortcut-col__title {
-  margin-bottom: 20px;
-  font-size: 14px;
-  font-weight: bold;
-  color: var(--el-text-color-primary);
-}
-
-.setting-shortcut-col {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-
-  &:first-child {
-    align-items: flex-start;
-  }
-
-  &:nth-child(2) {
-    align-items: center;
-  }
-
-  &:last-child {
-    align-items: flex-end;
-  }
 }
 </style>

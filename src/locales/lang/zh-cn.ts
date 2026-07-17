@@ -70,11 +70,16 @@ export default {
     keyScanCount: '键扫描',
     fieldScanCount: '字段扫描',
     keyScanCountTip: '键列表每次 SCAN 加载的数量；过大可能影响性能。范围 {min}–{max} 个',
-    fieldScanCountTip: '每次 HSCAN、SSCAN 加载的数量。范围 {min}~{max} 个',
+    fieldScanCountTip:
+      'HSCAN/SSCAN/ZSCAN 每次 COUNT；同时作为前端自动续扫的累积条数阈值。范围 {min}~{max} 个',
     commandTimeout: '命令超时',
     commandTimeoutTip: '单次 Redis 命令读写的最长等待时间；修改后需重连生效。范围 {min}–{max} 秒',
     scriptTimeout: '脚本超时',
     scriptTimeoutTip: '自定义编解码脚本的最长执行时间。范围 {min}–{max} 秒',
+    valueByteLimitMB: '安全阈值',
+    valueByteLimitMBTip: 'STRING 类型值超过此大小时提示是否全量加载；范围 {min}–{max} M',
+    valuePreviewBytes: '预览字节',
+    valuePreviewBytesTip: 'STRING 类型值超过安全阈值时仅展示前 N 字节；范围 {min}–{max} B',
     secUnit: '秒',
     countUnit: '个',
     pxUnit: 'px',
@@ -103,7 +108,7 @@ export default {
     openDir: '打开',
     resetWindow: '重置窗口',
     resetWindowTip: '恢复为默认大小并居中',
-    resetWindowOk: '窗口已恢复默认大小',
+    resetWindowOk: '窗口已恢复默认位置和大小',
     shortcuts: '快捷键',
     appFullscreen: '全屏应用',
     shortcutTips: '快捷键',
@@ -791,10 +796,29 @@ export default {
     locationTitle: '集群节点',
     slotHint: '查看键所在集群槽位',
     slotTitle: '集群槽位',
-    tableKeyword: '模糊筛选',
-    insertRow: '插入行',
+    tableKeyword: '本地过滤',
+    fieldScanPlaceholder: '扫描参数 / 本地过滤',
+    listStreamFilterPlaceholder: '本地过滤',
+    listIndexMin: '索引最小值',
+    listIndexMax: '索引最大值',
+    listSortAsc: '升序',
+    listSortDesc: '降序',
+    listLpopConfirm: '确认执行 LPOP？将弹出并删除列表的第一个元素。',
+    listRpopConfirm: '确认执行 RPOP？将弹出并删除列表的最后一个元素。',
+    setPopConfirm: '确认执行 SPOP？将随机弹出并删除集合中的一个元素。',
+    zpopMinConfirm: '确认执行 ZPOPMIN？将弹出并删除分数最小的元素。',
+    zpopMaxConfirm: '确认执行 ZPOPMAX？将弹出并删除分数最大的元素。',
+    fieldCommands: '更多',
+    fieldExactSearch:
+      '<b>扫描</b>（未勾选）<br/>app: 包含 app<br/>app*: 以 app 开头<br/>*app: 以 app 结尾<br/>含 * ? [ 时原样作为模式<br/><br/><b>精确</b>（勾选）<br/>判断 field/member 与输入完全一致是否存在（Hash 仅匹配 field 名）',
+    insertRow: '插入',
+    allHashKeys: '所有键',
+    allHashValues: '所有值',
+    hashKeysEmpty: '暂无字段',
+    hashValuesEmpty: '暂无值',
     id: 'ID',
     key: '键',
+    index: '索引',
     ttl: '过期',
     value: '值',
     score: '分数',
@@ -807,11 +831,27 @@ export default {
     renameKey: '重命名键',
     duplicateKey: '创建副本',
     copyValue: '复制值',
-    copyFieldValue: '复制字段值',
+    copyKey: '复制键',
+    copyIndex: '复制索引',
+    copyStreamId: '复制ID',
+    copyScore: '复制分数',
+    showZsetRank: '查看索引',
+    rank: '正序索引 (ZRANK)',
+    revRank: '倒序索引 (ZREVRANK)',
+    rankTitle: '成员索引',
+    rankNotFound: '未找到',
+    zsetRange: 'TopN',
+    zsetRangeTitle: 'ZSet 排名查询',
+    zsetRangeCount: '数量',
+    zsetRangeAsc: '正序',
+    zsetRangeDesc: '倒序',
+    zsetRangeQuery: '查询',
+    zsetRangeFilter: '模糊筛选（值、分数）',
+    zsetRangeEmpty: '暂无数据',
     copyAsCommand: '复制为命令',
     refreshFieldRow: '刷新行',
     refreshFieldRowOk: '行已刷新',
-    refreshKeyOk: '已刷新',
+    refreshKeyOk: '键已刷新',
     copyCommandOk: '命令已复制',
     copyCommandEmpty: '空键，无可复制命令',
     refreshKey: '刷新键',
@@ -828,6 +868,44 @@ export default {
     valueTruncatedDismiss: '继续使用预览',
     valueTruncatedLoadAll: '仍要加载全部',
     viewCodec: '数据编码',
+    commandHelp: '命令帮助',
+    objectInfo: '对象自省',
+    objectInfoCommand: '命令',
+    objectInfoItem: '项目',
+    objectInfoValue: '值',
+    objectEncoding: '内部编码',
+    objectIdleTime: '空闲时间',
+    objectRefcount: '引用计数',
+    objectFreq: '访问频率',
+    objectInfoNA: '不可用',
+    objectIdleTimeUnavailable: '当 maxmemory-policy 为 LFU 策略时，OBJECT IDLETIME 不可用',
+    objectFreqUnavailable: '当 maxmemory-policy 非 LFU 策略（含无淘汰策略）时，OBJECT FREQ 不可用',
+    objectEncodingTip: `Redis 对象可以使用不同的方式进行编码<br/><br/>
+<b>字符串</b><br/>
+• raw：普通字符串编码<br/>
+• int：表示 64 位有符号整数的字符串，以此方式编码以节省空间<br/>
+• embstr：嵌入式字符串；内部 SDS 与对象本身分配在同一内存块的不可变字符串，长度受 OBJ_ENCODING_EMBSTR_SIZE_LIMIT（44 字节）限制<br/><br/>
+<b>列表</b><br/>
+• linkedlist：简单列表编码（旧编码，已不再使用）<br/>
+• ziplist：（Redis ≤ 6.2）小列表的高效空间编码<br/>
+• listpack：（Redis ≥ 7.0）小列表的高效空间编码<br/>
+• quicklist：由 ziplist 或 listpack 编码的链表<br/><br/>
+<b>集合</b><br/>
+• hashtable：普通集合编码<br/>
+• intset：仅含整数的小集合的特殊编码<br/>
+• listpack：（Redis ≥ 7.2）小集合的高效空间编码<br/><br/>
+<b>哈希表</b><br/>
+• zipmap：旧哈希编码（已不再使用）<br/>
+• hashtable：普通哈希表编码<br/>
+• ziplist：（Redis ≤ 6.2）小哈希的高效空间编码<br/>
+• listpack：（Redis ≥ 7.0）小哈希的高效空间编码<br/><br/>
+<b>有序集合</b><br/>
+• skiplist：普通有序集合编码<br/>
+• ziplist：（Redis ≤ 6.2）小有序集合的高效空间编码<br/>
+• listpack：（Redis ≥ 7.0）小有序集合的高效空间编码<br/><br/>
+<b>流</b><br/>
+• stream：编码为 listpack 的基数树<br/><br/>
+一旦执行的操作导致 Redis 无法保留节省空间的编码，所有特殊编码类型都会自动转换为通用类型`,
     keyShortHint: '查看快捷键',
     keyShort: {
       fullscreen: '全屏编辑器',

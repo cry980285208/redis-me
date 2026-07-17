@@ -1,0 +1,158 @@
+<script setup lang="ts">
+/** ZSet TopN 弹框：输入数量和排序方向，ZRANGE/ZREVRANGE 查询 */
+import { computed, inject, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+import { shareProvideKey } from '@/types/me-interface'
+import type { BytesFormat, RedisZsetRangeItem } from '@/types/tauri-specta'
+import { meCommands } from '@/utils/util'
+
+const { t } = useI18n()
+const share = inject(shareProvideKey)!
+
+const visible = ref(false)
+const loading = ref(false)
+const count = ref(10)
+const reverse = ref(false)
+const itemList = ref<RedisZsetRangeItem[]>([])
+const keyword = ref('')
+
+const dialogTitle = computed(() => t('redisValue.zsetRangeTitle'))
+const dialogIcon = 'me-icon-rank'
+
+const filteredList = computed(() => {
+  const kw = keyword.value.trim().toLowerCase()
+  if (!kw) return itemList.value
+  return itemList.value.filter(
+    item => item.value.toLowerCase().includes(kw) || String(item.score).includes(kw),
+  )
+})
+
+let currentValFmt: BytesFormat | null = null
+
+async function open(valFmt: BytesFormat | null) {
+  const conn = share.conn
+  const redisKey = share.redisKey
+  if (!conn || !redisKey) return
+
+  currentValFmt = valFmt
+  visible.value = true
+  loading.value = false
+  count.value = 10
+  reverse.value = false
+  keyword.value = ''
+  itemList.value = []
+
+  // 弹框打开自动查询
+  await query()
+}
+
+async function query() {
+  const conn = share.conn
+  const redisKey = share.redisKey
+  if (!conn || !redisKey) return
+
+  loading.value = true
+  try {
+    itemList.value = await meCommands.zsetRange(conn.id, {
+      key: redisKey,
+      reverse: reverse.value,
+      count: count.value,
+      valFmt: currentValFmt,
+    })
+  } finally {
+    loading.value = false
+  }
+}
+
+// 正序/倒序切换后自动触发查询
+watch(reverse, () => {
+  if (visible.value) {
+    void query()
+  }
+})
+
+defineExpose({ open })
+</script>
+
+<template>
+  <me-dialog :title="dialogTitle" :icon="dialogIcon" v-model="visible" width="700">
+    <div v-loading="loading" class="table-zset-range">
+      <div class="zset-range-toolbar">
+        <div class="toolbar-left">
+          <el-input-number v-model="count" :min="1" :max="10000" style="width: 120px" />
+          <el-radio-group v-model="reverse">
+            <el-radio-button :label="false">
+              {{ t('redisValue.zsetRangeAsc') }}
+            </el-radio-button>
+            <el-radio-button :label="true">
+              {{ t('redisValue.zsetRangeDesc') }}
+            </el-radio-button>
+          </el-radio-group>
+        </div>
+        <div class="toolbar-right">
+          <el-input
+            v-model="keyword"
+            :placeholder="t('redisValue.zsetRangeFilter')"
+            clearable
+            style="width: 220px" />
+          <el-button icon="el-icon-search" @click="query" type="primary" />
+        </div>
+      </div>
+      <div class="zset-range-main">
+        <me-table
+          v-if="filteredList.length"
+          layout="sizes, prev, pager, next, jumper"
+          :data="filteredList"
+          export-name="zset-range"
+          height="100%"
+          stripe
+          border
+          :default-sort="{ prop: 'score', order: reverse ? 'descending' : 'ascending' }">
+          <el-table-column type="index" label="#" width="60" align="center" />
+          <el-table-column
+            :label="t('redisValue.value')"
+            prop="value"
+            show-overflow-tooltip
+            sortable />
+          <el-table-column :label="t('redisValue.score')" prop="score" width="140" sortable />
+        </me-table>
+        <el-empty v-else-if="!loading" :description="t('redisValue.zsetRangeEmpty')" />
+      </div>
+    </div>
+  </me-dialog>
+</template>
+
+<style scoped lang="scss">
+.table-zset-range {
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+
+  .zset-range-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    gap: 10px;
+
+    .toolbar-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .toolbar-right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+  }
+
+  .zset-range-main {
+    flex: 1;
+    min-height: 0;
+  }
+}
+</style>

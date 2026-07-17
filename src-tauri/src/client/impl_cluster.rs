@@ -237,8 +237,32 @@ impl MeClient for MeCluster {
         field_get0(self.get_conn()?, param, self.base().capabilities.httl_supported)
     }
 
+    fn hash_keys(&self, param: RedisHashKeys) -> AnyResult<Vec<String>> {
+        hash_keys0(self.get_conn()?, param)
+    }
+
+    fn hash_values(&self, param: RedisHashKeys) -> AnyResult<Vec<String>> {
+        hash_values0(self.get_conn()?, param)
+    }
+
+    fn field_pop(&self, param: RedisPop) -> AnyResult<String> {
+        field_pop0(self.get_conn()?, param)
+    }
+
     fn field_del(&self, param: RedisFieldDel) -> AnyResult<()> {
         field_del0(self.get_conn()?, param)
+    }
+
+    fn zset_rank(&self, param: RedisZsetRank) -> AnyResult<RedisZsetRankResult> {
+        zset_rank0(self.get_conn()?, param)
+    }
+
+    fn zset_range(&self, param: RedisZsetRange) -> AnyResult<Vec<RedisZsetRangeItem>> {
+        zset_range0(self.get_conn()?, param)
+    }
+
+    fn object_info(&self, key: RedisKey) -> AnyResult<RedisObjectInfo> {
+        object_info0(self.get_conn()?, key)
     }
 
     fn execute_command(&self, param: RedisCommand) -> AnyResult<String> {

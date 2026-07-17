@@ -73,7 +73,19 @@ pub trait MeClient: Send + Sync {
 
     fn field_get(&self, param: RedisFieldGet) -> AnyResult<RedisFieldValue>;
 
+    fn hash_keys(&self, param: RedisHashKeys) -> AnyResult<Vec<String>>;
+
+    fn hash_values(&self, param: RedisHashKeys) -> AnyResult<Vec<String>>;
+
+    fn field_pop(&self, param: RedisPop) -> AnyResult<String>;
+
     fn field_del(&self, param: RedisFieldDel) -> AnyResult<()>;
+
+    fn zset_rank(&self, param: RedisZsetRank) -> AnyResult<RedisZsetRankResult>;
+
+    fn zset_range(&self, param: RedisZsetRange) -> AnyResult<Vec<RedisZsetRangeItem>>;
+
+    fn object_info(&self, key: RedisKey) -> AnyResult<RedisObjectInfo>;
 
     fn execute_command(&self, param: RedisCommand) -> AnyResult<String>;
 
@@ -152,6 +164,55 @@ pub fn scan_0_batch_count(pattern: &str) -> u64 {
     }
 }
 
+/** fieldScan 单次 HSCAN/SSCAN/ZSCAN/LRANGE 的 COUNT，来自 settings.fieldScanCount */
+pub fn field_scan_batch_count(count: u64) -> u64 {
+    if count == 0 { 20 } else { count }
+}
+
+fn field_scan_include_meta(param: &FieldScanParam) -> bool {
+    param.include_meta.unwrap_or(true)
+}
+
+fn field_scan_include_field_ttl(param: &FieldScanParam, httl_supported: bool) -> bool {
+    resolve_include_field_ttl(param.include_field_ttl, httl_supported)
+}
+
+/// 是否执行 HTTL/HEXPIRE：须同时满足服务端能力与调用方 opt（默认 false）
+fn resolve_include_field_ttl(opt: Option<bool>, httl_supported: bool) -> bool {
+    httl_supported && opt.unwrap_or(false)
+}
+
+/// HSET 前读取 Hash 字段剩余过期秒数；无字段级 TTL 或已永久则返回 None
+fn hash_field_ttl_to_preserve(
+    conn: &mut impl Commands,
+    key: &RedisKey,
+    field: &[u8],
+    httl_supported: bool,
+) -> AnyResult<Option<i64>> {
+    if !httl_supported {
+        return Ok(None);
+    }
+    let ttl_values = conn.httl::<_, _, Vec<IntegerReplyOrNoOp>>(key, &[field])?;
+    Ok(match ttl_values.first() {
+        Some(IntegerReplyOrNoOp::IntegerReply(ttl)) if *ttl > 0 => Some(*ttl as i64),
+        _ => None,
+    })
+}
+
+fn resolve_field_scan_key_type(
+    conn: &mut MutexGuard<impl Commands>,
+    key: &RedisKey,
+    param: &FieldScanParam,
+) -> AnyResult<ValueType> {
+    if field_scan_include_meta(param) {
+        Ok(conn.key_type(key)?)
+    } else if let Some(ref t) = param.key_type {
+        Ok(to_key_type(t))
+    } else {
+        Ok(conn.key_type(key)?)
+    }
+}
+
 /// 完全匹配时用 EXISTS 判断键是否存在；否则返回 None 走 SCAN
 /// 注意：EXISTS 路径不校验 scan_type，精确查完整键名时更符合实际使用场景
 pub fn scan_0_exact<C: redis::ConnectionLike>(
@@ -197,72 +258,134 @@ pub fn scan_1_cmd(cursor: u64, pattern: &str, batch_count: u64, scan_type: Optio
     cmd
 }
 
+pub fn field_scan_0_exact(
+    conn: &mut impl Commands,
+    key: &RedisKey,
+    key_type: &ValueType,
+    param: &FieldScanParam,
+    bytes_format: &BytesFormat,
+    include_field_ttl: bool,
+) -> AnyResult<Option<(serde_json::Value, ScanCursor)>> {
+    if !param.exact {
+        return Ok(None);
+    }
+    let cc = ScanCursor {
+        finished: true,
+        ..Default::default()
+    };
+    let member = &param.pattern;
+    let json = match key_type {
+        ValueType::Hash => {
+            let value: Option<Vec<u8>> = conn.hget(key, member)?;
+            let mut items = match value {
+                Some(bytes) => ui_hash_value(&[(member.as_bytes().to_vec(), bytes)], bytes_format),
+                None => Vec::new(),
+            };
+            if include_field_ttl && !items.is_empty() {
+                let field_bytes = member.as_bytes().to_vec();
+                if let Ok(ttl_values) =
+                    conn.httl::<_, _, Vec<IntegerReplyOrNoOp>>(key, &[&field_bytes])
+                {
+                    if let (Some(item), Some(ttl_reply)) = (items.first_mut(), ttl_values.first())
+                    {
+                        item.ttl = match ttl_reply {
+                            IntegerReplyOrNoOp::IntegerReply(ttl) => Some(*ttl as i64),
+                            IntegerReplyOrNoOp::NotExists => Some(-2),
+                            IntegerReplyOrNoOp::ExistsButNotRelevant => Some(-1),
+                            _ => None,
+                        };
+                    }
+                }
+            }
+            serde_json::to_value(items)?
+        }
+        ValueType::Set => {
+            let exists: bool = conn.sismember(key, member)?;
+            let set = if exists {
+                ui_set_value(
+                    HashSet::from([member.as_bytes().to_vec()]),
+                    bytes_format,
+                )
+            } else {
+                Vec::new()
+            };
+            serde_json::to_value(set)?
+        }
+        ValueType::ZSet => {
+            let score: Option<f64> = conn.zscore(key, member)?;
+            let zset = score
+                .map(|score| {
+                    ui_zset_value(vec![(member.as_bytes().to_vec(), score)], bytes_format)
+                })
+                .unwrap_or_default();
+            serde_json::to_value(zset)?
+        }
+        _ => return Ok(None),
+    };
+    Ok(Some((json, cc)))
+}
+
 pub fn field_scan0(
     mut conn: MutexGuard<impl Commands>,
     param: FieldScanParam,
     httl_supported: bool,
 ) -> AnyResult<FieldScanResult> {
     let bytes_format = param.bytes_format.as_ref().cloned().unwrap_or_default();
+    let include_field_ttl = field_scan_include_field_ttl(&param, httl_supported);
 
-    // String, Json, List, Hash(WithKey), Stream(WithKey), Stream 直接获取得到值
+    // String, Json, List, Stream 直接获取；Hash/Set/ZSet 走 exact 或 *SCAN
     let (mut value, key_type, mut cc, length, value_truncated) =
         field_scan_0_get(&mut conn, &param, &bytes_format)?;
-    // Hash, Set, Zset 进行扫描(hscan, sscan, zscan)
-    let key = param.key;
     if value.is_none() {
-        let mut scan_value = FieldScanValue::default();
-        let mut ready_count = 0;
-        loop {
-            // 优化字段扫描个数
-            let count = if param.load_all {
-                1000
-            } else if param.count == 0 {
-                20
-            } else {
-                param.count
-            };
-
-            let cmd = field_scan_1_cmd(&key_type, &key, cc.now_cursor, count)?;
+        if let Some((exact_value, exact_cc)) = field_scan_0_exact(
+            &mut conn,
+            &param.key,
+            &key_type,
+            &param,
+            &bytes_format,
+            include_field_ttl,
+        )? {
+            value = Some(exact_value);
+            cc = exact_cc;
+        } else {
+            // 每次 API 只执行一轮 HSCAN/SSCAN/ZSCAN，循环由前端控制；COUNT 用 fieldScanCount，非键扫描 batch
+            let batch_count = field_scan_batch_count(param.count);
+            let cmd = field_scan_1_cmd(
+                &key_type,
+                &param.key,
+                cc.now_cursor,
+                &param.pattern,
+                batch_count,
+            )?;
             let (next_cursor, new_value): (u64, Value) = cmd.query(&mut conn)?;
-            let new_count = field_scan_2_value(
+            let mut scan_value = FieldScanValue::default();
+            field_scan_2_value(
                 &mut conn,
                 &key_type,
                 &mut scan_value,
                 new_value,
-                &key,
+                &param.key,
                 &bytes_format,
-                httl_supported,
+                include_field_ttl,
             )?;
-
-            ready_count += new_count;
             cc.now_cursor = next_cursor;
-
             if next_cursor == 0 {
                 cc.finished = true;
-                break;
             }
-
-            if !param.load_all && ready_count >= param.count as usize {
-                break;
-            }
+            value = Some(field_scan_3_json(&key_type, &scan_value)?);
         }
-        value = Some(field_scan_3_json(&key_type, &scan_value)?)
     }
 
-    let with_field_key = param
-        .hash_key
-        .as_ref()
-        .is_some_and(|k| !k.is_empty());
-    // 返回值添加 TTL、内存占用与元素总数
+    let include_meta = field_scan_include_meta(&param);
     field_scan_4_return(
         conn,
-        key,
+        param.key,
         key_type,
         value.unwrap_or_default(),
         cc,
         length,
-        with_field_key,
         value_truncated,
+        include_meta,
     )
 }
 
@@ -273,11 +396,12 @@ fn load_string_bytes(
     param: &FieldScanParam,
 ) -> AnyResult<(Vec<u8>, usize, bool)> {
     let strlen: usize = conn.strlen(key)?;
-    let force_full = param.force_full_value.unwrap_or(false);
+    let meta = param.meta.as_ref();
+    let force_full = meta.and_then(|m| m.force_full_value).unwrap_or(false);
     if !force_full {
-        if let Some(limit) = param.value_byte_limit {
+        if let Some(limit) = meta.and_then(|m| m.value_byte_limit) {
             if strlen > limit as usize {
-                let preview = param.value_preview_bytes.unwrap_or(1000) as usize;
+                let preview = meta.and_then(|m| m.value_preview_bytes).unwrap_or(1000) as usize;
                 let end = preview.saturating_sub(1) as isize;
                 let value: Vec<u8> = conn.getrange(key, 0, end)?;
                 return Ok((value, strlen, true));
@@ -288,15 +412,96 @@ fn load_string_bytes(
     Ok((value, strlen, false))
 }
 
+fn list_scan_desc(param: &FieldScanParam) -> bool {
+    param
+        .meta
+        .as_ref()
+        .and_then(|m| m.list_desc)
+        .unwrap_or(false)
+}
+
+fn resolve_list_scan_range(param: &FieldScanParam, list_len: usize) -> (i64, i64) {
+    let max_default = list_len.saturating_sub(1) as i64;
+    let meta = param.meta.as_ref();
+    let raw_min = meta.and_then(|m| m.list_min_index);
+    let raw_max = meta.and_then(|m| m.list_max_index);
+
+    let min = raw_min.map_or(0, |v| {
+        if v < 0 {
+            (list_len as i64 + v).max(0)
+        } else {
+            v
+        }
+    });
+    let max = raw_max.map_or(max_default, |v| {
+        if v < 0 {
+            (list_len as i64 + v).max(0)
+        } else {
+            v
+        }
+    });
+
+    (min, max)
+}
+
+fn field_scan_list_page(
+    conn: &mut MutexGuard<impl Commands>,
+    key: &RedisKey,
+    param: &FieldScanParam,
+    bytes_format: &BytesFormat,
+    cc: &mut ScanCursor,
+) -> AnyResult<Vec<RedisListItem>> {
+    let count = field_scan_batch_count(param.count);
+    let list_len: usize = conn.llen(key)?;
+    if list_len == 0 {
+        cc.finished = true;
+        return Ok(Vec::new());
+    }
+    let (range_min, range_max) = resolve_list_scan_range(param, list_len);
+
+    if range_min > range_max {
+        cc.finished = true;
+        return Ok(Vec::new());
+    }
+
+    let desc = list_scan_desc(param);
+    let (start, end) = if desc {
+        let potential_end = range_max - cc.now_cursor as i64;
+        if potential_end < range_min {
+            cc.finished = true;
+            return Ok(Vec::new());
+        }
+        let end = potential_end;
+        let start = (end - count as i64 + 1).max(range_min);
+        (start, end)
+    } else {
+        let start = range_min + cc.now_cursor as i64;
+        let end = (start + count as i64 - 1).min(range_max);
+        (start, end)
+    };
+    let raw: Vec<Vec<u8>> = conn.lrange(key, start as isize, end as isize)?;
+    if raw.is_empty() {
+        cc.finished = true;
+        return Ok(Vec::new());
+    }
+    let mut items = ui_list_items(start, &raw, bytes_format);
+    // LRANGE 始终按索引升序返回；降序扫描时反转，使结果页从高索引到低索引
+    if desc {
+        items.reverse();
+    }
+
+    cc.now_cursor += items.len() as u64;
+    Ok(items)
+}
+
 pub fn field_scan_0_get(
     mut conn: &mut MutexGuard<impl Commands>,
     param: &FieldScanParam,
     bytes_format: &BytesFormat,
 ) -> AnyResult<(Option<serde_json::Value>, ValueType, ScanCursor, usize, bool)> {
     let key = &param.key;
-    let hash_key = param.hash_key.clone();
 
-    let key_type: ValueType = conn.key_type(key)?;
+    let key_type = resolve_field_scan_key_type(&mut conn, key, param)?;
     let mut cc = param.cursor.clone().unwrap_or_default();
 
     // String类型的bytes长度
@@ -320,76 +525,23 @@ pub fn field_scan_0_get(
         ValueType::JSON => {
             let value: Value = redis::cmd("JSON.GET").arg(key).query(&mut conn)?;
             cc.finished = true;
-            //Some(serde_json::to_value(redis_value_to_string(value, "\n"))?)
             Some(serde_json::from_str(&redis_value_to_string(value, "\n"))?)
         }
-        ValueType::Hash => {
-            if let Some(hash_key) = hash_key
-                && !hash_key.is_empty()
-            {
-                let value: Option<Vec<u8>> = conn.hget(key, &hash_key)?;
-                match value {
-                    Some(str) => {
-                        length = str.len();
-                        cc.finished = true;
-                        Some(serde_json::to_value(format_bytes(&str, bytes_format))?)
-                    }
-                    None => bail!(AppError::FieldNotFound { hash_key }),
-                }
-            } else {
-                None
-            }
-        }
+        ValueType::Hash => None,
         ValueType::List => {
-            // 如果你有一个从 0 到 100 的数字列表，LRANGE list 0 10 将返回 11 个元素，也就是说，最右边的项是包含在内的
-            // 超出范围的索引不会产生错误。如果 start 大于列表的末尾，将返回一个空列表。如果 stop 大于列表的实际末尾，Redis 会将其视为列表的最后一个元素。
-            let end_index: isize = if param.load_all {
-                -1
-            } else {
-                (cc.now_cursor + param.count) as isize
-            };
-            let value: Vec<Vec<u8>> = conn.lrange(key, cc.now_cursor as isize, end_index)?;
-
-            // 0 ~ 10 获取到11元素, 表示还没有获取到全部数据。序号为10的元素本次不取
-            let value: Vec<String> = if !param.load_all && value.len() > param.count as usize {
-                cc.finished = false;
-                cc.now_cursor += param.count;
-                ui_list_value(&value[0..param.count as usize], bytes_format)
-            } else {
-                cc.finished = true;
-                ui_list_value(&value, bytes_format)
-            };
-            Some(serde_json::to_value(value)?)
+            let items = field_scan_list_page(&mut conn, key, param, bytes_format, &mut cc)?;
+            Some(serde_json::to_value(items)?)
         }
         ValueType::Stream => {
-            // stream的id, 复用hash_key字段
-            if let Some(hash_key) = hash_key
-                && !hash_key.is_empty()
-            {
-                let mut reply: StreamRangeReply = conn.xrange(key, &hash_key, &hash_key)?;
-                match reply.ids.pop() {
-                    Some(entry) => {
-                        cc.finished = true;
-                        Some(serde_json::to_value(ui_stream_id(entry.map))?)
-                    }
-                    None => bail!(AppError::FieldNotFoundStream {
-                        stream_id: hash_key
-                    }),
-                }
-            } else {
-                // https://redis.ac.cn/docs/latest/commands/xrange/
-                // XRANGE key start end [COUNT count]   注意start/end是包含在内的
-                // 起始参数: - 表示最小值, 游标有值则取值
-                // 结束参数: + 表示最大值
-                // 加载所有: 不追加count参数，否则追加count + 1参数，多获取1个用于判断是否已扫描结束
-                //let start = if cc.stream_cursor.is_empty() { "-" } else { &cc.stream_cursor };
-                //let end = "+";
-                //let count = if cc.stream_cursor.is_empty() { param.count + 1 } else { param.count };
-                //let mut cmd = redis::cmd("XRANGE");
-                //cmd.arg(key).arg(start).arg(end);
+            let count = field_scan_batch_count(param.count);
+            let is_desc = param
+                .meta
+                .as_ref()
+                .and_then(|m| m.stream_desc)
+                .unwrap_or(true);
 
-                // 倒序: 更符合实际的使用习惯, 即查看最新的消息。TinyRDM/AnotherRDM都是倒序的
-                // XREVRANGE key end start [COUNT count]
+            let (arg1, arg2) = if is_desc {
+                // XREVRANGE: (end, start)
                 let end = if cc.stream_cursor.is_empty() {
                     match param.meta.as_ref() {
                         Some(meta) if !meta.max_id.is_empty() => &meta.max_id,
@@ -398,36 +550,49 @@ pub fn field_scan_0_get(
                 } else {
                     &cc.stream_cursor
                 };
-
                 let start = match param.meta.as_ref() {
                     Some(meta) if !meta.min_id.is_empty() => &meta.min_id,
                     _ => "-",
                 };
-
-                let count = if cc.stream_cursor.is_empty() {
-                    param.count + 1
+                (end, start)
+            } else {
+                // XRANGE: (start, end)
+                let start = if cc.stream_cursor.is_empty() {
+                    match param.meta.as_ref() {
+                        Some(meta) if !meta.min_id.is_empty() => &meta.min_id,
+                        _ => "-",
+                    }
                 } else {
-                    param.count
+                    &cc.stream_cursor
                 };
-
-                let mut cmd = redis::cmd("XREVRANGE");
-                cmd.arg(key).arg(end).arg(start);
-                if !param.load_all {
-                    cmd.arg("COUNT").arg(count);
-                }
-                let reply: StreamRangeReply = cmd.query(&mut conn)?;
-                let mut value = ui_stream_value(reply);
-
-                if !param.load_all && value.len() > param.count as usize {
-                    cc.finished = false;
-                    cc.stream_cursor = value.pop().unwrap().id; // 弹出最后1个元素，作为下次游标
-                } else {
-                    cc.finished = true;
+                let end = match param.meta.as_ref() {
+                    Some(meta) if !meta.max_id.is_empty() => &meta.max_id,
+                    _ => "+",
                 };
-                Some(serde_json::to_value(value)?)
-            }
+                (start, end)
+            };
+
+            let scan_count = if cc.stream_cursor.is_empty() {
+                count + 1
+            } else {
+                count
+            };
+
+            let cmd_name = if is_desc { "XREVRANGE" } else { "XRANGE" };
+            let mut cmd = redis::cmd(cmd_name);
+            cmd.arg(key).arg(arg1).arg(arg2);
+            cmd.arg("COUNT").arg(scan_count);
+            let reply: StreamRangeReply = cmd.query(&mut conn)?;
+            let mut value = ui_stream_value(reply);
+
+            if value.len() > count as usize {
+                cc.finished = false;
+                cc.stream_cursor = value.pop().unwrap().id;
+            } else {
+                cc.finished = true;
+            };
+            Some(serde_json::to_value(value)?)
         }
-        // 注意此处SET/ZSET等是支持的，只是需要进行扫描，不能直接使用通用的: handle_other_value_type
         ValueType::Unknown(_) => {
             handle_other_value_type(&key_type, key)?;
             None
@@ -441,7 +606,8 @@ pub fn field_scan_1_cmd(
     key_type: &ValueType,
     key: &RedisKey,
     cursor: u64,
-    count: u64,
+    pattern: &str,
+    batch_count: u64,
 ) -> AnyResult<Cmd> {
     let scan_command = match key_type {
         ValueType::Hash => "hscan",
@@ -452,12 +618,12 @@ pub fn field_scan_1_cmd(
         }),
     };
 
-    // SCAN cursor [MATCH pattern] [COUNT count] [TYPE type]
-    // HSCAN key cursor [MATCH pattern] [COUNT count] [NOVALUES]
-    // SSCAN key cursor [MATCH pattern] [COUNT count]
-    // ZSCAN key cursor [MATCH pattern] [COUNT count]
     let mut cmd = redis::cmd(scan_command);
-    cmd.arg(key).arg(cursor).arg("count").arg(count);
+    cmd.arg(key).arg(cursor);
+    if !pattern.is_empty() && pattern != "*" {
+        cmd.arg("MATCH").arg(pattern);
+    }
+    cmd.arg("COUNT").arg(batch_count);
     Ok(cmd)
 }
 
@@ -468,7 +634,7 @@ pub fn field_scan_2_value(
     new_value: Value,
     key: &RedisKey,
     bytes_format: &BytesFormat,
-    httl_supported: bool,
+    include_field_ttl: bool,
 ) -> AnyResult<usize> {
     let new_count = match key_type {
         ValueType::Hash => {
@@ -476,8 +642,7 @@ pub fn field_scan_2_value(
             let new_count = value.len();
             let mut new_value = ui_hash_value(&value, bytes_format);
 
-            // 补充hash字段ttl（Redis/Valkey >= 7.4）
-            if httl_supported {
+            if include_field_ttl {
                 let fields: Vec<&Vec<u8>> = value.iter().map(|(f, _)| f).collect();
                 if let Ok(ttl_values) = conn.httl::<_, _, Vec<IntegerReplyOrNoOp>>(key, &fields) {
                     for (item, ttl_reply) in new_value.iter_mut().zip(ttl_values) {
@@ -529,17 +694,13 @@ pub fn field_scan_3_json(
     Ok(value)
 }
 
-/// 集合类型用 HLEN/LLEN 等填充 length；String/单字段仍用已算好的 bytes 长度
+/// 集合类型用 HLEN/LLEN 等填充 length；String 仍用已算好的 bytes 长度
 fn resolve_field_scan_length(
     conn: &mut MutexGuard<impl Commands>,
     key: &RedisKey,
     key_type: &ValueType,
     field_byte_len: usize,
-    with_field_key: bool,
 ) -> AnyResult<usize> {
-    if with_field_key {
-        return Ok(field_byte_len);
-    }
     let len = match key_type {
         ValueType::String => field_byte_len,
         ValueType::Hash => conn.hlen(key)?,
@@ -559,17 +720,21 @@ pub fn field_scan_4_return(
     value: serde_json::Value,
     cursor: ScanCursor,
     length: usize,
-    with_field_key: bool,
     value_truncated: bool,
+    include_meta: bool,
 ) -> AnyResult<FieldScanResult> {
-    let ttl: i64 = conn.ttl(&key)?;
-    let size: u64 = redis::cmd("memory")
-        .arg("usage")
-        .arg(&key)
-        .query(&mut conn)
-        // 兼容腾讯云Redis等不支持memory usage的第三方缓存数据库 #81
-        .unwrap_or(0);
-    let length = resolve_field_scan_length(&mut conn, &key, &key_type, length, with_field_key)?;
+    let (ttl, size, length) = if include_meta {
+        let ttl: i64 = conn.ttl(&key)?;
+        let size: u64 = redis::cmd("memory")
+            .arg("usage")
+            .arg(&key)
+            .query(&mut conn)
+            .unwrap_or(0);
+        let length = resolve_field_scan_length(&mut conn, &key, &key_type, length)?;
+        (ttl, size, length)
+    } else {
+        (0, 0, length)
+    };
 
     Ok(FieldScanResult {
         key_type: ui_key_type(key_type),
@@ -782,12 +947,23 @@ pub fn field_set0(
 
     match key_type {
         ValueType::Hash => {
-            // HSET 会清除字段级的 TTL，将其置为 -1（永久）。因此只需要处理>0的场景
+            // HSET 会清除字段级 TTL；UI 开启时用用户输入，未开启则写前 HTTL、写后 HEXPIRE 补回
             let key_bytes = parse_bytes(&param.field_key, &val_fmt)?;
             let value_bytes = parse_bytes(&param.field_value, &val_fmt)?;
+            let include_field_ttl = resolve_include_field_ttl(param.include_field_ttl, httl_supported);
+            let preserve_ttl = if httl_supported && !include_field_ttl {
+                hash_field_ttl_to_preserve(&mut conn, &key, &key_bytes, httl_supported)?
+            } else {
+                None
+            };
             let _: () = conn.hset(&key, &key_bytes, &value_bytes)?;
-            if httl_supported && param.field_ttl > 0 {
-                let _: () = conn.hexpire(&key, param.field_ttl, ExpireOption::NONE, &key_bytes)?;
+            if httl_supported {
+                if include_field_ttl && param.field_ttl > 0 {
+                    let _: () =
+                        conn.hexpire(&key, param.field_ttl, ExpireOption::NONE, &key_bytes)?;
+                } else if let Some(ttl) = preserve_ttl {
+                    let _: () = conn.hexpire(&key, ttl, ExpireOption::NONE, &key_bytes)?;
+                }
             }
         }
         ValueType::List => {
@@ -831,7 +1007,8 @@ pub fn field_get0(
                 hash_key: param.field_key.clone(),
             })?;
             let mut field_ttl = -1i64;
-            if httl_supported {
+            let include_field_ttl = resolve_include_field_ttl(param.include_field_ttl, httl_supported);
+            if include_field_ttl {
                 if let Ok(ttl_values) =
                     conn.httl::<_, _, Vec<IntegerReplyOrNoOp>>(&key, &[&field_bytes])
                 {
@@ -882,6 +1059,86 @@ pub fn field_get0(
     }
 }
 
+/// Hash 全量字段名：HKEYS，按 val_fmt 格式化后返回
+pub fn hash_keys0(
+    mut conn: MutexGuard<impl Commands>,
+    param: RedisHashKeys,
+) -> AnyResult<Vec<String>> {
+    let key = param.key;
+    let key_type: ValueType = conn.key_type(&key)?;
+    if key_type != ValueType::Hash {
+        handle_other_value_type(&key_type, &key)?;
+        unreachable!()
+    }
+    let val_fmt = param.val_fmt.as_ref().cloned().unwrap_or_default();
+    let fields: Vec<Vec<u8>> = redis::cmd("HKEYS").arg(&key).query(&mut conn)?;
+    Ok(fields
+        .into_iter()
+        .map(|f| format_bytes(&f, &val_fmt))
+        .collect())
+}
+
+/// Hash 全量字段值：HVALS，按 val_fmt 格式化后返回
+pub fn hash_values0(
+    mut conn: MutexGuard<impl Commands>,
+    param: RedisHashKeys,
+) -> AnyResult<Vec<String>> {
+    let key = param.key;
+    let key_type: ValueType = conn.key_type(&key)?;
+    if key_type != ValueType::Hash {
+        handle_other_value_type(&key_type, &key)?;
+        unreachable!()
+    }
+    let val_fmt = param.val_fmt.as_ref().cloned().unwrap_or_default();
+    let values: Vec<Vec<u8>> = redis::cmd("HVALS").arg(&key).query(&mut conn)?;
+    Ok(values
+        .into_iter()
+        .map(|v| format_bytes(&v, &val_fmt))
+        .collect())
+}
+
+/// List/Set/ZSet 通用弹出：LPOP/RPOP/SPOP/ZPOPMIN/ZPOPMAX
+pub fn field_pop0(
+    mut conn: MutexGuard<impl Commands>,
+    param: RedisPop,
+) -> AnyResult<String> {
+    let key = param.key;
+    let key_type: ValueType = conn.key_type(&key)?;
+    let cmd = param.mode.to_uppercase();
+    let val_fmt = param.val_fmt.as_ref().cloned().unwrap_or_default();
+
+    // 校验键类型
+    let expected = match cmd.as_str() {
+        "LPOP" | "RPOP" => ValueType::List,
+        "SPOP" => ValueType::Set,
+        "ZPOPMIN" | "ZPOPMAX" => ValueType::ZSet,
+        other => bail!(AppError::FieldOperationNotSupported {
+            mode: other.into()
+        }),
+    };
+    if key_type != expected {
+        handle_other_value_type(&key_type, &key)?;
+        unreachable!()
+    }
+
+    // 执行命令
+    match cmd.as_str() {
+        "LPOP" | "RPOP" | "SPOP" => {
+            let value: Option<Vec<u8>> = redis::cmd(&cmd).arg(&key).query(&mut conn)?;
+            Ok(value.map(|v| format_bytes(&v, &val_fmt)).unwrap_or_default())
+        }
+        "ZPOPMIN" | "ZPOPMAX" => {
+            let value: Option<Vec<(Vec<u8>, f64)>> = redis::cmd(&cmd).arg(&key).query(&mut conn)?;
+            let result = value.and_then(|mut v| v.pop()).map(|(member, score)| {
+                let member_str = format_bytes(&member, &val_fmt);
+                format!("{} (score: {})", member_str, score)
+            });
+            Ok(result.unwrap_or_default())
+        }
+        _ => unreachable!(),
+    }
+}
+
 pub fn field_del0(mut conn: MutexGuard<impl Commands>, param: RedisFieldDel) -> AnyResult<()> {
     let key: RedisKey = param.key;
     let key_type: ValueType = conn.key_type(&key)?;
@@ -912,6 +1169,77 @@ pub fn field_del0(mut conn: MutexGuard<impl Commands>, param: RedisFieldDel) -> 
         }
     };
     Ok(())
+}
+
+pub fn zset_rank0(
+    mut conn: MutexGuard<impl Commands>,
+    param: RedisZsetRank,
+) -> AnyResult<RedisZsetRankResult> {
+    let key: RedisKey = param.key;
+    let val_fmt = param.val_fmt.as_ref().cloned().unwrap_or_default();
+    let member_bytes = parse_bytes(&param.member, &val_fmt)?;
+    let rank: Option<u64> = conn.zrank(&key, &member_bytes)?;
+    let rev_rank: Option<u64> = conn.zrevrank(&key, &member_bytes)?;
+    Ok(RedisZsetRankResult { rank, rev_rank })
+}
+
+/// OBJECT ENCODING / IDLETIME / REFCOUNT / FREQ；IDLETIME/FREQ 受 maxmemory-policy 限制时写入 *_error
+pub fn object_info0(
+    mut conn: MutexGuard<impl Commands>,
+    key: RedisKey,
+) -> AnyResult<RedisObjectInfo> {
+    let encoding: Option<String> = conn.object_encoding(&key)?;
+    let refcount_raw: Option<usize> = conn.object_refcount(&key)?;
+    let refcount = refcount_raw.map(|n| n as u64);
+
+    // LFU 策略下 IDLETIME 报错；非 LFU 下 FREQ 报错 —— 记录原因供前端提示
+    let (idle_time, idle_time_error) = match conn.object_idletime(&key) {
+        Ok(v) => {
+            let n: Option<usize> = v;
+            (n.map(|x| x as u64), None)
+        }
+        Err(e) => (None, Some(e.to_string())),
+    };
+    let (freq, freq_error) = match conn.object_freq(&key) {
+        Ok(v) => {
+            let n: Option<usize> = v;
+            (n.map(|x| x as u64), None)
+        }
+        Err(e) => (None, Some(e.to_string())),
+    };
+
+    Ok(RedisObjectInfo {
+        encoding,
+        idle_time,
+        idle_time_error,
+        refcount,
+        freq,
+        freq_error,
+    })
+}
+
+/// ZSet Top/Bottom 范围查询：ZRANGE/ZREVRANGE ... WITHSCORES
+pub fn zset_range0(
+    mut conn: MutexGuard<impl Commands>,
+    param: RedisZsetRange,
+) -> AnyResult<Vec<RedisZsetRangeItem>> {
+    let key: RedisKey = param.key;
+    let val_fmt = param.val_fmt.as_ref().cloned().unwrap_or_default();
+    let cmd_name = if param.reverse { "ZREVRANGE" } else { "ZRANGE" };
+    let end = (param.count as isize).saturating_sub(1);
+    let values: Vec<(Vec<u8>, f64)> = redis::cmd(cmd_name)
+        .arg(&key)
+        .arg(0)
+        .arg(end)
+        .arg("WITHSCORES")
+        .query(&mut conn)?;
+    Ok(values
+        .into_iter()
+        .map(|(v, s)| RedisZsetRangeItem {
+            value: format_bytes(&v, &val_fmt),
+            score: s,
+        })
+        .collect())
 }
 
 pub fn publish0(

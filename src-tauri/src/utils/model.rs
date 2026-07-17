@@ -313,23 +313,42 @@ impl ScanParam {
     }
 }
 
-api_model!(FieldScanParam {
-    key: RedisKey,
-    hash_key: Option<String>, // Hash键 或 StreamId
-    count: u64,
-    cursor: Option<ScanCursor>,
-    load_all: bool,
-    meta: Option<FiledScanMeta>, // 扩展参数
-    bytes_format: Option<BytesFormat>, // 扫描/展示用字节格式
+// fieldScan 按类型的扩展参数：Stream 范围、STRING 大值预览阈值等
+api_model!(FiledScanMeta {
+    /// Stream XREVRANGE 上界和下界
+    max_id: String,
+    min_id: String,
     /// STRING 全量加载字节上限；超过且未 force 时仅 GETRANGE 预览前 value_preview_bytes
     value_byte_limit: Option<u64>,
     value_preview_bytes: Option<u64>,
     force_full_value: Option<bool>,
+    /// List LRANGE 下界；空则 0
+    list_min_index: Option<i64>,
+    /// List LRANGE 上界；空则 len-1
+    list_max_index: Option<i64>,
+    /// List 扫描方向：true 从 max 向 min，false 从 min 向 max
+    list_desc: Option<bool>,
+    /// Stream 扫描方向：true 从 max 向 min（XREVRANGE），false 从 min 向 max（XRANGE）
+    stream_desc: Option<bool>,
 });
 
-api_model!(FiledScanMeta {
-    max_id: String,
-    min_id: String
+api_model!(FieldScanParam {
+    key: RedisKey,
+    count: u64,
+    cursor: Option<ScanCursor>,
+    /// HSCAN/SSCAN/ZSCAN 的 MATCH pattern（前端字段名 match）
+    #[serde(rename = "match")]
+    pattern: String,
+    /// 完全匹配：true 时走 HGET / SISMEMBER / ZSCORE
+    exact: bool,
+    meta: Option<FiledScanMeta>,
+    bytes_format: Option<BytesFormat>, // 扫描/展示用字节格式
+    /// 是否拉取 TYPE/TTL/MEMORY/HLEN；前端续扫时为 false
+    include_meta: Option<bool>,
+    /// 续扫时传入（include_meta=false），避免重复 TYPE
+    key_type: Option<String>,
+    /// Hash 扫描是否附带 HTTL（默认 false 以提速）
+    include_field_ttl: Option<bool>,
 });
 
 api_model!(XInfoGroup{
@@ -523,6 +542,12 @@ api_model!(RedisHashItem{
     ttl: Option<i64>,
 });
 
+// List 条目（fieldScan 返回，index 为 Redis 列表下标）
+api_model!(RedisListItem {
+    index: i64,
+    value: String,
+});
+
 // Zset条目
 api_model!(RedisZetItem {
     value: String,
@@ -566,17 +591,37 @@ api_model!(RedisFieldSet {
     field_value: String,
     field_score: f64,
     field_ttl: i64, // 字段 TTL（秒），仅 Redis/Valkey >= 7.4
+    /// true：界面展示/编辑字段 TTL；false：不拉取列表 TTL，保存时仍保留原有过期
+    include_field_ttl: Option<bool>,
     /// 编辑字段时解析用户输入（含 Hash 字段名）；Redis 键由 `key` 承载，不再经此格式解析
     val_fmt: Option<BytesFormat>,
 });
 
-// 字段单条读取（HGET / LINDEX / ZSCORE 等，供前端刷新表格单行）
+// Hash HKEYS / HVALS 共用参数
+api_model!(RedisHashKeys {
+    key: RedisKey,
+    /// Hash 字段名/值解码格式，与 field_get / fieldScan 一致
+    val_fmt: Option<BytesFormat>,
+});
+
+// List/Set/ZSet 通用弹出：LPOP/RPOP/SPOP/ZPOPMIN/ZPOPMAX
+// mode: LPOP/RPOP/SPOP/ZPOPMIN/ZPOPMAX
+api_model!(RedisPop {
+    key: RedisKey,
+    /// 操作模式（LPOP/RPOP/SPOP/ZPOPMIN/ZPOPMAX）
+    mode: String,
+    /// 弹出元素的展示格式
+    val_fmt: Option<BytesFormat>,
+});
+
 api_model!(RedisFieldGet {
     key: RedisKey,
     field_index: isize,
     field_key: String,
     /// ZSet 成员定位；Hash 用 field_key、List 用 field_index
     field_value: String,
+    /// 为 true 时对 Hash 执行 HTTL；默认 false
+    include_field_ttl: Option<bool>,
     val_fmt: Option<BytesFormat>,
 });
 
@@ -596,6 +641,46 @@ api_model!(RedisFieldValue {
     field_value: String,
     field_score: f64,
     field_ttl: i64, // 字段 TTL（秒），仅 Redis/Valkey >= 7.4
+});
+
+// ZSet 排名查询
+api_model!(RedisZsetRank {
+    key: RedisKey,
+    member: String,
+    val_fmt: Option<BytesFormat>,
+});
+
+api_model!(RedisZsetRankResult {
+    rank: Option<u64>,
+    rev_rank: Option<u64>,
+});
+
+// OBJECT 自省：ENCODING / IDLETIME / REFCOUNT / FREQ（*_error 为策略限制等原因）
+api_model!(RedisObjectInfo {
+    encoding: Option<String>,
+    idle_time: Option<u64>,
+    /// IDLETIME 因 maxmemory-policy 等不可用时的错误信息
+    idle_time_error: Option<String>,
+    refcount: Option<u64>,
+    freq: Option<u64>,
+    /// FREQ 因 maxmemory-policy 等不可用时的错误信息
+    freq_error: Option<String>,
+});
+
+// ZSet Top/Bottom 范围查询
+api_model!(RedisZsetRange {
+    key: RedisKey,
+    /// true: ZREVRANGE (分数从高到低); false: ZRANGE (分数从低到高)
+    reverse: bool,
+    /// 返回数量限制
+    count: u64,
+    /// 值解码格式
+    val_fmt: Option<BytesFormat>,
+});
+
+api_model!(RedisZsetRangeItem {
+    value: String,
+    score: f64,
 });
 
 // 字段删除

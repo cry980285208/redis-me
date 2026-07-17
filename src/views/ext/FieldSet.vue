@@ -45,8 +45,10 @@ const props = withDefaults(
   defineProps<{
     /** 与 RedisValue 值区美化开关一致，open 时同步为初始状态 */
     pretty?: boolean
+    /** 与值页 HTTL 开关一致；关则隐藏 TTL 展示/编辑，保存时由后端保留原有过期 */
+    hashFieldTtlEnabled?: boolean
   }>(),
-  { pretty: true },
+  { pretty: true, hashFieldTtlEnabled: false },
 )
 
 const { t } = useI18n()
@@ -67,6 +69,7 @@ const initForm: FieldSetForm = {
   fieldValue: '',
   fieldScore: 0,
   fieldTtl: -1,
+  includeFieldTtl: false,
   valFmt: 'utf8',
 }
 const form = ref<FieldSetForm>(cloneDeep(initForm))
@@ -209,12 +212,11 @@ function submit() {
         fieldKey: form.value.type === 'hash' && wireFieldKey ? wireFieldKey : form.value.fieldKey,
         fieldValue,
         valFmt: toWireFormat(fmt),
+        includeFieldTtl: form.value.type === 'hash' ? props.hashFieldTtlEnabled : null,
       })
       visible.value = false
       emit('success')
       meOk(t('editOk'))
-    } catch (e) {
-      meErr(e instanceof Error ? e.message : String(e))
     } finally {
       isSaving.value = false
     }
@@ -232,6 +234,7 @@ function buildFieldGetParam(): RedisFieldGet_Deserialize | null {
       type === 'hash' && form.value.wireFieldKey ? form.value.wireFieldKey : form.value.fieldKey,
     fieldValue: type === 'zset' ? srcFieldWire.value : '',
     valFmt: toWireFormat(viewFmtForField(keyViewFmt.value)),
+    includeFieldTtl: type === 'hash' ? props.hashFieldTtlEnabled : null,
   }
 }
 
@@ -240,7 +243,9 @@ function applyFieldGetToForm(data: RedisFieldValue) {
   srcFieldWire.value = data.fieldValue
   if (type === 'hash') {
     form.value.fieldKey = data.fieldKey
-    form.value.fieldTtl = data.fieldTtl
+    if (props.hashFieldTtlEnabled) {
+      form.value.fieldTtl = data.fieldTtl
+    }
   } else if (type === 'zset' && data.fieldScore != null) {
     form.value.fieldScore = data.fieldScore
   }
@@ -277,7 +282,7 @@ async function refreshField() {
       </el-form-item>
       <el-form-item
         :label="t('fieldSet.fieldTtl')"
-        v-if="form.type === 'hash' && share.capabilities.httlSupported">
+        v-if="form.type === 'hash' && share.capabilities.httlSupported && hashFieldTtlEnabled">
         <el-input-number
           v-model="form.fieldTtl"
           :min="-1"
@@ -320,7 +325,7 @@ async function refreshField() {
             @click="togglePretty" />
           <me-icon
             placement="top-start"
-            :info="t('redisValue.copyFieldValue')"
+            :info="t('redisValue.copyValue')"
             class="icon-btn"
             style="font-size: 18px; margin-left: 5px"
             icon="el-icon-document-copy"

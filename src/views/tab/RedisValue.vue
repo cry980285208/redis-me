@@ -5,6 +5,7 @@
  */
 // #region 导入
 import dayjs from 'dayjs'
+import { minimatch } from 'minimatch'
 import {
   computed,
   inject,
@@ -18,7 +19,6 @@ import {
 } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import MeShortcut from '@/components/MeShortcut.vue'
 import { shareProvideKey, connUiProvideKey } from '@/types/me-interface'
 import type {
   FieldScanResult,
@@ -27,8 +27,8 @@ import type {
   RedisFieldGet_Deserialize,
   RedisFieldValue,
   RedisKey_Deserialize,
+  RedisZsetRankResult,
   ScanCursor,
-  XInfoGroup,
 } from '@/types/tauri-specta'
 import { useFavorites, addFavorite, removeFavorite, isFavorited } from '@/utils/favorite'
 import {
@@ -47,12 +47,18 @@ import {
   viewFmtForField,
   type ViewBytesFormat,
 } from '@/utils/format'
-import { getValueShortcuts } from '@/utils/shortcut'
+import {
+  buildScanPattern,
+  buildLocalFilterPattern,
+  computeScanProgress,
+  MINIMATCH_SCAN_OPTS,
+} from '@/utils/redis-glob'
 import {
   bus,
   KEY_DELETE,
   KEY_REFRESH,
   meCommands,
+  meConfirm,
   meCopy,
   meDeleteKey,
   meErr,
@@ -63,11 +69,17 @@ import {
   meJsonNormal,
   meOk,
   meWarn,
+  sleep,
 } from '@/utils/util'
+import ObjectInfo from '@/views/ext/ObjectInfo.vue'
 import TableGroup from '@/views/ext/TableGroup.vue'
+import TableHashKeys from '@/views/ext/TableHashKeys.vue'
+import TableZsetRange from '@/views/ext/TableZsetRange.vue'
 import TTLSet from '@/views/ext/TTLSet.vue'
+import ValueShortcut from '@/views/ext/ValueShortcut.vue'
 import KeyRename from '@/views/key/KeyRename.vue'
 
+import CommandHelp from '../ext/CommandHelp.vue'
 import CustomCodec from '../ext/CustomCodec.vue'
 import FieldAdd from '../ext/FieldAdd.vue'
 import FieldSet from '../ext/FieldSet.vue'
@@ -93,6 +105,8 @@ type ValueTableRow = Record<string, unknown> & {
   id?: string
   score?: number
   ttl?: number
+  /** List 行的真实 Redis 索引（后端 fieldScan 返回） */
+  index?: number
 }
 // #endregion
 
@@ -107,19 +121,56 @@ const canEdit = computed(() => !share.readonly)
 const redisValue = ref<FieldScanViewState | null>(null)
 const cursor = ref<ScanCursor | null>(null) // list/hash/set/zset/stream 分页游标
 const loading = ref(false)
-const hashKey = ref('') // hash 子键 / stream 起始 ID
-const withHashKey = ref(false) // 是否处于「单字段」模式（hashKey 非空）
 const isPretty = ref(true)
-const tableKeyword = ref('')
+/** 表格工具栏关键词：Hash/Set/ZSet 兼扫描参数与本地过滤，List/Stream 仅本地过滤 */
+const fieldKeyword = ref('')
+const fieldExact = ref(false)
+const fieldMatch = computed(() => buildScanPattern(fieldKeyword.value, fieldExact.value))
+const scanCancelled = ref(false)
+const scanPaused = ref(false)
+const scanLoadAll = ref(false)
+const scanBatchCount = ref(0)
+const SCAN_CONTROL_MIN_BATCHES = 10
+const showScanControl = computed(() => {
+  const type = redisValue.value?.type
+  if (!supportsTableView(type)) return false
+  return scanPaused.value || (loading.value && scanBatchCount.value >= SCAN_CONTROL_MIN_BATCHES)
+})
+const showFieldExactCheckbox = computed(() => supportsFieldServerScan(redisValue.value?.type))
+const fieldScanInputPlaceholder = computed(() => {
+  const type = redisValue.value?.type
+  if (type === 'list' || type === 'stream') {
+    return t('redisValue.listStreamFilterPlaceholder')
+  }
+  return t('redisValue.fieldScanPlaceholder')
+})
+const scanToggleTip = computed(() =>
+  loading.value ? t('keyMain.pauseScan') : t('keyMain.resumeScan'),
+)
+const FIELD_SCAN_FETCH_COUNT = computed(() => meTauri.settings.fieldScanCount as number)
+/** 进度环估算：与 settings.fieldScanCount 一致，不用键扫描的 scan_0_batch_count */
+const scanBatchSize = computed(() => FIELD_SCAN_FETCH_COUNT.value)
+const scanProgress = computed(() =>
+  computeScanProgress(
+    scanBatchCount.value,
+    scanBatchSize.value,
+    redisValue.value?.length ?? 0,
+    Boolean(cursor.value?.finished),
+  ),
+)
 const suppressCodeUpdate = ref(false)
 /** fieldScan 成功后递增，强制 me-code 与服务器同步（未保存时 modelValue 字符串可能不变） */
 const valueEditorRemountKey = ref(0)
 /** 手动控制「加载更多」按钮，避免 cursor 变化导致按钮闪现 */
 const showMore = ref(false)
 
-/** 临时：STRING 全量加载阈值与预览长度，后期迁至 settings */
-const VALUE_BYTE_LIMIT = 1024 * 1024
-const VALUE_PREVIEW_BYTES = 1000
+/** STRING 全量加载阈值与预览长度，从 settings 读取 */
+const VALUE_BYTE_LIMIT = computed(
+  () => ((window.meTauri.settings.valueByteLimitMB as number) ?? 1) * 1024 * 1024,
+)
+const VALUE_PREVIEW_BYTES = computed(
+  () => (window.meTauri.settings.valuePreviewBytes as number) ?? 2000,
+)
 /** 用户确认「仍要加载全部」后为 true，fieldScan 走 GET 全量 */
 const forceFullValue = ref(false)
 const valueTruncatedDismissed = ref(false)
@@ -130,16 +181,72 @@ const showValueTruncatedAlert = computed(
 
 /** Stream 扫描范围（meta 传给 fieldScan） */
 const meta = ref({ maxId: '', minId: '' })
+/** List 扫描范围与方向（经 meta 传给 fieldScan） */
+const listIndexMin = ref('')
+const listIndexMax = ref('')
+/** true=升序扫描；false=降序 */
+const listDescAsc = ref(true)
+/** Stream 扫描方向：true=升序（XRANGE），false=降序（XREVRANGE） */
+const streamDescAsc = ref(true)
+
+function parseListIndexInput(raw: string): number | null {
+  const s = raw.trim()
+  if (!s) return null
+  const n = Number.parseInt(s, 10)
+  return Number.isFinite(n) ? n : null
+}
+
+function listRowRedisIndex(row: ValueTableRow): number {
+  return typeof row.index === 'number' ? row.index : -1
+}
+
+function toggleListSortOrder() {
+  listDescAsc.value = !listDescAsc.value
+  void restartFieldScan()
+}
+
+function toggleStreamSortOrder() {
+  streamDescAsc.value = !streamDescAsc.value
+  void restartFieldScan()
+}
+
+/** List LPOP/RPOP / Set SPOP / ZSet ZPOPMIN/ZPOPMAX：统一走 field_pop API */
+async function runFieldPop(mode: string) {
+  const conn = share.conn
+  const key = share.redisKey
+  if (!conn || !key || !canEdit.value) return
+  const data = await meCommands.fieldPop(conn.id, {
+    key,
+    mode,
+    valFmt: toWireFormat(viewFmtForField(bytesFormat.value)),
+  })
+  meOk(data)
+  await restartFieldScan()
+}
+
+function onPopCommand(command: string) {
+  const confirmMap: Record<string, string> = {
+    LPOP: 'redisValue.listLpopConfirm',
+    RPOP: 'redisValue.listRpopConfirm',
+    SPOP: 'redisValue.setPopConfirm',
+    ZPOPMIN: 'redisValue.zpopMinConfirm',
+    ZPOPMAX: 'redisValue.zpopMaxConfirm',
+  }
+  meConfirm(t(confirmMap[command]), () => runFieldPop(command))
+}
 // #endregion
 
 // #region 键类型（派生）
-const hashType = computed(() => 'hash' === redisValue.value?.type)
 const stringType = computed(() => 'string' === redisValue.value?.type)
 const jsonType = computed(() => 'json' === redisValue.value?.type)
 const streamType = computed(() => 'stream' === redisValue.value?.type)
-const stringTypeOrWithHashKey = computed(
-  () => 'string' === redisValue.value?.type || withHashKey.value,
-)
+const hashType = computed(() => 'hash' === redisValue.value?.type)
+const listType = computed(() => 'list' === redisValue.value?.type)
+const setType = computed(() => 'set' === redisValue.value?.type)
+const zsetType = computed(() => 'zset' === redisValue.value?.type)
+/** 服务端支持 HTTL 时，可选是否在 fieldScan 中拉取 Hash 字段 TTL */
+const scanHashFieldTtl = ref(false)
+const showHashFieldTtlOption = computed(() => hashType.value && share.capabilities.httlSupported)
 const canSave = computed(
   () =>
     canEdit.value &&
@@ -152,6 +259,38 @@ const canSave = computed(
 type FieldViewType = 'json' | 'table'
 const viewTypeList: FieldViewType[] = ['json', 'table']
 const viewType = ref<FieldViewType>('json')
+
+function supportsFieldServerScan(type: string | undefined) {
+  return type === 'hash' || type === 'set' || type === 'zset'
+}
+
+function pauseFieldScan() {
+  scanCancelled.value = true
+  scanPaused.value = true
+}
+
+function onFieldScanAction() {
+  if (loading.value) pauseFieldScan()
+  else if (scanPaused.value) {
+    scanPaused.value = false
+    void refreshKey(false, true, scanLoadAll.value, false)
+  }
+}
+
+/** Enter / 搜索图标：保留 keyword，中断进行中的扫描后重扫（无 F5 快捷键） */
+function restartFieldScan() {
+  return refreshKey(false, false, false, true)
+}
+
+async function onFieldSearch() {
+  await restartFieldScan()
+}
+
+/** 菜单 / 底部按钮手动刷新：保留 fieldKeyword，可 restart 中断扫描 */
+function manualRefreshKey() {
+  prepareManualKeyRefresh()
+  return restartFieldScan()
+}
 
 /** 支持表格视图的类型（与底部 segmented 可见条件一致） */
 function supportsTableView(type: string | undefined) {
@@ -168,7 +307,7 @@ function supportsFieldRowRefresh(type: string | undefined) {
 /** 切换键或 reset 时，按 settings.fieldShow 决定默认视图 */
 function applyDefaultViewType() {
   const rv = redisValue.value
-  if (!rv || stringTypeOrWithHashKey.value || jsonType.value) {
+  if (!rv || stringType.value || jsonType.value) {
     viewType.value = 'json'
     return
   }
@@ -194,7 +333,7 @@ function onViewTypeChange(val: string | number | boolean) {
 
 // string / json 仅支持 JSON 视图，强制切回
 watchEffect(() => {
-  if (stringTypeOrWithHashKey.value || jsonType.value) {
+  if (stringType.value || jsonType.value) {
     viewType.value = 'json'
   }
 })
@@ -285,7 +424,7 @@ function syncDisplaySnapshot() {
 }
 
 async function refreshResolvedWireView() {
-  if (!stringTypeOrWithHashKey.value || !isCustomView(displayBytesFormat.value)) {
+  if (!stringType.value || !isCustomView(displayBytesFormat.value)) {
     resolvedWireView.value = ''
     customCodecFailed.value = false
     return
@@ -322,7 +461,7 @@ const showValue = computed(() => {
   if (obj === null || obj === undefined) return ''
 
   if (isPretty.value) {
-    if (stringTypeOrWithHashKey.value) {
+    if (stringType.value) {
       const str = stringWireDisplayText(displayWire.value)
       return meFormatDisplayValue(str, isPretty.value)
     }
@@ -330,14 +469,14 @@ const showValue = computed(() => {
   }
 
   if (
-    ('hash' === redisValue.value?.type && !withHashKey.value) ||
+    'hash' === redisValue.value?.type ||
     'zset' === redisValue.value?.type ||
     'json' === redisValue.value?.type ||
     'stream' === redisValue.value?.type
   ) {
     return JSON.stringify(obj)
   }
-  if (stringTypeOrWithHashKey.value) {
+  if (stringType.value) {
     return stringWireDisplayText(displayWire.value)
   }
   return obj.toString()
@@ -363,16 +502,16 @@ const dataList = computed(() => {
   if (rv === null || rv === undefined || rv.value === null || rv.value === undefined) return []
 
   const data: ValueTableRow[] = []
-  if (rv.type === 'list' || rv.type === 'set') {
-    fieldValueRows(rv.value).forEach(value => data.push({ value }))
-  } else if (rv.type === 'zset' || rv.type === 'stream' || rv.type === 'hash') {
-    fieldValueRows(rv.value).forEach(value => data.push(value as ValueTableRow))
-  }
+  fieldValueRows(rv.value).forEach(value => {
+    // set 为裸字符串；list/hash/zset/stream 已是对象（list 含 index）
+    if (rv.type === 'set') data.push({ value })
+    else data.push(value as ValueTableRow)
+  })
   return data
 })
 
 const filterDataList = computed(() => {
-  const key = tableKeyword.value.toLowerCase()
+  const key = fieldKeyword.value.toLowerCase()
   return dataList.value.filter(row => {
     if (!key) return true
     if ((formatTableCell(row.key).toLowerCase() ?? '').indexOf(key) > -1) return true
@@ -380,34 +519,96 @@ const filterDataList = computed(() => {
     const cell = streamType.value ? JSON.stringify(row.value) : formatTableCell(row.value)
     if (cell.toLowerCase().indexOf(key) > -1) return true
     if ((row.score?.toString() ?? '').indexOf(key) > -1) return true
+    if (String(row.index ?? '').indexOf(key) > -1) return true
     return false
   })
 })
+
+/** 切换 exact 未 Enter 时本地 minimatch（与 KeyMain filterKeyList 一致） */
+const filterFieldPattern = computed(() =>
+  buildLocalFilterPattern(fieldKeyword.value, fieldExact.value, fieldMatch.value),
+)
+
+const filterFieldList = computed(() => {
+  if (!filterFieldPattern.value) return dataList.value
+  return dataList.value.filter(row => {
+    const name = row.key ? formatTableCell(row.key) : formatTableCell(row.value)
+    return minimatch(name, filterFieldPattern.value, MINIMATCH_SCAN_OPTS)
+  })
+})
+
+const tableDisplayList = computed(() => {
+  const type = redisValue.value?.type
+  if (type === 'hash' || type === 'set' || type === 'zset') return filterFieldList.value
+  return filterDataList.value
+})
+
+/** 值表各类型默认排序列（与可见 sortable 列 prop 一致）；List 不设 default-sort，保持 fieldScan 返回顺序（含升/降序扫描） */
+const tableDefaultSort = computed(
+  (): { prop: string; order: 'ascending' | 'descending' } | undefined => {
+    switch (redisValue.value?.type) {
+      case 'hash':
+        return { prop: 'key', order: 'ascending' }
+      case 'zset':
+        return { prop: 'score', order: 'ascending' }
+      case 'set':
+        return { prop: 'value', order: 'ascending' }
+      default:
+        return undefined
+    }
+  },
+)
 // #endregion
 
 // #region 键刷新 fieldScan
 
-/** 切换键或全量刷新时清空 hash 子键、表格筛选等 UI 状态 */
+/** 切换键或全量刷新时清空表格筛选等 UI 状态 */
 function resetParam() {
-  tableKeyword.value = ''
-  hashKey.value = ''
-  withHashKey.value = false
+  fieldKeyword.value = ''
+  fieldExact.value = false
+  scanHashFieldTtl.value = false
+  listIndexMin.value = ''
+  listIndexMax.value = ''
+  listDescAsc.value = true
+  streamDescAsc.value = true
 }
 
-/** 组装 fieldScan 参数：游标分页、Stream 范围 meta、wire 字节格式 */
-function buildFieldScanParam(loadAll: boolean) {
+/** 续扫时 cursor 非空，跳过 TYPE/TTL/MEMORY/HLEN 等元数据命令 */
+function fieldScanIncludeMeta(): boolean {
+  return cursor.value == null
+}
+
+/** 组装 fieldScan 参数：count 来自 settings.fieldScanCount（HSCAN COUNT + 前端续扫阈值） */
+function buildFieldScanParam() {
+  const type = redisValue.value?.type
+  const serverScan = supportsFieldServerScan(type)
+  const includeMeta = fieldScanIncludeMeta()
   return {
     key: share.redisKey!,
-    hashKey: hashKey.value,
     count: meTauri.settings.fieldScanCount ?? 10,
     cursor: cursor.value,
-    loadAll,
-    meta: meta.value,
+    match: serverScan ? fieldMatch.value : '*',
+    exact: serverScan ? fieldExact.value : false,
+    meta: {
+      ...meta.value,
+      listMinIndex: parseListIndexInput(listIndexMin.value),
+      listMaxIndex: parseListIndexInput(listIndexMax.value),
+      listDesc: listType.value ? !listDescAsc.value : null,
+      streamDesc: streamType.value ? !streamDescAsc.value : null,
+      valueByteLimit: VALUE_BYTE_LIMIT.value,
+      valuePreviewBytes: VALUE_PREVIEW_BYTES.value,
+      forceFullValue: forceFullValue.value,
+    },
     bytesFormat: toWireFormat(bytesFormat.value),
-    valueByteLimit: VALUE_BYTE_LIMIT,
-    valuePreviewBytes: VALUE_PREVIEW_BYTES,
-    forceFullValue: forceFullValue.value,
+    includeMeta,
+    keyType: includeMeta ? null : (type ?? null),
+    includeFieldTtl: scanHashFieldTtl.value,
   }
+}
+
+function toggleHashFieldTtl() {
+  scanHashFieldTtl.value = !scanHashFieldTtl.value
+  void restartFieldScan()
 }
 
 function dismissValueTruncated() {
@@ -430,14 +631,20 @@ async function loadFullValue() {
  * 仅 hash/list/set/zset/stream 的行数组可拼接；string/json 等走整包替换。
  * @returns true 已就地 merge；false 调用方应 set replaceData 整包换
  */
-function mergeFieldScanPage(prev: FieldScanViewState, data: FieldScanResult): boolean {
+function mergeFieldScanPage(
+  prev: FieldScanViewState,
+  data: FieldScanResult,
+  includeMeta: boolean,
+): boolean {
   if (!supportsTableView(data.type)) return false
   const merged: unknown[] = [...fieldValueRows(prev.value), ...fieldValueRows(data.value)]
   ;(prev as { value: unknown }).value = merged
-  // length/ttl/size 随服务端最新统计更新（length 为键内总条数，非当前已加载数）
-  prev.length = data.length
-  prev.ttl = data.ttl
-  prev.size = data.size
+  if (includeMeta) {
+    // length/ttl/size 随服务端最新统计更新（length 为键内总条数，非当前已加载数）
+    prev.length = data.length
+    prev.ttl = data.ttl
+    prev.size = data.size
+  }
   return true
 }
 
@@ -472,60 +679,105 @@ async function finalizeAfterFieldScan(reset: boolean, replaceData?: FieldScanRes
   loading.value = false
 }
 
+async function fieldScanCore(
+  useCursor: boolean,
+): Promise<{ count: number; replaceData?: FieldScanResult }> {
+  const includeMeta = fieldScanIncludeMeta()
+  const data = await meCommands.fieldScan(share.conn!.id, buildFieldScanParam())
+  cursor.value = data.cursor
+  scanBatchCount.value++
+
+  if (useCursor) {
+    const prev = redisValue.value
+    if (prev && mergeFieldScanPage(prev, data, includeMeta)) {
+      return { count: fieldValueRows(data.value).length }
+    }
+  }
+  return { count: fieldValueRows(data.value).length, replaceData: data }
+}
+
+async function fieldScanAuto(fetchedCount = 0): Promise<void> {
+  if (!cursor.value || cursor.value.finished) return
+  if (scanCancelled.value) return
+  if (fetchedCount >= FIELD_SCAN_FETCH_COUNT.value) return
+
+  const { count } = await fieldScanCore(true)
+  await fieldScanAuto(fetchedCount + count)
+}
+
+async function fieldScanAll(): Promise<void> {
+  if (!cursor.value || cursor.value.finished) return
+  if (scanCancelled.value) return
+
+  await fieldScanCore(true)
+  await fieldScanAll()
+}
+
+function shouldFieldScanAuto(type: string | undefined, exact: boolean) {
+  if (exact || !type) return false
+  // Hash/Set/ZSet pattern 扫描、List/Stream 前端分页循环
+  return supportsFieldServerScan(type) || type === 'list' || type === 'stream'
+}
+
 /**
  * 拉取/刷新当前键（fieldScan → 更新 redisValue → 同步编辑器）。
- *
- * 典型调用：
- * - refreshKey() / refreshKey(true)：选中新键或切换 hashKey，从头 scan
- * - refreshKey(false)：同键刷新（改 bytesFormat、保存/删字段后）
- * - refreshKey(false, true)：加载更多（useCursor，追加一页）
- * - refreshKey(false, true, true)：加载全部
- *
- * @param reset 是否 resetParam + 重算 json/table 默认视图
- * @param useCursor 为 true 时保留 cursor，请求下一页并尝试 merge
- * @param loadAll 为 true 时后端一次返回剩余全部页（仍走 cursor 协议）
+ * - reset=true：切换键，清空 fieldKeyword
+ * - restart=true：手动刷新 / Enter 搜索，保留 keyword 并中断进行中的扫描
+ * 值面板无 F5；F5 仅 KeyMain 刷新键列表。
  */
 async function refreshKey(
   reset: boolean = true,
   useCursor: boolean = false,
   loadAll: boolean = false,
+  restart: boolean = false,
 ) {
+  if (!share.conn || !share.redisKey) return
+
+  if (loading.value) {
+    if (!restart) return
+    scanCancelled.value = true
+    scanPaused.value = false
+    while (loading.value) {
+      await sleep(20)
+    }
+  }
+
   fieldSetInit()
-  // 刷新过程中 me-code 的 modelValue 会变，避免误写入 newValue
   suppressCodeUpdate.value = true
+  scanLoadAll.value = loadAll
 
   if (reset) {
     resetParam()
     forceFullValue.value = false
     valueTruncatedDismissed.value = false
   }
-  // 非「加载更多」时从第一页重新 scan
   if (!useCursor) cursor.value = null
 
   loading.value = true
-  // 有值则 finally 整包替换；undefined 表示 merge 成功或仅更新了 prev 字段
-  let replaceData: FieldScanResult | undefined
-  try {
-    const data = await meCommands.fieldScan(share.conn!.id, buildFieldScanParam(loadAll))
-    cursor.value = data.cursor
-    // hashKey 非空时进入「单字段」模式，UI 按 string 展示
-    withHashKey.value = !!hashKey.value
+  scanCancelled.value = false
+  if (!useCursor) scanPaused.value = false
 
-    if (useCursor) {
-      const prev = redisValue.value
-      if (!prev || !mergeFieldScanPage(prev, data)) {
-        replaceData = data
-      }
-    } else {
-      replaceData = data
+  try {
+    if (!useCursor) scanBatchCount.value = 0
+
+    const first = await fieldScanCore(useCursor)
+    if (first.replaceData) {
+      redisValue.value = toViewState(first.replaceData)
+    }
+
+    const scanType = redisValue.value?.type
+    if (loadAll) {
+      await fieldScanAll()
+    } else if (shouldFieldScanAuto(scanType, fieldExact.value)) {
+      await fieldScanAuto(first.count)
     }
 
     showMore.value = !cursor.value?.finished
-    // setTimer 用 ttl 启本地倒计时；merge 场景直接用 prev
-    const rvDone = replaceData ? toViewState(replaceData) : redisValue.value
+    const rvDone = redisValue.value
     if (rvDone) await setTimer(rvDone.ttl)
   } finally {
-    await finalizeAfterFieldScan(reset, replaceData)
+    await finalizeAfterFieldScan(reset)
+    if (cursor.value?.finished) scanPaused.value = false
   }
 }
 // #endregion
@@ -581,6 +833,8 @@ function renameKey() {
   keyRenameRef.value?.open({ redisKey: share.redisKey })
 }
 
+const objectInfoRef = useTemplateRef<InstanceType<typeof ObjectInfo>>('objectInfoRef')
+
 function duplicateKey() {
   if (!share.redisKey) return
   connUi.openKeyCopy(share.redisKey)
@@ -606,9 +860,7 @@ async function copyAsCommand() {
 }
 
 async function onFooterRefreshKey() {
-  if (loading.value) return
-  prepareManualKeyRefresh()
-  await refreshKey(false)
+  await manualRefreshKey()
   meOk(t('redisValue.refreshKeyOk'))
 }
 
@@ -626,7 +878,7 @@ function buildFieldAsCommandParam(row: ValueTableRow): RedisFieldAsCommand_Deser
     valFmt: toWireFormat(fieldViewFmt),
   }
   if (rv.type === 'list') {
-    param.fieldIndex = fieldValueRows(rv.value).indexOf(row.value)
+    param.fieldIndex = listRowRedisIndex(row)
   }
   if (rv.type === 'stream') {
     param.fieldValue = ''
@@ -668,10 +920,9 @@ function toggleFavorite() {
   }
 }
 
-function onKeyMoreCommand(command: string) {
+async function onKeyMoreCommand(command: string) {
   if (command === 'refreshKey') {
-    prepareManualKeyRefresh()
-    void refreshKey(false)
+    await onFooterRefreshKey()
   } else if (command === 'copyKey') {
     meCopy(showKey.value)
   } else if (command === 'copyValue') {
@@ -682,10 +933,14 @@ function onKeyMoreCommand(command: string) {
     renameKey()
   } else if (command === 'duplicateKey') {
     duplicateKey()
+  } else if (command === 'objectInfo') {
+    objectInfoRef.value?.open()
   } else if (command === 'showSlot') {
     void showSlot()
   } else if (command === 'showLocation') {
     void showLocation()
+  } else if (command === 'commandHelp') {
+    openCommandHelp()
   }
 }
 // #endregion
@@ -786,7 +1041,7 @@ function prepareFieldRowContext(row: ValueTableRow) {
   fieldEditKey.value = row.key || ''
   fieldEditIndex.value = -1
   if (rv?.type === 'list') {
-    fieldEditIndex.value = fieldValueRows(rv.value).indexOf(row.value)
+    fieldEditIndex.value = listRowRedisIndex(row)
   }
 }
 
@@ -806,11 +1061,20 @@ function buildFieldGetParam(row?: ValueTableRow): RedisFieldGet_Deserialize | nu
     fieldKey: fieldEditKey.value,
     fieldValue: rv.type === 'zset' && row ? String(row.value ?? '') : '',
     valFmt: toWireFormat(viewFmtForField(bytesFormat.value)),
+    includeFieldTtl: rv.type === 'hash' ? scanHashFieldTtl.value : null,
   }
 }
 
 function fieldRowDisplayValue(row: ValueTableRow): string {
   return streamType.value ? JSON.stringify(row.value) : formatTableCell(row.value)
+}
+
+/** 值列排序：与单元格展示一致（Stream 等为 JSON 字符串） */
+function compareFieldRowValue(a: ValueTableRow, b: ValueTableRow): number {
+  return fieldRowDisplayValue(a).localeCompare(fieldRowDisplayValue(b), undefined, {
+    numeric: true,
+    sensitivity: 'base',
+  })
 }
 
 function openFieldPanel(row: ValueTableRow, index: number, readonly: boolean) {
@@ -878,14 +1142,18 @@ function applyFieldGetResult(rv: FieldScanViewState, data: RedisFieldValue, row:
     const rows = fieldValueRows(rv.value) as ValueTableRow[]
     const idx = rows.findIndex(r => r.key === (row.key || fieldEditKey.value))
     if (idx >= 0) {
-      rows[idx] = { key: data.fieldKey, value: data.fieldValue, ttl: data.fieldTtl }
+      rows[idx] = {
+        key: data.fieldKey,
+        value: data.fieldValue,
+        ttl: scanHashFieldTtl.value ? data.fieldTtl : (rows[idx].ttl ?? row.ttl),
+      }
     }
   } else if (rv.type === 'list') {
-    const rows = fieldValueRows(rv.value)
-    const idx =
-      fieldEditIndex.value >= 0 ? fieldEditIndex.value : fieldValueRows(rv.value).indexOf(row.value)
-    if (idx >= 0 && idx < rows.length) {
-      rows[idx] = data.fieldValue
+    const rows = fieldValueRows(rv.value) as ValueTableRow[]
+    const redisIndex = fieldEditIndex.value >= 0 ? fieldEditIndex.value : listRowRedisIndex(row)
+    const idx = rows.findIndex(r => r.index === redisIndex)
+    if (idx >= 0) {
+      rows[idx] = { index: rows[idx].index, value: data.fieldValue }
     }
   } else if (rv.type === 'zset') {
     const rows = fieldValueRows(rv.value) as ValueTableRow[]
@@ -921,11 +1189,41 @@ async function refreshFieldRow(row: ValueTableRow) {
 function onFieldRowMoreCommand(command: string, row: ValueTableRow) {
   if (command === 'refreshRow') {
     void refreshFieldRow(row)
-  } else if (command === 'copyFieldValue') {
+  } else if (command === 'copyKey') {
+    meCopy(String(row.key ?? ''))
+  } else if (command === 'copyValue') {
     meCopy(fieldRowDisplayValue(row))
+  } else if (command === 'copyIndex') {
+    meCopy(String(row.index ?? ''))
+  } else if (command === 'copyStreamId') {
+    meCopy(String(row.id ?? ''))
+  } else if (command === 'copyScore') {
+    meCopy(String(row.score ?? ''))
   } else if (command === 'copyAsCommand') {
     void copyFieldAsCommand(row)
+  } else if (command === 'showZsetRank') {
+    void showZsetRank(row)
   }
+}
+
+async function showZsetRank(row: ValueTableRow) {
+  const conn = share.conn
+  const rk = share.redisKey
+  if (!conn || !rk) return
+  const member = fieldRowDisplayValue(row)
+  const data: RedisZsetRankResult = await meCommands.zsetRank(conn.id, {
+    key: rk,
+    member,
+    valFmt: toWireFormat(viewFmtForField(bytesFormat.value)),
+  })
+  const rankText = data.rank !== null ? String(data.rank) : t('redisValue.rankNotFound')
+  const revRankText = data.revRank !== null ? String(data.revRank) : t('redisValue.rankNotFound')
+  meOk(
+    `${t('redisValue.rank')}: ${rankText}<br>${t('redisValue.revRank')}: ${revRankText}`,
+    true,
+    t('redisValue.rankTitle'),
+    { dangerouslyUseHTMLString: true },
+  )
 }
 
 function onFieldSetRefreshed(data: RedisFieldValue) {
@@ -974,7 +1272,7 @@ async function fieldDel(row: ValueTableRow) {
     valFmt: toWireFormat(fieldViewFmt),
   }
   if (rv.type === 'list') {
-    param.fieldIndex = fieldValueRows(rv.value).indexOf(row.value)
+    param.fieldIndex = listRowRedisIndex(row)
   }
   if (rv.type === 'stream') {
     param.fieldValue = ''
@@ -997,11 +1295,25 @@ function streamIdToDate(id: string) {
   }
 }
 
-const groupDataList = ref<XInfoGroup[]>([])
-const tableGroupVisible = ref(false)
-async function showGroups() {
-  groupDataList.value = await meCommands.xinfoGroups(share.conn!.id, share.redisKey!)
-  tableGroupVisible.value = true
+const tableGroupRef = useTemplateRef('tableGroupRef')
+function showGroups() {
+  tableGroupRef.value?.open()
+}
+
+const hashKeysRef = useTemplateRef('hashKeysRef')
+function hashListValFmt() {
+  return toWireFormat(viewFmtForField(bytesFormat.value))
+}
+function showAllHashKeys() {
+  hashKeysRef.value?.open(hashListValFmt(), 'keys')
+}
+function showAllHashValues() {
+  hashKeysRef.value?.open(hashListValFmt(), 'values')
+}
+
+const zsetRangeRef = useTemplateRef('zsetRangeRef')
+function showZsetRange() {
+  zsetRangeRef.value?.open(hashListValFmt())
 }
 // #endregion
 
@@ -1025,8 +1337,8 @@ const textMemory = computed(() => {
 /** 与 textLength 同一位置：String/单字段为字节长度，集合类型为总数 */
 const textLength = computed(() => {
   const rv = redisValue.value
-  if (!rv || jsonType.value || (streamType.value && withHashKey.value)) return ''
-  if (stringTypeOrWithHashKey.value) {
+  if (!rv || jsonType.value) return ''
+  if (stringType.value) {
     return t('redisValue.textLength') + rv.length
   }
   if (rv.length <= 0) return ''
@@ -1035,8 +1347,8 @@ const textLength = computed(() => {
 
 const textEntries = computed(() => {
   const rv = redisValue.value
-  if (!rv || jsonType.value || stringTypeOrWithHashKey.value) return ''
-  const filtered = filterDataList.value.length
+  if (!rv || jsonType.value || stringType.value) return ''
+  const filtered = tableDisplayList.value.length
   const loaded = fieldValueRows(rv.value).length
   return t('redisValue.textEntries') + `${filtered} / ${loaded}`
 })
@@ -1066,15 +1378,35 @@ function locateKeyInTree(): void {
 // #endregion
 
 // #region 快捷键说明弹窗
-const keyShortVisible = ref(false)
+const valueShortcutRef = useTemplateRef('valueShortcutRef')
 function openKeyShortDialog() {
-  keyShortVisible.value = true
+  valueShortcutRef.value?.open()
+}
+// #endregion
+
+// #region 命令帮助弹窗
+const commandHelpRef = useTemplateRef<InstanceType<typeof CommandHelp>>('commandHelpRef')
+
+/** 键类型到命令分组 group 的映射 */
+const KEY_TYPE_TO_GROUP: Record<string, string> = {
+  string: 'string',
+  hash: 'hash',
+  list: 'list',
+  set: 'set',
+  zset: 'sorted-set',
+  stream: 'stream',
+  json: 'json',
 }
 
-const keyShortcuts = computed(() => getValueShortcuts(t))
+function openCommandHelp() {
+  const type = redisValue.value?.type
+  const group = type ? KEY_TYPE_TO_GROUP[type] : ''
+  commandHelpRef.value?.open({ group })
+}
 // #endregion
 
 // #region 事件总线与生命周期
+/** 选中键时加载值（KEY_REFRESH）；与 KeyMain F5 刷新键列表无关 */
 const onKeyRefreshBus = () => {
   bytesFormat.value = 'utf8'
   void refreshKey()
@@ -1094,8 +1426,8 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <!-- 大部分Key都很快得到，element-loading-background设置为unset避免loading背景一闪而过，不友好  -->
-  <div class="redis-value" v-loading="loading" element-loading-background="unset">
+  <!-- 扫描进度由搜索框内的进度环展示，避免 loading 遮罩拦截暂停/继续操作 -->
+  <div class="redis-value">
     <template v-if="share.redisKey && redisValue">
       <!-- 上方键 -->
       <div class="value-header">
@@ -1112,6 +1444,7 @@ onUnmounted(() => {
                 @click.stop="locateKeyInTree" />
             </template>
             <template #suffix>
+              <span class="ttl-suffix-separator">|</span>
               <me-icon
                 icon="el-icon-timer"
                 class="suffix-ttl icon-btn"
@@ -1121,19 +1454,6 @@ onUnmounted(() => {
                 placement="top"
                 @click.stop="updateTTL" />
             </template>
-          </el-input>
-
-          <el-input
-            type="text"
-            :placeholder="t('redisValue.optional')"
-            clearable
-            class="value-header-hash"
-            v-model="hashKey"
-            v-if="hashType || streamType"
-            @keyup.enter="refreshKey(false)">
-            <template #prepend>{{
-              streamType ? t('redisValue.streamId') : t('redisValue.hashKey')
-            }}</template>
           </el-input>
         </div>
 
@@ -1180,6 +1500,12 @@ onUnmounted(() => {
                 </el-dropdown-item>
                 <el-dropdown-item v-if="share.conn?.cluster" command="showLocation">
                   <me-icon icon="el-icon-location" :name="t('redisValue.locationTitle')" />
+                </el-dropdown-item>
+                <el-dropdown-item command="objectInfo" divided>
+                  <me-icon icon="el-icon-info-filled" :name="t('redisValue.objectInfo')" />
+                </el-dropdown-item>
+                <el-dropdown-item command="commandHelp">
+                  <me-icon icon="el-icon-help" :name="t('redisValue.commandHelp')" />
                 </el-dropdown-item>
               </el-dropdown-menu>
             </template>
@@ -1228,33 +1554,92 @@ onUnmounted(() => {
           style="flex-direction: column; height: 100%"
           v-else
           @click="onFieldPanelOutsideClick">
-          <div class="me-flex" style="width: 100%">
-            <!-- 左侧模糊筛选 -->
-            <div>
-              <el-input
-                v-model="tableKeyword"
-                :placeholder="t('redisValue.tableKeyword')"
-                clearable
-                :style="{ width: streamType ? '180px' : '300px' }" />
-            </div>
+          <div class="me-flex table-toolbar">
+            <el-input
+              v-model="fieldKeyword"
+              :placeholder="fieldScanInputPlaceholder"
+              :readonly="loading"
+              clearable
+              class="field-scan-input"
+              @keyup.enter="onFieldSearch">
+              <template #suffix>
+                <div class="keyword-suffix">
+                  <el-tooltip
+                    v-if="showScanControl"
+                    :content="scanToggleTip"
+                    placement="bottom"
+                    :show-after="1000">
+                    <div class="scan-control" @click.stop="onFieldScanAction">
+                      <el-progress
+                        type="circle"
+                        :percentage="scanProgress"
+                        :width="22"
+                        :stroke-width="2"
+                        :show-text="false"
+                        color="var(--el-color-danger)"
+                        class="scan-ring" />
+                      <me-icon
+                        :icon="loading ? 'el-icon-video-pause' : 'el-icon-video-play'"
+                        class="scan-icon" />
+                    </div>
+                  </el-tooltip>
+                  <el-tooltip
+                    v-if="showFieldExactCheckbox"
+                    :content="t('redisValue.fieldExactSearch')"
+                    placement="bottom"
+                    raw-content
+                    :show-after="1000">
+                    <el-checkbox size="small" v-model="fieldExact" class="suffix-exact-checkbox" />
+                  </el-tooltip>
+                </div>
+              </template>
+            </el-input>
 
-            <div v-if="streamType">
+            <div v-if="streamType" class="stream-range-inputs">
               <el-input
-                @keyup.enter="refreshKey(true)"
-                v-model.trim="meta.maxId"
-                placeholder="MaxId"
-                clearable
-                style="width: 180px" />
-              <el-input
-                @keyup.enter="refreshKey(true)"
+                @keyup.enter="restartFieldScan()"
                 v-model.trim="meta.minId"
                 placeholder="MinId"
-                clearable
-                style="width: 180px; margin-left: 10px" />
+                clearable />
+              <span class="stream-range-sep">-</span>
+              <el-input
+                @keyup.enter="restartFieldScan()"
+                v-model.trim="meta.maxId"
+                placeholder="MaxId"
+                clearable />
+            </div>
+
+            <div v-if="listType" class="list-range-inputs">
+              <el-input
+                @keyup.enter="restartFieldScan()"
+                v-model.trim="listIndexMin"
+                :placeholder="t('redisValue.listIndexMin')"
+                clearable />
+              <span class="list-range-sep">-</span>
+              <el-input
+                @keyup.enter="restartFieldScan()"
+                v-model.trim="listIndexMax"
+                :placeholder="t('redisValue.listIndexMax')"
+                clearable />
             </div>
 
             <!-- 右侧更多+插入行 -->
-            <div>
+            <div class="table-toolbar-actions">
+              <me-button
+                v-if="showHashFieldTtlOption"
+                icon="el-icon-clock"
+                :type="scanHashFieldTtl ? 'primary' : 'default'"
+                style="margin-left: 10px"
+                @click="toggleHashFieldTtl">
+                HTTL
+              </me-button>
+              <el-button
+                v-if="streamType"
+                :icon="streamDescAsc ? 'el-icon-sort-up' : 'el-icon-sort-down'"
+                @click="toggleStreamSortOrder"
+                style="margin-left: 10px">
+                {{ streamDescAsc ? t('redisValue.listSortAsc') : t('redisValue.listSortDesc') }}
+              </el-button>
               <el-button
                 icon="el-icon-grid"
                 @click="showGroups"
@@ -1262,6 +1647,52 @@ onUnmounted(() => {
                 v-if="streamType">
                 Groups
               </el-button>
+              <el-button
+                v-if="hashType"
+                icon="el-icon-key"
+                @click="showAllHashKeys"
+                style="margin-left: 10px">
+                {{ t('redisValue.allHashKeys') }}
+              </el-button>
+              <el-button
+                v-if="hashType"
+                icon="el-icon-document"
+                @click="showAllHashValues"
+                style="margin-left: 10px">
+                {{ t('redisValue.allHashValues') }}
+              </el-button>
+              <el-button
+                v-if="listType"
+                :icon="listDescAsc ? 'el-icon-sort-up' : 'el-icon-sort-down'"
+                @click="toggleListSortOrder"
+                style="margin-left: 10px">
+                {{ listDescAsc ? t('redisValue.listSortAsc') : t('redisValue.listSortDesc') }}
+              </el-button>
+              <me-button
+                v-if="zsetType"
+                icon="me-icon-rank"
+                @click="showZsetRange"
+                style="margin-left: 10px">
+                {{ t('redisValue.zsetRange') }}
+              </me-button>
+              <el-dropdown
+                v-if="(listType || setType || zsetType) && canEdit"
+                placement="bottom-end"
+                @command="onPopCommand"
+                style="margin-left: 10px">
+                <el-button icon="el-icon-arrow-down">
+                  {{ t('redisValue.fieldCommands') }}
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item v-if="listType" command="LPOP">LPOP</el-dropdown-item>
+                    <el-dropdown-item v-if="listType" command="RPOP">RPOP</el-dropdown-item>
+                    <el-dropdown-item v-if="setType" command="SPOP">SPOP</el-dropdown-item>
+                    <el-dropdown-item v-if="zsetType" command="ZPOPMIN">ZPOPMIN</el-dropdown-item>
+                    <el-dropdown-item v-if="zsetType" command="ZPOPMAX">ZPOPMAX</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
               <el-button icon="el-icon-plus" @click="fieldAdd" style="margin-left: 10px">{{
                 t('redisValue.insertRow')
               }}</el-button>
@@ -1269,8 +1700,10 @@ onUnmounted(() => {
           </div>
           <div class="table-view">
             <me-table
+              :key="redisValue?.type"
               layout="sizes, prev, pager, next, jumper"
-              :data="filterDataList"
+              :data="tableDisplayList"
+              :default-sort="tableDefaultSort"
               border
               stripe
               ref="table"
@@ -1303,7 +1736,7 @@ onUnmounted(() => {
               <el-table-column
                 :label="t('redisValue.id')"
                 prop="id"
-                width="310"
+                width="350"
                 sortable
                 show-overflow-tooltip
                 v-if="redisValue.type === 'stream'">
@@ -1317,16 +1750,7 @@ onUnmounted(() => {
                 </template>
               </el-table-column>
 
-              <!-- 分数 -->
-              <el-table-column
-                :label="t('redisValue.score')"
-                prop="score"
-                width="140"
-                sortable
-                show-overflow-tooltip
-                v-if="redisValue.type === 'zset'" />
-
-              <!-- 字段键 -->
+              <!-- 哈希键 -->
               <el-table-column
                 :label="t('redisValue.key')"
                 prop="key"
@@ -1338,23 +1762,43 @@ onUnmounted(() => {
                 </template>
               </el-table-column>
 
+              <!-- List 索引 -->
+              <el-table-column
+                :label="t('redisValue.index')"
+                prop="index"
+                width="100"
+                sortable
+                show-overflow-tooltip
+                v-if="redisValue.type === 'list'" />
+
               <!-- 字段值 -->
               <el-table-column
                 :label="t('redisValue.value')"
                 prop="value"
                 min-width="200"
+                sortable
+                :sort-method="compareFieldRowValue"
                 show-overflow-tooltip>
                 <template #default="scope">
                   {{ fieldRowDisplayValue(scope.row) }}
                 </template>
               </el-table-column>
 
+              <!-- 分数 -->
+              <el-table-column
+                :label="t('redisValue.score')"
+                prop="score"
+                width="140"
+                sortable
+                show-overflow-tooltip
+                v-if="redisValue.type === 'zset'" />
+
               <!-- TTL -->
               <el-table-column
                 :label="t('redisValue.ttl')"
                 width="140"
                 prop="ttl"
-                v-if="redisValue.type === 'hash' && share.capabilities.httlSupported">
+                v-if="showHashFieldTtlOption && scanHashFieldTtl">
                 <template #default="scope">
                   {{ formatFieldTtl(scope.row.ttl) }}
                 </template>
@@ -1399,15 +1843,36 @@ onUnmounted(() => {
                               icon="el-icon-refresh-right"
                               :name="t('redisValue.refreshFieldRow')" />
                           </el-dropdown-item>
-                          <el-dropdown-item command="copyFieldValue">
+                          <el-dropdown-item v-if="hashType" command="copyKey">
+                            <me-icon icon="el-icon-document-copy" :name="t('redisValue.copyKey')" />
+                          </el-dropdown-item>
+                          <el-dropdown-item v-if="listType" command="copyIndex">
                             <me-icon
                               icon="el-icon-document-copy"
-                              :name="t('redisValue.copyFieldValue')" />
+                              :name="t('redisValue.copyIndex')" />
+                          </el-dropdown-item>
+                          <el-dropdown-item v-if="streamType" command="copyStreamId">
+                            <me-icon
+                              icon="el-icon-document-copy"
+                              :name="t('redisValue.copyStreamId')" />
+                          </el-dropdown-item>
+                          <el-dropdown-item command="copyValue">
+                            <me-icon
+                              icon="el-icon-document-copy"
+                              :name="t('redisValue.copyValue')" />
+                          </el-dropdown-item>
+                          <el-dropdown-item v-if="zsetType" command="copyScore">
+                            <me-icon
+                              icon="el-icon-document-copy"
+                              :name="t('redisValue.copyScore')" />
                           </el-dropdown-item>
                           <el-dropdown-item command="copyAsCommand">
                             <me-icon
                               icon="me-icon-copy-command"
                               :name="t('redisValue.copyAsCommand')" />
+                          </el-dropdown-item>
+                          <el-dropdown-item v-if="zsetType" command="showZsetRank">
+                            <me-icon icon="me-icon-rank" :name="t('redisValue.showZsetRank')" />
                           </el-dropdown-item>
                         </el-dropdown-menu>
                       </template>
@@ -1420,6 +1885,7 @@ onUnmounted(() => {
             <FieldSet
               ref="fieldSetRef"
               :pretty="isPretty"
+              :hash-field-ttl-enabled="scanHashFieldTtl"
               @success="onFieldSetSuccess"
               @refreshed="onFieldSetRefreshed"
               @closed="fieldSetInit"
@@ -1546,13 +2012,13 @@ onUnmounted(() => {
             @click="setValue"
             placement="top" />
 
-          <!-- string类型不显示，带有hashKey不显示 -->
+          <!-- string / json 类型不显示 -->
           <el-segmented
             style="margin-left: 10px"
             v-model="viewType"
             :options="viewTypeList"
             @change="onViewTypeChange"
-            v-if="!(stringTypeOrWithHashKey || jsonType)">
+            v-if="!(stringType || jsonType)">
             <template #default="scope">
               <me-icon
                 :name="t('redisValue.jsonView')"
@@ -1579,23 +2045,19 @@ onUnmounted(() => {
     <TTLSet ref="ttlSetRef" @success="setTimer" />
     <FieldAdd ref="fieldAddRef" @success="refreshKey" />
     <KeyRename ref="keyRenameRef" />
+    <ObjectInfo ref="objectInfoRef" />
     <CustomCodec v-model="customCodecVisible" />
 
-    <!-- Stream消费者组 -->
-    <me-dialog title="Groups" icon="el-icon-coin" v-model="tableGroupVisible" width="900">
-      <TableGroup :data-list="groupDataList" />
-    </me-dialog>
-
-    <!-- 值编辑器快捷键 -->
-    <el-dialog
-      v-model="keyShortVisible"
-      width="400"
-      align-center
-      draggable
-      :show-close="false"
-      header-class="me-shortcut-dialog__header">
-      <MeShortcut :items="keyShortcuts" />
-    </el-dialog>
+    <!-- Stream 消费者组 -->
+    <TableGroup ref="tableGroupRef" />
+    <!-- Hash 全量字段名/值（HKEYS/HVALS） -->
+    <TableHashKeys ref="hashKeysRef" />
+    <!-- ZSet TopN 范围查询 -->
+    <TableZsetRange ref="zsetRangeRef" />
+    <!-- 值编辑器快捷键说明 -->
+    <ValueShortcut ref="valueShortcutRef" />
+    <!-- 命令帮助 -->
+    <CommandHelp ref="commandHelpRef" />
   </div>
 </template>
 
@@ -1608,6 +2070,8 @@ onUnmounted(() => {
   flex-direction: column;
 
   .value-header {
+    margin-right: 5px;
+
     :deep(.el-input-group__prepend) {
       padding: 0 12px;
     }
@@ -1644,6 +2108,12 @@ onUnmounted(() => {
       }
     }
 
+    .ttl-suffix-separator {
+      margin-right: 6px;
+      color: var(--el-border-color);
+      user-select: none;
+    }
+
     .value-header-actions {
       display: flex;
       align-items: center;
@@ -1677,6 +2147,113 @@ onUnmounted(() => {
       .value-truncated-actions {
         display: flex;
         gap: 8px;
+      }
+    }
+
+    .table-toolbar {
+      width: 100%;
+      align-items: center;
+
+      .stream-range-inputs {
+        display: flex;
+        gap: 5px;
+        margin-left: 10px;
+        flex-shrink: 0;
+        align-items: center;
+
+        :deep(.el-input) {
+          width: 120px;
+        }
+      }
+
+      .list-range-inputs {
+        display: flex;
+        gap: 5px;
+        margin-left: 10px;
+        flex-shrink: 0;
+        align-items: center;
+
+        :deep(.el-input) {
+          width: 120px;
+        }
+      }
+
+      .list-range-sep {
+        color: var(--el-text-color-secondary);
+        flex-shrink: 0;
+      }
+
+      .stream-range-sep {
+        color: var(--el-text-color-secondary);
+        flex-shrink: 0;
+      }
+
+      .table-toolbar-actions {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        flex-shrink: 0;
+      }
+
+      .field-scan-input {
+        width: 250px;
+        flex-shrink: 0;
+
+        .keyword-suffix {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          margin-left: 6px;
+
+          :deep(.suffix-exact-checkbox) {
+            height: auto;
+
+            .el-checkbox__inner {
+              border-color: var(--el-text-color-secondary);
+              background-color: transparent;
+            }
+
+            &:hover .el-checkbox__inner {
+              border-color: var(--el-color-primary);
+            }
+
+            &.is-checked .el-checkbox__inner {
+              background-color: var(--el-color-primary);
+              border-color: var(--el-color-primary);
+            }
+          }
+        }
+
+        .scan-control {
+          position: relative;
+          width: 24px;
+          height: 24px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          flex-shrink: 0;
+
+          .scan-ring {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            line-height: 1;
+          }
+
+          .scan-icon {
+            position: relative;
+            z-index: 1;
+            font-size: 16px;
+
+            :deep(.icon),
+            :deep(svg) {
+              width: 16px;
+              height: 16px;
+            }
+          }
+        }
       }
     }
 

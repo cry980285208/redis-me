@@ -300,6 +300,7 @@ defineExpose({
         v-if="showExportMenu"
         class="me-table-more-wrap"
         trigger="click"
+        placement="top-end"
         @command="handleExportCommand">
         <me-icon icon="el-icon-more-filled" class="icon-btn me-table-more" />
         <template #dropdown>
@@ -357,6 +358,7 @@ defineExpose({
       flex-shrink: 0;
       margin-left: auto;
       margin-right: 5px;
+      font-size: 16px;
     }
   }
 }

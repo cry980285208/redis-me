@@ -167,7 +167,7 @@ mod tests {
 
         pipe.set("field-scan:string", "字段扫描字符串类型 😄")
             .ignore();
-        for i in 0..600 {
+        for i in 0..9999 {
             // 大于512个
             pipe.hset("field-scan:hash", format!("k{i}"), format!("v{i}"))
                 .ignore();
@@ -190,7 +190,7 @@ mod tests {
 
         pipe.set("field-scan:string", "字段扫描字符串类型 😄")
             .ignore();
-        for i in 0..555 {
+        for i in 0..9999 {
             // 大于512个
             pipe.hset("field-scan:hash", format!("k{i}"), format!("v{i}"))
                 .ignore();
@@ -209,15 +209,15 @@ mod tests {
                 key: key.to_string(),
                 bytes: vec![],
             },
-            hash_key: None,
             count: 150,
             cursor: None,
-            load_all: false,
+            pattern: "*".into(),
+            exact: false,
             meta: None,
             bytes_format: Some(BytesFormat::Base64),
-            value_byte_limit: None,
-            value_preview_bytes: None,
-            force_full_value: None,
+            include_meta: None,
+            key_type: None,
+            include_field_ttl: None,
         }
     }
 

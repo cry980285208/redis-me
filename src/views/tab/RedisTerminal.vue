@@ -10,6 +10,7 @@ import type { CliOutputMode } from '@/types/tauri-specta'
 import { getTerminalShortcuts } from '@/utils/shortcut'
 import { meCopy, meCommands, isZh } from '@/utils/util'
 
+import CommandHelp from '../ext/CommandHelp.vue'
 import NodeList from '../ext/NodeList.vue'
 
 const { t } = useI18n()
@@ -91,48 +92,10 @@ watch(commandHelp, () => {
   })
 })
 
-// 表格Redis命令的帮助手册显示
-const visible = ref(false)
-const keyword = ref('')
-const group = ref('')
-const groupList = computed(() => new Set(commandHelp.value.map(row => row.group)))
-const tableKey = ref(0)
-/** 列头筛选（MeTable 分页前先过滤全量数据，列上 filter-method 仅保留 UI） */
-const activeFilters = ref<Record<string, unknown[]>>({})
-const sinceFilters = computed(() =>
-  [...new Set(commandHelp.value.map(row => row.since))]
-    .sort()
-    .map(value => ({ text: value, value })),
-)
-const readonlyFilters = computed(() => [
-  { text: t('redisTerminal.readonlyYes'), value: true },
-  { text: t('redisTerminal.readonlyNo'), value: false },
-])
-const filterDataList = computed(() => {
-  let rows = commandHelp.value
-  const key = keyword.value.toLowerCase().trim()
-  if (group.value) rows = rows.filter(row => row.group === group.value)
-  if (key) {
-    rows = rows.filter(
-      row => row.title.toLowerCase().includes(key) || row.summary.toLowerCase().includes(key),
-    )
-  }
-  const sinces = activeFilters.value.since as string[] | undefined
-  if (sinces?.length) rows = rows.filter(row => sinces.includes(row.since))
-  const readonlys = activeFilters.value.readonly as boolean[] | undefined
-  if (readonlys?.length) rows = rows.filter(row => readonlys.includes(!!row.readonly))
-  return rows
-})
-function onFilterChange(filters: Record<string, unknown[]>) {
-  // EP 每次只回传当前列，需合并保留其它列已选条件
-  activeFilters.value = { ...activeFilters.value, ...filters }
-}
+// 命令帮助弹窗
+const commandHelpRef = ref<InstanceType<typeof CommandHelp>>()
 function openCommandDialog() {
-  keyword.value = ''
-  group.value = ''
-  activeFilters.value = {}
-  tableKey.value++
-  visible.value = true
+  commandHelpRef.value?.open()
 }
 
 const keyShortVisible = ref(false)
@@ -206,84 +169,8 @@ const keyShortcuts = computed(() => getTerminalShortcuts(t))
       <MeShortcut :items="keyShortcuts" />
     </el-dialog>
 
-    <!-- 命令表格 -->
-    <me-dialog
-      v-model="visible"
-      icon="el-icon-document"
-      :title="t('redisTerminal.commandTitle')"
-      width="80vw">
-      <div style="height: 100%; display: flex; flex-direction: column">
-        <div class="me-flex">
-          <div class="me-flex">
-            <el-select
-              v-model="group"
-              style="width: 200px"
-              :placeholder="t('redisTerminal.group')"
-              clearable
-              filterable>
-              <el-option v-for="item in groupList" :key="item" :value="item">{{ item }}</el-option>
-            </el-select>
-            <me-website to="command" />
-          </div>
-          <el-input
-            v-model="keyword"
-            :placeholder="t('redisTerminal.keywordHint')"
-            style="width: 300px"
-            clearable />
-        </div>
-
-        <div class="cmd-table" style="margin-top: 10px; flex-grow: 1; height: 0">
-          <me-table
-            :key="tableKey"
-            ref="table"
-            :data="filterDataList"
-            border
-            stripe
-            height="100%"
-            export-name="command"
-            :default-sort="{ prop: 'key', order: 'ascending' }"
-            @filter-change="onFilterChange">
-            <el-table-column
-              :label="t('redisTerminal.group')"
-              prop="group"
-              width="120"
-              show-overflow-tooltip
-              sortable />
-            <el-table-column
-              :label="t('redisTerminal.command')"
-              prop="key"
-              width="150"
-              show-overflow-tooltip
-              sortable />
-            <el-table-column :label="t('redisTerminal.usage')" prop="usage" show-overflow-tooltip />
-            <el-table-column
-              :label="t('redisTerminal.summary')"
-              prop="summary"
-              show-overflow-tooltip />
-            <el-table-column
-              :label="t('redisTerminal.since')"
-              prop="since"
-              column-key="since"
-              width="108"
-              show-overflow-tooltip
-              :filters="sinceFilters"
-              :filter-method="() => true" />
-            <el-table-column
-              :label="t('redisTerminal.readonly')"
-              prop="readonly"
-              column-key="readonly"
-              :width="readonlyColWidth"
-              align="center"
-              :filters="readonlyFilters"
-              :filter-method="() => true">
-              <template #default="{ row }">
-                {{ row.readonly ? t('redisTerminal.readonlyYes') : t('redisTerminal.readonlyNo') }}
-              </template>
-            </el-table-column>
-          </me-table>
-        </div>
-      </div>
-    </me-dialog>
+    <!-- 命令帮助 -->
+    <CommandHelp ref="commandHelpRef" />
   </div>
 </template>
 
@@ -314,25 +201,6 @@ const keyShortcuts = computed(() => getTerminalShortcuts(t))
     bottom: 0;
     z-index: 10;
     align-items: center;
-  }
-}
-</style>
-
-<!-- 命令列表弹窗 append-to-body，表头样式不可 scoped -->
-<style lang="scss">
-.cmd-table {
-  .el-table__header .cell:has(.el-table__column-filter-trigger) {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-  }
-
-  .el-table__header th.is-center .cell:has(.el-table__column-filter-trigger) {
-    justify-content: center;
-  }
-
-  .el-table__column-filter-trigger {
-    flex-shrink: 0;
   }
 }
 </style>

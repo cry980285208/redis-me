@@ -5,7 +5,14 @@ import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
+const visible = ref(false)
 const appVersion = ref('')
+
+function open() {
+  visible.value = true
+}
+
+defineExpose({ open })
 getVersion()
   .then(res => (appVersion.value = res))
   .catch(() => {})
@@ -20,19 +27,21 @@ function openOfficialWebsite(): void {
 </script>
 
 <template>
-  <div class="app-info">
-    <me-icon icon="me-icon-redis-me" class="app-icon" />
-    <div class="app-name">RedisME</div>
-    <div class="app-version">v{{ appVersion }}</div>
-    <div class="app-site">
-      <el-link underline="never" @click="openSourceCode">{{ t('about.sourceCode') }}</el-link>
-      <div class="sep"></div>
-      <el-link underline="never" @click="openOfficialWebsite">{{
-        t('about.officialWebsite')
-      }}</el-link>
+  <el-dialog v-model="visible" width="400" align-center draggable>
+    <div class="app-info">
+      <me-icon icon="me-icon-redis-me" class="app-icon" />
+      <div class="app-name">RedisME</div>
+      <div class="app-version">v{{ appVersion }}</div>
+      <div class="app-site">
+        <el-link underline="never" @click="openSourceCode">{{ t('about.sourceCode') }}</el-link>
+        <div class="sep"></div>
+        <el-link underline="never" @click="openOfficialWebsite">{{
+          t('about.officialWebsite')
+        }}</el-link>
+      </div>
+      <div class="app-copyright">Copyright © 2025 hepengju.com All Rights Reserved</div>
     </div>
-    <div class="app-copyright">Copyright © 2025 hepengju.com All Rights Reserved</div>
-  </div>
+  </el-dialog>
 </template>
 
 <style scoped lang="scss">

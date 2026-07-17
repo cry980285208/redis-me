@@ -382,6 +382,7 @@ const isContextNodeFavorited = computed(() => {
         :item-size="keyHeight"
         :show-checkbox="showCheckbox">
         <template #default="{ node }">
+          <!-- 长名截断：左侧文字 ellipsis，右侧 [数量]/操作图标固定不挤出 -->
           <div v-if="node.isLeaf" :class="getNodeClass(node)" class="me-flex key-leaf-row">
             <div
               class="me-flex key-leaf-main"
@@ -392,7 +393,7 @@ const isContextNodeFavorited = computed(() => {
                 <span v-else style="color: var(--el-color-info-light-3)">[EMPTY]</span>
               </div>
             </div>
-            <div class="me-flex" style="margin-right: 15px; gap: 5px">
+            <div class="key-leaf-actions">
               <me-icon
                 v-if="canEdit && !showCheckbox && !favoriteMode"
                 :info="t('keyTree.deleteKey')"
@@ -407,9 +408,9 @@ const isContextNodeFavorited = computed(() => {
                 @click.stop="emit('contextKey', 'unfavoriteKey', node.data.redisKey)" />
             </div>
           </div>
-          <div class="me-flex" v-else style="width: 100%" :class="getNodeClass(node)">
+          <div v-else :class="getNodeClass(node)" class="me-flex folder-row">
             <me-icon
-              :name="node.label"
+              class="folder-icon"
               :icon="
                 node.data.isRootNode
                   ? 'me-icon-db'
@@ -417,9 +418,8 @@ const isContextNodeFavorited = computed(() => {
                     ? 'el-icon-folderOpened'
                     : 'el-icon-folder'
               " />
-            <div style="color: var(--el-color-info); margin-right: 10px">
-              [ {{ node.data.keyCount }} ]
-            </div>
+            <div class="folder-label">{{ node.label }}</div>
+            <div class="folder-count">[ {{ node.data.keyCount }} ]</div>
           </div>
         </template>
       </el-tree-v2>
@@ -530,6 +530,11 @@ const isContextNodeFavorited = computed(() => {
   background-color: var(--el-color-info-light-8);
 }
 
+/* 自定义节点可收缩，长名才能 ellipsis，右侧数量/图标不被挤出 */
+:deep(.el-tree-node__content) {
+  overflow: hidden;
+}
+
 /* 右键选中的键 */
 :deep(.context-key) {
   outline: 1px dashed var(--el-color-primary);
@@ -541,9 +546,13 @@ const isContextNodeFavorited = computed(() => {
   margin-left: -20px;
 }
 
-.key-leaf-row {
-  width: 100%;
+/* 占满 content 剩余宽度（勿用 width:100%，会和展开图标叠宽溢出） */
+.key-leaf-row,
+.folder-row {
+  flex: 1;
+  min-width: 0;
   align-items: center;
+  overflow: hidden;
 }
 
 .key-leaf-main {
@@ -551,15 +560,47 @@ const isContextNodeFavorited = computed(() => {
   min-width: 0;
   align-items: center;
   justify-content: flex-start;
+  overflow: hidden;
 }
 
-.key-leaf-label {
+.key-leaf-main :deep(.el-tag) {
+  flex-shrink: 0;
+}
+
+.key-leaf-label,
+.folder-label {
   flex: 1;
   min-width: 0;
-  margin-left: 5px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.key-leaf-label {
+  margin-left: 5px;
+}
+
+.folder-icon {
+  flex-shrink: 0;
+}
+
+.folder-label {
+  margin: 0 5px;
+}
+
+/* 数量区固定右侧；操作图标右缘大致对齐到 [ n ] 的最后一个数字 */
+.folder-count {
+  flex-shrink: 0;
+  margin-right: 10px;
+  color: var(--el-color-info);
+}
+
+.key-leaf-actions {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-right: 15px;
 }
 
 /* 删除图标：hover 行时显示 */
@@ -567,7 +608,6 @@ const isContextNodeFavorited = computed(() => {
   visibility: visible;
 }
 
-/* 删除图标右缘与文件夹 [数量] 末位数字对齐（略大于数量块的 margin-right） */
 .key-delete-btn {
   flex-shrink: 0;
   visibility: hidden;
