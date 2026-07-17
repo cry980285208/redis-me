@@ -1,5 +1,36 @@
 # 4.x Changelog
 
+## [v4.4.0](https://mp.weixin.qq.com/s/O9uHI9wMX_cSoh3jBOkxzg) (2026-07-18)
+
+### ✨ New Features
+
+- Value Tab: scan improvements and per-type feature expansions
+  - **Field scan: Hash/Set/ZSet support MATCH, scan progress, and exact match**
+  - **Field table default sort by key type**
+  - Extended menu: Command Help with default group filter by key type
+  - Extended menu: **Object Introspection** (OBJECT ENCODING / IDLETIME / REFCOUNT / FREQ)
+  - Hash: optional HTTL, **All Keys**, All Values, Copy Key
+  - List: **index range query**, asc/desc order, LPOP/RPOP; dedicated index column and Copy Index
+  - Set: SPOP support
+  - ZSet: **TopN rank query**; row menu view rank (ZRANK/ZREVRANK), ZPOPMIN / ZPOPMAX, Copy Score
+  - Stream: range input style polish, asc/desc scan, Copy ID
+- Key Area
+  - Better layout for long key names
+  - DB selector width and related style tweaks
+- Settings
+  - Added **Safe Limit** and **Preview Bytes**; layout polish
+  - Default field scan count changed to 100
+- Commands: one-click jump from Command Help command column to official docs
+- Other details
+  - Separator before the key TTL icon
+  - Clearer tips for refresh key and reset window
+  - Hide social menu to reduce package size
+
+### 🐞 Bug Fixes
+
+- Fixed website dropdown menu being obscured in Safari
+- Fixed meCommands error dialog showing more than once in some cases
+
 ## [v4.3.0](https://mp.weixin.qq.com/s/k3KMigBxg3fJraezIMdP5Q) (2026-07-11)
 
 ### ✨ New Features
