@@ -34,7 +34,8 @@
 
 ## 分析 / 参考
 
-| 文件                                                                                   | 说明         |
-| -------------------------------------------------------------------------------------- | ------------ |
-| [20260425_project-deep-audit.md](./20260425_project-deep-audit.md)                     | 项目深度审计 |
-| [20260425_redis-client-competitive-gap.md](./20260425_redis-client-competitive-gap.md) | 竞品差距     |
+| 文件                                                                                   | 说明                                                         |
+| -------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| [20260718_rdm-competitive-analysis.md](./20260718_rdm-competitive-analysis.md)         | 竞品对标（Tiny / Another / Insight / Redisee，含可落地小点） |
+| [20260425_project-deep-audit.md](./20260425_project-deep-audit.md)                     | 项目深度审计                                                 |
+| [20260425_redis-client-competitive-gap.md](./20260425_redis-client-competitive-gap.md) | 竞品差距（2026-04，部分项已过时，以 20260718 为准）          |
