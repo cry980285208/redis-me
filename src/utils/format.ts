@@ -1,4 +1,4 @@
-/** 值/键视图格式与 wire(utf8/base64) 编解码；hex/msgpack/strjson/javaserial/custom 在前端，custom 走 shell 脚本 */
+/** 值/键视图格式与 wire(utf8/base64) 编解码；auto/hex/msgpack/strjson/javaserial/custom 在前端，custom 走 shell 脚本 */
 
 import { decode, encode } from '@msgpack/msgpack'
 import { isTauri } from '@tauri-apps/api/core'
@@ -247,8 +247,9 @@ export async function testCodec(
 /** 键重命名等基础字节视图；KeyRename、FieldAdd */
 export const BYTES_FORMAT = ['UTF8', 'Hex', 'Binary', 'Base64'] as const
 
-/** 前端值/键展示格式；RedisValue 数据编码下拉 */
+/** 前端值/键展示格式；RedisValue 数据编码下拉（auto 仅 STRING，拉取 base64 后前端识别） */
 export type ViewBytesFormat =
+  | 'auto'
   | 'utf8'
   | 'hex'
   | 'binary'
@@ -274,9 +275,15 @@ export function customFormatName(view: ViewBytesFormat): string | null {
   return isCustomView(view) ? view.slice(CUSTOM_FORMAT_PREFIX.length) : null
 }
 
-/** 仅整键 STRING 可选（MsgPack、StrJson、JavaSerial、custom）；RedisValue 下拉过滤 */
+/** 仅整键 STRING 可选（Auto、MsgPack、StrJson、JavaSerial、custom）；RedisValue 下拉过滤 */
 export function isStringOnlyView(view: ViewBytesFormat): boolean {
-  return view === 'msgpack' || view === 'strjson' || view === 'javaserial' || isCustomView(view)
+  return (
+    view === 'auto' ||
+    view === 'msgpack' ||
+    view === 'strjson' ||
+    view === 'javaserial' ||
+    isCustomView(view)
+  )
 }
 
 function resolveCustomCodec(view: ViewBytesFormat): CustomCodec {
@@ -287,7 +294,7 @@ function resolveCustomCodec(view: ViewBytesFormat): CustomCodec {
   return codec
 }
 
-/** STRING 值详情下拉扩展项；RedisValue（value = label.toLowerCase()） */
+/** STRING 值详情下拉扩展项（不含 Auto，Auto 单独置顶）；RedisValue */
 export const EXT_FORMAT = ['StrJson', 'MsgPack', 'JavaSerial'] as const
 
 export const MSGPACK_DECODE_ERR = '⚠️ MsgPack Decode Error'
@@ -303,12 +310,12 @@ export function isViewDecodeError(text: string): boolean {
   )
 }
 
-/** 视图格式 → 后端 wire；RedisValue / FieldSet / FieldAdd 读写 Redis */
+/** 视图格式 → 后端 wire；RedisValue / FieldSet / FieldAdd 读写 Redis（auto → base64） */
 export function toWireFormat(view: ViewBytesFormat): BytesFormat {
   return view === 'utf8' || view === 'strjson' ? 'utf8' : 'base64'
 }
 
-/** 字段弹窗：MsgPack / custom 不适用，降级 utf8；RedisValue fieldScan */
+/** 字段弹窗：Auto / MsgPack / custom 等不适用，降级 utf8；RedisValue fieldScan */
 export function viewFmtForField(view: ViewBytesFormat): ViewBytesFormat {
   return isStringOnlyView(view) ? 'utf8' : view
 }

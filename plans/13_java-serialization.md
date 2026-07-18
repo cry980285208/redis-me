@@ -25,7 +25,7 @@
 - **LocalDate 等失败原因**：经 `java.time.Ser`（Externalizable）写出，上游库原对 Externalizable 直接 `unimplemented`
 - **解法**：`pnpm patch` 支持已注册类的 `readExternal`；`javaserial/time.ts` 按 OpenJDK Ser 协议解析（嵌套字段一并生效）
 - **EnumMap / EnumSet**：依赖 patch 对 `TC_CLASS`（`readNewClass`）的支持
-- **魔数自动识别**：不做（见 future.md「数据编码魔数自动识别」）
+- **魔数自动识别**：由 Auto 编码统一做（见 `detect-view-format.ts`）
 
 ## 类型覆盖复核
 

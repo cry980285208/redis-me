@@ -883,6 +883,7 @@ export default {
     valueTruncatedDismiss: 'Keep Preview',
     valueTruncatedLoadAll: 'Load Full Value',
     viewCodec: 'Codec',
+    autoDetected: 'Auto-detected codec',
     commandHelp: 'Command Help',
     objectInfo: 'Object Introspection',
     objectInfoCommand: 'Command',

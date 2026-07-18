@@ -8,7 +8,6 @@
 
 - Viewer 解压查看：Gzip / Deflate / Brotli（对标 TinyRDM / Another）
 - 连接级自动解压：优先 GZIP，可选 LZ4 / ZSTD / Snappy（对标 RedisInsight；即此前「自动解压缩」）
-- 数据编码魔数自动识别（Auto：ACED / MsgPack / UTF-8 / Hex）
 - 网络代理：HTTP / SOCKS5
 - Unix Socket 支持
 - 连接 / 执行超时配置
@@ -43,6 +42,7 @@
 
 ### 已完成
 
+- 数据编码魔数自动识别（Auto：ACED / MsgPack / StrJson / UTF-8 / Hex）✅️
 - String类型阈值保护 ✅️
 - Binary格式恢复支持（setbit等场景还是需要的）✅️
 - Hash/Set/ZSet的扫描模式支持 ✅️

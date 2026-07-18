@@ -869,6 +869,7 @@ export default {
     valueTruncatedDismiss: '继续使用预览',
     valueTruncatedLoadAll: '仍要加载全部',
     viewCodec: '数据编码',
+    autoDetected: '自动识别的编码',
     commandHelp: '命令帮助',
     objectInfo: '对象自省',
     objectInfoCommand: '命令',
