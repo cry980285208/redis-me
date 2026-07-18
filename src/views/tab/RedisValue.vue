@@ -54,6 +54,7 @@ import {
   viewFmtForField,
   type ViewBytesFormat,
 } from '@/utils/format'
+import { resolveKeyType } from '@/utils/key-type-cache'
 import {
   buildScanPattern,
   buildLocalFilterPattern,
@@ -816,7 +817,7 @@ async function refreshKey(
   }
 
   // 等上一轮结束后再领取，避免被上一轮 finally 清掉后漏探测
-  const detectThisLoad = !useCursor && pendingAutoDetect.value
+  let detectThisLoad = !useCursor && pendingAutoDetect.value
   if (detectThisLoad) pendingAutoDetect.value = false
 
   fieldSetInit()
@@ -833,6 +834,15 @@ async function refreshKey(
   loading.value = true
   scanCancelled.value = false
   if (!useCursor) scanPaused.value = false
+
+  // base64 探测只服务 STRING Auto；已知 List/Hash 等则直接 utf8，避免双次 fieldScan
+  if (detectThisLoad && share.conn && share.redisKey) {
+    const knownType = await resolveKeyType(share.conn.id, share.conn.db, share.redisKey)
+    if (knownType && knownType !== 'STRING') {
+      commitBytesFormat('utf8')
+      detectThisLoad = false
+    }
+  }
   probingAutoDetect.value = detectThisLoad
 
   try {
@@ -848,7 +858,7 @@ async function refreshKey(
     if (detectThisLoad) {
       const nextFormat: ViewBytesFormat = scanType === 'string' ? 'auto' : 'utf8'
       commitBytesFormat(nextFormat)
-      // 首包探测结束；非 STRING 需按 utf8 重拉（编码未变也要重拉）
+      // 首包探测结束；非 STRING 需按 utf8 重拉（类型缓存未命中时的兜底）
       probingAutoDetect.value = false
       if (nextFormat === 'utf8') {
         cursor.value = null
@@ -1521,7 +1531,7 @@ function openCommandHelp() {
 // #region 事件总线与生命周期
 /** 选中键时加载值（KEY_REFRESH）；与 KeyMain F5 刷新键列表无关 */
 const onKeyRefreshBus = () => {
-  // 每次重新探测；编码/探测结果未变则 commit* 不改 UI
+  // 换键标记待探测；非 STRING 会在 refreshKey 内用类型缓存跳过 base64 首包
   pendingAutoDetect.value = true
   // restart：快速连点不同键时不丢弃后一次
   void refreshKey(true, false, false, true)
