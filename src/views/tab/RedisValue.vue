@@ -305,14 +305,14 @@ function supportsFieldRowRefresh(type: string | undefined) {
   return type === 'hash' || type === 'list' || type === 'zset'
 }
 
-/** 切换键或 reset 时，按 settings.fieldShow 决定默认视图 */
-function applyDefaultViewType() {
-  const rv = redisValue.value
-  if (!rv || stringType.value || jsonType.value) {
+/** 切换键或 reset 时，按 settings.fieldShow 决定默认视图（可传入刚拿到的 type，避免等 finally） */
+function applyDefaultViewType(type?: string) {
+  const keyType = type ?? redisValue.value?.type
+  if (!keyType || keyType === 'string' || keyType === 'json') {
     viewType.value = 'json'
     return
   }
-  if (!supportsTableView(rv.type)) {
+  if (!supportsTableView(keyType)) {
     viewType.value = 'json'
     return
   }
@@ -322,6 +322,12 @@ function applyDefaultViewType() {
   }
   // auto：默认表格，手动切换后沿用 fieldShowView（跨连接/键）
   viewType.value = meTauri.settings.fieldShowView === 'json' ? 'json' : 'table'
+}
+
+/** 写入 fieldScan 结果；换键时同步校正 viewType，避免先闪 JSON 再切表格 */
+function commitFieldScanReplace(data: FieldScanResult, resetView: boolean) {
+  redisValue.value = toViewState(data)
+  if (resetView) applyDefaultViewType(data.type)
 }
 
 /** 自动模式下记录 segmented 手动切换，写入 settings 持久化 */
@@ -719,14 +725,16 @@ function mergeFieldScanPage(
  */
 async function finalizeAfterFieldScan(reset: boolean, replaceData?: FieldScanResult) {
   if (replaceData) {
-    redisValue.value = toViewState(replaceData)
+    commitFieldScanReplace(replaceData, reset)
+  } else if (reset) {
+    // 换键路径若中途已 commit，这里再校正一次；失败清空时仍落到 json
+    applyDefaultViewType()
   }
   // 清空未保存编辑；fieldScan 结果即当前权威内容
   if (redisValue.value) {
     redisValue.value.newValue = null
   }
   suppressCodeUpdate.value = false
-  if (reset) applyDefaultViewType()
 
   // 键类型可能在 scan 后才确定，nextTick 等 computed 更新后再校正编码下拉
   await nextTick(() => {
@@ -832,7 +840,7 @@ async function refreshKey(
 
     let first = await fieldScanCore(useCursor)
     if (first.replaceData) {
-      redisValue.value = toViewState(first.replaceData)
+      commitFieldScanReplace(first.replaceData, reset)
     }
 
     let scanType = redisValue.value?.type
@@ -847,7 +855,7 @@ async function refreshKey(
         scanBatchCount.value = 0
         first = await fieldScanCore(false)
         if (first.replaceData) {
-          redisValue.value = toViewState(first.replaceData)
+          commitFieldScanReplace(first.replaceData, reset)
         }
         scanType = redisValue.value?.type
       }
@@ -863,7 +871,7 @@ async function refreshKey(
       scanBatchCount.value = 0
       first = await fieldScanCore(false)
       if (first.replaceData) {
-        redisValue.value = toViewState(first.replaceData)
+        commitFieldScanReplace(first.replaceData, reset)
       }
       scanType = redisValue.value?.type
     }
