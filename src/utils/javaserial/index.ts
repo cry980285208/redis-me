@@ -3,7 +3,7 @@
 import { ObjectInputStream, type JavaSerializable } from 'java-object-serialization'
 
 import { registerJavaCollections } from './collections'
-import { registerJavaMisc } from './misc'
+import { formatBigDecimal, formatBigInteger, registerJavaMisc } from './misc'
 import { JAVA_TIME_SER_CLASS, JAVA_TIME_SER_UID, JavaTimeSer } from './time'
 
 /** 对齐 RedisInsight `java-date.ts`：解析 `java.util.Date` 的 writeObject 时间戳 */
@@ -82,11 +82,6 @@ function asBigInt(v: unknown): bigint | null {
   return null
 }
 
-/** 流中 int 常以无符号读出（如 -1 → 4294967295） */
-function toSignedInt32(n: number): number {
-  return n > 0x7fffffff ? n - 0x100000000 : n
-}
-
 function formatUuid(mostSigBits: unknown, leastSigBits: unknown): string | null {
   const m = asBigInt(mostSigBits)
   const l = asBigInt(leastSigBits)
@@ -95,54 +90,6 @@ function formatUuid(mostSigBits: unknown, leastSigBits: unknown): string | null 
     BigInt.asUintN(64, m).toString(16).padStart(16, '0') +
     BigInt.asUintN(64, l).toString(16).padStart(16, '0')
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
-}
-
-/** BigInteger：signum + magnitude(big-endian bytes) → 十进制字符串 */
-function formatBigInteger(signum: unknown, magnitude: unknown): string | null {
-  if (typeof signum !== 'number' || !Array.isArray(magnitude)) return null
-  const sign = toSignedInt32(signum)
-  if (sign === 0 || magnitude.length === 0) return '0'
-  let abs = 0n
-  for (const b of magnitude) {
-    if (typeof b !== 'number') return null
-    abs = (abs << 8n) | BigInt(b & 0xff)
-  }
-  return sign < 0 ? `-${abs}` : abs.toString()
-}
-
-/** BigDecimal：unscaled / 10^scale */
-function formatBigDecimal(scale: unknown, intVal: unknown): string | null {
-  if (typeof scale !== 'number') return null
-  let unscaled: string | null = null
-  if (typeof intVal === 'string') {
-    unscaled = intVal
-  } else if (
-    intVal &&
-    typeof intVal === 'object' &&
-    (intVal as { $type?: string }).$type === 'java.math.BigInteger'
-  ) {
-    const v = (intVal as { value?: unknown }).value
-    unscaled = typeof v === 'string' ? v : null
-  } else if (intVal && typeof intVal === 'object') {
-    const f = intVal as { signum?: unknown; magnitude?: unknown }
-    unscaled = formatBigInteger(f.signum, f.magnitude)
-  }
-  if (unscaled == null) return null
-
-  const sc = toSignedInt32(scale)
-  const neg = unscaled.startsWith('-')
-  const digits = neg ? unscaled.slice(1) : unscaled
-  if (sc === 0) return unscaled
-  if (sc > 0) {
-    if (digits.length <= sc) {
-      const frac = digits.padStart(sc, '0')
-      return `${neg ? '-' : ''}0.${frac}`
-    }
-    const i = digits.length - sc
-    return `${neg ? '-' : ''}${digits.slice(0, i)}.${digits.slice(i)}`
-  }
-  // scale < 0：末尾补零
-  return `${unscaled}${'0'.repeat(-sc)}`
 }
 
 /**

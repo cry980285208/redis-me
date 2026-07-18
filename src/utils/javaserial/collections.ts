@@ -23,6 +23,8 @@ const UID = {
   Stack: '1224463164541339165',
   ArrayDeque: '2340985798034038923',
   PriorityQueue: '10725939016403747505',
+  Hashtable: '1421746759512286392',
+  Properties: '4112578634029874840',
 } as const
 
 function mapResolve(className: string, entries: [unknown, unknown][]): unknown {
@@ -295,6 +297,44 @@ class JavaPriorityQueue implements JavaSerializable {
   }
 }
 
+/** Hashtable：default fields + length/count + 交替 key/value（Properties 复用此读逻辑） */
+class JavaHashtable implements JavaSerializable {
+  className = 'java.util.Hashtable'
+  loadFactor = 0.75
+  threshold = 0
+  entries: [unknown, unknown][] = []
+
+  readObject(stream: ObjectInputStream): void {
+    stream.defaultReadObject()
+    stream.readInt() // table length
+    const count = stream.readInt()
+    this.entries = []
+    for (let i = 0; i < count; i++) {
+      this.entries.push([stream.readObject(), stream.readObject()])
+    }
+  }
+
+  readResolve(): unknown {
+    return mapResolve(this.className, this.entries)
+  }
+}
+
+/**
+ * Properties：无自有 writeObject，条目写在 Hashtable 超类槽；
+ * 本类仅多 defaults 字段，注册后避免超类走 JavaObject 临时路径。
+ */
+class JavaProperties extends JavaHashtable {
+  className = 'java.util.Properties'
+  defaults: unknown = null
+
+  readResolve(): unknown {
+    const value = mapResolve(this.className, this.entries)
+    const out: Record<string, unknown> = { $type: 'java.util.Properties', value }
+    if (this.defaults != null) out.defaults = this.defaults
+    return out
+  }
+}
+
 export function registerJavaCollections(
   register: typeof ObjectInputStream.RegisterObjectClass,
 ): void {
@@ -313,4 +353,6 @@ export function registerJavaCollections(
   register(JavaVector, 'java.util.Stack', UID.Stack)
   register(JavaArrayDeque, 'java.util.ArrayDeque', UID.ArrayDeque)
   register(JavaPriorityQueue, 'java.util.PriorityQueue', UID.PriorityQueue)
+  register(JavaHashtable, 'java.util.Hashtable', UID.Hashtable)
+  register(JavaProperties, 'java.util.Properties', UID.Properties)
 }

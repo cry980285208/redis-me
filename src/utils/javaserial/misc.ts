@@ -1,5 +1,7 @@
 /**
- * 其它常见 JDK 内置类型展示：BitSet / StringBuilder·Buffer / InetAddress / Calendar / sql.Date·Timestamp
+ * 其它常见 JDK 内置类型展示：
+ * BitSet / StringBuilder·Buffer / InetAddress / Calendar / sql.Date·Timestamp /
+ * BigInteger·BigDecimal / Locale / SimpleTimeZone
  */
 
 import { ObjectInputStream, type JavaSerializable } from 'java-object-serialization'
@@ -13,6 +15,11 @@ const UID = {
   InetAddress: '3286316764910316507',
   SqlDate: '1511598038487230103',
   Timestamp: '2745179027874758501',
+  /** 与流中无符号 BigInt 一致；未注册时库会 console.warn */
+  BigInteger: '10159169817773079325',
+  BigDecimal: '6108874887143696463',
+  Locale: '9149081749638150636',
+  SimpleTimeZone: '18043493102494086566',
 } as const
 
 const JAVA_MAX_LONG = 9223372036854775807n
@@ -208,6 +215,160 @@ export class JavaSqlTimestamp implements JavaSerializable {
   }
 }
 
+/** 流中 int 常以无符号读出（如 -1 → 4294967295） */
+function toSignedInt32(n: number): number {
+  return n > 0x7fffffff ? n - 0x100000000 : n
+}
+
+/** BigInteger：signum + magnitude(big-endian bytes) → 十进制字符串 */
+export function formatBigInteger(signum: unknown, magnitude: unknown): string | null {
+  if (typeof signum !== 'number' || !Array.isArray(magnitude)) return null
+  const sign = toSignedInt32(signum)
+  if (sign === 0 || magnitude.length === 0) return '0'
+  let abs = 0n
+  for (const b of magnitude) {
+    if (typeof b !== 'number') return null
+    abs = (abs << 8n) | BigInt(b & 0xff)
+  }
+  return sign < 0 ? `-${abs}` : abs.toString()
+}
+
+/** BigDecimal：unscaled / 10^scale */
+export function formatBigDecimal(scale: unknown, intVal: unknown): string | null {
+  if (typeof scale !== 'number') return null
+  let unscaled: string | null = null
+  if (typeof intVal === 'string') {
+    unscaled = intVal
+  } else if (
+    intVal &&
+    typeof intVal === 'object' &&
+    (intVal as { $type?: string }).$type === 'java.math.BigInteger'
+  ) {
+    const v = (intVal as { value?: unknown }).value
+    unscaled = typeof v === 'string' ? v : null
+  } else if (intVal && typeof intVal === 'object') {
+    const f = intVal as { signum?: unknown; magnitude?: unknown; fields?: Map<string, unknown> }
+    if (f.fields instanceof Map) {
+      unscaled = formatBigInteger(f.fields.get('signum'), f.fields.get('magnitude'))
+    } else {
+      unscaled = formatBigInteger(f.signum, f.magnitude)
+    }
+  }
+  if (unscaled == null) return null
+
+  const sc = toSignedInt32(scale)
+  const neg = unscaled.startsWith('-')
+  const digits = neg ? unscaled.slice(1) : unscaled
+  if (sc === 0) return unscaled
+  if (sc > 0) {
+    if (digits.length <= sc) {
+      const frac = digits.padStart(sc, '0')
+      return `${neg ? '-' : ''}0.${frac}`
+    }
+    const i = digits.length - sc
+    return `${neg ? '-' : ''}${digits.slice(0, i)}.${digits.slice(i)}`
+  }
+  // scale < 0：末尾补零
+  return `${unscaled}${'0'.repeat(-sc)}`
+}
+
+/** BigInteger.writeObject：PutField signum + magnitude */
+class JavaBigInteger implements JavaSerializable {
+  signum = 0
+  magnitude: unknown = null
+
+  readObject(stream: ObjectInputStream): void {
+    applyFields(this, stream.readFields())
+  }
+
+  readResolve(): unknown {
+    const bi = formatBigInteger(this.signum, this.magnitude)
+    if (bi == null) return { $type: 'java.math.BigInteger', value: null }
+    return { $type: 'java.math.BigInteger', value: bi }
+  }
+}
+
+/** BigDecimal.writeObject：PutField scale + intVal(BigInteger) */
+class JavaBigDecimal implements JavaSerializable {
+  scale = 0
+  intVal: unknown = null
+
+  readObject(stream: ObjectInputStream): void {
+    applyFields(this, stream.readFields())
+  }
+
+  readResolve(): unknown {
+    const bd = formatBigDecimal(this.scale, this.intVal)
+    if (bd == null) return { $type: 'java.math.BigDecimal', value: null }
+    return { $type: 'java.math.BigDecimal', value: bd }
+  }
+}
+
+/** 对齐 Locale.toString()：language[_country[_variant]] */
+function formatLocaleToString(language: string, country: string, variant: string): string {
+  let s = language || ''
+  if (country || variant) s += `_${country || ''}`
+  if (variant) s += `_${variant}`
+  return s
+}
+
+/** Locale.writeObject：PutField language/script/country/variant/extensions */
+class JavaLocale implements JavaSerializable {
+  language = ''
+  script = ''
+  country = ''
+  variant = ''
+  extensions = ''
+  hashcode = -1
+
+  readObject(stream: ObjectInputStream): void {
+    applyFields(this, stream.readFields())
+  }
+
+  readResolve(): unknown {
+    const out: Record<string, unknown> = {
+      $type: 'java.util.Locale',
+      value: formatLocaleToString(this.language, this.country, this.variant),
+    }
+    if (this.script) out.script = this.script
+    if (this.extensions) out.extensions = this.extensions
+    return out
+  }
+}
+
+/**
+ * SimpleTimeZone.writeObject：default fields + optional rules/times。
+ * Calendar 流里常嵌套此类；只展示 id / rawOffset（及 DST）。
+ */
+class JavaSimpleTimeZone implements JavaSerializable {
+  /** TimeZone 超类字段 */
+  ID = ''
+  rawOffset = 0
+  dstSavings = 0
+  useDaylight = false
+  serialVersionOnStream = 2
+
+  readObject(stream: ObjectInputStream): void {
+    stream.defaultReadObject()
+    const ver = toSignedInt32(this.serialVersionOnStream)
+    if (ver >= 1) {
+      const length = stream.readInt()
+      for (let i = 0; i < length; i++) stream.readByte()
+    }
+    if (ver >= 2) stream.readObject() // packed times:int[]
+  }
+
+  readResolve(): unknown {
+    const out: Record<string, unknown> = {
+      $type: 'java.util.SimpleTimeZone',
+      id: this.ID,
+      rawOffset: toSignedInt32(this.rawOffset),
+    }
+    if (this.useDaylight) out.dstSavings = toSignedInt32(this.dstSavings)
+    return out
+  }
+}
+
 export function registerJavaMisc(register: typeof ObjectInputStream.RegisterObjectClass): void {
   register(JavaBitSet, 'java.util.BitSet', UID.BitSet)
   register(JavaStringBuilder, 'java.lang.StringBuilder', UID.StringBuilder)
@@ -217,4 +378,8 @@ export function registerJavaMisc(register: typeof ObjectInputStream.RegisterObje
   register(JavaGregorianCalendar, 'java.util.GregorianCalendar', UID.GregorianCalendar)
   register(JavaSqlDate, 'java.sql.Date', UID.SqlDate)
   register(JavaSqlTimestamp, 'java.sql.Timestamp', UID.Timestamp)
+  register(JavaBigInteger, 'java.math.BigInteger', UID.BigInteger)
+  register(JavaBigDecimal, 'java.math.BigDecimal', UID.BigDecimal)
+  register(JavaLocale, 'java.util.Locale', UID.Locale)
+  register(JavaSimpleTimeZone, 'java.util.SimpleTimeZone', UID.SimpleTimeZone)
 }
