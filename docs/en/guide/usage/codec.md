@@ -2,6 +2,8 @@
 
 [RedisME](https://www.hepengju.com) supports custom serialization/deserialization via external scripts, so you can view and edit non–UTF-8 or application-specific payloads.
 
+> **Built-in JavaSerial**: For STRING values, choose **JavaSerial** in the codec dropdown to view JDK-serialized bytes as plain text (top-level `String`) or JSON (other objects). Same approach as RedisInsight (`java-object-serialization`), with extras for `java.time`, records, common collections, and BitSet / StringBuilder / InetAddress / Calendar / sql.Date. **View-only**. To write back, use the custom scripts below with a local `java`.
+
 ## Entry and setup
 
 1. Open the value detail view

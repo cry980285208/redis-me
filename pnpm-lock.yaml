@@ -9,6 +9,9 @@ overrides:
   '@codemirror/state': ^6.7.1
   '@codemirror/view': ^6.43.6
 
+patchedDependencies:
+  java-object-serialization@0.1.2: 7331b57bc057a72b0fb4cb5193ce5514af4a7b904a2475ff56256022e475a388
+
 importers:
 
   .:
@@ -97,6 +100,9 @@ importers:
       fflate:
         specifier: ^0.8.3
         version: 0.8.3
+      java-object-serialization:
+        specifier: ^0.1.2
+        version: 0.1.2(patch_hash=7331b57bc057a72b0fb4cb5193ce5514af4a7b904a2475ff56256022e475a388)
       json5:
         specifier: ^2.2.3
         version: 2.2.3
@@ -2379,6 +2385,9 @@ packages:
 
   isarray@1.0.0:
     resolution: {integrity: sha512-VLghIWNM6ELQzo7zwmcg0NmTVyWKYjvIeM83yjp0wRDTmUnrM678fQbcKBo6n2CJEF0szoG//ytg+TKla89ALQ==}
+
+  java-object-serialization@0.1.2:
+    resolution: {integrity: sha512-l0V2a/E7r6ScqG+ne09KR7G1npbiVdDf3Vdk6fcn8jy5TQiTTOQbDg9OfBriv2NmnCxcm4NmFW2dAD9QaN/htw==}
 
   js-tokens@4.0.0:
     resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}
@@ -4978,6 +4987,10 @@ snapshots:
 
   isarray@1.0.0: {}
 
+  java-object-serialization@0.1.2(patch_hash=7331b57bc057a72b0fb4cb5193ce5514af4a7b904a2475ff56256022e475a388):
+    dependencies:
+      tslib: 2.8.1
+
   js-tokens@4.0.0: {}
 
   js-tokens@9.0.1: {}
@@ -5567,8 +5580,7 @@ snapshots:
 
   triple-beam@1.4.1: {}
 
-  tslib@2.8.1:
-    optional: true
+  tslib@2.8.1: {}
 
   typescript@5.8.3: {}
 

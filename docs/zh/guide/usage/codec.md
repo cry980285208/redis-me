@@ -2,6 +2,8 @@
 
 [RedisME](https://www.hepengju.com) 支持通过外部脚本自定义序列化/反序列化，便于查看与编辑非 UTF-8 或业务自定义格式的数据。
 
+> **内置 JavaSerial**：STRING 值可在「数据编码」中选择 **JavaSerial**，将 JDK 序列化字节显示为纯字符串（顶层 `String`）或 JSON（其它对象）。实现与 RedisInsight 同款（`java-object-serialization`），并增强 `java.time`、record、常用集合与 BitSet / StringBuilder / InetAddress / Calendar / sql.Date 等展示，**仅支持查看**；需写回时请用下文自定义编解码 + 本机 `java`。
+
 ## 入口与配置
 
 1. 打开值详情页

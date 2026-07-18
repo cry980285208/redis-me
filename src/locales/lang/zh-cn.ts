@@ -333,6 +333,7 @@ export default {
     invalidHexCharacter: '无效的十六进制字符',
     invalidBinaryString: '无效的二进制字符串：长度不是 8 的倍数',
     invalidBinaryCharacter: '无效的二进制字符',
+    javaSerialReadonly: 'JavaSerial 目前仅支持查看，不支持保存写回',
   },
 
   tabMain: {

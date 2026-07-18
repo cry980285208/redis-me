@@ -19,11 +19,12 @@
 - ACL管理支持自定义角色
 - 树形节点的内存占用显示
 - 慢日志治理文档的编写
-- Java序列化的支持方案
+- Java序列化的支持方案 ✅️
 - Redis8.8已发布，更新命令列表（等9发布再更新吧）、配置文件等
 - 新增CPU占比: 需要两次INFO才能出来，作用也不大，暂不处理
 - cli功能支持
-- Java/Pickle序列化查看
+- Java/Pickle序列化查看 ✅️（JavaSerial 只读；Pickle 另议）
+- 数据编码魔数自动识别（Auto：ACED/MsgPack/UTF-8/Hex，后续单独做）
 - 黑金主题
 - 账号登录(谷歌firebase，腾讯cloudbase)
 - 图表: 集群模式多节点折线同时展示，新增CPU图

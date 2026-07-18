@@ -43,6 +43,7 @@ import {
   meFormatViewValueAsync,
   meViewToWire,
   meViewToWireAsync,
+  needsJsonNormalize,
   toWireFormat,
   viewFmtForField,
   type ViewBytesFormat,
@@ -251,6 +252,7 @@ const canSave = computed(
   () =>
     canEdit.value &&
     (stringType.value || jsonType.value) &&
+    bytesFormat.value !== 'javaserial' &&
     !(valueTruncated.value && !forceFullValue.value),
 )
 // #endregion
@@ -958,10 +960,7 @@ async function setValue() {
         return
       }
       value = meJsonNormal(value)
-    } else if (
-      stringType.value &&
-      (bytesFormat.value === 'msgpack' || bytesFormat.value === 'strjson')
-    ) {
+    } else if (stringType.value && needsJsonNormalize(bytesFormat.value)) {
       value = value === '' ? '' : meJsonNormal(value)
     }
     if (stringType.value && isCustomView(bytesFormat.value)) {

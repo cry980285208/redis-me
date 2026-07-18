@@ -19,3 +19,6 @@ overrides:
   '@codemirror/language': ^6.12.4
   '@codemirror/state': ^6.7.1
   '@codemirror/view': ^6.43.6
+
+patchedDependencies:
+  java-object-serialization@0.1.2: patches/java-object-serialization@0.1.2.patch
