@@ -923,7 +923,7 @@ export default {
 <b>Streams</b><br/>
 • stream: a radix tree encoded as listpack<br/><br/>
 Once an operation prevents Redis from keeping the space-saving encoding, special encodings are automatically converted to the general type`,
-    keyShortHint: 'View KeyShort',
+    keyShortHint: 'CodeMirror Shortcuts',
     keyShort: {
       fullscreen: 'Fullscreen Editor',
       toggleWrap: 'Toggle Line Wrap',

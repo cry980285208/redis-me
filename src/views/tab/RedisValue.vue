@@ -1047,6 +1047,8 @@ async function onKeyMoreCommand(command: string) {
     void showLocation()
   } else if (command === 'commandHelp') {
     openCommandHelp()
+  } else if (command === 'keyShort') {
+    openKeyShortDialog()
   }
 }
 // #endregion
@@ -1612,6 +1614,9 @@ onUnmounted(() => {
                 <el-dropdown-item command="commandHelp">
                   <me-icon icon="el-icon-help" :name="t('redisValue.commandHelp')" />
                 </el-dropdown-item>
+                <el-dropdown-item command="keyShort">
+                  <me-icon icon="me-icon-keyshort" :name="t('redisValue.keyShortHint')" />
+                </el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
@@ -2027,15 +2032,6 @@ onUnmounted(() => {
             style="font-size: 18px; margin-left: 5px"
             :icon="loading ? 'el-icon-loading' : 'el-icon-refresh-right'"
             @click="onFooterRefreshKey" />
-
-          <me-icon
-            v-if="viewType === 'json'"
-            class="icon-btn"
-            icon="me-icon-keyshort"
-            :info="t('redisValue.keyShortHint')"
-            placement="top-start"
-            @click="openKeyShortDialog"
-            style="margin-left: 5px; font-size: 20px" />
 
           <el-divider direction="vertical" v-if="textMemory" />
 

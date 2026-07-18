@@ -96,7 +96,7 @@ defineExpose({ open })
 
     <el-table v-loading="loading" :data="rows" border stripe>
       <el-table-column :label="t('redisValue.objectInfoCommand')" prop="command" width="110" />
-      <el-table-column :label="t('redisValue.objectInfoItem')" prop="item" width="160">
+      <el-table-column :label="t('redisValue.objectInfoItem')" prop="item" width="200">
         <template #default="{ row }">
           <me-icon
             v-if="row.tip && !row.unavailable"

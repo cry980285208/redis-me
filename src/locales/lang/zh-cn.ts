@@ -908,7 +908,7 @@ export default {
 <b>流</b><br/>
 • stream：编码为 listpack 的基数树<br/><br/>
 一旦执行的操作导致 Redis 无法保留节省空间的编码，所有特殊编码类型都会自动转换为通用类型`,
-    keyShortHint: '查看快捷键',
+    keyShortHint: 'CM快捷键',
     keyShort: {
       fullscreen: '全屏编辑器',
       toggleWrap: '切换自动换行',
