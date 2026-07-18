@@ -2023,9 +2023,9 @@ onUnmounted(() => {
             placement="top-start"
             :info="t('redisValue.refreshKey')"
             class="icon-btn"
+            :class="{ rotating: loading }"
             style="font-size: 18px; margin-left: 5px"
-            icon="el-icon-refresh-right"
-            :style="{ opacity: loading ? 0.5 : 1, cursor: loading ? 'wait' : 'pointer' }"
+            :icon="loading ? 'el-icon-loading' : 'el-icon-refresh-right'"
             @click="onFooterRefreshKey" />
 
           <me-icon
@@ -2412,6 +2412,19 @@ onUnmounted(() => {
   .value-footer {
     height: 30px;
     font-size: 20px;
+
+    @keyframes rotate {
+      from {
+        transform: rotate(0deg);
+      }
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .rotating {
+      animation: rotate 1s linear infinite;
+    }
 
     .bytes-format-auto-label {
       color: var(--el-color-primary);
