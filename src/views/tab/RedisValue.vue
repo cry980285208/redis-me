@@ -2106,12 +2106,14 @@ onUnmounted(() => {
               :value="item.value"
               :disabled="item.disabled"
               :class="{ 'bytes-format-auto-option': item.value === 'auto' }" />
-            <el-option
-              v-for="(item, index) in formatOptions.custom"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value"
-              :disabled="item.disabled" />
+            <el-option-group v-if="formatOptions.custom.length" :label="t('customCodec.group')">
+              <el-option
+                v-for="item in formatOptions.custom"
+                :key="item.value"
+                :label="item.label"
+                :value="item.value"
+                :disabled="item.disabled" />
+            </el-option-group>
           </el-select>
           <!-- 加载更多、加载全部 -->
           <div class="me-flex" style="width: 45px; margin-left: 10px" v-if="showMore">

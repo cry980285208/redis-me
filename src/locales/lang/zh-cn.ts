@@ -258,6 +258,7 @@ export default {
 
   customCodec: {
     title: '自定义编解码',
+    group: '自定义',
     docUrl: 'https://www.hepengju.com/zh/guide/usage/codec.html',
     docHelp: '帮助',
     docHelpTip: '查看官网自定义编解码示例',
@@ -277,6 +278,10 @@ export default {
 <b>失败时</b>：优先展示 stderr；退出码非 0 则提示执行失败`,
     commandPlaceholder: 'python C:\\path\\codec.py',
     add: '添加',
+    fromTemplate: '从模板添加',
+    template: { python: 'Python', node: 'Node', java: 'Java' },
+    templateExportOk: '模板脚本已保存',
+    templateExportErr: '保存模板脚本失败',
     edit: '编辑',
     testDecode: '测试解码',
     testEncode: '测试编码',
@@ -301,6 +306,7 @@ export default {
     timeout: '自定义编解码「{name}」执行超时（{sec}s）',
     duplicateName: '名称已存在',
     nameRequired: '请填写名称',
+    deleteConfirm: '确认删除自定义编解码「{name}」吗？',
   },
 
   meTable: {

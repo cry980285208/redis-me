@@ -268,6 +268,7 @@ export default {
 
   customCodec: {
     title: 'Custom Codec',
+    group: 'Custom',
     docUrl: 'https://www.hepengju.com/guide/usage/codec.html',
     docHelp: 'Help',
     docHelpTip: 'View custom codec examples on the official site',
@@ -287,6 +288,10 @@ export default {
 <b>On failure</b>: stderr is shown first; non-zero exit code shows an exec error`,
     commandPlaceholder: 'python C:\\path\\codec.py',
     add: 'Add',
+    fromTemplate: 'From Template',
+    template: { python: 'Python', node: 'Node', java: 'Java' },
+    templateExportOk: 'Template script saved',
+    templateExportErr: 'Failed to save template script',
     edit: 'Edit',
     testDecode: 'Test Decode',
     testEncode: 'Test Encode',
@@ -311,6 +316,7 @@ export default {
     timeout: 'Custom codec "{name}" timed out ({sec}s)',
     duplicateName: 'Name already exists',
     nameRequired: 'Name is required',
+    deleteConfirm: 'Delete custom codec "{name}"?',
   },
 
   meTable: {
