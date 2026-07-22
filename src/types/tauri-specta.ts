@@ -670,6 +670,8 @@ export type ScanParam = {
 	cursor: ScanCursor | null,
 	/**  完全匹配：true 时后端 EXISTS；false 时 SCAN */
 	exact: boolean,
+	/**  Redis SCAN COUNT（来自前端 keyScanCount）；0 时后端兜底 */
+	count: number,
 };
 
 export type ScanResult = ScanResult_Serialize | ScanResult_Deserialize;

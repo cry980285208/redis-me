@@ -156,7 +156,7 @@ const scanToggleTip = computed(() =>
   loading.value ? t('keyMain.pauseScan') : t('keyMain.resumeScan'),
 )
 const FIELD_SCAN_FETCH_COUNT = computed(() => meTauri.settings.fieldScanCount as number)
-/** 进度环估算：与 settings.fieldScanCount 一致，不用键扫描的 scan_0_batch_count */
+/** 进度环估算：与 settings.fieldScanCount 一致 */
 const scanBatchSize = computed(() => FIELD_SCAN_FETCH_COUNT.value)
 const scanProgress = computed(() =>
   computeScanProgress(

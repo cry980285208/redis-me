@@ -75,7 +75,7 @@ export default {
     keyScanCount: 'Key Scan',
     fieldScanCount: 'Field Scan',
     keyScanCountTip:
-      'Number of keys loaded per SCAN; too large may affect performance. Range {min}–{max}',
+      'Redis SCAN COUNT hint; also the auto-load cumulative threshold. Too large slows each round; too small adds round-trips. Range {min}–{max}',
     fieldScanCountTip:
       'HSCAN/SSCAN/ZSCAN COUNT per request; also the cumulative threshold for frontend auto-load. Range {min}~{max}',
     commandTimeout: 'Cmd Timeout',

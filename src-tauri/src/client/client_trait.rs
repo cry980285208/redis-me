@@ -155,13 +155,9 @@ pub trait MeClient: Send + Sync {
 
 // 通用实现: 由于Connection动态兼容问题，无法写在接口里面，因此写在方法中
 
-pub fn scan_0_batch_count(pattern: &str) -> u64 {
-    // 空白或单字母查询，SCAN 的 COUNT 参数（每次扫描的 bucket 数量）使用 1000；否则使用 10000
-    if pattern.replace("*", "").chars().count() <= 1 {
-        1000
-    } else {
-        10000
-    }
+/// Redis SCAN COUNT：来自 ScanParam.count（前端 keyScanCount）；0 时兜底 1000
+pub fn scan_0_batch_count(count: u64) -> u64 {
+    if count == 0 { 1000 } else { count }
 }
 
 /** fieldScan 单次 HSCAN/SSCAN/ZSCAN/LRANGE 的 COUNT，来自 settings.fieldScanCount */

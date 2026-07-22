@@ -69,7 +69,8 @@ export default {
     extLabelWidth: '100',
     keyScanCount: '键扫描',
     fieldScanCount: '字段扫描',
-    keyScanCountTip: '键列表每次 SCAN 加载的数量；过大可能影响性能。范围 {min}–{max} 个',
+    keyScanCountTip:
+      'Redis SCAN 的 COUNT（提示值），同时作为自动续扫累积条数阈值；过大单次更慢、过小往返更多。范围 {min}–{max} 个',
     fieldScanCountTip:
       'HSCAN/SSCAN/ZSCAN 每次 COUNT；同时作为前端自动续扫的累积条数阈值。范围 {min}~{max} 个',
     commandTimeout: '命令超时',

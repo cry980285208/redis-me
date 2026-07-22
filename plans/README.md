@@ -11,19 +11,20 @@
 
 ## 已实现（编号）
 
-| 编号 | 文件                                                                   | 概要                                     |
-| ---- | ---------------------------------------------------------------------- | ---------------------------------------- |
-| 01   | [01_command-logging.md](./01_command-logging.md)                       | 命令执行日志                             |
-| 02   | [02_value-display-format.md](./02_value-display-format.md)             | 值区多格式查看（前端视图层）             |
-| 03   | [03_redis-acl-management.md](./03_redis-acl-management.md)             | ACL 用户管理                             |
-| 04   | [04_rdm-import.md](./04_rdm-import.md)                                 | 多 RDM 连接导入                          |
-| 05   | [05_custom-formatter.md](./05_custom-formatter.md)                     | 自定义编解码                             |
-| 06   | [06_scan-keys-optimization.md](./06_scan-keys-optimization.md)         | 键扫描体验优化                           |
-| 07   | [07_favorite-keys.md](./07_favorite-keys.md)                           | 收藏键                                   |
-| 08   | [08_copy-key-as-command.md](./08_copy-key-as-command.md)               | 单键复制为 redis-cli 命令                |
-| 09   | [09_command-export-format.md](./09_command-export-format.md)           | 批量导出/导入 CSV 与 CMD                 |
-| 10   | [10_cluster-numbered-databases.md](./10_cluster-numbered-databases.md) | 集群多库（Valkey 9，连接时指定）         |
-| 13   | [13_java-serialization.md](./13_java-serialization.md)                 | JavaSerial 只读查看（对齐 RedisInsight） |
+| 编号 | 文件                                                                   | 概要                                       |
+| ---- | ---------------------------------------------------------------------- | ------------------------------------------ |
+| 01   | [01_command-logging.md](./01_command-logging.md)                       | 命令执行日志                               |
+| 02   | [02_value-display-format.md](./02_value-display-format.md)             | 值区多格式查看（前端视图层）               |
+| 03   | [03_redis-acl-management.md](./03_redis-acl-management.md)             | ACL 用户管理                               |
+| 04   | [04_rdm-import.md](./04_rdm-import.md)                                 | 多 RDM 连接导入                            |
+| 05   | [05_custom-formatter.md](./05_custom-formatter.md)                     | 自定义编解码                               |
+| 06   | [06_scan-keys-optimization.md](./06_scan-keys-optimization.md)         | 键扫描体验优化                             |
+| 07   | [07_favorite-keys.md](./07_favorite-keys.md)                           | 收藏键                                     |
+| 08   | [08_copy-key-as-command.md](./08_copy-key-as-command.md)               | 单键复制为 redis-cli 命令                  |
+| 09   | [09_command-export-format.md](./09_command-export-format.md)           | 批量导出/导入 CSV 与 CMD                   |
+| 10   | [10_cluster-numbered-databases.md](./10_cluster-numbered-databases.md) | 集群多库（Valkey 9，连接时指定）           |
+| 13   | [13_java-serialization.md](./13_java-serialization.md)                 | JavaSerial 只读查看（对齐 RedisInsight）   |
+| 14   | [14_key-scan-perf.md](./14_key-scan-perf.md)                           | 键全量 SCAN 性能（COUNT / 追加 / UI 节流） |
 
 ## 待实现（编号）
 

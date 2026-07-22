@@ -138,6 +138,7 @@ mod tests {
             scan_type: None,
             cursor: Some(ScanCursor::default()),
             exact: false,
+            count: 1000,
         };
         let result1 = client().scan(param).unwrap();
         println!("{result1:#?}");
@@ -147,6 +148,7 @@ mod tests {
             scan_type: None,
             cursor: Some(result1.cursor),
             exact: false,
+            count: 1000,
         };
         let result2 = client().scan(param2).unwrap();
         println!("{result2:#?}");

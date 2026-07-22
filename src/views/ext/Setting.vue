@@ -132,7 +132,7 @@ const moreDefaultSettings = {
 
 /** 更多设置数字项 min/max，与表单项及 ? 提示共用 */
 const MORE_SETTING_LIMITS = {
-  keyScanCount: { min: 10, max: 10000 },
+  keyScanCount: { min: 10, max: 50000 },
   fieldScanCount: { min: 10, max: 1000 },
   commandTimeout: { min: 5, max: 300 },
   codecExecTimeoutSec: { min: 1, max: 120 },

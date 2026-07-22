@@ -12,6 +12,7 @@ import {
   onMounted,
   onUnmounted,
   ref,
+  shallowRef,
   useTemplateRef,
 } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -30,7 +31,6 @@ import { clearKeyTypeCacheForConn } from '@/utils/key-type-cache'
 import {
   buildScanPattern,
   buildLocalFilterPattern,
-  computeScanBatchSize,
   computeScanProgress,
   MINIMATCH_SCAN_OPTS,
 } from '@/utils/redis-glob'
@@ -90,6 +90,7 @@ function initReset(): void {
   keyType.value = 'ALL'
   exact.value = false
   keyword.value = ''
+  scanBuffer = []
   keyList.value = []
   cursor.value = null
   share.redisKey = null
@@ -226,8 +227,9 @@ function onKeyListRefreshHotkey(e: KeyboardEvent) {
 // 搜索模式：关闭完全匹配时 buildScanPattern 补 * 后 SCAN；开启时原样 EXISTS
 const match = computed(() => buildScanPattern(keyword.value, exact.value, loadFolder.value))
 
-// 与后端 scan_0_batch_count 一致：pattern 去 * 后 ≤1 字符 COUNT=1000，否则 10000
-const scanBatchSize = computed(() => computeScanBatchSize(match.value))
+/** Redis SCAN COUNT / 自动续扫阈值 / 进度估算：均取 settings.keyScanCount */
+const SCAN_FETCH_COUNT = computed(() => meTauri.settings.keyScanCount as number)
+const scanBatchSize = SCAN_FETCH_COUNT
 
 /** 当前库键总量：单机取 INFO dbN；集群为单 master 键数 × master 节点数 */
 const dbSize = computed(() => {
@@ -260,7 +262,34 @@ const filterPattern = computed(() =>
   buildLocalFilterPattern(keyword.value, exact.value && !loadFolder.value, match.value),
 )
 
-const keyList = ref<RedisKey_Deserialize[]>([])
+/** 扫描工作缓冲：push 追加；定时 flush 到 keyList；本轮结束（含暂停）再排序 */
+const SCAN_UI_FLUSH_MS = 100
+let scanBuffer: RedisKey_Deserialize[] = []
+let scanDirty = false
+let scanFlushTimer: ReturnType<typeof setInterval> | null = null
+
+const keyList = shallowRef<RedisKey_Deserialize[]>([])
+
+function flushScanToUi(sortNow: boolean) {
+  if (sortNow) scanBuffer = sortBy(scanBuffer, ['key'])
+  // 必须新数组引用：否则 KeyTree 的 prop 引用不变，树不会重建
+  keyList.value = scanBuffer.slice()
+  scanDirty = false
+}
+
+function startScanFlush() {
+  stopScanFlush()
+  scanFlushTimer = setInterval(() => {
+    if (scanDirty) flushScanToUi(false)
+  }, SCAN_UI_FLUSH_MS)
+}
+
+function stopScanFlush() {
+  if (scanFlushTimer == null) return
+  clearInterval(scanFlushTimer)
+  scanFlushTimer = null
+}
+
 const filterKeyList = computed(() => {
   // 收藏模式下，只显示当前连接的收藏键
   let source: RedisKey_Deserialize[] = favoriteMode.value ? currentFavorites.value : keyList.value
@@ -268,9 +297,6 @@ const filterKeyList = computed(() => {
   if (!filterPattern.value) return source
   return source.filter(k => minimatch(k.key, filterPattern.value, MINIMATCH_SCAN_OPTS))
 })
-
-// 搜索自动加载的停止阈值：使用设置中的 keyScanCount
-const SCAN_FETCH_COUNT = computed(() => meTauri.settings.keyScanCount as number)
 
 // 扫描键；restart=true 时中断进行中的扫描并重新开始
 async function scanKey(useCursor = false, loadAll = false, restart = false): Promise<void> {
@@ -288,11 +314,13 @@ async function scanKey(useCursor = false, loadAll = false, restart = false): Pro
   loading.value = true
   scanCancelled.value = false // 每次扫描都重置取消标志
   if (!useCursor) scanPaused.value = false
+  startScanFlush()
   try {
     if (!useCursor) {
       addSearchHistory(keyword.value)
       cursor.value = null
       scanBatchCount.value = 0
+      scanBuffer = []
     }
 
     const firstScanKeys = await scanKeyCore(useCursor)
@@ -304,6 +332,9 @@ async function scanKey(useCursor = false, loadAll = false, restart = false): Pro
       await scanKeyAll()
     }
   } finally {
+    stopScanFlush()
+    // 本轮扫描结束（含暂停）：排一次序，方便立刻定位；续扫追加后再结束会再排
+    flushScanToUi(true)
     loading.value = false
     if (cursor.value?.finished) scanPaused.value = false
   }
@@ -316,6 +347,7 @@ async function scanKeyCore(useCursor = false): Promise<number> {
     type: keyType.value === 'ALL' ? '' : keyType.value.toLowerCase(),
     cursor: cursor.value,
     exact: exact.value && !loadFolder.value,
+    count: SCAN_FETCH_COUNT.value,
   }
 
   // 延迟一下，方便观察加载过程（不要删除，未来还是测试验证）
@@ -325,9 +357,13 @@ async function scanKeyCore(useCursor = false): Promise<number> {
   cursor.value = data.cursor
   scanBatchCount.value++
 
-  // useCursor=false 时替换列表（新搜索），useCursor=true 时追加结果（加载更多）
-  const newKeyList = useCursor ? [...keyList.value, ...data.keyList] : data.keyList
-  keyList.value = sortBy(newKeyList, ['key'])
+  // 新搜索替换缓冲；续扫 push 追加（避免每批 spread + sortBy）
+  if (!useCursor) scanBuffer = []
+  for (const k of data.keyList) scanBuffer.push(k)
+  scanDirty = true
+  // 首批立刻上屏，避免等第一个 100ms 间隔
+  if (scanBatchCount.value === 1) flushScanToUi(false)
+
   return data.keyList.length
 }
 
@@ -351,7 +387,8 @@ async function scanKeyAll(): Promise<void> {
 }
 
 function deleteKey(redisKey: RedisKey_Deserialize): void {
-  keyList.value = keyList.value.filter(rk => rk.bytes !== redisKey.bytes)
+  scanBuffer = scanBuffer.filter(rk => rk.bytes !== redisKey.bytes)
+  keyList.value = scanBuffer.slice()
   share.redisKey = null
 }
 
@@ -522,6 +559,7 @@ onMounted(() => {
   }
 })
 onUnmounted(() => {
+  stopScanFlush()
   bus.off(KEY_DELETE, deleteKey)
   bus.off(CONN_REFRESH, refresh)
   window.removeEventListener('keydown', onKeyListRefreshHotkey, true)
@@ -535,7 +573,8 @@ function addKey(): void {
 
 const keyTreeRef = useTemplateRef<InstanceType<typeof KeyTree>>('keyTreeRef')
 function addKeyOk(redisKey: RedisKey_Deserialize): void {
-  keyList.value.unshift(redisKey)
+  scanBuffer.unshift(redisKey)
+  keyList.value = scanBuffer.slice()
   chooseKey(redisKey)
   nextTick(() => {
     keyTreeRef.value?.setCurrentKey(redisKey)

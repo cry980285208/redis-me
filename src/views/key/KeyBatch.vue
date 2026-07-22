@@ -105,7 +105,13 @@ const showScan = ref(true)
 async function scanKey() {
   loading.value = true
   try {
-    const params = { match: form.value.match, type: '', cursor: null, exact: false }
+    const params = {
+      match: form.value.match,
+      type: '',
+      cursor: null,
+      exact: false,
+      count: (meTauri.settings.keyScanCount as number) || 1000,
+    }
     const data = await meCommands.scan(share.conn!.id, params)
     form.value.keyList = data.keyList
     showScan.value = false

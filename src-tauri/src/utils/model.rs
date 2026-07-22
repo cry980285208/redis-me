@@ -300,6 +300,9 @@ api_model!(ScanParam {
 
     /// 完全匹配：true 时后端 EXISTS；false 时 SCAN
     exact: bool,
+
+    /// Redis SCAN COUNT（来自前端 keyScanCount）；0 时后端兜底
+    count: u64,
 });
 
 impl ScanParam {
@@ -309,6 +312,7 @@ impl ScanParam {
             scan_type: None,
             cursor: None,
             exact: false,
+            count: 10000,
         }
     }
 }
