@@ -27,6 +27,18 @@ describe('detectViewFormat', () => {
     expect(detectViewFormat(b64)).toBe('javaserial')
   })
 
+  it('Pickle PROTO4 dict', () => {
+    expect(detectViewFormat('gASVFwAAAAAAAAB9lCiMAWGUSwGMAWKUXZQoSwFLAmV1Lg==')).toBe('pickle')
+  })
+
+  it('Pickle PROTO2 不被 MsgPack 误判', () => {
+    expect(detectViewFormat('gAJ9cQBYAQAAAGtxAVgBAAAAdnECcy4=')).toBe('pickle')
+  })
+
+  it('MsgPack 空 map(0x80) 不是 Pickle', () => {
+    expect(detectViewFormat(bytesToBase64(new Uint8Array([0x80])))).toBe('msgpack')
+  })
+
   it('MsgPack map', () => {
     expect(detectViewFormat(bytesToBase64(encode({ a: 1, b: 'x' })))).toBe('msgpack')
   })

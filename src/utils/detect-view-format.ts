@@ -1,23 +1,28 @@
 /**
  * STRING 值 Auto 编码识别：基于 base64 wire 原始字节。
- * 优先级：JavaSerial(ACED) → MsgPack → StrJson → UTF-8 → Hex。
+ * 优先级：JavaSerial(ACED) → Pickle(PROTO 0x80) → MsgPack → StrJson → UTF-8 → Hex。
  */
 import { decode } from '@msgpack/msgpack'
 import JSON5 from 'json5'
 
 import { javaSerBase64ToValue } from '@/utils/javaserial'
+import { pickleBase64ToValue } from '@/utils/pickle'
 
-/** 超过此字节数跳过 MsgPack / StrJson 试解，只做 ACED 头 + UTF-8/Hex */
+/** 超过此字节数跳过 MsgPack / StrJson 试解，只做 ACED / Pickle 头 + UTF-8/Hex */
 export const DETECT_TRY_MAX_BYTES = 512 * 1024
 
 /** Auto 识别结果（不含 auto / binary / base64 / custom） */
-export type DetectedViewFormat = 'javaserial' | 'msgpack' | 'strjson' | 'utf8' | 'hex'
+export type DetectedViewFormat = 'javaserial' | 'pickle' | 'msgpack' | 'strjson' | 'utf8' | 'hex'
 
 const JAVA_STREAM_MAGIC_0 = 0xac
 const JAVA_STREAM_MAGIC_1 = 0xed
+/** Pickle PROTO opcode；下一字节为协议号（常见 0–5） */
+const PICKLE_PROTO = 0x80
+const PICKLE_PROTO_MAX = 5
 
 const DETECTED_LABELS: Record<DetectedViewFormat, string> = {
   javaserial: 'JavaSerial',
+  pickle: 'Pickle',
   msgpack: 'MsgPack',
   strjson: 'StrJson',
   utf8: 'UTF8',
@@ -75,6 +80,20 @@ function looksLikeJavaSerial(bytes: Uint8Array, base64: string): boolean {
   }
 }
 
+/** PROTO + 协议号；再试解，避免与 MsgPack 空 map(0x80) 等误判 */
+function looksLikePickle(bytes: Uint8Array, base64: string): boolean {
+  if (bytes.length < 2) return false
+  if (bytes[0] !== PICKLE_PROTO) return false
+  const proto = bytes[1]!
+  if (proto > PICKLE_PROTO_MAX) return false
+  try {
+    pickleBase64ToValue(base64)
+    return true
+  } catch {
+    return false
+  }
+}
+
 /** 保守：仅根为 object/array 才认 MsgPack，避免短文本误判 */
 function looksLikeMsgpack(bytes: Uint8Array): boolean {
   try {
@@ -109,6 +128,7 @@ export function detectViewFormat(base64: string): DetectedViewFormat {
   if (!bytes) return 'hex'
 
   if (looksLikeJavaSerial(bytes, base64)) return 'javaserial'
+  if (looksLikePickle(bytes, base64)) return 'pickle'
 
   const allowTry = bytes.length <= DETECT_TRY_MAX_BYTES
   if (allowTry && looksLikeMsgpack(bytes)) return 'msgpack'

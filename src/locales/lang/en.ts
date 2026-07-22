@@ -345,6 +345,7 @@ export default {
     invalidBinaryString: 'Invalid binary string: length not multiple of 8',
     invalidBinaryCharacter: 'Invalid binary character',
     javaSerialReadonly: 'JavaSerial is view-only; saving back is not supported',
+    pickleReadonly: 'Pickle is view-only; saving back is not supported',
   },
 
   tabMain: {

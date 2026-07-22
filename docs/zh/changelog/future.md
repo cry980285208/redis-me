@@ -40,7 +40,7 @@
 
 ### 已完成
 
-- 数据编码魔数自动识别（Auto：ACED / MsgPack / StrJson / UTF-8 / Hex）✅️
+- 数据编码魔数自动识别（Auto：ACED / Pickle PROTO / MsgPack / StrJson / UTF-8 / Hex）✅️
 - String类型阈值保护 ✅️
 - Binary格式恢复支持（setbit等场景还是需要的）✅️
 - Hash/Set/ZSet的扫描模式支持 ✅️
@@ -48,7 +48,7 @@
 - List/Stream支持正序倒序查询 ✅️
 - Memory Usage命令不支持时前端显示大小 ✅️
 - Java序列化的支持方案 ✅️
-- Java/Pickle序列化查看 ✅️（JavaSerial 只读；Pickle 另议）
+- Java/Pickle序列化查看 ✅️（JavaSerial / Pickle 均为只读）
 - 命令执行日志✅️
 - 搜索历史记录✅️
 - 全局快捷键✅️

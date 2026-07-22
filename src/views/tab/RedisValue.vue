@@ -43,6 +43,7 @@ import {
   customFormatName,
   customFormatValue,
   isCustomView,
+  isReadonlyView,
   isStringOnlyView,
   isViewDecodeError,
   meFormatViewValue,
@@ -380,7 +381,7 @@ const canSave = computed(
   () =>
     canEdit.value &&
     (stringType.value || jsonType.value) &&
-    effectiveViewFormat.value !== 'javaserial' &&
+    !isReadonlyView(effectiveViewFormat.value) &&
     !(valueTruncated.value && !forceFullValue.value),
 )
 /**

@@ -335,6 +335,7 @@ export default {
     invalidBinaryString: '无效的二进制字符串：长度不是 8 的倍数',
     invalidBinaryCharacter: '无效的二进制字符',
     javaSerialReadonly: 'JavaSerial 目前仅支持查看，不支持保存写回',
+    pickleReadonly: 'Pickle 目前仅支持查看，不支持保存写回',
   },
 
   tabMain: {
