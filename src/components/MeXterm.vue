@@ -61,7 +61,8 @@ function onKeydown(e: KeyboardEvent): void {
     return
   }
 
-  if (!e.ctrlKey) return
+  // 与快捷键文档 mod 一致：Mac ⌘ / Win·Linux Ctrl
+  if (!(e.ctrlKey || e.metaKey)) return
 
   switch (key) {
     case 'L':

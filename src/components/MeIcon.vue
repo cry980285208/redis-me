@@ -1,6 +1,8 @@
 <script setup lang="ts">
 // 说明: 统一图标使用方式，支持el-icon-xxx图标和自定义的svg图标me-icon-xxx
-withDefaults(
+import { computed } from 'vue'
+
+const props = withDefaults(
   defineProps<{
     icon?: string
     iconLeft?: boolean
@@ -22,52 +24,31 @@ withDefaults(
     showAfter: 1000,
   },
 )
+
+/** 与 MeButton 一致：el-icon-xxx 走 Element Plus 原生图标 */
+const isElIcon = computed(() => props.icon.startsWith('el-icon-'))
+/** info 优先；纯 hint 时用 name 作 tooltip */
+const tooltipEnabled = computed(() => !!props.info || props.hint)
+const tooltipContent = computed(() => props.info || (props.hint ? props.name : ''))
+/** info 或「非 hint 的 name」旁注；纯 hint 不显示旁注（与旧分支一致） */
+const showLabel = computed(() => !!props.name && (!props.hint || !!props.info))
 </script>
 
 <template>
   <div class="icon-main">
-    <!-- 图标 + 文字 + 额外提示 -->
-    <template v-if="info">
-      <span v-if="name && !iconLeft" style="margin-right: 5px">{{ name }}</span>
-      <el-tooltip
-        :placement="placement"
-        :content="info"
-        :raw-content="rawContent"
-        :show-after="showAfter">
-        <el-icon v-if="icon.startsWith('el-icon-')">
-          <Component :is="icon" />
-        </el-icon>
-        <SvgIcon v-else :name="icon" class="icon" />
-      </el-tooltip>
-      <span v-if="name && iconLeft" style="margin-left: 5px">{{ name }}</span>
-    </template>
-
-    <!-- 图标 + 文字提示 -->
-    <template v-else-if="hint">
-      <el-tooltip :placement="placement" :content="name" :show-after="showAfter">
-        <el-icon v-if="icon.startsWith('el-icon-')">
-          <Component :is="icon" />
-        </el-icon>
-        <SvgIcon v-else :name="icon" />
-      </el-tooltip>
-    </template>
-
-    <!-- 图标 + 文字 -->
-    <template v-else-if="name">
-      <span v-if="name && !iconLeft" style="margin-right: 5px">{{ name }}</span>
-      <el-icon v-if="icon.startsWith('el-icon-')">
+    <span v-if="showLabel && !iconLeft" style="margin-right: 5px">{{ name }}</span>
+    <el-tooltip
+      :disabled="!tooltipEnabled"
+      :placement="placement"
+      :content="tooltipContent"
+      :raw-content="rawContent"
+      :show-after="showAfter">
+      <el-icon v-if="isElIcon">
         <Component :is="icon" />
       </el-icon>
-      <SvgIcon v-else :name="icon" />
-      <span v-if="name && iconLeft" style="margin-left: 5px">{{ name }}</span>
-    </template>
-
-    <template v-else>
-      <el-icon v-if="icon.startsWith('el-icon-')">
-        <Component :is="icon" />
-      </el-icon>
-      <SvgIcon v-else :name="icon" />
-    </template>
+      <SvgIcon v-else :name="icon" :class="{ icon: !!info }" />
+    </el-tooltip>
+    <span v-if="showLabel && iconLeft" style="margin-left: 5px">{{ name }}</span>
   </div>
 </template>
 
