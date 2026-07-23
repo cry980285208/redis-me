@@ -27,8 +27,18 @@ describe('detectViewFormat', () => {
     expect(detectViewFormat(b64)).toBe('javaserial')
   })
 
+  it('截断 ACED 仍认 JavaSerial（只认魔数头）', () => {
+    expect(detectViewFormat(bytesToBase64(new Uint8Array([0xac, 0xed, 0x00, 0x05])))).toBe(
+      'javaserial',
+    )
+  })
+
   it('Pickle PROTO4 dict', () => {
     expect(detectViewFormat('gASVFwAAAAAAAAB9lCiMAWGUSwGMAWKUXZQoSwFLAmV1Lg==')).toBe('pickle')
+  })
+
+  it('截断 PROTO 仍认 Pickle', () => {
+    expect(detectViewFormat(bytesToBase64(new Uint8Array([0x80, 0x04])))).toBe('pickle')
   })
 
   it('Pickle PROTO2 不被 MsgPack 误判', () => {

@@ -2079,7 +2079,7 @@ onUnmounted(() => {
           </el-text>
           <el-select
             v-model="bytesFormat"
-            :disabled="jsonType || streamType"
+            :disabled="jsonType || streamType || loading"
             :class="{ 'is-auto-format': bytesFormat === 'auto' }"
             popper-class="bytes-format-select"
             style="width: 100px"

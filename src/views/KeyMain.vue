@@ -78,6 +78,8 @@ const canEdit = computed(() => !share.readonly)
 async function refresh(): Promise<void> {
   if (!share.conn) return
   await syncDbToVisibleList()
+  // 必须先停旧扫描再 initReset：scanKey(restart) 会在等待期间仍写缓冲，不能先清空再 restart
+  await stopScanIfRunning()
   initReset()
   await scanKey()
 }
@@ -298,16 +300,22 @@ const filterKeyList = computed(() => {
   return source.filter(k => minimatch(k.key, filterPattern.value, MINIMATCH_SCAN_OPTS))
 })
 
+/** 若正在扫描则取消并等到 loading 结束（refresh / scanKey restart 共用） */
+async function stopScanIfRunning(): Promise<void> {
+  if (!loading.value) return
+  scanCancelled.value = true
+  scanPaused.value = false
+  while (loading.value) {
+    await sleep(20)
+  }
+}
+
 // 扫描键；restart=true 时中断进行中的扫描并重新开始
 async function scanKey(useCursor = false, loadAll = false, restart = false): Promise<void> {
   if (!share.conn) return
   if (loading.value) {
     if (!restart) return
-    scanCancelled.value = true
-    scanPaused.value = false
-    while (loading.value) {
-      await sleep(20)
-    }
+    await stopScanIfRunning()
   }
 
   scanLoadAll.value = loadAll

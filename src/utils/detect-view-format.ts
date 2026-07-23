@@ -1,12 +1,10 @@
 /**
  * STRING 值 Auto 编码识别：基于 base64 wire 原始字节。
  * 优先级：JavaSerial(ACED) → Pickle(PROTO 0x80) → MsgPack → StrJson → UTF-8 → Hex。
+ * JavaSerial/Pickle 只认魔数头（不做全量反序列化），避免大值/截断预览卡顿与误判。
  */
 import { decode } from '@msgpack/msgpack'
 import JSON5 from 'json5'
-
-import { javaSerBase64ToValue } from '@/utils/javaserial'
-import { pickleBase64ToValue } from '@/utils/pickle'
 
 /** 超过此字节数跳过 MsgPack / StrJson 试解，只做 ACED / Pickle 头 + UTF-8/Hex */
 export const DETECT_TRY_MAX_BYTES = 512 * 1024
@@ -19,6 +17,8 @@ const JAVA_STREAM_MAGIC_1 = 0xed
 /** Pickle PROTO opcode；下一字节为协议号（常见 0–5） */
 const PICKLE_PROTO = 0x80
 const PICKLE_PROTO_MAX = 5
+/** java 序列化流：magic(2) + version(2)，至少 4 字节 */
+const JAVA_STREAM_MIN_LEN = 4
 
 const DETECTED_LABELS: Record<DetectedViewFormat, string> = {
   javaserial: 'JavaSerial',
@@ -69,29 +69,20 @@ function isDisplayableUtf8(text: string): boolean {
   return control / text.length < 0.1
 }
 
-function looksLikeJavaSerial(bytes: Uint8Array, base64: string): boolean {
-  if (bytes.length < 4) return false
-  if (bytes[0] !== JAVA_STREAM_MAGIC_0 || bytes[1] !== JAVA_STREAM_MAGIC_1) return false
-  try {
-    javaSerBase64ToValue(base64)
-    return true
-  } catch {
-    return false
-  }
+/** 仅认 ACED 魔数头，不解析 body（截断预览/大值也安全） */
+function looksLikeJavaSerial(bytes: Uint8Array): boolean {
+  if (bytes.length < JAVA_STREAM_MIN_LEN) return false
+  return bytes[0] === JAVA_STREAM_MAGIC_0 && bytes[1] === JAVA_STREAM_MAGIC_1
 }
 
-/** PROTO + 协议号；再试解，避免与 MsgPack 空 map(0x80) 等误判 */
-function looksLikePickle(bytes: Uint8Array, base64: string): boolean {
+/**
+ * 仅认 PROTO + 协议号。
+ * 单字节 0x80（MsgPack 空 map）长度不足，不会误判为 Pickle。
+ */
+function looksLikePickle(bytes: Uint8Array): boolean {
   if (bytes.length < 2) return false
   if (bytes[0] !== PICKLE_PROTO) return false
-  const proto = bytes[1]!
-  if (proto > PICKLE_PROTO_MAX) return false
-  try {
-    pickleBase64ToValue(base64)
-    return true
-  } catch {
-    return false
-  }
+  return bytes[1]! <= PICKLE_PROTO_MAX
 }
 
 /** 保守：仅根为 object/array 才认 MsgPack，避免短文本误判 */
@@ -127,8 +118,8 @@ export function detectViewFormat(base64: string): DetectedViewFormat {
   const bytes = base64ToBytes(base64)
   if (!bytes) return 'hex'
 
-  if (looksLikeJavaSerial(bytes, base64)) return 'javaserial'
-  if (looksLikePickle(bytes, base64)) return 'pickle'
+  if (looksLikeJavaSerial(bytes)) return 'javaserial'
+  if (looksLikePickle(bytes)) return 'pickle'
 
   const allowTry = bytes.length <= DETECT_TRY_MAX_BYTES
   if (allowTry && looksLikeMsgpack(bytes)) return 'msgpack'
