@@ -454,6 +454,11 @@ export default {
     match: 'Key match expression',
     impactKeys: 'Impact Key ({count}) | Impact Keys ({count})',
     showImpactKeys: 'Show Impact Keys',
+    scanProgress: 'Scanned {count}',
+    scanDone: 'Done',
+    scanScanning: 'Scanning',
+    scanPaused: 'Paused',
+    cancelScan: 'Cancel Scan',
 
     delete: 'Batch Delete Keys',
     deleteDirect: 'Delete Direct',

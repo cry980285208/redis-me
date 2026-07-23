@@ -1390,9 +1390,25 @@ pub fn batch_key0(
         if param.pattern.is_empty() {
             bail!(AppError::EmptyParameters)
         }
-        let scan_result = rmc.scan(ScanParam::all(param.pattern))?;
-        info!("scan key count: {}", scan_result.key_list.len());
-        scan_result.key_list
+        // 直接匹配：循环 SCAN 至 cursor.finished（单次 scan 只跑一轮）
+        let mut all_keys: Vec<RedisKey> = vec![];
+        let mut cursor: Option<ScanCursor> = None;
+        loop {
+            let scan_result = rmc.scan(ScanParam {
+                pattern: param.pattern.clone(),
+                scan_type: None,
+                cursor,
+                exact: false,
+                count: 10000,
+            })?;
+            all_keys.extend(scan_result.key_list);
+            if scan_result.cursor.finished {
+                break;
+            }
+            cursor = Some(scan_result.cursor);
+        }
+        info!("scan key count: {}", all_keys.len());
+        all_keys
     } else {
         param.key_list
     };

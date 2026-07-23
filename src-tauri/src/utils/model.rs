@@ -305,18 +305,6 @@ api_model!(ScanParam {
     count: u64,
 });
 
-impl ScanParam {
-    pub fn all(pattern: String) -> Self {
-        ScanParam {
-            pattern,
-            scan_type: None,
-            cursor: None,
-            exact: false,
-            count: 10000,
-        }
-    }
-}
-
 // fieldScan 按类型的扩展参数：Stream 范围、STRING 大值预览阈值等
 api_model!(FiledScanMeta {
     /// Stream XREVRANGE 上界和下界

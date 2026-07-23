@@ -444,6 +444,11 @@ export default {
     match: '键名表达式',
     impactKeys: '受影响的键名({count})',
     showImpactKeys: '查看受影响的键名',
+    scanProgress: '已扫描 {count} 个',
+    scanDone: '已完成',
+    scanScanning: '扫描中',
+    scanPaused: '已暂停',
+    cancelScan: '取消扫描',
 
     delete: '批量删除键',
     deleteDirect: '直接匹配删除',
