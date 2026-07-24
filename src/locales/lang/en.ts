@@ -853,6 +853,7 @@ export default {
     jsonView: 'JSON View',
     tableView: 'Table View',
     noKeySelected: 'No Key Selected',
+    keyGone: 'Key does not exist or has expired',
     loadMore: 'Load More',
     loadAll: 'Load All',
     renameKey: 'Rename Key',
@@ -1065,7 +1066,7 @@ Once an operation prevents Redis from keeping the space-saving encoding, special
     cluster_not_supported: 'SSH tunnel does not support cluster mode',
     cluster_db_switch_not_supported:
       'Cluster mode does not support switching DB; change the initial DB in connection settings and reconnect',
-    key_not_found: 'Key "{key}" not found',
+    key_not_found: '"{key}" not found',
     key_node_not_found: 'Node not found for key "{key}"',
     key_already_exists: 'Key "{key}" already exists',
     key_type_unsupported: 'Unsupported value type: {value_type}',

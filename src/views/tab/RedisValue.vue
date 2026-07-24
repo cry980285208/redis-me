@@ -896,6 +896,12 @@ async function refreshKey(
     showMore.value = !cursor.value?.finished
     const rvDone = redisValue.value
     if (rvDone) await setTimer(rvDone.ttl)
+  } catch (e) {
+    // 整键刷新且键已不存在：清掉过期快照；续扫失败保留已加载页；其它错误也保留旧值
+    if (!useCursor && isAppErrorCode(e, 'key_not_found')) {
+      clearValueAfterKeyGone()
+    }
+    throw e
   } finally {
     probingAutoDetect.value = false
     if (!stringType.value && isStringOnlyView(bytesFormat.value)) {
@@ -903,6 +909,29 @@ async function refreshKey(
     }
     await finalizeAfterFieldScan(reset)
     if (cursor.value?.finished) scanPaused.value = false
+  }
+}
+
+/** Specta 抛出的应用错误 JSON（`{"code":"key_not_found",...}`） */
+function isAppErrorCode(e: unknown, code: string): boolean {
+  const raw = typeof e === 'string' ? e : e instanceof Error ? e.message : ''
+  if (!raw) return false
+  try {
+    const parsed = JSON.parse(raw) as { code?: unknown }
+    return parsed?.code === code
+  } catch {
+    return false
+  }
+}
+
+/** 键已删除/过期：与 KEY_DELETE 一致清空详情，避免仍显示旧 STRING/字节数 */
+function clearValueAfterKeyGone() {
+  redisValue.value = null
+  cursor.value = null
+  showMore.value = false
+  if (timer !== null) {
+    clearInterval(timer)
+    timer = null
   }
 }
 // #endregion
@@ -2167,8 +2196,12 @@ onUnmounted(() => {
       </div>
     </template>
 
-    <!-- 未选择键时Empty显示 -->
-    <el-empty v-else :description="t('redisValue.noKeySelected')"></el-empty>
+    <!-- 未选键 / 键已不存在（fieldScan key_not_found 清空后） -->
+    <el-empty
+      v-else
+      :description="
+        share.redisKey ? t('redisValue.keyGone') : t('redisValue.noKeySelected')
+      " />
 
     <!-- 更新TTL, 字段新增 -->
     <TTLSet ref="ttlSetRef" @success="setTimer" />
