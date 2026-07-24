@@ -3,7 +3,7 @@ import { getVersion } from '@tauri-apps/api/app'
 import { appConfigDir, appLogDir } from '@tauri-apps/api/path'
 import { openPath } from '@tauri-apps/plugin-opener'
 import { getSystemFonts } from 'tauri-plugin-system-fonts-api'
-import { computed, inject, onMounted, ref } from 'vue'
+import { computed, inject, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { appProvideKey, connUiProvideKey } from '@/types/me-interface'
@@ -23,10 +23,6 @@ const isAppStore = window.meTauri.isAppStore
 const connUi = inject(connUiProvideKey)!
 
 const visible = ref(false)
-function open() {
-  visible.value = true
-}
-defineExpose({ open })
 
 /** `window.queryLocalFonts()` 返回项中用到的字段（Local Font Access，与 FontData 子集一致） */
 interface LocalFontFace {
@@ -55,27 +51,35 @@ const loadFonts = async () => {
   // 取fullName作为显示, style过滤Regular去除粗体/斜体
   // 示例1: FontData {postscriptName: 'SimHei', fullName: '黑体', family: 'SimHei', style: 'Regular'}
   // 示例2: FontData {postscriptName: 'Arial-Black', fullName: 'Arial Black Normal', family: 'Arial', style: 'Black'}
-  const localFonts = window.queryLocalFonts ? [...(await window.queryLocalFonts())] : []
-  //console.log('localFonts:', localFonts)
-
-  if (localFonts.length > 0) {
-    fonts.value = localFonts
-      .filter(f => f.style === 'Regular')
-      .map(f => f.fullName)
-      .sort()
-  } else {
-    // 用户未授权时采用rust获取字体（名称就没有中文了）, 但可以判断是否为等宽字体
-    // 示例1: {"id":"4294967481","name":"SimHei","fontName":"SimHei","path":"C:\\Windows\\Fonts\\simhei.ttf","weight":400,"style":"Normal","monospaced":false}
-    // 示例2: {"id":"4294967341","name":"Consolas","fontName":"Consolas","path":"C:\\Windows\\Fonts\\consola.ttf","weight":400,"style":"Normal","monospaced":true}
-    // 示例3: {"id":"4294967479","name":"Segoe UI Variable","fontName":"SegoeUIVariable","path":"C:\\Windows\\Fonts\\SegUIVar.ttf","weight":400,"style":"Normal","monospaced":false}
-    const systemFonts = await getSystemFonts()
-    //console.log('systemFonts:', systemFonts)
-    fonts.value = [...new Set(systemFonts.map(f => f.name))].sort()
+  try {
+    const localFonts: LocalFontFace[] = window.queryLocalFonts
+      ? [...(await window.queryLocalFonts())]
+      : []
+    if (localFonts.length > 0) {
+      fonts.value = localFonts
+        .filter(f => f.style === 'Regular')
+        .map(f => f.fullName)
+        .sort()
+      return
+    }
+  } catch {
+    // 无用户激活 / 拒绝授权等 → 走 Rust 回退
   }
+
+  // 用户未授权时采用rust获取字体（名称就没有中文了）, 但可以判断是否为等宽字体
+  // 示例1: {"id":"4294967481","name":"SimHei","fontName":"SimHei","path":"C:\\Windows\\Fonts\\simhei.ttf","weight":400,"style":"Normal","monospaced":false}
+  // 示例2: {"id":"4294967341","name":"Consolas","fontName":"Consolas","path":"C:\\Windows\\Fonts\\consola.ttf","weight":400,"style":"Normal","monospaced":true}
+  // 示例3: {"id":"4294967479","name":"Segoe UI Variable","fontName":"SegoeUIVariable","path":"C:\\Windows\\Fonts\\SegUIVar.ttf","weight":400,"style":"Normal","monospaced":false}
+  const systemFonts = await getSystemFonts()
+  fonts.value = [...new Set(systemFonts.map(f => f.name))].sort()
 }
-onMounted(() => {
-  void loadFonts()
-})
+
+function open() {
+  visible.value = true
+  // queryLocalFonts 需要用户手势；在打开设置（点击）时再拉字体，避免启动 onMounted 抛 SecurityError
+  if (fonts.value.length === 0) void loadFonts()
+}
+defineExpose({ open })
 
 // 检查更新
 const appVersion = ref('')
