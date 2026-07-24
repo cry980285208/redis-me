@@ -2080,8 +2080,6 @@ onUnmounted(() => {
           <el-select
             v-model="bytesFormat"
             :disabled="jsonType || streamType || loading"
-            :class="{ 'is-auto-format': bytesFormat === 'auto' }"
-            popper-class="bytes-format-select"
             style="width: 100px"
             @change="refreshKey(false)">
             <template #header>
@@ -2104,8 +2102,7 @@ onUnmounted(() => {
               :key="item.value"
               :label="item.label"
               :value="item.value"
-              :disabled="item.disabled"
-              :class="{ 'bytes-format-auto-option': item.value === 'auto' }" />
+              :disabled="item.disabled" />
             <el-option-group v-if="formatOptions.custom.length" :label="t('customCodec.group')">
               <el-option
                 v-for="item in formatOptions.custom"
@@ -2448,13 +2445,6 @@ onUnmounted(() => {
       font-weight: 600;
     }
 
-    .is-auto-format {
-      :deep(.el-select__selected-item) {
-        color: var(--el-color-primary);
-        font-weight: 600;
-      }
-    }
-
     :deep(.el-select__wrapper) {
       min-height: 0;
       height: 30px;
@@ -2465,16 +2455,6 @@ onUnmounted(() => {
     :deep(.el-select-dropdown__item) {
       padding: 0 20px 0 20px;
     }
-  }
-}
-</style>
-
-<!-- 下拉挂到 body，需非 scoped -->
-<style lang="scss">
-.bytes-format-select {
-  .bytes-format-auto-option {
-    color: var(--el-color-primary);
-    font-weight: 600;
   }
 }
 </style>

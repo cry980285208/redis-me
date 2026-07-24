@@ -144,7 +144,7 @@ const extensions = computed(() => {
 
 <style scoped lang="scss">
 .codemirror-opacity {
-  opacity: 0.6;
+  opacity: 0.8;
 }
 
 .vue-codemirror {
@@ -192,6 +192,11 @@ html.dark .vue-codemirror {
   }
 
   /* JSON值在黑色模式下红色看着不舒服，因此改下 */
+  /* Json 的 null（默认 #708 过暗） */
+  :deep(.ͼb) {
+    color: #ae81ff;
+  }
+
   /* Json的字符串值 */
   :deep(.ͼe) {
     color: #e6db74;
