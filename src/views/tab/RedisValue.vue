@@ -513,10 +513,15 @@ async function refreshResolvedWireView() {
 }
 
 function stringWireDisplayText(wire: string): string {
-  if (stringType.value && isCustomView(displayBytesFormat.value)) {
-    return resolvedWireView.value
+  try {
+    if (stringType.value && isCustomView(displayBytesFormat.value)) {
+      return resolvedWireView.value
+    }
+    return meFormatViewValue(wire, displayBytesFormat.value)
+  } catch (e) {
+    // 表格单元格渲染兜底：任一解码异常不得打挂 Vue 更新
+    return e instanceof Error ? e.message : String(e)
   }
-  return meFormatViewValue(wire, displayBytesFormat.value)
 }
 
 function formatTableCell(raw: unknown): string {

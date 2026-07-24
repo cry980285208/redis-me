@@ -309,6 +309,7 @@ export const MSGPACK_DECODE_ERR = '⚠️ MsgPack Decode Error'
 export const STRJSON_DECODE_ERR = '⚠️ StrJson Decode Error'
 export const JAVASERIAL_DECODE_ERR = '⚠️ JavaSerial Decode Error'
 export const PICKLE_DECODE_ERR = '⚠️ Pickle Decode Error'
+export const BYTES_DECODE_ERR = '⚠️ Bytes Decode Error'
 
 /** 展示文本是否为内置解码失败；RedisValue、FieldSet 保存校验 */
 export function isViewDecodeError(text: string): boolean {
@@ -316,7 +317,8 @@ export function isViewDecodeError(text: string): boolean {
     text.startsWith(MSGPACK_DECODE_ERR) ||
     text.startsWith(STRJSON_DECODE_ERR) ||
     text.startsWith(JAVASERIAL_DECODE_ERR) ||
-    text.startsWith(PICKLE_DECODE_ERR)
+    text.startsWith(PICKLE_DECODE_ERR) ||
+    text.startsWith(BYTES_DECODE_ERR)
   )
 }
 
@@ -369,19 +371,24 @@ export function needsJsonNormalize(view: ViewBytesFormat): boolean {
   return view === 'msgpack' || view === 'strjson'
 }
 
-/** wire → 编辑器/表格展示（同步）；RedisValue、FieldSet */
+/** wire → 编辑器/表格展示（同步）；RedisValue、FieldSet。解码失败返回错误文案，避免渲染抛错打挂 Vue */
 export function meFormatViewValue(wire: string, view: ViewBytesFormat): string {
   if (!wire || view === 'utf8') return wire
   if (view === 'base64') return wire
-  if (view === 'hex' || view === 'binary') return meFormatBytes(wire, view)
-  if (view === 'msgpack') return meMsgpackBase64ToJson(wire)
-  if (view === 'strjson') return meStrJsonWireToDisplay(wire)
-  if (view === 'javaserial') return meJavaSerialBase64ToDisplay(wire)
-  if (view === 'pickle') return mePickleBase64ToDisplay(wire)
-  if (isCustomView(view)) {
-    throw new Error('custom view requires meFormatViewValueAsync')
+  try {
+    if (view === 'hex' || view === 'binary') return meFormatBytes(wire, view)
+    if (view === 'msgpack') return meMsgpackBase64ToJson(wire)
+    if (view === 'strjson') return meStrJsonWireToDisplay(wire)
+    if (view === 'javaserial') return meJavaSerialBase64ToDisplay(wire)
+    if (view === 'pickle') return mePickleBase64ToDisplay(wire)
+    if (isCustomView(view)) {
+      throw new Error('custom view requires meFormatViewValueAsync')
+    }
+    return wire
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e)
+    return `${BYTES_DECODE_ERR}\n${detail}\n${wire}`
   }
-  return wire
 }
 
 /** wire → 展示（含 custom）；RedisValue refreshKey、FieldSet */
@@ -433,9 +440,24 @@ export function meToBase64(bytes: string, encoding: string): string {
   return 'Unknown encoding: ' + encoding
 }
 
+/** atob 失败时返回 null（非法字符/填充），供展示层降级，禁止在渲染路径抛错 */
+function tryAtob(base64: string): string | null {
+  if (!base64) return ''
+  try {
+    // 去空白并补齐 padding，兼容偶发未填充的 wire
+    const compact = base64.replace(/\s+/g, '')
+    const pad = compact.length % 4
+    const padded = pad === 0 ? compact : pad === 1 ? compact : compact + '='.repeat(4 - pad)
+    return atob(padded)
+  } catch {
+    return null
+  }
+}
+
 function base64ToHex(base64: string): string {
   if (!base64) return ''
-  const binary = atob(base64)
+  const binary = tryAtob(base64)
+  if (binary === null) return `${BYTES_DECODE_ERR}\n${base64}`
   return Array.from(binary)
     .map(char => char.charCodeAt(0).toString(16).padStart(2, '0'))
     .join('')
@@ -443,7 +465,8 @@ function base64ToHex(base64: string): string {
 
 function base64ToBinary(base64: string): string {
   if (!base64) return ''
-  const binary = atob(base64)
+  const binary = tryAtob(base64)
+  if (binary === null) return `${BYTES_DECODE_ERR}\n${base64}`
   return Array.from(binary)
     .map(char => char.charCodeAt(0).toString(2).padStart(8, '0'))
     .join('')
@@ -490,7 +513,8 @@ function binaryToBase64(binary: string): string {
 }
 
 function base64ToUint8Array(base64: string): Uint8Array {
-  const binary = atob(base64)
+  const binary = tryAtob(base64)
+  if (binary === null) throw new Error('invalid base64')
   const bytes = new Uint8Array(binary.length)
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
   return bytes
