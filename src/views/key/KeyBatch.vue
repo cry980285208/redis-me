@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/** 批量删除/导出：查看受影响键时按 cursor 续扫至完成，支持暂停/继续/取消 */
 import { useVirtualList } from '@vueuse/core'
 import type { FormItemRule } from 'element-plus'
 import { cloneDeep } from 'lodash'
@@ -6,9 +7,9 @@ import { computed, inject, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { shareProvideKey } from '@/types/me-interface'
-import type { RedisKey_Deserialize } from '@/types/tauri-specta'
+import type { RedisKey_Deserialize, ScanCursor } from '@/types/tauri-specta'
 import { clearKeyTypeCacheForConn } from '@/utils/key-type-cache'
-import { meCommands, meOk } from '@/utils/util'
+import { meCommands, meOk, sleep } from '@/utils/util'
 
 /** 打开对话框时合并进表单的字段（与 initForm 一致） */
 type KeyBatchForm = {
@@ -28,12 +29,14 @@ const emit = defineEmits(['success', 'closed'])
 
 defineExpose({ open })
 function open(data: KeyBatchOpenData, mode: string = 'export') {
+  resetScanState()
   visible.value = true
   checkedKeys.value = (data.keyList?.length ?? 0) > 0
   showScan.value = !checkedKeys.value
   batchMode.value = mode
   Object.assign(form.value, cloneDeep(initForm))
   Object.assign(form.value, data)
+  if (checkedKeys.value) scanFinished.value = true
 }
 
 // 共享数据
@@ -55,15 +58,41 @@ const initForm: KeyBatchForm = {
 
 const form = ref<KeyBatchForm>(cloneDeep(initForm))
 
+/** 扫描：续扫至 finished；暂停保留列表与游标，取消则回到初始 */
+const scanning = ref(false)
+const scanPaused = ref(false)
+const scanCancelled = ref(false)
+const scanFinished = ref(false)
+const scanCursor = ref<ScanCursor | null>(null)
+
 watch(
   () => form.value.match,
   () => {
     if (!checkedKeys.value) {
-      showScan.value = true
-      form.value.keyList = []
+      void abortScanAndResetList()
     }
   },
 )
+
+function resetScanState() {
+  scanCancelled.value = true
+  scanPaused.value = false
+  scanFinished.value = false
+  scanCursor.value = null
+}
+
+async function abortScanAndResetList() {
+  scanCancelled.value = true
+  scanPaused.value = false
+  // 等当前一轮 scan 的 finally 把 scanning 置回 false
+  while (scanning.value) {
+    await sleep(20)
+  }
+  showScan.value = true
+  form.value.keyList = []
+  scanCursor.value = null
+  scanFinished.value = false
+}
 
 const rules = computed((): Record<string, FormItemRule[]> => {
   const rules: Record<string, FormItemRule[]> = {
@@ -100,23 +129,71 @@ function submit() {
   })
 }
 
-// 扫描受影响的键
+// 扫描受影响的键（可暂停/继续；确认仅在扫完后）
 const showScan = ref(true)
-async function scanKey() {
-  loading.value = true
-  try {
-    const params = { match: form.value.match, type: '', cursor: null, exact: false }
-    const data = await meCommands.scan(share.conn!.id, params)
-    form.value.keyList = data.keyList
+async function startOrResumeScan() {
+  if (!share.conn || scanning.value) return
+
+  // 全新开始
+  if (showScan.value) {
+    form.value.keyList = []
+    scanCursor.value = null
+    scanFinished.value = false
     showScan.value = false
-  } finally {
-    loading.value = false
   }
+
+  scanning.value = true
+  scanCancelled.value = false
+  scanPaused.value = false
+  try {
+    const count = (meTauri.settings.keyScanCount as number) || 1000
+    while (!scanCancelled.value && !scanPaused.value) {
+      const data = await meCommands.scan(share.conn.id, {
+        match: form.value.match,
+        type: '',
+        cursor: scanCursor.value,
+        exact: false,
+        count,
+      })
+      if (scanCancelled.value) break
+      form.value.keyList = form.value.keyList.concat(data.keyList)
+      scanCursor.value = data.cursor
+      if (data.cursor.finished) {
+        scanFinished.value = true
+        break
+      }
+    }
+  } catch {
+    // meCommands 已弹错；停在暂停态便于继续或取消
+    scanPaused.value = true
+  } finally {
+    scanning.value = false
+  }
+}
+
+function pauseScan() {
+  scanPaused.value = true
+}
+
+function cancelScan() {
+  void abortScanAndResetList()
+}
+
+function onDialogClosed() {
+  resetScanState()
+  emit('closed')
 }
 
 // 虚拟列表
 const items = computed(() => form.value.keyList)
 const { list, containerProps, wrapperProps } = useVirtualList(items, { itemHeight: 14 })
+
+const scanStatusText = computed(() => {
+  if (scanFinished.value) return t('keyBatch.scanDone')
+  if (scanning.value) return t('keyBatch.scanScanning')
+  if (scanPaused.value) return t('keyBatch.scanPaused')
+  return ''
+})
 
 // 批量删除和导出数据同时支持
 const isExport = computed(() => batchMode.value === 'export')
@@ -134,6 +211,14 @@ const confirmSizeBtn = computed(() => {
     : t('keyBatch.confirmDeleteSize', { count }, count)
 })
 const exportBtnEnabled = computed(() => (isExport.value ? !!form.value.file : true))
+/** 列表路径：扫完才可确认；多选打开时已是完整列表 */
+const listConfirmEnabled = computed(
+  () =>
+    scanFinished.value &&
+    form.value.keyList.length > 0 &&
+    exportBtnEnabled.value &&
+    !scanning.value,
+)
 
 // 导出文件名称添加服务器及版本（不同版本的redisdump命令可能不兼容，便于分析问题）
 const exportFilePrefix = computed(
@@ -155,12 +240,12 @@ const exportFormatTip = computed(() =>
 </script>
 
 <template>
-  <el-dialog :title v-model="visible" :width="600" @closed="emit('closed')" destroy-on-close>
+  <el-dialog :title v-model="visible" :width="600" @closed="onDialogClosed" destroy-on-close>
     <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
       <el-form-item :label="t('keyBatch.match')" prop="match" v-if="!checkedKeys">
         <!-- 此处保留可编辑，使用更加方便 -->
-        <el-input type="text" v-model="form.match" />
-        <el-checkbox v-model="form.deleteDirect" v-if="form.keyList.length === 0">{{
+        <el-input type="text" v-model="form.match" :disabled="scanning" />
+        <el-checkbox v-model="form.deleteDirect" v-if="form.keyList.length === 0 && !scanning">{{
           directTip
         }}</el-checkbox>
       </el-form-item>
@@ -197,6 +282,10 @@ const exportFormatTip = computed(() =>
             </div>
           </div>
         </div>
+        <el-text type="info" class="scan-progress-tip">
+          {{ t('keyBatch.scanProgress', { count: form.keyList.length }) }}
+          <template v-if="scanStatusText"> · {{ scanStatusText }}</template>
+        </el-text>
       </el-form-item>
     </el-form>
 
@@ -207,19 +296,33 @@ const exportFormatTip = computed(() =>
         :loading="loading"
         @click="submit"
         v-if="form.deleteDirect"
-        :disabled="!exportBtnEnabled"
+        :disabled="!exportBtnEnabled || scanning"
         >{{ confirmBtn }}</el-button
       >
       <template v-else>
-        <el-button type="primary" :loading="loading" @click="scanKey" v-if="showScan">{{
+        <!-- 尚未开始扫描 -->
+        <el-button type="primary" :loading="scanning" @click="startOrResumeScan" v-if="showScan">{{
           t('keyBatch.showImpactKeys')
         }}</el-button>
+        <!-- 扫描中：暂停 / 取消 -->
+        <template v-else-if="scanning">
+          <el-button @click="cancelScan">{{ t('keyBatch.cancelScan') }}</el-button>
+          <el-button type="warning" @click="pauseScan">{{ t('keyMain.pauseScan') }}</el-button>
+        </template>
+        <!-- 已暂停：继续 / 取消 -->
+        <template v-else-if="scanPaused && !scanFinished">
+          <el-button @click="cancelScan">{{ t('keyBatch.cancelScan') }}</el-button>
+          <el-button type="primary" @click="startOrResumeScan">{{
+            t('keyMain.resumeScan')
+          }}</el-button>
+        </template>
+        <!-- 扫完：确认 -->
         <el-button
+          v-else
           type="primary"
           :loading="loading"
           @click="submit"
-          v-else
-          :disabled="!(form.keyList.length > 0 && exportBtnEnabled)">
+          :disabled="!listConfirmEnabled">
           {{ confirmSizeBtn }}</el-button
         >
       </template>
@@ -241,5 +344,12 @@ const exportFormatTip = computed(() =>
   font-size: 12px;
   line-height: 1.5;
   white-space: pre-line;
+}
+
+.scan-progress-tip {
+  display: block;
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.5;
 }
 </style>

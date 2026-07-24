@@ -1,4 +1,4 @@
-/** 值/键视图格式与 wire(utf8/base64) 编解码；hex/msgpack/strjson/custom 在前端，custom 走 shell 脚本 */
+/** 值/键视图格式与 wire(utf8/base64) 编解码；auto/hex/msgpack/strjson/javaserial/pickle/custom 在前端，custom 走 shell 脚本 */
 
 import { decode, encode } from '@msgpack/msgpack'
 import { isTauri } from '@tauri-apps/api/core'
@@ -8,6 +8,8 @@ import JSON5 from 'json5'
 
 import i18n from '@/locales'
 import type { BytesFormat } from '@/types/tauri-specta'
+import { formatJavaSerDisplay, javaSerBase64ToValue } from '@/utils/javaserial'
+import { formatPickleDisplay, pickleBase64ToValue } from '@/utils/pickle'
 
 const t = i18n.global.t
 
@@ -246,14 +248,17 @@ export async function testCodec(
 /** 键重命名等基础字节视图；KeyRename、FieldAdd */
 export const BYTES_FORMAT = ['UTF8', 'Hex', 'Binary', 'Base64'] as const
 
-/** 前端值/键展示格式；RedisValue 数据编码下拉 */
+/** 前端值/键展示格式；RedisValue 数据编码下拉（auto 仅 STRING，拉取 base64 后前端识别） */
 export type ViewBytesFormat =
+  | 'auto'
   | 'utf8'
   | 'hex'
   | 'binary'
   | 'base64'
   | 'msgpack'
   | 'strjson'
+  | 'javaserial'
+  | 'pickle'
   | `custom:${string}`
 
 export const CUSTOM_FORMAT_PREFIX = 'custom:' as const
@@ -272,9 +277,21 @@ export function customFormatName(view: ViewBytesFormat): string | null {
   return isCustomView(view) ? view.slice(CUSTOM_FORMAT_PREFIX.length) : null
 }
 
-/** 仅整键 STRING 可选（MsgPack、StrJson、custom）；RedisValue 下拉过滤 */
+/** 仅整键 STRING 可选（Auto、MsgPack、StrJson、JavaSerial、Pickle、custom）；RedisValue 下拉过滤 */
 export function isStringOnlyView(view: ViewBytesFormat): boolean {
-  return view === 'msgpack' || view === 'strjson' || isCustomView(view)
+  return (
+    view === 'auto' ||
+    view === 'msgpack' ||
+    view === 'strjson' ||
+    view === 'javaserial' ||
+    view === 'pickle' ||
+    isCustomView(view)
+  )
+}
+
+/** 内置只读视图（不可写回）；RedisValue canSave */
+export function isReadonlyView(view: ViewBytesFormat): boolean {
+  return view === 'javaserial' || view === 'pickle'
 }
 
 function resolveCustomCodec(view: ViewBytesFormat): CustomCodec {
@@ -285,23 +302,32 @@ function resolveCustomCodec(view: ViewBytesFormat): CustomCodec {
   return codec
 }
 
-/** STRING 值详情下拉扩展项；RedisValue */
-export const EXT_FORMAT = ['StrJson', 'MsgPack'] as const
+/** STRING 值详情下拉扩展项（不含 Auto，Auto 单独置顶）；RedisValue */
+export const EXT_FORMAT = ['StrJson', 'MsgPack', 'JavaSerial', 'Pickle'] as const
 
 export const MSGPACK_DECODE_ERR = '⚠️ MsgPack Decode Error'
 export const STRJSON_DECODE_ERR = '⚠️ StrJson Decode Error'
+export const JAVASERIAL_DECODE_ERR = '⚠️ JavaSerial Decode Error'
+export const PICKLE_DECODE_ERR = '⚠️ Pickle Decode Error'
+export const BYTES_DECODE_ERR = '⚠️ Bytes Decode Error'
 
 /** 展示文本是否为内置解码失败；RedisValue、FieldSet 保存校验 */
 export function isViewDecodeError(text: string): boolean {
-  return text.startsWith(MSGPACK_DECODE_ERR) || text.startsWith(STRJSON_DECODE_ERR)
+  return (
+    text.startsWith(MSGPACK_DECODE_ERR) ||
+    text.startsWith(STRJSON_DECODE_ERR) ||
+    text.startsWith(JAVASERIAL_DECODE_ERR) ||
+    text.startsWith(PICKLE_DECODE_ERR) ||
+    text.startsWith(BYTES_DECODE_ERR)
+  )
 }
 
-/** 视图格式 → 后端 wire；RedisValue / FieldSet / FieldAdd 读写 Redis */
+/** 视图格式 → 后端 wire；RedisValue / FieldSet / FieldAdd 读写 Redis（auto → base64） */
 export function toWireFormat(view: ViewBytesFormat): BytesFormat {
   return view === 'utf8' || view === 'strjson' ? 'utf8' : 'base64'
 }
 
-/** 字段弹窗：MsgPack / custom 不适用，降级 utf8；RedisValue fieldScan */
+/** 字段弹窗：Auto / MsgPack / custom 等不适用，降级 utf8；RedisValue fieldScan */
 export function viewFmtForField(view: ViewBytesFormat): ViewBytesFormat {
   return isStringOnlyView(view) ? 'utf8' : view
 }
@@ -340,22 +366,29 @@ export function defaultFieldViewFmt(
   return options[0]!.value
 }
 
-/** 保存前需 JSON compact；FieldSet */
+/** 保存前需 JSON compact；FieldSet / RedisValue */
 export function needsJsonNormalize(view: ViewBytesFormat): boolean {
   return view === 'msgpack' || view === 'strjson'
 }
 
-/** wire → 编辑器/表格展示（同步）；RedisValue、FieldSet */
+/** wire → 编辑器/表格展示（同步）；RedisValue、FieldSet。解码失败返回错误文案，避免渲染抛错打挂 Vue */
 export function meFormatViewValue(wire: string, view: ViewBytesFormat): string {
   if (!wire || view === 'utf8') return wire
   if (view === 'base64') return wire
-  if (view === 'hex' || view === 'binary') return meFormatBytes(wire, view)
-  if (view === 'msgpack') return meMsgpackBase64ToJson(wire)
-  if (view === 'strjson') return meStrJsonWireToDisplay(wire)
-  if (isCustomView(view)) {
-    throw new Error('custom view requires meFormatViewValueAsync')
+  try {
+    if (view === 'hex' || view === 'binary') return meFormatBytes(wire, view)
+    if (view === 'msgpack') return meMsgpackBase64ToJson(wire)
+    if (view === 'strjson') return meStrJsonWireToDisplay(wire)
+    if (view === 'javaserial') return meJavaSerialBase64ToDisplay(wire)
+    if (view === 'pickle') return mePickleBase64ToDisplay(wire)
+    if (isCustomView(view)) {
+      throw new Error('custom view requires meFormatViewValueAsync')
+    }
+    return wire
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e)
+    return `${BYTES_DECODE_ERR}\n${detail}\n${wire}`
   }
-  return wire
 }
 
 /** wire → 展示（含 custom）；RedisValue refreshKey、FieldSet */
@@ -374,6 +407,8 @@ export function meViewToWire(text: string, view: ViewBytesFormat): string {
   if (view === 'hex' || view === 'binary') return meToBase64(text, view)
   if (view === 'msgpack') return meJsonToMsgpackBase64(text)
   if (view === 'strjson') return meDisplayToStrJsonWire(text)
+  if (view === 'javaserial') return meDisplayToJavaSerialBase64(text)
+  if (view === 'pickle') return meDisplayToPickleBase64(text)
   if (isCustomView(view)) {
     throw new Error('custom view requires meViewToWireAsync')
   }
@@ -405,9 +440,24 @@ export function meToBase64(bytes: string, encoding: string): string {
   return 'Unknown encoding: ' + encoding
 }
 
+/** atob 失败时返回 null（非法字符/填充），供展示层降级，禁止在渲染路径抛错 */
+function tryAtob(base64: string): string | null {
+  if (!base64) return ''
+  try {
+    // 去空白并补齐 padding，兼容偶发未填充的 wire
+    const compact = base64.replace(/\s+/g, '')
+    const pad = compact.length % 4
+    const padded = pad === 0 ? compact : pad === 1 ? compact : compact + '='.repeat(4 - pad)
+    return atob(padded)
+  } catch {
+    return null
+  }
+}
+
 function base64ToHex(base64: string): string {
   if (!base64) return ''
-  const binary = atob(base64)
+  const binary = tryAtob(base64)
+  if (binary === null) return `${BYTES_DECODE_ERR}\n${base64}`
   return Array.from(binary)
     .map(char => char.charCodeAt(0).toString(16).padStart(2, '0'))
     .join('')
@@ -415,7 +465,8 @@ function base64ToHex(base64: string): string {
 
 function base64ToBinary(base64: string): string {
   if (!base64) return ''
-  const binary = atob(base64)
+  const binary = tryAtob(base64)
+  if (binary === null) return `${BYTES_DECODE_ERR}\n${base64}`
   return Array.from(binary)
     .map(char => char.charCodeAt(0).toString(2).padStart(8, '0'))
     .join('')
@@ -462,7 +513,8 @@ function binaryToBase64(binary: string): string {
 }
 
 function base64ToUint8Array(base64: string): Uint8Array {
-  const binary = atob(base64)
+  const binary = tryAtob(base64)
+  if (binary === null) throw new Error('invalid base64')
   const bytes = new Uint8Array(binary.length)
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
   return bytes
@@ -510,6 +562,36 @@ export function meStrJsonWireToDisplay(wire: string): string {
 export function meDisplayToStrJsonWire(text: string): string {
   const value = JSON5.parse(text.trim())
   return JSON.stringify(JSON.stringify(value))
+}
+
+export function meJavaSerialBase64ToDisplay(base64: string): string {
+  if (!base64) return ''
+  try {
+    return formatJavaSerDisplay(javaSerBase64ToValue(base64))
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e)
+    return `${JAVASERIAL_DECODE_ERR}\n${detail}\n${base64}`
+  }
+}
+
+/** JavaSerial 只读（与 RedisInsight / AnotherRDM 一致），不支持写回 */
+export function meDisplayToJavaSerialBase64(_text: string): string {
+  throw new Error(t('util.javaSerialReadonly'))
+}
+
+export function mePickleBase64ToDisplay(base64: string): string {
+  if (!base64) return ''
+  try {
+    return formatPickleDisplay(pickleBase64ToValue(base64))
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e)
+    return `${PICKLE_DECODE_ERR}\n${detail}\n${base64}`
+  }
+}
+
+/** Pickle 只读（与 JavaSerial 一致），不支持写回 */
+export function meDisplayToPickleBase64(_text: string): string {
+  throw new Error(t('util.pickleReadonly'))
 }
 
 // #endregion

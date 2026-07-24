@@ -29,12 +29,12 @@ function toggleCmEditorFullscreen(el: HTMLElement) {
   void el.requestFullscreen().catch(() => {})
 }
 
-/** 自动换行默认关闭，Ctrl+L 切换 */
+/** 自动换行默认关闭，Mod+L 切换（Mac ⌘ / Win·Linux Ctrl） */
 const lineWrap = ref(false)
-/** 行号默认显示，Ctrl+N 切换 */
+/** 行号默认显示，Mod+N 切换 */
 const showLineNumbers = ref(true)
 
-/** 编辑器字号（px），Ctrl+= / Ctrl+- 调节，Ctrl+0 恢复默认 */
+/** 编辑器字号（px），Mod+= / Mod+- 调节，Mod+0 恢复默认 */
 const FONT_SIZE_DEFAULT = 15
 const FONT_SIZE_MIN = 10
 const FONT_SIZE_MAX = 28
@@ -55,35 +55,35 @@ const meCodePrecKeymap = Prec.highest(
       },
     },
     {
-      key: 'Ctrl-l',
+      key: 'Mod-l',
       run: () => {
         lineWrap.value = !lineWrap.value
         return true
       },
     },
     {
-      key: 'Ctrl-n',
+      key: 'Mod-n',
       run: () => {
         showLineNumbers.value = !showLineNumbers.value
         return true
       },
     },
     {
-      key: 'Ctrl-=',
+      key: 'Mod-=',
       run: () => {
         bumpFontSize(FONT_SIZE_STEP)
         return true
       },
     },
     {
-      key: 'Ctrl--',
+      key: 'Mod--',
       run: () => {
         bumpFontSize(-FONT_SIZE_STEP)
         return true
       },
     },
     {
-      key: 'Ctrl-0',
+      key: 'Mod-0',
       run: () => {
         fontSizePx.value = FONT_SIZE_DEFAULT
         return true
@@ -144,7 +144,7 @@ const extensions = computed(() => {
 
 <style scoped lang="scss">
 .codemirror-opacity {
-  opacity: 0.6;
+  opacity: 0.8;
 }
 
 .vue-codemirror {
@@ -192,6 +192,11 @@ html.dark .vue-codemirror {
   }
 
   /* JSON值在黑色模式下红色看着不舒服，因此改下 */
+  /* Json 的 null（默认 #708 过暗） */
+  :deep(.ͼb) {
+    color: #ae81ff;
+  }
+
   /* Json的字符串值 */
   :deep(.ͼe) {
     color: #e6db74;

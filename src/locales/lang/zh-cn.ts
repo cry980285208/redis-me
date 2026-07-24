@@ -69,7 +69,8 @@ export default {
     extLabelWidth: '100',
     keyScanCount: '键扫描',
     fieldScanCount: '字段扫描',
-    keyScanCountTip: '键列表每次 SCAN 加载的数量；过大可能影响性能。范围 {min}–{max} 个',
+    keyScanCountTip:
+      'Redis SCAN 的 COUNT（提示值），同时作为自动续扫累积条数阈值；过大单次更慢、过小往返更多。范围 {min}–{max} 个',
     fieldScanCountTip:
       'HSCAN/SSCAN/ZSCAN 每次 COUNT；同时作为前端自动续扫的累积条数阈值。范围 {min}~{max} 个',
     commandTimeout: '命令超时',
@@ -257,6 +258,7 @@ export default {
 
   customCodec: {
     title: '自定义编解码',
+    group: '自定义',
     docUrl: 'https://www.hepengju.com/zh/guide/usage/codec.html',
     docHelp: '帮助',
     docHelpTip: '查看官网自定义编解码示例',
@@ -276,6 +278,10 @@ export default {
 <b>失败时</b>：优先展示 stderr；退出码非 0 则提示执行失败`,
     commandPlaceholder: 'python C:\\path\\codec.py',
     add: '添加',
+    fromTemplate: '从模板添加',
+    template: { python: 'Python', node: 'Node', java: 'Java' },
+    templateExportOk: '模板脚本已保存',
+    templateExportErr: '保存模板脚本失败',
     edit: '编辑',
     testDecode: '测试解码',
     testEncode: '测试编码',
@@ -300,6 +306,7 @@ export default {
     timeout: '自定义编解码「{name}」执行超时（{sec}s）',
     duplicateName: '名称已存在',
     nameRequired: '请填写名称',
+    deleteConfirm: '确认删除自定义编解码「{name}」吗？',
   },
 
   meTable: {
@@ -333,6 +340,8 @@ export default {
     invalidHexCharacter: '无效的十六进制字符',
     invalidBinaryString: '无效的二进制字符串：长度不是 8 的倍数',
     invalidBinaryCharacter: '无效的二进制字符',
+    javaSerialReadonly: 'JavaSerial 目前仅支持查看，不支持保存写回',
+    pickleReadonly: 'Pickle 目前仅支持查看，不支持保存写回',
   },
 
   tabMain: {
@@ -435,6 +444,11 @@ export default {
     match: '键名表达式',
     impactKeys: '受影响的键名({count})',
     showImpactKeys: '查看受影响的键名',
+    scanProgress: '已扫描 {count} 个',
+    scanDone: '已完成',
+    scanScanning: '扫描中',
+    scanPaused: '已暂停',
+    cancelScan: '取消扫描',
 
     delete: '批量删除键',
     deleteDirect: '直接匹配删除',
@@ -826,6 +840,7 @@ export default {
     jsonView: 'JSON展示',
     tableView: '表格展示',
     noKeySelected: '未选择任何键',
+    keyGone: '键不存在或已过期',
     loadMore: '加载更多',
     loadAll: '加载剩余所有键',
     renameKey: '重命名键',
@@ -868,6 +883,7 @@ export default {
     valueTruncatedDismiss: '继续使用预览',
     valueTruncatedLoadAll: '仍要加载全部',
     viewCodec: '数据编码',
+    autoDetected: '自动识别的编码',
     commandHelp: '命令帮助',
     objectInfo: '对象自省',
     objectInfoCommand: '命令',
@@ -906,7 +922,7 @@ export default {
 <b>流</b><br/>
 • stream：编码为 listpack 的基数树<br/><br/>
 一旦执行的操作导致 Redis 无法保留节省空间的编码，所有特殊编码类型都会自动转换为通用类型`,
-    keyShortHint: '查看快捷键',
+    keyShortHint: 'CM快捷键',
     keyShort: {
       fullscreen: '全屏编辑器',
       toggleWrap: '切换自动换行',
@@ -1034,7 +1050,7 @@ export default {
     sentinel_not_supported: 'SSH 隧道暂不支持哨兵模式',
     cluster_not_supported: 'SSH 隧道暂不支持集群模式',
     cluster_db_switch_not_supported: '集群模式不支持切换 DB，请在连接配置中修改初始库后重连',
-    key_not_found: '键 "{key}" 不存在',
+    key_not_found: '"{key}" 键不存在',
     key_node_not_found: '未找到键 "{key}" 所在的节点',
     key_already_exists: '键 "{key}" 已存在',
     key_type_unsupported: '不支持的值类型: {value_type}',

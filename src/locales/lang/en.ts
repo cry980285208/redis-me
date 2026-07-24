@@ -75,7 +75,7 @@ export default {
     keyScanCount: 'Key Scan',
     fieldScanCount: 'Field Scan',
     keyScanCountTip:
-      'Number of keys loaded per SCAN; too large may affect performance. Range {min}–{max}',
+      'Redis SCAN COUNT hint; also the auto-load cumulative threshold. Too large slows each round; too small adds round-trips. Range {min}–{max}',
     fieldScanCountTip:
       'HSCAN/SSCAN/ZSCAN COUNT per request; also the cumulative threshold for frontend auto-load. Range {min}~{max}',
     commandTimeout: 'Cmd Timeout',
@@ -268,6 +268,7 @@ export default {
 
   customCodec: {
     title: 'Custom Codec',
+    group: 'Custom',
     docUrl: 'https://www.hepengju.com/guide/usage/codec.html',
     docHelp: 'Help',
     docHelpTip: 'View custom codec examples on the official site',
@@ -287,6 +288,10 @@ export default {
 <b>On failure</b>: stderr is shown first; non-zero exit code shows an exec error`,
     commandPlaceholder: 'python C:\\path\\codec.py',
     add: 'Add',
+    fromTemplate: 'From Template',
+    template: { python: 'Python', node: 'Node', java: 'Java' },
+    templateExportOk: 'Template script saved',
+    templateExportErr: 'Failed to save template script',
     edit: 'Edit',
     testDecode: 'Test Decode',
     testEncode: 'Test Encode',
@@ -311,6 +316,7 @@ export default {
     timeout: 'Custom codec "{name}" timed out ({sec}s)',
     duplicateName: 'Name already exists',
     nameRequired: 'Name is required',
+    deleteConfirm: 'Delete custom codec "{name}"?',
   },
 
   meTable: {
@@ -344,6 +350,8 @@ export default {
     invalidHexCharacter: 'Invalid hex character',
     invalidBinaryString: 'Invalid binary string: length not multiple of 8',
     invalidBinaryCharacter: 'Invalid binary character',
+    javaSerialReadonly: 'JavaSerial is view-only; saving back is not supported',
+    pickleReadonly: 'Pickle is view-only; saving back is not supported',
   },
 
   tabMain: {
@@ -446,6 +454,11 @@ export default {
     match: 'Key match expression',
     impactKeys: 'Impact Key ({count}) | Impact Keys ({count})',
     showImpactKeys: 'Show Impact Keys',
+    scanProgress: 'Scanned {count}',
+    scanDone: 'Done',
+    scanScanning: 'Scanning',
+    scanPaused: 'Paused',
+    cancelScan: 'Cancel Scan',
 
     delete: 'Batch Delete Keys',
     deleteDirect: 'Delete Direct',
@@ -840,6 +853,7 @@ export default {
     jsonView: 'JSON View',
     tableView: 'Table View',
     noKeySelected: 'No Key Selected',
+    keyGone: 'Key does not exist or has expired',
     loadMore: 'Load More',
     loadAll: 'Load All',
     renameKey: 'Rename Key',
@@ -882,6 +896,7 @@ export default {
     valueTruncatedDismiss: 'Keep Preview',
     valueTruncatedLoadAll: 'Load Full Value',
     viewCodec: 'Codec',
+    autoDetected: 'Auto-detected codec',
     commandHelp: 'Command Help',
     objectInfo: 'Object Introspection',
     objectInfoCommand: 'Command',
@@ -921,7 +936,7 @@ export default {
 <b>Streams</b><br/>
 • stream: a radix tree encoded as listpack<br/><br/>
 Once an operation prevents Redis from keeping the space-saving encoding, special encodings are automatically converted to the general type`,
-    keyShortHint: 'View KeyShort',
+    keyShortHint: 'CodeMirror Shortcuts',
     keyShort: {
       fullscreen: 'Fullscreen Editor',
       toggleWrap: 'Toggle Line Wrap',
@@ -1051,7 +1066,7 @@ Once an operation prevents Redis from keeping the space-saving encoding, special
     cluster_not_supported: 'SSH tunnel does not support cluster mode',
     cluster_db_switch_not_supported:
       'Cluster mode does not support switching DB; change the initial DB in connection settings and reconnect',
-    key_not_found: 'Key "{key}" not found',
+    key_not_found: '"{key}" not found',
     key_node_not_found: 'Node not found for key "{key}"',
     key_already_exists: 'Key "{key}" already exists',
     key_type_unsupported: 'Unsupported value type: {value_type}',

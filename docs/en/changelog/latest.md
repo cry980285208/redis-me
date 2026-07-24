@@ -1,5 +1,29 @@
 # 4.x Changelog
 
+## [v4.5.0](https://mp.weixin.qq.com/s/Dxg6XWnPT3jPmH2FS1VYrQ) (2026-07-25)
+
+### ✨ New Features
+
+- Value Tab codecs
+  - Added **JavaSerial** viewer
+  - Added **Pickle** viewer (Python)
+  - STRING type defaults to **Auto** magic-byte detection
+  - Built-in **custom codec templates** as reference implementations
+- Batch delete/export: key preview supports **pause/cancel and continued SCAN** to completion
+- Million-key full SCAN performance: COUNT / append / throttled tree build #141
+- Other details
+  - Spinning loading icon while refreshing a key
+  - CodeMirror shortcuts moved into the extended menu; shortcut dialog title added
+  - Brighter JSON `null` in dark mode
+  - Upgraded frontend/backend dependencies to latest
+
+### 🐞 Bug Fixes
+
+- Batch delete/export by pattern preview or direct match only scanned one round and could miss keys on large DBs
+- Refreshing after a key expired/was deleted no longer kept the stale value; clearer related copy
+- Mac editor/terminal shortcuts now align with `Cmd` (use Mod)
+- Correct view mode earlier when switching keys to avoid a brief JSON flash
+
 ## [v4.4.0](https://mp.weixin.qq.com/s/O9uHI9wMX_cSoh3jBOkxzg) (2026-07-18)
 
 ### ✨ New Features

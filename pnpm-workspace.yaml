@@ -1,9 +1,12 @@
+# 允许带 install 脚本的依赖执行构建（pnpm 默认拦截）
 allowBuilds:
+  # sass 文件监听（开发热更新）
   '@parcel/watcher': true
+  # vite-plus / vitepress / vitest 间接依赖的原生二进制
   esbuild: true
+  # vue-codemirror6 的 Vue2/3 兼容层（postinstall 切换入口）
   vue-demi: true
 
-overrides:
-  '@codemirror/language': ^6.12.4
-  '@codemirror/state': ^6.7.0
-  '@codemirror/view': ^6.43.4
+# Java 序列化：补丁支持 TC_CLASS / Externalizable（如 java.time）
+patchedDependencies:
+  java-object-serialization@0.1.2: patches/java-object-serialization@0.1.2.patch

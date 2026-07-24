@@ -2,13 +2,25 @@
 
 [RedisME](https://www.hepengju.com) supports custom serialization/deserialization via external scripts, so you can view and edit non–UTF-8 or application-specific payloads.
 
+> **Built-in JavaSerial / Pickle**: For STRING values, choose **JavaSerial** or **Pickle** in the codec dropdown.
+>
+> - **JavaSerial**: View JDK-serialized bytes as plain text (top-level `String`) or JSON (other objects). Same approach as RedisInsight (`java-object-serialization`), with extras for `java.time`, records, common collections, etc.
+> - **Pickle**: View Python `pickle` bytes (protocols 0–5) as plain text (top-level `str`) or JSON; common dict/list/set/bytes and objects with `$class` / `$type` are supported.
+>
+> Both are **view-only**. To write back, use the custom scripts below with a local `java` / `python`.
+
 ## Entry and setup
 
 1. Open the value detail view
-2. Click the **edit** icon next to the **codec** dropdown to open the **Custom Codec** dialog
-3. Add an entry:
-   - **Name** — shown in the dropdown
+2. Click the **edit** icon in the **codec** dropdown header to open the **Custom Codec** dialog
+3. Add an entry (either way):
+   - **From Template**: pick Python / Node / Java, export the script to disk, then name and command are filled in
+   - **Add**: enter name and command manually
+4. Fields:
+   - **Name** — shown under the **Custom** group in the dropdown
    - **Command** — full executable command including the interpreter (see below)
+
+Built-in templates already split out `decode` / `encode`; leave the protocol boilerplate alone and put your logic in those two methods (Hex sample by default).
 
 ![](../../../public/images/codec/main.png)
 
@@ -47,7 +59,7 @@ Notes:
 ```
 python C:\path\to\codec.py
 node /path/to/codec.js
-java C:\path\to\codec.java
+java C:\path\to\Codec.java
 ```
 
 ::: tip stdout encoding
@@ -57,7 +69,7 @@ The app reads stdout as **UTF-8**. On Windows, Python scripts should call `sys.s
 ## Workflow
 
 1. Configure and save your custom codec entry
-2. Select it from the **codec** dropdown
+2. Select it from the **Custom** group in the **codec** dropdown
 3. The value area shows decoded text; edit and click **Save**
 4. Use **Test Decode / Test Encode** in the dialog to verify your script:
    - Default wire Base64 sample is `aGVsbG8=` (bytes `hello`)
@@ -70,34 +82,63 @@ The app reads stdout as **UTF-8**. On Windows, Python scripts should call `sys.s
 
 ## Sample: Python (Hex view/edit for binary)
 
-Raw Redis bytes are shown as **lowercase hex** in the editor; on save, hex is parsed back to bytes.
+Same as **From Template → Python** in the app. Raw Redis bytes are shown as **lowercase hex** in the editor; on save, hex is parsed back to bytes. For your own format, only change `decode` / `encode`.
 
 ```python
+#!/usr/bin/env python3
+"""
+RedisME custom codec template
+Leave the protocol boilerplate alone; only change decode / encode below.
+"""
 import sys
 import base64
 import binascii
 
-# Windows pipe output may default to GBK; RedisME reads stdout as UTF-8
-if hasattr(sys.stdout, 'reconfigure'):
-    sys.stdout.reconfigure(encoding='utf-8')
-    sys.stderr.reconfigure(encoding='utf-8')
+# ---------------------------------------------------------------------------
+# TODO: implement your codec (Hex sample below — use as-is or replace)
+# ---------------------------------------------------------------------------
 
-mode = sys.argv[1]
-if len(sys.argv) > 2 and sys.argv[2] == '--stdin':
-    b64 = sys.stdin.readline().strip()
-else:
-    b64 = sys.argv[2]
-try:
-    if mode == 'decode':
-        print(binascii.hexlify(base64.b64decode(b64)).decode('ascii'))
-    elif mode == 'encode':
-        hex_str = base64.b64decode(b64).decode('utf-8').strip()
-        print(base64.b64encode(binascii.unhexlify(hex_str)).decode('ascii'))
-    else:
-        raise ValueError(f'unknown mode: {mode}')
-except (binascii.Error, ValueError) as e:
-    print(str(e), file=sys.stderr)
-    sys.exit(1)
+def decode(raw: bytes) -> str:
+    """Redis raw bytes → editor text."""
+    return binascii.hexlify(raw).decode('ascii')  # sample: lowercase hex
+
+
+def encode(text: str) -> bytes:
+    """Editor text → Redis raw bytes."""
+    return binascii.unhexlify(text.strip())  # sample: parse hex
+
+
+# ---------------------------------------------------------------------------
+# Protocol boilerplate — usually leave as-is
+# ---------------------------------------------------------------------------
+
+def main() -> None:
+    # Windows pipes may default to GBK; RedisME reads stdout as UTF-8
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+
+    if len(sys.argv) < 3:
+        sys.exit('usage: codec.py <decode|encode> <base64|--stdin>')
+
+    mode, arg = sys.argv[1], sys.argv[2]
+    b64 = sys.stdin.readline().strip() if arg == '--stdin' else arg
+    raw = base64.b64decode(b64)
+
+    try:
+        if mode == 'decode':
+            sys.stdout.write(decode(raw))
+        elif mode == 'encode':
+            sys.stdout.write(base64.b64encode(encode(raw.decode('utf-8'))).decode('ascii'))
+        else:
+            raise ValueError(f'unknown mode: {mode}')
+    except Exception as e:
+        print(e, file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == '__main__':
+    main()
 ```
 
 Command example:
@@ -108,59 +149,68 @@ C:\path\to\python.exe C:\path\to\codec.py
 
 ## Sample: Node.js (Hex view/edit for binary)
 
+Same as **From Template → Node** in the app.
+
 ```javascript
 #!/usr/bin/env node
-/** wire base64 ↔ hex text (same protocol as codec.py) */
+/**
+ * RedisME custom codec template
+ * Leave the protocol boilerplate alone; only change decode / encode below.
+ */
+
+// ---------------------------------------------------------------------------
+// TODO: implement your codec (Hex sample below — use as-is or replace)
+// ---------------------------------------------------------------------------
+
+/** Redis raw bytes → editor text */
+function decode(raw) {
+  return raw.toString('hex') // sample: lowercase hex
+}
+
+/** Editor text → Redis raw bytes */
+function encode(text) {
+  return Buffer.from(text.trim(), 'hex') // sample: parse hex
+}
+
+// ---------------------------------------------------------------------------
+// Protocol boilerplate — usually leave as-is
+// ---------------------------------------------------------------------------
+
 const mode = process.argv[2]
 const arg = process.argv[3]
 
-function run(b64) {
-  try {
-    if (mode === 'decode') {
-      process.stdout.write(Buffer.from(b64, 'base64').toString('hex'))
-    } else if (mode === 'encode') {
-      const hex = Buffer.from(b64, 'base64').toString('utf8').trim()
-      process.stdout.write(Buffer.from(hex, 'hex').toString('base64'))
-    } else {
-      throw new Error(`unknown mode: ${mode}`)
-    }
-    process.exit(0) // app does not close stdin after write; exit explicitly
-  } catch (e) {
-    process.stderr.write(String(e) + '\n')
-    process.exit(1)
+async function readB64() {
+  if (arg !== '--stdin') {
+    if (!mode || !arg) throw new Error('usage: codec.js <decode|encode> <base64|--stdin>')
+    return arg
+  }
+  // App writes one line and does not close stdin — return on first newline (do not wait for EOF)
+  let data = ''
+  for await (const chunk of process.stdin) {
+    data += chunk
+    const nl = data.search(/\r?\n/)
+    if (nl >= 0) return data.slice(0, nl).trim()
+  }
+  return data.trim()
+}
+
+async function main() {
+  const raw = Buffer.from(await readB64(), 'base64')
+  if (mode === 'decode') {
+    process.stdout.write(decode(raw))
+  } else if (mode === 'encode') {
+    process.stdout.write(encode(raw.toString('utf8')).toString('base64'))
+  } else {
+    throw new Error(`unknown mode: ${mode}`)
   }
 }
 
-function readB64FromStdin() {
-  return new Promise((resolve, reject) => {
-    let buf = ''
-    process.stdin.setEncoding('utf8')
-    process.stdin.on('data', chunk => {
-      buf += chunk
-      const nl = buf.search(/\r?\n/)
-      if (nl >= 0) {
-        process.stdin.pause()
-        resolve(buf.slice(0, nl).trim())
-      }
-    })
-    process.stdin.on('error', reject)
-    process.stdin.resume()
+main()
+  .then(() => process.exit(0)) // app does not close stdin after write; exit explicitly
+  .catch(e => {
+    process.stderr.write(String(e) + '\n')
+    process.exit(1)
   })
-}
-
-if (arg === '--stdin') {
-  readB64FromStdin()
-    .then(run)
-    .catch(e => {
-      process.stderr.write(String(e) + '\n')
-      process.exit(1)
-    })
-} else if (arg) {
-  run(arg)
-} else {
-  process.stderr.write('usage: codec.js <decode|encode> <base64|--stdin>\n')
-  process.exit(1)
-}
 ```
 
 Command example:
@@ -171,18 +221,59 @@ node C:\path\to\codec.js
 
 ## Sample: Java (Hex view/edit for binary)
 
-Requires **JDK 11+**; you can run the single source file directly (no `javac` step). `args[0]` is the mode; `args[1]` is Base64 or `--stdin`.
+Same as **From Template → Java** in the app. Requires **JDK 11+**; run the single source file directly (no `javac`). Class and file names are `Codec` / `Codec.java`.
 
 ```java
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.Scanner;
 
-/** wire base64 ↔ hex text (same protocol as codec.py) */
-public class codec {
+/**
+ * RedisME custom codec template (JDK 11+: java Codec.java)
+ * File must be named Codec.java; leave the protocol boilerplate alone,
+ * only change decode / encode below.
+ */
+public class Codec {
+
+    // -----------------------------------------------------------------------
+    // TODO: implement your codec (Hex sample below — use as-is or replace)
+    // -----------------------------------------------------------------------
+
+    /** Redis raw bytes → editor text */
+    private static String decode(byte[] raw) {
+        return toHex(raw); // sample: lowercase hex
+    }
+
+    /** Editor text → Redis raw bytes */
+    private static byte[] encode(String text) {
+        return fromHex(text.trim()); // sample: parse hex
+    }
+
+    private static String toHex(byte[] bytes) {
+        StringBuilder sb = new StringBuilder(bytes.length * 2);
+        for (byte b : bytes) sb.append(String.format("%02x", b));
+        return sb.toString();
+    }
+
+    private static byte[] fromHex(String hex) {
+        if (hex.length() % 2 != 0) throw new IllegalArgumentException("invalid hex length");
+        byte[] out = new byte[hex.length() / 2];
+        for (int i = 0; i < hex.length(); i += 2) {
+            int hi = Character.digit(hex.charAt(i), 16);
+            int lo = Character.digit(hex.charAt(i + 1), 16);
+            if (hi < 0 || lo < 0) throw new IllegalArgumentException("invalid hex character");
+            out[i / 2] = (byte) ((hi << 4) + lo);
+        }
+        return out;
+    }
+
+    // -----------------------------------------------------------------------
+    // Protocol boilerplate — usually leave as-is
+    // -----------------------------------------------------------------------
+
     public static void main(String[] args) {
         if (args.length < 2) {
-            System.err.println("usage: codec <decode|encode> <base64|--stdin>");
+            System.err.println("usage: Codec <decode|encode> <base64|--stdin>");
             System.exit(1);
         }
         String mode = args[0];
@@ -190,11 +281,12 @@ public class codec {
             ? new Scanner(System.in).nextLine().trim()
             : args[1];
         try {
+            byte[] raw = Base64.getDecoder().decode(b64);
             if ("decode".equals(mode)) {
-                System.out.print(toHex(Base64.getDecoder().decode(b64)));
+                System.out.print(decode(raw));
             } else if ("encode".equals(mode)) {
-                String hex = new String(Base64.getDecoder().decode(b64), StandardCharsets.UTF_8).trim();
-                System.out.print(Base64.getEncoder().encodeToString(fromHex(hex)));
+                System.out.print(Base64.getEncoder().encodeToString(
+                    encode(new String(raw, StandardCharsets.UTF_8))));
             } else {
                 throw new IllegalArgumentException("unknown mode: " + mode);
             }
@@ -203,50 +295,26 @@ public class codec {
             System.exit(1);
         }
     }
-
-    private static String toHex(byte[] bytes) {
-        StringBuilder sb = new StringBuilder(bytes.length * 2);
-        for (byte b : bytes) {
-            sb.append(String.format("%02x", b));
-        }
-        return sb.toString();
-    }
-
-    private static byte[] fromHex(String hex) {
-        if (hex.length() % 2 != 0) {
-            throw new IllegalArgumentException("invalid hex length");
-        }
-        byte[] out = new byte[hex.length() / 2];
-        for (int i = 0; i < hex.length(); i += 2) {
-            int hi = Character.digit(hex.charAt(i), 16);
-            int lo = Character.digit(hex.charAt(i + 1), 16);
-            if (hi < 0 || lo < 0) {
-                throw new IllegalArgumentException("invalid hex character");
-            }
-            out[i / 2] = (byte) ((hi << 4) + lo);
-        }
-        return out;
-    }
 }
 ```
 
-Command example (**use the absolute path** to the source file — do not use `java codec.java`; if the working directory is wrong, the JVM may print GBK errors to stdout and the app reports `invalid utf-8 sequence`):
+Command example (**use the absolute path** to the source file — do not use `java Codec.java`; if the working directory is wrong, the JVM may print GBK errors to stdout and the app reports `invalid utf-8 sequence`):
 
 ```
-java C:\Users\he_pe\redis\custom\codec.java
+java C:\Users\he_pe\redis\custom\Codec.java
 ```
 
 If `java` is not on PATH, use the full JDK path, for example:
 
 ```
-"C:\Program Files\Java\jdk-21\bin\java.exe" C:\Users\he_pe\redis\custom\codec.java
+"C:\Program Files\Java\jdk-21\bin\java.exe" C:\Users\he_pe\redis\custom\Codec.java
 ```
 
 ## Troubleshooting
 
 | Symptom                  | Likely cause                                                                                                                                             |
 | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `invalid utf-8 sequence` | Script stdout is not UTF-8 (e.g. Chinese output on Windows); for Java: often a **relative** `codec.java` path — file not found, JVM prints GBK to stdout |
+| `invalid utf-8 sequence` | Script stdout is not UTF-8 (e.g. Chinese output on Windows); for Java: often a **relative** `Codec.java` path — file not found, JVM prints GBK to stdout |
 | python / java not found  | Interpreter not on PATH — use the **full path**                                                                                                          |
 | Empty decode             | Script did not write to stdout on decode, or exit code is non-zero                                                                                       |
 | encode hex errors        | Editor text has non-hex characters or odd length                                                                                                         |

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * 键值详情页：fieldScan 拉取 → JSON 编辑器 / 表格展示 → set / field* 写回。
- * 数据流：bytesFormat 触发 refreshKey → syncDisplaySnapshot → showValue / dataList 渲染。
+ * 数据流：bytesFormat 触发 refreshKey → syncDisplaySnapshot（Auto 时识别）→ showValue / dataList 渲染。
  */
 // #region 导入
 import dayjs from 'dayjs'
@@ -30,6 +30,12 @@ import type {
   RedisZsetRankResult,
   ScanCursor,
 } from '@/types/tauri-specta'
+import {
+  base64ToUtf8Text,
+  detectViewFormat,
+  detectedViewLabel,
+  type DetectedViewFormat,
+} from '@/utils/detect-view-format'
 import { useFavorites, addFavorite, removeFavorite, isFavorited } from '@/utils/favorite'
 import {
   BYTES_FORMAT,
@@ -37,16 +43,19 @@ import {
   customFormatName,
   customFormatValue,
   isCustomView,
+  isReadonlyView,
   isStringOnlyView,
   isViewDecodeError,
   meFormatViewValue,
   meFormatViewValueAsync,
   meViewToWire,
   meViewToWireAsync,
+  needsJsonNormalize,
   toWireFormat,
   viewFmtForField,
   type ViewBytesFormat,
 } from '@/utils/format'
+import { resolveKeyType } from '@/utils/key-type-cache'
 import {
   buildScanPattern,
   buildLocalFilterPattern,
@@ -148,7 +157,7 @@ const scanToggleTip = computed(() =>
   loading.value ? t('keyMain.pauseScan') : t('keyMain.resumeScan'),
 )
 const FIELD_SCAN_FETCH_COUNT = computed(() => meTauri.settings.fieldScanCount as number)
-/** 进度环估算：与 settings.fieldScanCount 一致，不用键扫描的 scan_0_batch_count */
+/** 进度环估算：与 settings.fieldScanCount 一致 */
 const scanBatchSize = computed(() => FIELD_SCAN_FETCH_COUNT.value)
 const scanProgress = computed(() =>
   computeScanProgress(
@@ -247,12 +256,6 @@ const zsetType = computed(() => 'zset' === redisValue.value?.type)
 /** 服务端支持 HTTL 时，可选是否在 fieldScan 中拉取 Hash 字段 TTL */
 const scanHashFieldTtl = ref(false)
 const showHashFieldTtlOption = computed(() => hashType.value && share.capabilities.httlSupported)
-const canSave = computed(
-  () =>
-    canEdit.value &&
-    (stringType.value || jsonType.value) &&
-    !(valueTruncated.value && !forceFullValue.value),
-)
 // #endregion
 
 // #region 视图模式：JSON 编辑器 / 表格
@@ -304,14 +307,14 @@ function supportsFieldRowRefresh(type: string | undefined) {
   return type === 'hash' || type === 'list' || type === 'zset'
 }
 
-/** 切换键或 reset 时，按 settings.fieldShow 决定默认视图 */
-function applyDefaultViewType() {
-  const rv = redisValue.value
-  if (!rv || stringType.value || jsonType.value) {
+/** 切换键或 reset 时，按 settings.fieldShow 决定默认视图（可传入刚拿到的 type，避免等 finally） */
+function applyDefaultViewType(type?: string) {
+  const keyType = type ?? redisValue.value?.type
+  if (!keyType || keyType === 'string' || keyType === 'json') {
     viewType.value = 'json'
     return
   }
-  if (!supportsTableView(rv.type)) {
+  if (!supportsTableView(keyType)) {
     viewType.value = 'json'
     return
   }
@@ -321,6 +324,12 @@ function applyDefaultViewType() {
   }
   // auto：默认表格，手动切换后沿用 fieldShowView（跨连接/键）
   viewType.value = meTauri.settings.fieldShowView === 'json' ? 'json' : 'table'
+}
+
+/** 写入 fieldScan 结果；换键时同步校正 viewType，避免先闪 JSON 再切表格 */
+function commitFieldScanReplace(data: FieldScanResult, resetView: boolean) {
+  redisValue.value = toViewState(data)
+  if (resetView) applyDefaultViewType(data.type)
 }
 
 /** 自动模式下记录 segmented 手动切换，写入 settings 持久化 */
@@ -340,12 +349,46 @@ watchEffect(() => {
 // #endregion
 
 // #region 字节格式与展示快照（wire ↔ 视图文本）
-/** 下拉选中项，变更时触发 fieldScan */
-const bytesFormat = ref<ViewBytesFormat>('utf8')
+/** 下拉选中项，变更时触发 fieldScan；STRING 默认 Auto */
+const bytesFormat = ref<ViewBytesFormat>('auto')
+/**
+ * 换键待探测标记（KEY_REFRESH 置位）。
+ * 真正开跑时领取到本次局部变量，避免被上一次 finally 清掉。
+ */
+const pendingAutoDetect = ref(false)
+/** 本次 refresh 是否按 base64 探测包拉取（领取后置位，首包结束后关闭） */
+const probingAutoDetect = ref(false)
+/** Auto 识别结果（左侧标签）；非 Auto 时不展示 */
+const detectedView = ref<DetectedViewFormat>('utf8')
+/** Auto 时为识别结果，否则等于 bytesFormat；驱动展示 / 保存 / 只读 */
+const effectiveViewFormat = computed<ViewBytesFormat>(() =>
+  bytesFormat.value === 'auto' ? detectedView.value : bytesFormat.value,
+)
+const detectedViewText = computed(() =>
+  bytesFormat.value === 'auto' && stringType.value ? detectedViewLabel(detectedView.value) : '',
+)
+
+/** 仅编码变化时写入下拉，相同则保持不动 */
+function commitBytesFormat(next: ViewBytesFormat) {
+  if (bytesFormat.value !== next) bytesFormat.value = next
+}
+
+/** 仅探测结果变化时写入左侧标签，相同则保持不动 */
+function commitDetectedView(next: DetectedViewFormat) {
+  if (detectedView.value !== next) detectedView.value = next
+}
+const canSave = computed(
+  () =>
+    canEdit.value &&
+    (stringType.value || jsonType.value) &&
+    !isReadonlyView(effectiveViewFormat.value) &&
+    !(valueTruncated.value && !forceFullValue.value),
+)
 /**
  * 展示层快照（防切换编码闪烁）：
  * - displayBytesFormat + displayWire：fieldScan 完成后才更新，供编辑器渲染
  * - resolvedWireView：custom 异步 decode 结果（仅 custom 时使用）
+ * - Auto 时 displayBytesFormat 为识别结果，displayWire 对 utf8/strjson 已转为文本
  */
 const displayBytesFormat = ref<ViewBytesFormat>('utf8')
 const displayWire = ref('')
@@ -356,7 +399,9 @@ const resolvedWireView = ref('')
 const customCodecFailed = ref(false)
 
 const formatOptions = computed(() => {
+  // Auto 置顶，仅 STRING 可用
   const builtin = [
+    { label: 'Auto', value: 'auto' as ViewBytesFormat, disabled: !stringType.value },
     ...BYTES_FORMAT.map(item => ({
       label: item,
       value: item.toLowerCase() as ViewBytesFormat,
@@ -393,7 +438,7 @@ watch(
     if (!isCustomView(bytesFormat.value)) return
     const name = customFormatName(bytesFormat.value)
     if (!name || !list?.some(f => f.name === name)) {
-      bytesFormat.value = 'utf8'
+      bytesFormat.value = stringType.value ? 'auto' : 'utf8'
       void refreshKey(false)
     }
   },
@@ -402,7 +447,7 @@ watch(
 
 watch(stringType, isString => {
   if (!isString && isStringOnlyView(bytesFormat.value)) {
-    bytesFormat.value = 'utf8'
+    commitBytesFormat('utf8')
   }
 })
 
@@ -415,11 +460,35 @@ function syncDisplaySnapshot() {
   const rv = redisValue.value
   if (!rv || rv.value === null || rv.value === undefined) {
     displayWire.value = ''
-  } else if (streamType.value) {
-    displayWire.value = JSON.stringify(rv.value)
-  } else {
-    displayWire.value = String(rv.value)
+    if (bytesFormat.value === 'auto' && stringType.value) {
+      commitDetectedView('utf8')
+      displayBytesFormat.value = 'utf8'
+    } else {
+      displayBytesFormat.value = bytesFormat.value
+    }
+    return
   }
+  if (streamType.value) {
+    displayWire.value = JSON.stringify(rv.value)
+    displayBytesFormat.value = bytesFormat.value
+    return
+  }
+
+  const wire = String(rv.value)
+  // Auto：base64 wire 上识别；utf8/strjson 展示层改为文本，避免二次请求
+  if (bytesFormat.value === 'auto' && stringType.value) {
+    const nextDetected = detectViewFormat(wire)
+    commitDetectedView(nextDetected)
+    if (nextDetected === 'utf8' || nextDetected === 'strjson') {
+      displayWire.value = base64ToUtf8Text(wire) ?? ''
+    } else {
+      displayWire.value = wire
+    }
+    displayBytesFormat.value = nextDetected
+    return
+  }
+
+  displayWire.value = wire
   displayBytesFormat.value = bytesFormat.value
 }
 
@@ -444,10 +513,15 @@ async function refreshResolvedWireView() {
 }
 
 function stringWireDisplayText(wire: string): string {
-  if (stringType.value && isCustomView(displayBytesFormat.value)) {
-    return resolvedWireView.value
+  try {
+    if (stringType.value && isCustomView(displayBytesFormat.value)) {
+      return resolvedWireView.value
+    }
+    return meFormatViewValue(wire, displayBytesFormat.value)
+  } catch (e) {
+    // 表格单元格渲染兜底：任一解码异常不得打挂 Vue 更新
+    return e instanceof Error ? e.message : String(e)
   }
-  return meFormatViewValue(wire, displayBytesFormat.value)
 }
 
 function formatTableCell(raw: unknown): string {
@@ -599,7 +673,11 @@ function buildFieldScanParam() {
       valuePreviewBytes: VALUE_PREVIEW_BYTES.value,
       forceFullValue: forceFullValue.value,
     },
-    bytesFormat: toWireFormat(bytesFormat.value),
+    // 探测首包或 Auto：base64，便于魔数识别
+    bytesFormat:
+      probingAutoDetect.value || bytesFormat.value === 'auto'
+        ? 'base64'
+        : toWireFormat(bytesFormat.value),
     includeMeta,
     keyType: includeMeta ? null : (type ?? null),
     includeFieldTtl: scanHashFieldTtl.value,
@@ -654,21 +732,23 @@ function mergeFieldScanPage(
  */
 async function finalizeAfterFieldScan(reset: boolean, replaceData?: FieldScanResult) {
   if (replaceData) {
-    redisValue.value = toViewState(replaceData)
+    commitFieldScanReplace(replaceData, reset)
+  } else if (reset) {
+    // 换键路径若中途已 commit，这里再校正一次；失败清空时仍落到 json
+    applyDefaultViewType()
   }
   // 清空未保存编辑；fieldScan 结果即当前权威内容
   if (redisValue.value) {
     redisValue.value.newValue = null
   }
   suppressCodeUpdate.value = false
-  if (reset) applyDefaultViewType()
 
   // 键类型可能在 scan 后才确定，nextTick 等 computed 更新后再校正编码下拉
   await nextTick(() => {
     if (jsonType.value) {
-      bytesFormat.value = 'utf8'
+      commitBytesFormat('utf8')
     } else if (!stringType.value && isStringOnlyView(bytesFormat.value)) {
-      bytesFormat.value = 'utf8'
+      commitBytesFormat('utf8')
     }
   })
   // displayWire / displayBytesFormat 与 resolvedWireView 对齐，供 me-code 渲染
@@ -742,6 +822,10 @@ async function refreshKey(
     }
   }
 
+  // 等上一轮结束后再领取，避免被上一轮 finally 清掉后漏探测
+  let detectThisLoad = !useCursor && pendingAutoDetect.value
+  if (detectThisLoad) pendingAutoDetect.value = false
+
   fieldSetInit()
   suppressCodeUpdate.value = true
   scanLoadAll.value = loadAll
@@ -757,15 +841,57 @@ async function refreshKey(
   scanCancelled.value = false
   if (!useCursor) scanPaused.value = false
 
+  // base64 探测只服务 STRING Auto；已知 List/Hash 等则直接 utf8，避免双次 fieldScan
+  if (detectThisLoad && share.conn && share.redisKey) {
+    const knownType = await resolveKeyType(share.conn.id, share.conn.db, share.redisKey)
+    if (knownType && knownType !== 'STRING') {
+      commitBytesFormat('utf8')
+      detectThisLoad = false
+    }
+  }
+  probingAutoDetect.value = detectThisLoad
+
   try {
     if (!useCursor) scanBatchCount.value = 0
 
-    const first = await fieldScanCore(useCursor)
+    let first = await fieldScanCore(useCursor)
     if (first.replaceData) {
-      redisValue.value = toViewState(first.replaceData)
+      commitFieldScanReplace(first.replaceData, reset)
     }
 
-    const scanType = redisValue.value?.type
+    let scanType = redisValue.value?.type
+    // 换键探测：目标编码进中间量，与当前相同时不改下拉
+    if (detectThisLoad) {
+      const nextFormat: ViewBytesFormat = scanType === 'string' ? 'auto' : 'utf8'
+      commitBytesFormat(nextFormat)
+      // 首包探测结束；非 STRING 需按 utf8 重拉（类型缓存未命中时的兜底）
+      probingAutoDetect.value = false
+      if (nextFormat === 'utf8') {
+        cursor.value = null
+        scanBatchCount.value = 0
+        first = await fieldScanCore(false)
+        if (first.replaceData) {
+          commitFieldScanReplace(first.replaceData, reset)
+        }
+        scanType = redisValue.value?.type
+      }
+    } else if (
+      !useCursor &&
+      scanType &&
+      scanType !== 'string' &&
+      isStringOnlyView(bytesFormat.value)
+    ) {
+      // 手动停在 Auto 时打开了非 STRING（兜底）
+      commitBytesFormat('utf8')
+      cursor.value = null
+      scanBatchCount.value = 0
+      first = await fieldScanCore(false)
+      if (first.replaceData) {
+        commitFieldScanReplace(first.replaceData, reset)
+      }
+      scanType = redisValue.value?.type
+    }
+
     if (loadAll) {
       await fieldScanAll()
     } else if (shouldFieldScanAuto(scanType, fieldExact.value)) {
@@ -775,9 +901,42 @@ async function refreshKey(
     showMore.value = !cursor.value?.finished
     const rvDone = redisValue.value
     if (rvDone) await setTimer(rvDone.ttl)
+  } catch (e) {
+    // 整键刷新且键已不存在：清掉过期快照；续扫失败保留已加载页；其它错误也保留旧值
+    if (!useCursor && isAppErrorCode(e, 'key_not_found')) {
+      clearValueAfterKeyGone()
+    }
+    throw e
   } finally {
+    probingAutoDetect.value = false
+    if (!stringType.value && isStringOnlyView(bytesFormat.value)) {
+      commitBytesFormat('utf8')
+    }
     await finalizeAfterFieldScan(reset)
     if (cursor.value?.finished) scanPaused.value = false
+  }
+}
+
+/** Specta 抛出的应用错误 JSON（`{"code":"key_not_found",...}`） */
+function isAppErrorCode(e: unknown, code: string): boolean {
+  const raw = typeof e === 'string' ? e : e instanceof Error ? e.message : ''
+  if (!raw) return false
+  try {
+    const parsed = JSON.parse(raw) as { code?: unknown }
+    return parsed?.code === code
+  } catch {
+    return false
+  }
+}
+
+/** 键已删除/过期：与 KEY_DELETE 一致清空详情，避免仍显示旧 STRING/字节数 */
+function clearValueAfterKeyGone() {
+  redisValue.value = null
+  cursor.value = null
+  showMore.value = false
+  if (timer !== null) {
+    clearInterval(timer)
+    timer = null
   }
 }
 // #endregion
@@ -941,6 +1100,8 @@ async function onKeyMoreCommand(command: string) {
     void showLocation()
   } else if (command === 'commandHelp') {
     openCommandHelp()
+  } else if (command === 'keyShort') {
+    openKeyShortDialog()
   }
 }
 // #endregion
@@ -958,20 +1119,17 @@ async function setValue() {
         return
       }
       value = meJsonNormal(value)
-    } else if (
-      stringType.value &&
-      (bytesFormat.value === 'msgpack' || bytesFormat.value === 'strjson')
-    ) {
+    } else if (stringType.value && needsJsonNormalize(effectiveViewFormat.value)) {
       value = value === '' ? '' : meJsonNormal(value)
     }
-    if (stringType.value && isCustomView(bytesFormat.value)) {
-      value = await meViewToWireAsync(value, bytesFormat.value)
-    } else if (stringType.value && bytesFormat.value !== 'utf8') {
-      value = meViewToWire(value, bytesFormat.value)
+    if (stringType.value && isCustomView(effectiveViewFormat.value)) {
+      value = await meViewToWireAsync(value, effectiveViewFormat.value)
+    } else if (stringType.value && effectiveViewFormat.value !== 'utf8') {
+      value = meViewToWire(value, effectiveViewFormat.value)
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
-    if (stringType.value && isCustomView(bytesFormat.value)) {
+    if (stringType.value && isCustomView(effectiveViewFormat.value)) {
       setCustomCodecError(msg)
       rv.newValue = null
       valueEditorRemountKey.value++
@@ -986,7 +1144,7 @@ async function setValue() {
     value,
     ttl: rv.ttl,
     keyType: rv.type,
-    inputFormat: toWireFormat(bytesFormat.value),
+    inputFormat: toWireFormat(effectiveViewFormat.value),
   })
   meOk(t('saveOk'))
   await refreshKey()
@@ -1408,8 +1566,10 @@ function openCommandHelp() {
 // #region 事件总线与生命周期
 /** 选中键时加载值（KEY_REFRESH）；与 KeyMain F5 刷新键列表无关 */
 const onKeyRefreshBus = () => {
-  bytesFormat.value = 'utf8'
-  void refreshKey()
+  // 换键标记待探测；非 STRING 会在 refreshKey 内用类型缓存跳过 base64 首包
+  pendingAutoDetect.value = true
+  // restart：快速连点不同键时不丢弃后一次
+  void refreshKey(true, false, false, true)
 }
 
 onMounted(() => {
@@ -1506,6 +1666,9 @@ onUnmounted(() => {
                 </el-dropdown-item>
                 <el-dropdown-item command="commandHelp">
                   <me-icon icon="el-icon-help" :name="t('redisValue.commandHelp')" />
+                </el-dropdown-item>
+                <el-dropdown-item command="keyShort">
+                  <me-icon icon="me-icon-keyshort" :name="t('redisValue.keyShortHint')" />
                 </el-dropdown-item>
               </el-dropdown-menu>
             </template>
@@ -1918,19 +2081,10 @@ onUnmounted(() => {
             placement="top-start"
             :info="t('redisValue.refreshKey')"
             class="icon-btn"
+            :class="{ rotating: loading }"
             style="font-size: 18px; margin-left: 5px"
-            icon="el-icon-refresh-right"
-            :style="{ opacity: loading ? 0.5 : 1, cursor: loading ? 'wait' : 'pointer' }"
+            :icon="loading ? 'el-icon-loading' : 'el-icon-refresh-right'"
             @click="onFooterRefreshKey" />
-
-          <me-icon
-            v-if="viewType === 'json'"
-            class="icon-btn"
-            icon="me-icon-keyshort"
-            :info="t('redisValue.keyShortHint')"
-            placement="top-start"
-            @click="openKeyShortDialog"
-            style="margin-left: 5px; font-size: 20px" />
 
           <el-divider direction="vertical" v-if="textMemory" />
 
@@ -1949,10 +2103,17 @@ onUnmounted(() => {
         </div>
 
         <div class="me-flex" style="position: relative">
+          <!-- Auto 识别结果：下拉左侧，下拉本身保持 Auto -->
+          <el-text
+            v-if="detectedViewText"
+            class="bytes-format-auto-label"
+            style="margin-right: 8px; white-space: nowrap"
+            :title="t('redisValue.autoDetected')">
+            {{ detectedViewText }}
+          </el-text>
           <el-select
             v-model="bytesFormat"
-            :disabled="jsonType || streamType"
-            popper-class="bytes-format-select"
+            :disabled="jsonType || streamType || loading"
             style="width: 100px"
             @change="refreshKey(false)">
             <template #header>
@@ -1976,12 +2137,14 @@ onUnmounted(() => {
               :label="item.label"
               :value="item.value"
               :disabled="item.disabled" />
-            <el-option
-              v-for="(item, index) in formatOptions.custom"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value"
-              :disabled="item.disabled" />
+            <el-option-group v-if="formatOptions.custom.length" :label="t('customCodec.group')">
+              <el-option
+                v-for="item in formatOptions.custom"
+                :key="item.value"
+                :label="item.label"
+                :value="item.value"
+                :disabled="item.disabled" />
+            </el-option-group>
           </el-select>
           <!-- 加载更多、加载全部 -->
           <div class="me-flex" style="width: 45px; margin-left: 10px" v-if="showMore">
@@ -2038,8 +2201,12 @@ onUnmounted(() => {
       </div>
     </template>
 
-    <!-- 未选择键时Empty显示 -->
-    <el-empty v-else :description="t('redisValue.noKeySelected')"></el-empty>
+    <!-- 未选键 / 键已不存在（fieldScan key_not_found 清空后） -->
+    <el-empty
+      v-else
+      :description="
+        share.redisKey ? t('redisValue.keyGone') : t('redisValue.noKeySelected')
+      " />
 
     <!-- 更新TTL, 字段新增 -->
     <TTLSet ref="ttlSetRef" @success="setTimer" />
@@ -2297,6 +2464,24 @@ onUnmounted(() => {
   .value-footer {
     height: 30px;
     font-size: 20px;
+
+    @keyframes rotate {
+      from {
+        transform: rotate(0deg);
+      }
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .rotating {
+      animation: rotate 1s linear infinite;
+    }
+
+    .bytes-format-auto-label {
+      color: var(--el-color-primary);
+      font-weight: 600;
+    }
 
     :deep(.el-select__wrapper) {
       min-height: 0;

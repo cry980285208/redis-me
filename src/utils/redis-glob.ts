@@ -26,12 +26,6 @@ export function buildLocalFilterPattern(keyword: string, exact: boolean, match: 
   return match
 }
 
-/** 与后端 scan_0_batch_count 一致：pattern 去 * 后 ≤1 字符 COUNT=1000，否则 10000 */
-export function computeScanBatchSize(match: string): number {
-  const stripped = match.replace(/\*/g, '')
-  return stripped.length <= 1 ? 1000 : 10000
-}
-
 /** 扫描进度环：按批次估算，finished 时 100% */
 export function computeScanProgress(
   batchCount: number,

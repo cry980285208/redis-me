@@ -1,0 +1,48 @@
+diff --git a/lib/JavaObjectStream.js b/lib/JavaObjectStream.js
+index c24236450a30a43520ba7193eb6f7bdfe1f54a62..b8e1f0c0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0 100644
+--- a/lib/JavaObjectStream.js
++++ b/lib/JavaObjectStream.js
+@@ -179,7 +179,14 @@ class JavaObjectStream {
+         return this.readObject(type);
+     }
+     readNewClass() {
+-        throw new Error("unimplemented");
++        // RedisME patch: TC_CLASS (e.g. EnumMap.keyType / EnumSet elementType)
++        const classDesc = this.readClassDescWithType().object;
++        const newHandle = this.newHandle();
++        newHandle.object = {
++            $class: "java.lang.Class",
++            name: classDesc ? classDesc.className : null,
++        };
++        return newHandle;
+     }
+     readClassDesc(type) {
+         switch (type) {
+@@ -324,7 +331,26 @@ class JavaObjectStream {
+                 throw new Error("unimplemented");
+             }
+             if ((dataClassDesc.flags & ClassDescFlags.Externalizable) !== 0) {
+-                throw new Error("unimplemented");
++                // RedisME patch: allow RegisterObjectClass + readExternal (e.g. java.time.Ser)
++                const extClass = (0, ObjectClassMap_1.getObjectClass)(dataClassDesc.className, dataClassDesc.serialVersionUid);
++                if (!extClass || typeof extClass.prototype.readExternal !== "function") {
++                    throw new Error(`unimplemented Externalizable: ${dataClassDesc.className}`);
++                }
++                if (newObject instanceof JavaObject) {
++                    const tempObject = Object.create(null);
++                    extClass.prototype.readExternal.call(tempObject, new ObjectInputStream_1.ObjectInputStream(this, tempObject, []));
++                    for (const property in tempObject) {
++                        if (Object.prototype.hasOwnProperty.call(tempObject, property)) {
++                            newObject.fields.set(property, tempObject[property]);
++                        }
++                    }
++                    this.readAnnotations();
++                }
++                else {
++                    extClass.prototype.readExternal.call(newObject, new ObjectInputStream_1.ObjectInputStream(this, newObject, []));
++                    this.readAnnotations();
++                }
++                continue;
+             }
+             if ((dataClassDesc.flags & ClassDescFlags.Serializable) === 0) {
+                 throw new Error("expected the serializable flag to be set");

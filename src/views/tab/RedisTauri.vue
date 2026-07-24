@@ -84,6 +84,7 @@ const minimalScanParam: ScanParam = {
   type: null,
   cursor: emptyScanCursor,
   exact: false,
+  count: 1000,
 }
 
 const dummyKey: RedisKey_Deserialize = { key: 'k', bytes: '' }

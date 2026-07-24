@@ -300,18 +300,10 @@ api_model!(ScanParam {
 
     /// 完全匹配：true 时后端 EXISTS；false 时 SCAN
     exact: bool,
-});
 
-impl ScanParam {
-    pub fn all(pattern: String) -> Self {
-        ScanParam {
-            pattern,
-            scan_type: None,
-            cursor: None,
-            exact: false,
-        }
-    }
-}
+    /// Redis SCAN COUNT（来自前端 keyScanCount）；0 时后端兜底
+    count: u64,
+});
 
 // fieldScan 按类型的扩展参数：Stream 范围、STRING 大值预览阈值等
 api_model!(FiledScanMeta {

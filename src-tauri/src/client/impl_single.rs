@@ -110,7 +110,7 @@ impl MeClient for MeSingle {
         }
 
         let mut cc = param.cursor.unwrap_or_default();
-        let batch_count = scan_0_batch_count(&param.pattern);
+        let batch_count = scan_0_batch_count(param.count);
 
         // 只执行一次 SCAN，扫描次数和数据量判断完全由前端控制
         let cmd = scan_1_cmd(

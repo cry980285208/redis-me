@@ -166,6 +166,7 @@ const keyShortcuts = computed(() => getTerminalShortcuts(t))
       draggable
       :show-close="false"
       header-class="me-shortcut-dialog__header">
+      <div class="terminal-shortcut-title">{{ t('setting.shortcutTerminal') }}</div>
       <MeShortcut :items="keyShortcuts" />
     </el-dialog>
 
@@ -202,5 +203,13 @@ const keyShortcuts = computed(() => getTerminalShortcuts(t))
     z-index: 10;
     align-items: center;
   }
+}
+
+.terminal-shortcut-title {
+  margin-bottom: 20px;
+  font-size: 14px;
+  font-weight: bold;
+  color: var(--el-text-color-primary);
+  text-align: center;
 }
 </style>

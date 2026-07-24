@@ -1,18 +1,21 @@
 <script setup lang="ts">
 /** 自定义编解码 CRUD：由 RedisValue 编解码下拉头部编辑入口打开；列表顺序即下拉展示顺序 */
+import { writeTextFile } from '@tauri-apps/plugin-fs'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import type { TableInstance } from 'element-plus'
 import { Sortable, type SortableEvent } from 'sortablejs'
 import { computed, nextTick, onBeforeUnmount, reactive, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import { buildCodecCommandLine, CODEC_TEMPLATES, findCodecTemplate } from '@/utils/codec-templates'
+import { pickSavePath } from '@/utils/export'
 import {
   buildCodecCommand,
   parseCodecErrorDetail,
   testCodec,
   type CustomCodec,
 } from '@/utils/format'
-import { meErr, meErrHtml, meOk } from '@/utils/util'
+import { meConfirm, meErr, meErrHtml, meOk } from '@/utils/util'
 
 const visible = defineModel<boolean>({ default: false })
 
@@ -81,10 +84,10 @@ function readForm(): CustomCodec | null {
   return { name, command }
 }
 
-function openAdd() {
+function openAdd(name = '', command = '') {
   editIndex.value = -1
-  form.name = ''
-  form.command = ''
+  form.name = name
+  form.command = command
   formVisible.value = true
 }
 
@@ -95,8 +98,25 @@ function openEdit(row: CustomCodec, index: number) {
   formVisible.value = true
 }
 
-function removeAt(index: number) {
-  list.value.splice(index, 1)
+/** 从模板导出脚本到本机，再预填添加表单 */
+async function applyTemplate(id: string) {
+  const tpl = findCodecTemplate(id)
+  if (!tpl) return
+  const path = await pickSavePath(tpl.fileName, [tpl.ext], tpl.ext.toUpperCase())
+  if (!path) return
+  try {
+    await writeTextFile(path, tpl.source)
+    meOk(t('customCodec.templateExportOk'))
+    openAdd(tpl.defaultName, buildCodecCommandLine(tpl.interpreter, path))
+  } catch (e: unknown) {
+    meErr(e instanceof Error ? e : String(e), t('customCodec.templateExportErr'))
+  }
+}
+
+function removeAt(row: CustomCodec, index: number) {
+  meConfirm(t('customCodec.deleteConfirm', { name: row.name }), () => {
+    list.value.splice(index, 1)
+  })
 }
 
 function saveForm() {
@@ -160,32 +180,47 @@ function openCodecDoc() {
   <el-dialog
     v-model="visible"
     :title="t('customCodec.title')"
-    width="560px"
+    width="720px"
     append-to-body
     destroy-on-close
     draggable>
     <div class="toolbar me-flex">
-      <el-button link type="primary" icon="el-icon-question-filled" @click="openCodecDoc">
+      <el-button link icon="el-icon-question-filled" @click="openCodecDoc">
         {{ t('customCodec.docHelp') }}
       </el-button>
-      <el-button size="small" icon="el-icon-plus" @click="openAdd">
-        {{ t('customCodec.add') }}
-      </el-button>
+      <div class="toolbar-actions me-flex">
+        <el-dropdown trigger="click" @command="applyTemplate">
+          <el-button>
+            {{ t('customCodec.fromTemplate') }}
+            <me-icon icon="el-icon-arrow-down" style="margin-left: 4px" />
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item v-for="tpl in CODEC_TEMPLATES" :key="tpl.id" :command="tpl.id">
+                {{ t(`customCodec.template.${tpl.id}`) }}
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+        <el-button icon="el-icon-plus" @click="openAdd()">
+          {{ t('customCodec.add') }}
+        </el-button>
+      </div>
     </div>
 
-    <el-table ref="table" :data="list" row-key="name" empty-text="—" size="small">
-      <el-table-column label="#" type="index" width="44" align="center" class-name="drag-handle" />
+    <el-table ref="table" :data="list" row-key="name" border stripe>
+      <el-table-column label="#" type="index" width="50" align="center" class-name="drag-handle" />
       <el-table-column
         :label="t('customCodec.name')"
         prop="name"
         width="100"
         show-overflow-tooltip />
       <el-table-column :label="t('customCodec.command')" prop="command" show-overflow-tooltip />
-      <el-table-column width="100" align="center">
+      <el-table-column :label="t('action')" width="80" align="center">
         <template #default="{ row, $index }">
           <div class="row-actions">
             <el-button link type="primary" icon="el-icon-edit" @click="openEdit(row, $index)" />
-            <el-button link type="danger" icon="el-icon-delete" @click="removeAt($index)" />
+            <el-button link type="danger" icon="el-icon-delete" @click="removeAt(row, $index)" />
           </div>
         </template>
       </el-table-column>
@@ -195,7 +230,7 @@ function openCodecDoc() {
   <el-dialog
     v-model="formVisible"
     :title="editIndex >= 0 ? t('customCodec.edit') : t('customCodec.add')"
-    width="560px"
+    width="720px"
     append-to-body
     destroy-on-close
     draggable>
@@ -246,6 +281,11 @@ function openCodecDoc() {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 12px;
+}
+
+.toolbar-actions {
+  gap: 8px;
+  align-items: center;
 }
 
 /* 命令标签与必填星号、? 保持同一行 */

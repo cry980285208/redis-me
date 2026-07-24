@@ -103,7 +103,7 @@ impl MeClient for MeCluster {
         // Error: This command cannot be safely routed in cluster mode- ClientError
         // let keys: Vec<String> = conn.scan_options(opts)?.collect();
         let mut cc = param.cursor.unwrap_or_default();
-        let batch_count = scan_0_batch_count(&param.pattern);
+        let batch_count = scan_0_batch_count(param.count);
 
         let mut keys: Vec<Vec<u8>> = vec![];
 

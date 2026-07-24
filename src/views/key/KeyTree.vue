@@ -222,29 +222,41 @@ const rootTreeData = computed((): KeyBuildNode[] => {
   return treeData.value as KeyBuildNode[]
 })
 
-// 构建树：这个方法是由AI（豆包）生成的，非常不赖！ 但由BUG，还得亲自修复边界问题
+// 构建树：同层文件夹用 Map 查找，避免 find 线性扫描
 function buildTree(keyList: RedisKey_Deserialize[]) {
   const root: KeyBuildNode[] = []
+  /** 每层 children 数组 → label → 文件夹节点（不含叶子） */
+  const folderMaps = new WeakMap<KeyBuildNode[], Map<string, KeyBuildNode>>()
+
+  function folderMapOf(level: KeyBuildNode[]): Map<string, KeyBuildNode> {
+    let m = folderMaps.get(level)
+    if (!m) {
+      m = new Map()
+      folderMaps.set(level, m)
+    }
+    return m
+  }
+
   keyList.forEach(rk => {
     const parts = rk.key.split(/:+/)
     let nowLevel = root
     parts.forEach((part, index) => {
       // 叶子节点：hepengju 这种无分隔符的键直接作为叶子
       if (index === parts.length - 1) {
-        // 叶子节点显示简称（最后一段）, 保存原始值
         const label = part
         let node = { id: TREE_KEY_ID_PREFIX + rk.key, label, children: [], redisKey: rk }
         nowLevel.push(node)
         return
       }
 
-      // hepengju:
-      // hepengju:string
-      let node = nowLevel.find(item => item.label === part && item.redisKey === undefined) // 此处过滤去掉上面的叶子节点
+      // hepengju: / hepengju:string
+      const folders = folderMapOf(nowLevel)
+      let node = folders.get(part)
       if (!node) {
-        // 避免叶子节点的id与部分非叶子节点一致
+        // 避免叶子节点的 id 与部分非叶子节点一致
         node = { id: parts.slice(0, index + 1).join(':'), label: part, children: [] }
         nowLevel.push(node)
+        folders.set(part, node)
       }
       nowLevel = node.children
     })

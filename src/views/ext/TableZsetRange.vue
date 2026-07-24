@@ -82,10 +82,10 @@ defineExpose({ open })
         <div class="toolbar-left">
           <el-input-number v-model="count" :min="1" :max="10000" style="width: 120px" />
           <el-radio-group v-model="reverse">
-            <el-radio-button :label="false">
+            <el-radio-button :value="false">
               {{ t('redisValue.zsetRangeAsc') }}
             </el-radio-button>
-            <el-radio-button :label="true">
+            <el-radio-button :value="true">
               {{ t('redisValue.zsetRangeDesc') }}
             </el-radio-button>
           </el-radio-group>
