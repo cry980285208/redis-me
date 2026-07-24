@@ -1,7 +1,5 @@
 ## Future
 
-> 竞品对标详见 [plans/20260718_rdm-competitive-analysis.md](../../../plans/20260718_rdm-competitive-analysis.md)
-
 ### 可逐步完善（小点）
 
 按「单点可做、可验收」排，便于分批落地：
