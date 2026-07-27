@@ -29,7 +29,7 @@ pub fn app_dir() -> ApiResult<String> {
     }
 }
 
-/// 是否通过应用商店类渠道安装（内置更新应关闭）。具体判断在 `utils/app_store.rs`。
+/// 是否通过应用商店类渠道安装（内置更新应关闭）：Win MSIX / macOS MAS / Linux Flatpak·Snap。
 #[command]
 #[specta]
 pub fn is_app_store() -> bool {
