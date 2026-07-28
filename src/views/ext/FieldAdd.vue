@@ -6,7 +6,7 @@ import { useI18n } from 'vue-i18n'
 
 import { shareProvideKey } from '@/types/me-interface'
 import type { RedisFieldAdd_Deserialize, RedisKey_Deserialize } from '@/types/tauri-specta'
-import { BYTES_FORMAT, meViewToWire, toWireFormat, type ViewBytesFormat } from '@/utils/format'
+import { BYTES_FORMAT, IPC_WIRE_FORMAT, meViewToWire, type ViewBytesFormat } from '@/utils/format'
 import {
   KEY_TYPE_LIST,
   meCommands,
@@ -140,11 +140,11 @@ function submit() {
     try {
       const keyViewFmt = form.value.keyFmt as ViewBytesFormat
       const valViewFmt = form.value.valFmt as ViewBytesFormat
-      const keyWireFmt = toWireFormat(keyViewFmt)
-      const valWireFmt = toWireFormat(valViewFmt)
+      const isJson = form.value.type === 'json'
 
-      let value = form.value.type === 'json' ? meJsonNormal(form.value.value) : form.value.value
-      if (form.value.type === 'string' && valViewFmt !== 'utf8') {
+      let value = isJson ? meJsonNormal(form.value.value) : form.value.value
+      // STRING：编辑区 → base64 wire；JSON：保持文本（后端 from_str）
+      if (form.value.type === 'string') {
         value = meViewToWire(value, valViewFmt)
       }
 
@@ -157,8 +157,9 @@ function submit() {
         if (item.fieldTtl === null) item.fieldTtl = -1
       })
 
+      // 键名：无 bytes 时按 keyFmt 解析；统一提交 base64（JSON 类型键名同样）
       const key: RedisKey_Deserialize =
-        form.value.mode === 'key' && keyViewFmt !== 'utf8' && !form.value.key.bytes
+        form.value.mode === 'key' && !form.value.key.bytes
           ? { key: meViewToWire(form.value.key.key, keyViewFmt), bytes: '' }
           : form.value.key
 
@@ -168,8 +169,8 @@ function submit() {
         value,
         ttl: meTtlSeconds(form.value.ttl, ttlUnit.value),
         fieldValueList,
-        keyFmt: keyWireFmt,
-        valFmt: valWireFmt,
+        keyFmt: IPC_WIRE_FORMAT,
+        valFmt: isJson ? 'utf8' : IPC_WIRE_FORMAT,
       })
       visible.value = false
       emit('success', redisKey)

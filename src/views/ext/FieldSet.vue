@@ -11,18 +11,19 @@ import type {
   RedisFieldValue,
 } from '@/types/tauri-specta'
 import {
+  IPC_WIRE_FORMAT,
+  base64WireToUtf8Display,
   customFormatName,
   defaultFieldViewFmt,
   fieldViewOptions,
   isCustomView,
+  isReadonlyView,
   isViewDecodeError,
   meFormatViewValue,
   meFormatViewValueAsync,
   meViewToWire,
   meViewToWireAsync,
   needsJsonNormalize,
-  toWireFormat,
-  viewFmtForField,
   type ViewBytesFormat,
 } from '@/utils/format'
 import { meCommands, meCopy, meErr, meFormatDisplayValue, meJsonNormal, meOk } from '@/utils/util'
@@ -31,9 +32,9 @@ import { meCommands, meCopy, meErr, meFormatDisplayValue, meJsonNormal, meOk } f
 type FieldSetForm = RedisFieldSet_Deserialize & { type: string; wireFieldKey?: string }
 
 type FieldSetOpen = Partial<FieldSetForm> & {
-  /** fieldScan 返回的 wire 形态 */
+  /** fieldScan 返回的 wire 形态（恒 base64） */
   keyWireFmt?: BytesFormat
-  /** 键级数据编码，用于默认字段 view */
+  /** 键级展示编码，用于默认字段 view */
   keyViewFmt?: ViewBytesFormat
   /** Stream 条目 ID */
   streamId?: string
@@ -70,14 +71,13 @@ const initForm: FieldSetForm = {
   fieldScore: 0,
   fieldTtl: -1,
   includeFieldTtl: false,
-  valFmt: 'utf8',
+  valFmt: IPC_WIRE_FORMAT,
 }
 const form = ref<FieldSetForm>(cloneDeep(initForm))
 
-/** fieldScan 原始 wire，切换字段编码时始终以此为源 */
+/** fieldScan 原始 base64 wire，切换字段编码时始终以此为源 */
 const srcFieldWire = ref('')
-const keyWireFmt = ref<BytesFormat>('utf8')
-/** 键级 view 编码，field_get 与值页表格刷新一致 */
+/** 键级展示编码 */
 const keyViewFmt = ref<ViewBytesFormat>('utf8')
 const fieldViewFmt = ref<ViewBytesFormat>('utf8')
 const fieldPretty = ref(true)
@@ -85,12 +85,36 @@ const editorLoading = ref(false)
 const isRefreshing = ref(false)
 const decodeFailed = ref(false)
 const codeRemountKey = ref(0)
+/** syncFieldEditor 完成后的展示快照，用于脏检查 */
+const initialFieldDisplay = ref('')
 
 const customNames = computed(() => (window.meTauri.settings.customCodecs ?? []).map(f => f.name))
-const fieldViewOptionList = computed(() => fieldViewOptions(keyWireFmt.value, customNames.value))
+const fieldViewOptionList = computed(() => fieldViewOptions(customNames.value))
 const prettyEnabled = computed(
   () => fieldViewFmt.value === 'utf8' || fieldViewFmt.value === 'strjson',
 )
+/** JavaSerial / Pickle：不支持写回 → 按钮禁用 + tooltip（连接只读则整钮隐藏，见模板） */
+const isViewReadonlyFmt = computed(() => isReadonlyView(fieldViewFmt.value))
+const fieldDirty = computed(() => form.value.fieldValue !== initialFieldDisplay.value)
+const canSaveField = computed(
+  () =>
+    !readonly.value &&
+    !share.readonly &&
+    !isViewReadonlyFmt.value &&
+    !decodeFailed.value &&
+    fieldDirty.value,
+)
+/** 禁用原因提示；可保存时为普通「保存」 */
+const saveFieldTip = computed(() => {
+  if (isViewReadonlyFmt.value) {
+    return fieldViewFmt.value === 'pickle' ? t('util.pickleReadonly') : t('util.javaSerialReadonly')
+  }
+  if (decodeFailed.value) return t('util.saveDecodeFailed')
+  if (!fieldDirty.value) return t('util.saveNoChange')
+  return t('save')
+})
+/** 显示保存钮：连接只读 / 查看模式 → 隐藏 */
+const showSaveField = computed(() => !readonly.value && !share.readonly)
 /** hash/list/zset 支持 field_get 单行刷新 */
 const supportsFieldRefresh = computed(() => {
   const type = form.value.type
@@ -103,11 +127,13 @@ async function syncFieldEditor() {
   const fmt = fieldViewFmt.value
   if (!wire) {
     form.value.fieldValue = ''
+    initialFieldDisplay.value = ''
     decodeFailed.value = false
     return
   }
   if (!fieldPretty.value && fmt === 'strjson') {
-    form.value.fieldValue = wire
+    form.value.fieldValue = base64WireToUtf8Display(wire)
+    initialFieldDisplay.value = form.value.fieldValue
     decodeFailed.value = false
     return
   }
@@ -116,13 +142,18 @@ async function syncFieldEditor() {
     if (isCustomView(fmt)) {
       form.value.fieldValue = await meFormatViewValueAsync(wire, fmt)
     } else if (fmt === 'utf8') {
-      form.value.fieldValue = meFormatDisplayValue(wire, fieldPretty.value)
+      form.value.fieldValue = meFormatDisplayValue(
+        meFormatViewValue(wire, 'utf8'),
+        fieldPretty.value,
+      )
     } else {
       form.value.fieldValue = meFormatViewValue(wire, fmt)
     }
     decodeFailed.value = isViewDecodeError(form.value.fieldValue)
+    initialFieldDisplay.value = form.value.fieldValue
   } catch (e) {
     form.value.fieldValue = e instanceof Error ? e.message : String(e)
+    initialFieldDisplay.value = form.value.fieldValue
     decodeFailed.value = true
   } finally {
     editorLoading.value = false
@@ -135,9 +166,14 @@ function open(data: FieldSetOpen) {
   Object.assign(form.value, cloneDeep(initForm))
   Object.assign(form.value, data)
   srcFieldWire.value = String(data.srcFieldValue ?? '')
-  keyWireFmt.value = data.keyWireFmt ?? 'utf8'
   keyViewFmt.value = data.keyViewFmt ?? 'utf8'
-  fieldViewFmt.value = defaultFieldViewFmt(data.keyViewFmt ?? 'utf8', keyWireFmt.value)
+  // Hash 字段名：wireFieldKey 为 base64；fieldKey 仅展示
+  const wireKey = String(data.wireFieldKey || data.fieldKey || '')
+  if (form.value.type === 'hash' && wireKey) {
+    form.value.wireFieldKey = wireKey
+    form.value.fieldKey = meFormatViewValue(wireKey, 'utf8')
+  }
+  fieldViewFmt.value = defaultFieldViewFmt(srcFieldWire.value, keyViewFmt.value)
   fieldPretty.value = props.pretty
   void syncFieldEditor()
 }
@@ -163,7 +199,7 @@ watch(customNames, names => {
   if (!visible.value || !isCustomView(fieldViewFmt.value)) return
   const name = customFormatName(fieldViewFmt.value)
   if (!name || !names.includes(name)) {
-    fieldViewFmt.value = defaultFieldViewFmt('utf8', keyWireFmt.value)
+    fieldViewFmt.value = defaultFieldViewFmt(srcFieldWire.value, keyViewFmt.value)
     void syncFieldEditor()
   }
 })
@@ -191,6 +227,7 @@ onUnmounted(() => window.removeEventListener('keydown', onEscapeKey, true))
 
 const formRef = useTemplateRef('formRef')
 function submit() {
+  if (!canSaveField.value) return
   formRef.value.validate(async (valid: boolean) => {
     if (!valid) return
 
@@ -207,16 +244,24 @@ function submit() {
       } else {
         fieldValue = meViewToWire(fieldValue, fmt)
       }
+      // srcFieldValue：Set/ZSet 替换成员时定位用，须与 valFmt 同为 base64
+      const srcFieldValue =
+        form.value.type === 'zset' || form.value.type === 'set'
+          ? srcFieldWire.value
+          : form.value.srcFieldValue
       await meCommands.fieldSet(share.conn!.id, {
         ...rest,
+        srcFieldValue,
         fieldKey: form.value.type === 'hash' && wireFieldKey ? wireFieldKey : form.value.fieldKey,
         fieldValue,
-        valFmt: toWireFormat(fmt),
+        valFmt: IPC_WIRE_FORMAT,
         includeFieldTtl: form.value.type === 'hash' ? props.hashFieldTtlEnabled : null,
       })
       visible.value = false
       emit('success')
       meOk(t('editOk'))
+    } catch (e) {
+      meErr(e instanceof Error ? e.message : String(e))
     } finally {
       isSaving.value = false
     }
@@ -233,7 +278,7 @@ function buildFieldGetParam(): RedisFieldGet_Deserialize | null {
     fieldKey:
       type === 'hash' && form.value.wireFieldKey ? form.value.wireFieldKey : form.value.fieldKey,
     fieldValue: type === 'zset' ? srcFieldWire.value : '',
-    valFmt: toWireFormat(viewFmtForField(keyViewFmt.value)),
+    valFmt: IPC_WIRE_FORMAT,
     includeFieldTtl: type === 'hash' ? props.hashFieldTtlEnabled : null,
   }
 }
@@ -242,7 +287,8 @@ function applyFieldGetToForm(data: RedisFieldValue) {
   const type = form.value.type
   srcFieldWire.value = data.fieldValue
   if (type === 'hash') {
-    form.value.fieldKey = data.fieldKey
+    form.value.wireFieldKey = data.fieldKey
+    form.value.fieldKey = meFormatViewValue(data.fieldKey, 'utf8')
     if (props.hashFieldTtlEnabled) {
       form.value.fieldTtl = data.fieldTtl
     }
@@ -306,7 +352,7 @@ async function refreshField() {
         <me-code
           :key="codeRemountKey"
           v-model="form.fieldValue"
-          :read-only="editorLoading || readonly"
+          :read-only="editorLoading || readonly || isReadonlyView(fieldViewFmt)"
           class="field-code-editor" />
       </el-form-item>
     </el-form>
@@ -354,14 +400,18 @@ async function refreshField() {
         </div>
         <div>
           <el-button @click="cancel">{{ t('cancel') }}</el-button>
-          <el-button
-            v-if="!readonly"
-            type="primary"
-            :loading="isSaving"
-            :disabled="decodeFailed"
-            @click="submit"
-            >{{ t('save') }}</el-button
-          >
+          <!-- 连接只读/查看模式：隐藏；禁用时 tooltip 说明原因 -->
+          <el-tooltip v-if="showSaveField" :content="saveFieldTip" placement="top">
+            <span style="margin-left: 12px; display: inline-block">
+              <el-button
+                type="primary"
+                :loading="isSaving"
+                :disabled="isViewReadonlyFmt || decodeFailed || !fieldDirty"
+                @click="submit"
+                >{{ t('save') }}</el-button
+              >
+            </span>
+          </el-tooltip>
         </div>
       </div>
     </template>

@@ -10,7 +10,8 @@ localhost:6379，密码 hepengju。
     python PickleSeed.py 127.0.0.1 6379 hepengju
     python PickleSeed.py 127.0.0.1 6379 ""          # 无密码
 
-写入的键前缀均为 encoding:pickle:，便于与其它编码测试键聚在一起；值页选 Pickle / Auto 查看。
+写入的键前缀均为 encoding:pickle:。STRING 整键选 Pickle / Auto；
+Hash/List/Set/ZSet 打开字段弹窗即可（可测字段级 Auto，并混有 UTF-8 字段）。
 """
 
 from __future__ import annotations
@@ -122,7 +123,7 @@ def dumps(obj: Any, *, protocol: int = PROTOCOL) -> bytes:
 
 
 class RedisCli:
-    """最小 RESP 客户端：AUTH / SET 二进制值。"""
+    """最小 RESP 客户端：AUTH / SET / DEL / HSET / RPUSH / SADD / ZADD 二进制值。"""
 
     def __init__(self, host: str, port: int) -> None:
         self._sock = socket.create_connection((host, port))
@@ -145,6 +146,31 @@ class RedisCli:
         self._write_command(b"SET", key.encode("utf-8"), value)
         self._read_ok()
 
+    def delete(self, key: str) -> None:
+        self._write_command(b"DEL", key.encode("utf-8"))
+        self._read_integer()
+
+    def hset(self, key: str, field: str, value: bytes) -> None:
+        self._write_command(b"HSET", key.encode("utf-8"), field.encode("utf-8"), value)
+        self._read_integer()
+
+    def rpush(self, key: str, value: bytes) -> None:
+        self._write_command(b"RPUSH", key.encode("utf-8"), value)
+        self._read_integer()
+
+    def sadd(self, key: str, member: bytes) -> None:
+        self._write_command(b"SADD", key.encode("utf-8"), member)
+        self._read_integer()
+
+    def zadd(self, key: str, score: float, member: bytes) -> None:
+        self._write_command(
+            b"ZADD",
+            key.encode("utf-8"),
+            str(score).encode("ascii"),
+            member,
+        )
+        self._read_integer()
+
     def _write_command(self, cmd: bytes, *args: bytes) -> None:
         parts = [cmd, *args]
         buf = bytearray()
@@ -163,6 +189,14 @@ class RedisCli:
             raise OSError(f"Redis error: {line[1:].decode('utf-8', errors='replace')}")
         raise OSError(f"unexpected Redis reply: {line!r}")
 
+    def _read_integer(self) -> None:
+        line = self._readline()
+        if line.startswith(b":"):
+            return
+        if line.startswith(b"-"):
+            raise OSError(f"Redis error: {line[1:].decode('utf-8', errors='replace')}")
+        raise OSError(f"unexpected Redis reply: {line!r}")
+
     def _readline(self) -> bytes:
         buf = bytearray()
         while True:
@@ -174,6 +208,50 @@ class RedisCli:
                     return bytes(buf[:-1])
                 return bytes(buf)
             buf.extend(ch)
+
+
+def user_sample() -> DemoUser:
+    return DemoUser(
+        id=1001,
+        name="Alice",
+        active=True,
+        birthday=date(1990, 1, 15),
+        created_at=datetime(2024, 6, 1, 10, 0, 0),
+        role=DemoRole.USER,
+    )
+
+
+def seed_compound_types(redis: RedisCli) -> None:
+    """Hash/List/Set/ZSet：字段值为 pickle（混 UTF-8，测字段级 Auto）。"""
+    hash_key = PREFIX + "hash"
+    redis.delete(hash_key)
+    redis.hset(hash_key, "user", dumps(user_sample()))
+    redis.hset(hash_key, "list", dumps(["a", "b", "中文"]))
+    redis.hset(hash_key, "date", dumps(date(2024, 6, 1)))
+    redis.hset(hash_key, "plain-utf8", "新增字段".encode("utf-8"))
+    print(f"HSET {hash_key} (user/list/date=Pickle, plain-utf8=UTF8)")
+
+    list_key = PREFIX + "list-key"
+    redis.delete(list_key)
+    redis.rpush(list_key, dumps("hello-list"))
+    redis.rpush(list_key, dumps(42))
+    redis.rpush(list_key, dumps(user_sample()))
+    redis.rpush(list_key, "纯文本元素".encode("utf-8"))
+    print(f"RPUSH {list_key} (3×Pickle + 1×UTF8)")
+
+    set_key = PREFIX + "set-key"
+    redis.delete(set_key)
+    redis.sadd(set_key, dumps("member-a"))
+    redis.sadd(set_key, dumps(date(2024, 12, 25)))
+    redis.sadd(set_key, b"utf8-member")
+    print(f"SADD {set_key} (2×Pickle + 1×UTF8)")
+
+    zset_key = PREFIX + "zset"
+    redis.delete(zset_key)
+    redis.zadd(zset_key, 1.0, dumps("z-low"))
+    redis.zadd(zset_key, 2.5, dumps(user_sample()))
+    redis.zadd(zset_key, 9.0, b"z-utf8")
+    print(f"ZADD {zset_key} (2×Pickle + 1×UTF8)")
 
 
 def main(argv: list[str]) -> int:
@@ -195,8 +273,9 @@ def main(argv: list[str]) -> int:
             redis.set(key, payload)
             proto = payload[1] if len(payload) >= 2 and payload[0] == 0x80 else "?"
             print(f"SET {key} ({len(payload)} bytes, proto={proto})")
+        seed_compound_types(redis)
 
-    print("done. Switch codec to Pickle (or Auto) in RedisME to inspect.")
+    print("done. STRING → Pickle/Auto；Hash/List/Set/ZSet → 打开字段查看。")
     return 0
 
 

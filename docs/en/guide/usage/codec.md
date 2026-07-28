@@ -2,7 +2,15 @@
 
 [RedisME](https://www.hepengju.com) supports custom serialization/deserialization via external scripts, so you can view and edit non–UTF-8 or application-specific payloads.
 
-> **Built-in JavaSerial / Pickle**: For STRING values, choose **JavaSerial** or **Pickle** in the codec dropdown.
+> **Wire vs display**
+>
+> - STRING / Hash / List / Set / ZSet: IPC is always **Base64 wire**; the codec dropdown only controls **display** and does **not** re-fetch from Redis when changed.
+> - Stream / JSON: codec dropdown stays disabled.
+>
+> **Built-in JavaSerial / Pickle**:
+>
+> - **STRING**: choose **JavaSerial** / **Pickle** in the codec dropdown (or Auto).
+> - **Hash / List / Set / ZSet**: open the field editor; magic bytes auto-select when possible.
 >
 > - **JavaSerial**: View JDK-serialized bytes as plain text (top-level `String`) or JSON (other objects). Same approach as RedisInsight (`java-object-serialization`), with extras for `java.time`, records, common collections, etc.
 > - **Pickle**: View Python `pickle` bytes (protocols 0–5) as plain text (top-level `str`) or JSON; common dict/list/set/bytes and objects with `$class` / `$type` are supported.

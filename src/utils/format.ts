@@ -1,4 +1,8 @@
-/** 值/键视图格式与 wire(utf8/base64) 编解码；auto/hex/msgpack/strjson/javaserial/pickle/custom 在前端，custom 走 shell 脚本 */
+/**
+ * 值/键视图格式与 base64 wire 编解码。
+ * IPC 对 STRING/Hash/List/Set/ZSet 恒为 base64；UTF8/Hex/JavaSerial 等仅为前端展示。
+ * custom 走 shell 脚本。
+ */
 
 import { decode, encode } from '@msgpack/msgpack'
 import { isTauri } from '@tauri-apps/api/core'
@@ -8,6 +12,7 @@ import JSON5 from 'json5'
 
 import i18n from '@/locales'
 import type { BytesFormat } from '@/types/tauri-specta'
+import { base64ToUtf8Text, detectViewFormat } from '@/utils/detect-view-format'
 import { formatJavaSerDisplay, javaSerBase64ToValue } from '@/utils/javaserial'
 import { formatPickleDisplay, pickleBase64ToValue } from '@/utils/pickle'
 
@@ -248,7 +253,7 @@ export async function testCodec(
 /** 键重命名等基础字节视图；KeyRename、FieldAdd */
 export const BYTES_FORMAT = ['UTF8', 'Hex', 'Binary', 'Base64'] as const
 
-/** 前端值/键展示格式；RedisValue 数据编码下拉（auto 仅 STRING，拉取 base64 后前端识别） */
+/** 前端值/键展示格式；IPC wire 恒 base64，本类型仅控展示（auto 仅 STRING 键级） */
 export type ViewBytesFormat =
   | 'auto'
   | 'utf8'
@@ -262,6 +267,9 @@ export type ViewBytesFormat =
   | `custom:${string}`
 
 export const CUSTOM_FORMAT_PREFIX = 'custom:' as const
+
+/** 适用类型（STRING/Hash/List/Set/ZSet）IPC 固定 wire 格式 */
+export const IPC_WIRE_FORMAT: BytesFormat = 'base64'
 
 export function isCustomView(view: ViewBytesFormat): view is `custom:${string}` {
   return view.startsWith(CUSTOM_FORMAT_PREFIX)
@@ -277,7 +285,7 @@ export function customFormatName(view: ViewBytesFormat): string | null {
   return isCustomView(view) ? view.slice(CUSTOM_FORMAT_PREFIX.length) : null
 }
 
-/** 仅整键 STRING 可选（Auto、MsgPack、StrJson、JavaSerial、Pickle、custom）；RedisValue 下拉过滤 */
+/** 仅 STRING 键级可选（Auto、MsgPack、StrJson、JavaSerial、Pickle、custom）；非 STRING 键级降为 utf8 */
 export function isStringOnlyView(view: ViewBytesFormat): boolean {
   return (
     view === 'auto' ||
@@ -289,7 +297,7 @@ export function isStringOnlyView(view: ViewBytesFormat): boolean {
   )
 }
 
-/** 内置只读视图（不可写回）；RedisValue canSave */
+/** 内置只读视图（不可写回）；RedisValue / FieldSet canSave */
 export function isReadonlyView(view: ViewBytesFormat): boolean {
   return view === 'javaserial' || view === 'pickle'
 }
@@ -322,48 +330,64 @@ export function isViewDecodeError(text: string): boolean {
   )
 }
 
-/** 视图格式 → 后端 wire；RedisValue / FieldSet / FieldAdd 读写 Redis（auto → base64） */
-export function toWireFormat(view: ViewBytesFormat): BytesFormat {
-  return view === 'utf8' || view === 'strjson' ? 'utf8' : 'base64'
+/**
+ * 视图 → 后端 BytesFormat。适用类型恒 base64（编码只控展示）。
+ * 保留参数以兼容旧调用；JSON 等特殊路径可仍传 utf8 文本但勿经此写二进制。
+ */
+export function toWireFormat(_view?: ViewBytesFormat): BytesFormat {
+  return IPC_WIRE_FORMAT
 }
 
-/** 字段弹窗：Auto / MsgPack / custom 等不适用，降级 utf8；RedisValue fieldScan */
+/** 非 STRING 键级：string-only view 降为 utf8 展示（不改 wire） */
 export function viewFmtForField(view: ViewBytesFormat): ViewBytesFormat {
   return isStringOnlyView(view) ? 'utf8' : view
 }
 
 export type FieldViewOption = { label: string; value: ViewBytesFormat }
 
-/** 字段编辑下拉选项；FieldSet */
-export function fieldViewOptions(
-  keyWireFmt: BytesFormat,
-  customNames: string[] = [],
-): FieldViewOption[] {
-  if (keyWireFmt === 'utf8') {
-    return [
-      { label: 'UTF8', value: 'utf8' },
-      { label: 'StrJson', value: 'strjson' },
-    ]
-  }
-  const opts: FieldViewOption[] = BYTES_FORMAT.filter(label => label !== 'UTF8').map(label => ({
-    label,
-    value: label.toLowerCase() as ViewBytesFormat,
-  }))
-  opts.push({ label: 'MsgPack', value: 'msgpack' })
+/** 字段编辑下拉选项（wire 恒 base64，选项与键级 utf8 无关）；FieldSet */
+export function fieldViewOptions(customNames: string[] = []): FieldViewOption[] {
+  const opts: FieldViewOption[] = [
+    { label: 'UTF8', value: 'utf8' },
+    ...BYTES_FORMAT.filter(label => label !== 'UTF8').map(label => ({
+      label,
+      value: label.toLowerCase() as ViewBytesFormat,
+    })),
+    { label: 'StrJson', value: 'strjson' },
+    { label: 'MsgPack', value: 'msgpack' },
+    { label: 'JavaSerial', value: 'javaserial' },
+    { label: 'Pickle', value: 'pickle' },
+  ]
   for (const name of customNames) {
     opts.push({ label: name, value: customFormatValue(name) })
   }
   return opts
 }
 
-/** 字段编辑默认 view；FieldSet 打开弹窗 */
-export function defaultFieldViewFmt(
-  keyView: ViewBytesFormat,
-  keyWireFmt: BytesFormat,
-): ViewBytesFormat {
-  const options = fieldViewOptions(keyWireFmt)
-  if (options.some(o => o.value === keyView)) return keyView
-  return options[0]!.value
+/**
+ * 字段弹窗默认 view：魔数格式优先，否则跟随键级基础展示，再否则 utf8。
+ * FieldSet open
+ */
+export function defaultFieldViewFmt(wire: string, keyView: ViewBytesFormat): ViewBytesFormat {
+  const detected = detectViewFormat(wire)
+  if (
+    detected === 'javaserial' ||
+    detected === 'pickle' ||
+    detected === 'msgpack' ||
+    detected === 'strjson'
+  ) {
+    return detected
+  }
+  const tableView = viewFmtForField(keyView)
+  if (
+    tableView === 'utf8' ||
+    tableView === 'hex' ||
+    tableView === 'binary' ||
+    tableView === 'base64'
+  ) {
+    return tableView
+  }
+  return detected === 'hex' ? 'hex' : 'utf8'
 }
 
 /** 保存前需 JSON compact；FieldSet / RedisValue */
@@ -371,10 +395,32 @@ export function needsJsonNormalize(view: ViewBytesFormat): boolean {
   return view === 'msgpack' || view === 'strjson'
 }
 
-/** wire → 编辑器/表格展示（同步）；RedisValue、FieldSet。解码失败返回错误文案，避免渲染抛错打挂 Vue */
+/** UTF-8 文本 → base64 wire */
+export function utf8TextToBase64(text: string): string {
+  if (!text) return ''
+  const bytes = new TextEncoder().encode(text)
+  let binary = ''
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]!)
+  return btoa(binary)
+}
+
+/** base64 wire → UTF-8 展示；非法 UTF-8 时 lossy（对齐旧 from_utf8_lossy） */
+export function base64WireToUtf8Display(base64: string): string {
+  if (!base64) return ''
+  const strict = base64ToUtf8Text(base64)
+  if (strict !== null) return strict
+  const binary = tryAtob(base64)
+  if (binary === null) return `${BYTES_DECODE_ERR}\n${base64}`
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  return new TextDecoder('utf-8').decode(bytes)
+}
+
+/** base64 wire → 编辑器/表格展示（同步）；解码失败返回错误文案，避免渲染抛错打挂 Vue */
 export function meFormatViewValue(wire: string, view: ViewBytesFormat): string {
-  if (!wire || view === 'utf8') return wire
+  if (!wire) return ''
   if (view === 'base64') return wire
+  if (view === 'utf8') return base64WireToUtf8Display(wire)
   try {
     if (view === 'hex' || view === 'binary') return meFormatBytes(wire, view)
     if (view === 'msgpack') return meMsgpackBase64ToJson(wire)
@@ -391,22 +437,25 @@ export function meFormatViewValue(wire: string, view: ViewBytesFormat): string {
   }
 }
 
-/** wire → 展示（含 custom）；RedisValue refreshKey、FieldSet */
+/** base64 wire → 展示（含 custom）；RedisValue、FieldSet */
 export async function meFormatViewValueAsync(wire: string, view: ViewBytesFormat): Promise<string> {
-  if (!wire || view === 'utf8') return wire
+  if (!wire) return ''
   if (isCustomView(view)) {
     return runDecode(wire, resolveCustomCodec(view))
   }
   return meFormatViewValue(wire, view)
 }
 
-/** 编辑区 → wire（同步）；RedisValue、FieldSet、FieldAdd */
+/** 编辑区 → base64 wire（同步）；RedisValue、FieldSet、FieldAdd */
 export function meViewToWire(text: string, view: ViewBytesFormat): string {
-  if (!text || view === 'utf8') return text
   if (view === 'base64') return text
+  if (view === 'utf8') return utf8TextToBase64(text)
+  if (!text) {
+    if (view === 'hex' || view === 'binary' || view === 'msgpack' || view === 'strjson') return ''
+  }
   if (view === 'hex' || view === 'binary') return meToBase64(text, view)
   if (view === 'msgpack') return meJsonToMsgpackBase64(text)
-  if (view === 'strjson') return meDisplayToStrJsonWire(text)
+  if (view === 'strjson') return utf8TextToBase64(meDisplayToStrJsonWire(text))
   if (view === 'javaserial') return meDisplayToJavaSerialBase64(text)
   if (view === 'pickle') return meDisplayToPickleBase64(text)
   if (isCustomView(view)) {
@@ -415,10 +464,10 @@ export function meViewToWire(text: string, view: ViewBytesFormat): string {
   return text
 }
 
-/** 编辑区 → wire（含 custom）；RedisValue 保存、FieldSet */
+/** 编辑区 → base64 wire（含 custom）；RedisValue 保存、FieldSet */
 export async function meViewToWireAsync(text: string, view: ViewBytesFormat): Promise<string> {
-  if (!text || view === 'utf8') return text
   if (isCustomView(view)) {
+    if (!text) return ''
     return runEncode(text, resolveCustomCodec(view))
   }
   return meViewToWire(text, view)
@@ -549,16 +598,20 @@ function unwrapStrJsonValue(wire: string): unknown {
   return JSON5.parse(parsed.trim())
 }
 
-export function meStrJsonWireToDisplay(wire: string): string {
-  if (!wire) return ''
+/** base64 wire → StrJson 展示（先解 UTF-8 再拆双层 JSON） */
+export function meStrJsonWireToDisplay(base64: string): string {
+  if (!base64) return ''
+  const utf8 = base64ToUtf8Text(base64)
+  if (utf8 === null) return `${STRJSON_DECODE_ERR}\n${base64}`
   try {
-    const value = unwrapStrJsonValue(wire)
+    const value = unwrapStrJsonValue(utf8)
     return JSON.stringify(value, null, 2)
   } catch {
-    return `${STRJSON_DECODE_ERR}\n${wire}`
+    return `${STRJSON_DECODE_ERR}\n${base64}`
   }
 }
 
+/** 编辑区 JSON → 双层 JSON 字符串（UTF-8 文本，再由 meViewToWire 转 base64） */
 export function meDisplayToStrJsonWire(text: string): string {
   const value = JSON5.parse(text.trim())
   return JSON.stringify(JSON.stringify(value))

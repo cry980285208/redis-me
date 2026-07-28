@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
- * 键值详情页：fieldScan 拉取 → JSON 编辑器 / 表格展示 → set / field* 写回。
- * 数据流：bytesFormat 触发 refreshKey → syncDisplaySnapshot（Auto 时识别）→ showValue / dataList 渲染。
+ * 键值详情页：fieldScan 拉取（IPC 恒 base64）→ 前端按数据编码展示 → set / field* 写回。
+ * 数据流：srcWire 不被展示覆盖；切编码只重算展示，不打 Redis。
  */
 // #region 导入
 import dayjs from 'dayjs'
@@ -31,7 +31,6 @@ import type {
   ScanCursor,
 } from '@/types/tauri-specta'
 import {
-  base64ToUtf8Text,
   detectViewFormat,
   detectedViewLabel,
   type DetectedViewFormat,
@@ -40,6 +39,7 @@ import { useFavorites, addFavorite, removeFavorite, isFavorited } from '@/utils/
 import {
   BYTES_FORMAT,
   EXT_FORMAT,
+  IPC_WIRE_FORMAT,
   customFormatName,
   customFormatValue,
   isCustomView,
@@ -51,7 +51,6 @@ import {
   meViewToWire,
   meViewToWireAsync,
   needsJsonNormalize,
-  toWireFormat,
   viewFmtForField,
   type ViewBytesFormat,
 } from '@/utils/format'
@@ -224,12 +223,14 @@ async function runFieldPop(mode: string) {
   const conn = share.conn
   const key = share.redisKey
   if (!conn || !key || !canEdit.value) return
-  const data = await meCommands.fieldPop(conn.id, {
-    key,
-    mode,
-    valFmt: toWireFormat(viewFmtForField(bytesFormat.value)),
-  })
-  meOk(data)
+  const data = await meCommands.fieldPop(conn.id, { key, mode, valFmt: IPC_WIRE_FORMAT })
+  // IPC 为 base64；toast 按当前键级展示格式解码（ZSet 形如 `wire (score: n)`）
+  const view = viewFmtForField(bytesFormat.value)
+  const scoreSuffix = data.match(/^(.*) \(score: (.+)\)$/s)
+  const tip = scoreSuffix
+    ? `${meFormatViewValue(scoreSuffix[1]!, view)} (score: ${scoreSuffix[2]})`
+    : meFormatViewValue(data, view)
+  meOk(tip)
   await restartFieldScan()
 }
 
@@ -348,16 +349,14 @@ watchEffect(() => {
 })
 // #endregion
 
-// #region 字节格式与展示快照（wire ↔ 视图文本）
-/** 下拉选中项，变更时触发 fieldScan；STRING 默认 Auto */
+// #region 字节格式与展示快照（base64 wire ↔ 视图文本）
+/** 下拉选中项；仅控展示，切换不打 Redis。STRING 默认 Auto */
 const bytesFormat = ref<ViewBytesFormat>('auto')
 /**
  * 换键待探测标记（KEY_REFRESH 置位）。
  * 真正开跑时领取到本次局部变量，避免被上一次 finally 清掉。
  */
 const pendingAutoDetect = ref(false)
-/** 本次 refresh 是否按 base64 探测包拉取（领取后置位，首包结束后关闭） */
-const probingAutoDetect = ref(false)
 /** Auto 识别结果（左侧标签）；非 Auto 时不展示 */
 const detectedView = ref<DetectedViewFormat>('utf8')
 /** Auto 时为识别结果，否则等于 bytesFormat；驱动展示 / 保存 / 只读 */
@@ -377,20 +376,43 @@ function commitBytesFormat(next: ViewBytesFormat) {
 function commitDetectedView(next: DetectedViewFormat) {
   if (detectedView.value !== next) detectedView.value = next
 }
-const canSave = computed(
+/** 连接可写且为 STRING/JSON、非截断预览时显示保存（连接只读 → 隐藏） */
+const showSave = computed(
   () =>
     canEdit.value &&
     (stringType.value || jsonType.value) &&
-    !isReadonlyView(effectiveViewFormat.value) &&
     !(valueTruncated.value && !forceFullValue.value),
 )
+/** 编辑器只读：无权限 / 截断预览 / 格式不支持写回 */
+const editorReadOnly = computed(
+  () =>
+    !canEdit.value ||
+    isReadonlyView(effectiveViewFormat.value) ||
+    (valueTruncated.value && !forceFullValue.value),
+)
+/** 禁用保存：脏检查/解码失败，或格式不支持写回（非连接只读） */
+const saveDisabled = computed(
+  () => viewDecodeFailed.value || !valueDirty.value || isReadonlyView(effectiveViewFormat.value),
+)
+/** 按禁用原因给出提示；可保存时为普通「保存」 */
+const saveTip = computed(() => {
+  if (isReadonlyView(effectiveViewFormat.value)) {
+    return effectiveViewFormat.value === 'pickle'
+      ? t('util.pickleReadonly')
+      : t('util.javaSerialReadonly')
+  }
+  if (viewDecodeFailed.value) return t('util.saveDecodeFailed')
+  if (!valueDirty.value) return t('util.saveNoChange')
+  return t('save')
+})
 /**
- * 展示层快照（防切换编码闪烁）：
- * - displayBytesFormat + displayWire：fieldScan 完成后才更新，供编辑器渲染
- * - resolvedWireView：custom 异步 decode 结果（仅 custom 时使用）
- * - Auto 时 displayBytesFormat 为识别结果，displayWire 对 utf8/strjson 已转为文本
+ * 展示层快照：
+ * - srcWire / displayWire：始终为 fieldScan 返回的 base64（权威，不被展示覆盖）
+ * - displayBytesFormat：当前生效的展示格式（Auto 时为识别结果）
+ * - resolvedWireView：custom 异步 decode 结果
  */
 const displayBytesFormat = ref<ViewBytesFormat>('utf8')
+/** 权威 base64 wire（与 redisValue.value 同步；Auto 不得改写成文本） */
 const displayWire = ref('')
 const customCodecVisible = ref(false)
 /** STRING 单键：wire → 当前视图文本（custom 异步解码） */
@@ -399,7 +421,7 @@ const resolvedWireView = ref('')
 const customCodecFailed = ref(false)
 
 const formatOptions = computed(() => {
-  // Auto 置顶，仅 STRING 可用
+  // Auto / 扩展格式仅 STRING；非 STRING 键级仅基础字节视图
   const builtin = [
     { label: 'Auto', value: 'auto' as ViewBytesFormat, disabled: !stringType.value },
     ...BYTES_FORMAT.map(item => ({
@@ -431,7 +453,7 @@ const viewDecodeFailed = computed(() => {
   return isViewDecodeError(meFormatViewValue(wire, fmt))
 })
 
-/** 自定义编解码被删或改名后，当前选中项失效则回退 utf8 */
+/** 自定义编解码被删或改名后，当前选中项失效则回退；仅重算展示 */
 watch(
   () => window.meTauri.settings.customCodecs,
   list => {
@@ -439,7 +461,7 @@ watch(
     const name = customFormatName(bytesFormat.value)
     if (!name || !list?.some(f => f.name === name)) {
       bytesFormat.value = stringType.value ? 'auto' : 'utf8'
-      void refreshKey(false)
+      void onBytesFormatChange()
     }
   },
   { deep: true },
@@ -463,8 +485,11 @@ function syncDisplaySnapshot() {
     if (bytesFormat.value === 'auto' && stringType.value) {
       commitDetectedView('utf8')
       displayBytesFormat.value = 'utf8'
-    } else {
+    } else if (stringType.value) {
+      // STRING：下拉即展示格式（勿经 viewFmtForField，否则 JavaSerial 等会被降成 utf8）
       displayBytesFormat.value = bytesFormat.value
+    } else {
+      displayBytesFormat.value = viewFmtForField(bytesFormat.value)
     }
     return
   }
@@ -474,22 +499,33 @@ function syncDisplaySnapshot() {
     return
   }
 
+  // 权威 wire 恒为 base64（STRING 为整值；表格类型各行自带 wire，此处仅 STRING 编辑器用）
   const wire = String(rv.value)
-  // Auto：base64 wire 上识别；utf8/strjson 展示层改为文本，避免二次请求
+  displayWire.value = wire
+
   if (bytesFormat.value === 'auto' && stringType.value) {
     const nextDetected = detectViewFormat(wire)
     commitDetectedView(nextDetected)
-    if (nextDetected === 'utf8' || nextDetected === 'strjson') {
-      displayWire.value = base64ToUtf8Text(wire) ?? ''
-    } else {
-      displayWire.value = wire
-    }
     displayBytesFormat.value = nextDetected
     return
   }
 
-  displayWire.value = wire
-  displayBytesFormat.value = bytesFormat.value
+  // STRING 保持用户所选（含 JavaSerial/MsgPack/custom）；非 STRING 键级仅基础视图
+  displayBytesFormat.value = stringType.value
+    ? bytesFormat.value
+    : viewFmtForField(bytesFormat.value)
+}
+
+/** 切换数据编码：只重算展示，不请求 Redis */
+async function onBytesFormatChange() {
+  if (!stringType.value && isStringOnlyView(bytesFormat.value)) {
+    commitBytesFormat('utf8')
+  }
+  // 有未保存编辑时先丢弃，避免编码切换后 dirty 状态错乱
+  if (redisValue.value) redisValue.value.newValue = null
+  syncDisplaySnapshot()
+  await refreshResolvedWireView()
+  valueEditorRemountKey.value++
 }
 
 async function refreshResolvedWireView() {
@@ -527,33 +563,66 @@ function stringWireDisplayText(wire: string): string {
 function formatTableCell(raw: unknown): string {
   return stringWireDisplayText(String(raw ?? ''))
 }
+
+/** JSON 视图：把 base64 wire 解成 UTF-8，避免整表露出 YXpMPQ== 一类串 */
+function wireToUtf8JsonText(wire: unknown): string {
+  if (wire == null) return ''
+  return meFormatViewValue(String(wire), 'utf8')
+}
+
+/** fieldScan 行数据 → JSON 视图友好结构（键/值按 UTF-8 展示） */
+function fieldScanValueForJsonView(type: string, value: unknown): unknown {
+  if (value == null) return value
+  switch (type) {
+    case 'hash':
+      return (value as ValueTableRow[]).map(row => {
+        const out: Record<string, unknown> = {
+          key: wireToUtf8JsonText(row.key),
+          value: wireToUtf8JsonText(row.value),
+        }
+        if (row.ttl != null) out.ttl = row.ttl
+        return out
+      })
+    case 'list':
+      return (value as ValueTableRow[]).map(row => ({
+        index: row.index,
+        value: wireToUtf8JsonText(row.value),
+      }))
+    case 'set':
+      return (value as unknown[]).map(v => wireToUtf8JsonText(v))
+    case 'zset':
+      return (value as ValueTableRow[]).map(row => ({
+        value: wireToUtf8JsonText(row.value),
+        score: row.score,
+      }))
+    default:
+      return value
+  }
+}
 // #endregion
 
 // #region 编辑器展示内容（showValue）
 const showValue = computed(() => {
-  const obj = redisValue.value?.value
-  if (obj === null || obj === undefined) return ''
+  const rv = redisValue.value
+  const obj = rv?.value
+  if (obj === null || obj === undefined || !rv) return ''
 
-  if (isPretty.value) {
-    if (stringType.value) {
-      const str = stringWireDisplayText(displayWire.value)
-      return meFormatDisplayValue(str, isPretty.value)
-    }
-    return JSON.stringify(obj, null, 2)
-  }
-
-  if (
-    'hash' === redisValue.value?.type ||
-    'zset' === redisValue.value?.type ||
-    'json' === redisValue.value?.type ||
-    'stream' === redisValue.value?.type
-  ) {
-    return JSON.stringify(obj)
-  }
   if (stringType.value) {
-    return stringWireDisplayText(displayWire.value)
+    const str = stringWireDisplayText(displayWire.value)
+    return isPretty.value ? meFormatDisplayValue(str, true) : str
   }
-  return obj.toString()
+
+  // Hash/List/Set/ZSet：JSON 视图展示 UTF-8，不直接 dump base64 wire
+  if (rv.type === 'hash' || rv.type === 'list' || rv.type === 'set' || rv.type === 'zset') {
+    const display = fieldScanValueForJsonView(rv.type, obj)
+    return JSON.stringify(display, null, isPretty.value ? 2 : undefined)
+  }
+
+  if (rv.type === 'json' || rv.type === 'stream') {
+    return JSON.stringify(obj, null, isPretty.value ? 2 : undefined)
+  }
+
+  return JSON.stringify(obj, null, isPretty.value ? 2 : undefined)
 })
 
 /** me-code 编辑回调：写入 redisValue.newValue，保存时由 setValue 读回 */
@@ -603,11 +672,21 @@ const filterFieldPattern = computed(() =>
   buildLocalFilterPattern(fieldKeyword.value, fieldExact.value, fieldMatch.value),
 )
 
+/** Hash/Set/ZSet：本地 minimatch（键、值、分都可匹配；未 Enter 时不依赖服务端 MATCH） */
 const filterFieldList = computed(() => {
   if (!filterFieldPattern.value) return dataList.value
+  const pattern = filterFieldPattern.value
   return dataList.value.filter(row => {
-    const name = row.key ? formatTableCell(row.key) : formatTableCell(row.value)
-    return minimatch(name, filterFieldPattern.value, MINIMATCH_SCAN_OPTS)
+    if (row.key != null && row.key !== '') {
+      if (minimatch(formatTableCell(row.key), pattern, MINIMATCH_SCAN_OPTS)) return true
+    }
+    if (row.value != null && row.value !== '') {
+      if (minimatch(formatTableCell(row.value), pattern, MINIMATCH_SCAN_OPTS)) return true
+    }
+    if (row.score != null && minimatch(String(row.score), pattern, MINIMATCH_SCAN_OPTS)) {
+      return true
+    }
+    return false
   })
 })
 
@@ -673,11 +752,8 @@ function buildFieldScanParam() {
       valuePreviewBytes: VALUE_PREVIEW_BYTES.value,
       forceFullValue: forceFullValue.value,
     },
-    // 探测首包或 Auto：base64，便于魔数识别
-    bytesFormat:
-      probingAutoDetect.value || bytesFormat.value === 'auto'
-        ? 'base64'
-        : toWireFormat(bytesFormat.value),
+    // STRING/Hash/List/Set/ZSet：IPC 恒 base64；Stream/JSON 后端仍按格式化路径，传 base64 无害
+    bytesFormat: IPC_WIRE_FORMAT,
     includeMeta,
     keyType: includeMeta ? null : (type ?? null),
     includeFieldTtl: scanHashFieldTtl.value,
@@ -841,7 +917,7 @@ async function refreshKey(
   scanCancelled.value = false
   if (!useCursor) scanPaused.value = false
 
-  // base64 探测只服务 STRING Auto；已知 List/Hash 等则直接 utf8，避免双次 fieldScan
+  // 换键：已知非 STRING 则键级展示默认 utf8（不再为探测单独拉一包）
   if (detectThisLoad && share.conn && share.redisKey) {
     const knownType = await resolveKeyType(share.conn.id, share.conn.db, share.redisKey)
     if (knownType && knownType !== 'STRING') {
@@ -849,47 +925,28 @@ async function refreshKey(
       detectThisLoad = false
     }
   }
-  probingAutoDetect.value = detectThisLoad
 
   try {
     if (!useCursor) scanBatchCount.value = 0
 
-    let first = await fieldScanCore(useCursor)
+    const first = await fieldScanCore(useCursor)
     if (first.replaceData) {
       commitFieldScanReplace(first.replaceData, reset)
     }
 
     let scanType = redisValue.value?.type
-    // 换键探测：目标编码进中间量，与当前相同时不改下拉
+    // 换键：STRING → Auto；其它 → utf8 展示（wire 已是 base64，无需重拉）
     if (detectThisLoad) {
       const nextFormat: ViewBytesFormat = scanType === 'string' ? 'auto' : 'utf8'
       commitBytesFormat(nextFormat)
-      // 首包探测结束；非 STRING 需按 utf8 重拉（类型缓存未命中时的兜底）
-      probingAutoDetect.value = false
-      if (nextFormat === 'utf8') {
-        cursor.value = null
-        scanBatchCount.value = 0
-        first = await fieldScanCore(false)
-        if (first.replaceData) {
-          commitFieldScanReplace(first.replaceData, reset)
-        }
-        scanType = redisValue.value?.type
-      }
+      scanType = redisValue.value?.type
     } else if (
       !useCursor &&
       scanType &&
       scanType !== 'string' &&
       isStringOnlyView(bytesFormat.value)
     ) {
-      // 手动停在 Auto 时打开了非 STRING（兜底）
       commitBytesFormat('utf8')
-      cursor.value = null
-      scanBatchCount.value = 0
-      first = await fieldScanCore(false)
-      if (first.replaceData) {
-        commitFieldScanReplace(first.replaceData, reset)
-      }
-      scanType = redisValue.value?.type
     }
 
     if (loadAll) {
@@ -908,7 +965,6 @@ async function refreshKey(
     }
     throw e
   } finally {
-    probingAutoDetect.value = false
     if (!stringType.value && isStringOnlyView(bytesFormat.value)) {
       commitBytesFormat('utf8')
     }
@@ -1027,14 +1083,13 @@ function buildFieldAsCommandParam(row: ValueTableRow): RedisFieldAsCommand_Deser
   const rv = redisValue.value
   const rk = share.redisKey
   if (!rv || !rk) return null
-  const fieldViewFmt = viewFmtForField(bytesFormat.value)
   const param: RedisFieldAsCommand_Deserialize = {
     key: rk,
     fieldKey: row.key || '',
     fieldValue: String(row.value ?? ''),
     streamId: row.id || '',
     fieldIndex: -1,
-    valFmt: toWireFormat(fieldViewFmt),
+    valFmt: IPC_WIRE_FORMAT,
   }
   if (rv.type === 'list') {
     param.fieldIndex = listRowRedisIndex(row)
@@ -1110,6 +1165,7 @@ async function onKeyMoreCommand(command: string) {
 async function setValue() {
   const rv = redisValue.value
   if (!rv || rv.newValue === null) return
+  if (isReadonlyView(effectiveViewFormat.value)) return
   let value = rv.newValue
 
   try {
@@ -1124,7 +1180,7 @@ async function setValue() {
     }
     if (stringType.value && isCustomView(effectiveViewFormat.value)) {
       value = await meViewToWireAsync(value, effectiveViewFormat.value)
-    } else if (stringType.value && effectiveViewFormat.value !== 'utf8') {
+    } else if (stringType.value) {
       value = meViewToWire(value, effectiveViewFormat.value)
     }
   } catch (e) {
@@ -1144,7 +1200,8 @@ async function setValue() {
     value,
     ttl: rv.ttl,
     keyType: rv.type,
-    inputFormat: toWireFormat(effectiveViewFormat.value),
+    // JSON 用 utf8 文本；STRING 恒 base64 wire
+    inputFormat: jsonType.value ? 'utf8' : IPC_WIRE_FORMAT,
   })
   meOk(t('saveOk'))
   await refreshKey()
@@ -1159,7 +1216,7 @@ function fieldAdd() {
   fieldAddRef.value?.open({
     mode: 'field',
     type: rv.type,
-    valFmt: toWireFormat(viewFmtForField(bytesFormat.value)),
+    valFmt: IPC_WIRE_FORMAT,
     viewValFmt: viewFmtForField(bytesFormat.value),
     key: { ...share.redisKey! },
   })
@@ -1218,7 +1275,7 @@ function buildFieldGetParam(row?: ValueTableRow): RedisFieldGet_Deserialize | nu
     fieldIndex: fieldEditIndex.value,
     fieldKey: fieldEditKey.value,
     fieldValue: rv.type === 'zset' && row ? String(row.value ?? '') : '',
-    valFmt: toWireFormat(viewFmtForField(bytesFormat.value)),
+    valFmt: IPC_WIRE_FORMAT,
     includeFieldTtl: rv.type === 'hash' ? scanHashFieldTtl.value : null,
   }
 }
@@ -1250,8 +1307,8 @@ function openFieldPanel(row: ValueTableRow, index: number, readonly: boolean) {
     fieldTtl: row.ttl ?? -1,
     srcFieldValue: rowValWire,
     wireFieldKey: row.key || '',
-    keyWireFmt: toWireFormat(bytesFormat.value),
-    keyViewFmt: bytesFormat.value,
+    keyWireFmt: IPC_WIRE_FORMAT,
+    keyViewFmt: viewFmtForField(bytesFormat.value),
     type: rv.type,
     key: share.redisKey!,
     fieldIndex: -1,
@@ -1348,7 +1405,7 @@ function onFieldRowMoreCommand(command: string, row: ValueTableRow) {
   if (command === 'refreshRow') {
     void refreshFieldRow(row)
   } else if (command === 'copyKey') {
-    meCopy(String(row.key ?? ''))
+    meCopy(formatTableCell(row.key ?? ''))
   } else if (command === 'copyValue') {
     meCopy(fieldRowDisplayValue(row))
   } else if (command === 'copyIndex') {
@@ -1368,11 +1425,11 @@ async function showZsetRank(row: ValueTableRow) {
   const conn = share.conn
   const rk = share.redisKey
   if (!conn || !rk) return
-  const member = fieldRowDisplayValue(row)
+  const member = String(row.value ?? '')
   const data: RedisZsetRankResult = await meCommands.zsetRank(conn.id, {
     key: rk,
     member,
-    valFmt: toWireFormat(viewFmtForField(bytesFormat.value)),
+    valFmt: IPC_WIRE_FORMAT,
   })
   const rankText = data.rank !== null ? String(data.rank) : t('redisValue.rankNotFound')
   const revRankText = data.revRank !== null ? String(data.revRank) : t('redisValue.rankNotFound')
@@ -1420,14 +1477,13 @@ async function onFieldSetSuccess() {
 async function fieldDel(row: ValueTableRow) {
   const rv = redisValue.value
   if (!rv) return
-  const fieldViewFmt = viewFmtForField(bytesFormat.value)
   const param: RedisFieldDel_Deserialize = {
     fieldKey: row.key || '',
     fieldValue: String(row.value ?? ''),
     key: share.redisKey!,
     streamId: row.id || '',
     fieldIndex: -1,
-    valFmt: toWireFormat(fieldViewFmt),
+    valFmt: IPC_WIRE_FORMAT,
   }
   if (rv.type === 'list') {
     param.fieldIndex = listRowRedisIndex(row)
@@ -1459,19 +1515,16 @@ function showGroups() {
 }
 
 const hashKeysRef = useTemplateRef('hashKeysRef')
-function hashListValFmt() {
-  return toWireFormat(viewFmtForField(bytesFormat.value))
-}
 function showAllHashKeys() {
-  hashKeysRef.value?.open(hashListValFmt(), 'keys')
+  hashKeysRef.value?.open(IPC_WIRE_FORMAT, 'keys', displayBytesFormat.value)
 }
 function showAllHashValues() {
-  hashKeysRef.value?.open(hashListValFmt(), 'values')
+  hashKeysRef.value?.open(IPC_WIRE_FORMAT, 'values', displayBytesFormat.value)
 }
 
 const zsetRangeRef = useTemplateRef('zsetRangeRef')
 function showZsetRange() {
-  zsetRangeRef.value?.open(hashListValFmt())
+  zsetRangeRef.value?.open(IPC_WIRE_FORMAT, displayBytesFormat.value)
 }
 // #endregion
 
@@ -1566,7 +1619,7 @@ function openCommandHelp() {
 // #region 事件总线与生命周期
 /** 选中键时加载值（KEY_REFRESH）；与 KeyMain F5 刷新键列表无关 */
 const onKeyRefreshBus = () => {
-  // 换键标记待探测；非 STRING 会在 refreshKey 内用类型缓存跳过 base64 首包
+  // 换键标记待探测展示格式；wire 恒 base64，无需为探测单独拉包
   pendingAutoDetect.value = true
   // restart：快速连点不同键时不丢弃后一次
   void refreshKey(true, false, false, true)
@@ -1709,7 +1762,7 @@ onUnmounted(() => {
           :key="valueEditorRemountKey"
           :modelValue="showValue"
           @update:modelValue="onCodeUpdate"
-          :read-only="!canSave" />
+          :read-only="editorReadOnly" />
 
         <!-- 表格显示 -->
         <div
@@ -2115,7 +2168,7 @@ onUnmounted(() => {
             v-model="bytesFormat"
             :disabled="jsonType || streamType || loading"
             style="width: 100px"
-            @change="refreshKey(false)">
+            @change="onBytesFormatChange">
             <template #header>
               <div
                 class="me-flex"
@@ -2164,17 +2217,16 @@ onUnmounted(() => {
               @click="refreshKey(false, true, true)" />
           </div>
 
-          <!-- 保存 -->
-          <me-button
-            style="margin-left: 10px"
-            :disabled="viewDecodeFailed || !valueDirty"
-            v-if="canSave"
-            :info="t('save')"
-            type="primary"
-            icon="me-icon-save"
-            @click="setValue"
-            placement="top" />
-
+          <!-- 连接只读：隐藏；禁用时 tooltip 说明原因 -->
+          <el-tooltip v-if="showSave" :content="saveTip" placement="top" :show-after="300">
+            <span style="margin-left: 10px; display: inline-flex">
+              <me-button
+                :disabled="saveDisabled"
+                type="primary"
+                icon="me-icon-save"
+                @click="setValue" />
+            </span>
+          </el-tooltip>
           <!-- string / json 类型不显示 -->
           <el-segmented
             style="margin-left: 10px"
@@ -2204,9 +2256,7 @@ onUnmounted(() => {
     <!-- 未选键 / 键已不存在（fieldScan key_not_found 清空后） -->
     <el-empty
       v-else
-      :description="
-        share.redisKey ? t('redisValue.keyGone') : t('redisValue.noKeySelected')
-      " />
+      :description="share.redisKey ? t('redisValue.keyGone') : t('redisValue.noKeySelected')" />
 
     <!-- 更新TTL, 字段新增 -->
     <TTLSet ref="ttlSetRef" @success="setTimer" />
