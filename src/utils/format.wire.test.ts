@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest'
 
 import {
   IPC_WIRE_FORMAT,
+  JAVASERIAL_DECODE_ERR,
   base64WireToUtf8Display,
   fieldViewOptions,
+  isViewDecodeError,
   meFormatViewValue,
+  meJavaSerialBase64ToDisplay,
   meViewToWire,
   toWireFormat,
   utf8TextToBase64,
@@ -45,5 +48,14 @@ describe('format wire=base64 display-only', () => {
     expect(labels).toContain('JavaSerial')
     expect(labels).toContain('Pickle')
     expect(labels).toContain('MsgPack')
+  })
+
+  it('JavaSerial 解码失败：标题 + Reason + Base64', () => {
+    const wire = utf8TextToBase64('Line01\nLine02\nLinu03')
+    const text = meJavaSerialBase64ToDisplay(wire)
+    expect(text.startsWith(JAVASERIAL_DECODE_ERR)).toBe(true)
+    expect(text).toContain('Reason:')
+    expect(text).toContain(`Base64: ${wire}`)
+    expect(isViewDecodeError(text)).toBe(true)
   })
 })

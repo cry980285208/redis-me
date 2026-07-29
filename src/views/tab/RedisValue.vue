@@ -384,11 +384,12 @@ const showSave = computed(
     (stringType.value || jsonType.value) &&
     !(valueTruncated.value && !forceFullValue.value),
 )
-/** 编辑器只读：无权限 / 截断预览 / 格式不支持写回 */
+/** 编辑器只读：无权限 / 截断预览 / 格式不支持写回 / 解码失败 */
 const editorReadOnly = computed(
   () =>
     !canEdit.value ||
     isReadonlyView(effectiveViewFormat.value) ||
+    viewDecodeFailed.value ||
     (valueTruncated.value && !forceFullValue.value),
 )
 /** 禁用保存：脏检查/解码失败，或格式不支持写回（非连接只读） */
@@ -418,7 +419,7 @@ const displayWire = ref('')
 const customCodecVisible = ref(false)
 /** STRING 单键：wire → 当前视图文本（custom 异步解码） */
 const resolvedWireView = ref('')
-/** custom 编解码失败时为 true，编辑器展示 resolvedWireView 中的错误信息 */
+/** custom 抛错（含未包装成标准文案的 notFound/shell 等） */
 const customCodecFailed = ref(false)
 
 const formatOptions = computed(() => {
@@ -450,6 +451,7 @@ const viewDecodeFailed = computed(() => {
   if (fmt === 'utf8' || fmt === 'hex' || fmt === 'binary' || fmt === 'base64') return false
   const wire = displayWire.value
   if (!wire) return false
+  // custom：以抛错标志为准（部分异常未包成标准 Decode Error 文案）
   if (isCustomView(fmt)) return customCodecFailed.value
   return isViewDecodeError(meFormatViewValue(wire, fmt))
 })
@@ -1762,7 +1764,8 @@ onUnmounted(() => {
           :key="valueEditorRemountKey"
           :modelValue="showValue"
           @update:modelValue="onCodeUpdate"
-          :read-only="editorReadOnly" />
+          :read-only="editorReadOnly"
+          :error="viewDecodeFailed" />
 
         <!-- 表格显示 -->
         <div

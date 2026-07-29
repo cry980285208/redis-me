@@ -360,7 +360,10 @@ async function refreshField() {
         <me-code
           :key="codeRemountKey"
           v-model="form.fieldValue"
-          :read-only="editorLoading || readonly || isReadonlyView(effectiveFieldViewFmt)"
+          :read-only="
+            editorLoading || readonly || isReadonlyView(effectiveFieldViewFmt) || decodeFailed
+          "
+          :error="decodeFailed"
           class="field-code-editor" />
       </el-form-item>
     </el-form>
