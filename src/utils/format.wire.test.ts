@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest'
 import {
   IPC_WIRE_FORMAT,
   base64WireToUtf8Display,
-  defaultFieldViewFmt,
   fieldViewOptions,
   meFormatViewValue,
   meViewToWire,
@@ -39,23 +38,12 @@ describe('format wire=base64 display-only', () => {
     expect(meViewToWire(hex, 'hex')).toBe(wire)
   })
 
-  it('fieldViewOptions 含 JavaSerial/Pickle/UTF8', () => {
+  it('fieldViewOptions：Auto 置顶，含 JavaSerial/Pickle/UTF8', () => {
     const labels = fieldViewOptions().map(o => o.label)
+    expect(labels[0]).toBe('Auto')
     expect(labels).toContain('UTF8')
     expect(labels).toContain('JavaSerial')
     expect(labels).toContain('Pickle')
     expect(labels).toContain('MsgPack')
-  })
-
-  it('defaultFieldViewFmt：无魔数时跟随键级', () => {
-    const wire = utf8TextToBase64('plain')
-    expect(defaultFieldViewFmt(wire, 'hex')).toBe('hex')
-    expect(defaultFieldViewFmt(wire, 'utf8')).toBe('utf8')
-  })
-
-  it('defaultFieldViewFmt：ACED 识别为 JavaSerial', () => {
-    // java.util.TreeSet 样例（与 javaserial / detect 单测同源）
-    const b64 = 'rO0ABXNyABFqYXZhLnV0aWwuVHJlZVNldLq2J1h0c5eMAwAAeHB3BAAAAAJ0AAFhdAABYng='
-    expect(defaultFieldViewFmt(b64, 'utf8')).toBe('javaserial')
   })
 })

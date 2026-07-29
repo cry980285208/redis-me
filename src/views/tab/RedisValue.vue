@@ -19,6 +19,7 @@ import {
 } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import { MeSelectUpDownIcon } from '@/components/MeSelectUpDownIcon'
 import { shareProvideKey, connUiProvideKey } from '@/types/me-interface'
 import type {
   FieldScanResult,
@@ -1308,7 +1309,6 @@ function openFieldPanel(row: ValueTableRow, index: number, readonly: boolean) {
     srcFieldValue: rowValWire,
     wireFieldKey: row.key || '',
     keyWireFmt: IPC_WIRE_FORMAT,
-    keyViewFmt: viewFmtForField(bytesFormat.value),
     type: rv.type,
     key: share.redisKey!,
     fieldIndex: -1,
@@ -2156,18 +2156,11 @@ onUnmounted(() => {
         </div>
 
         <div class="me-flex" style="position: relative">
-          <!-- Auto 识别结果：下拉左侧，下拉本身保持 Auto -->
-          <el-text
-            v-if="detectedViewText"
-            class="bytes-format-auto-label"
-            style="margin-right: 8px; white-space: nowrap"
-            :title="t('redisValue.autoDetected')">
-            {{ detectedViewText }}
-          </el-text>
           <el-select
             v-model="bytesFormat"
+            class="bytes-format-select me-select-plain"
+            :suffix-icon="MeSelectUpDownIcon"
             :disabled="jsonType || streamType || loading"
-            style="width: 100px"
             @change="onBytesFormatChange">
             <template #header>
               <div
@@ -2199,6 +2192,14 @@ onUnmounted(() => {
                 :disabled="item.disabled" />
             </el-option-group>
           </el-select>
+          <!-- Auto 识别结果：下拉右侧，与字段弹窗一致 -->
+          <el-text
+            v-if="detectedViewText"
+            class="bytes-format-auto-label"
+            style="margin-left: 8px; white-space: nowrap"
+            :title="t('redisValue.autoDetected')">
+            {{ detectedViewText }}
+          </el-text>
           <!-- 加载更多、加载全部 -->
           <div class="me-flex" style="width: 45px; margin-left: 10px" v-if="showMore">
             <me-icon
@@ -2533,11 +2534,12 @@ onUnmounted(() => {
       font-weight: 600;
     }
 
-    :deep(.el-select__wrapper) {
-      min-height: 0;
-      height: 30px;
-      padding: 4px 4px 4px 10px;
-      //box-shadow: 0 0 0 1px var(--el-border-color);
+    .bytes-format-select {
+      :deep(.el-select__wrapper) {
+        min-height: 0;
+        height: 30px;
+        padding: 4px;
+      }
     }
 
     :deep(.el-select-dropdown__item) {

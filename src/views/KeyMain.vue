@@ -5,8 +5,6 @@ import { sortBy } from 'lodash'
 import { minimatch } from 'minimatch'
 import {
   computed,
-  defineComponent,
-  h,
   inject,
   nextTick,
   onMounted,
@@ -16,8 +14,8 @@ import {
   useTemplateRef,
 } from 'vue'
 import { useI18n } from 'vue-i18n'
-import SvgIcon from '~virtual/svg-component'
 
+import { MeSelectUpDownIcon } from '@/components/MeSelectUpDownIcon'
 import { shareProvideKey, connUiProvideKey } from '@/types/me-interface'
 import type { RedisDB, RedisKey_Deserialize, ScanCursor } from '@/types/tauri-specta'
 import {
@@ -456,14 +454,6 @@ function formatDbOptionLabel(db: number): string {
 const showClusterDbLabel = computed(() =>
   Boolean(share.conn?.cluster && share.capabilities.clusterDbSupported),
 )
-
-// el-select 后缀：项目 upDown 图标
-const dbSelectSuffixIcon = defineComponent({
-  name: 'DbSelectSuffixIcon',
-  setup() {
-    return () => h(SvgIcon, { name: 'me-icon-upDown', class: 'db-select-arrow' })
-  },
-})
 
 const keyPrefix = ref('')
 
@@ -1022,8 +1012,8 @@ function editDbName(db: number): void {
           <el-select
             v-model="share.conn.db"
             @change="selectDB"
-            class="db-select"
-            :suffix-icon="dbSelectSuffixIcon"
+            class="db-select me-select-plain"
+            :suffix-icon="MeSelectUpDownIcon"
             filterable
             v-else-if="!share.conn.cluster">
             <template #header>
@@ -1446,54 +1436,7 @@ function editDbName(db: number): void {
       padding: 4px;
     }
 
-    /* 按当前显示的「dbN (count)」收缩；下拉仍按选项内容撑开 */
     .db-select {
-      flex: 0 0 auto;
-      --el-select-width: max-content;
-
-      :deep(.el-select__wrapper) {
-        width: max-content;
-        box-shadow: none;
-        background: transparent;
-        gap: 2px;
-      }
-
-      /* 默认 flex:1 会撑满；收成内容宽 */
-      :deep(.el-select__selection) {
-        flex: 0 0 auto;
-        padding: 0 4px;
-      }
-
-      /* 默认 absolute+width:100%，文案不进 max-content，须改回文档流 */
-      :deep(.el-select__selected-item.el-select__placeholder) {
-        position: static;
-        transform: none;
-        width: auto;
-      }
-
-      /* 展开过滤时 input 默认占位，改为叠在文案上避免撑宽 */
-      :deep(.el-select__input-wrapper) {
-        position: absolute;
-        inset: 0 18px 0 4px;
-      }
-
-      :deep(.el-select__suffix) {
-        .el-icon {
-          font-size: 12px;
-          color: var(--el-text-color-placeholder);
-
-          // upDown 图标固定方向，不随展开旋转
-          &.is-reverse {
-            transform: none;
-          }
-        }
-
-        .db-select-arrow {
-          width: 1em;
-          height: 1em;
-        }
-      }
-
       :deep(.icon-main) {
         white-space: nowrap;
       }

@@ -3,6 +3,7 @@ import { cloneDeep } from 'lodash'
 import { computed, inject, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import { MeSelectUpDownIcon } from '@/components/MeSelectUpDownIcon'
 import { shareProvideKey } from '@/types/me-interface'
 import type {
   BytesFormat,
@@ -10,11 +11,11 @@ import type {
   RedisFieldSet_Deserialize,
   RedisFieldValue,
 } from '@/types/tauri-specta'
+import { detectViewFormat, detectedViewLabel } from '@/utils/detect-view-format'
 import {
   IPC_WIRE_FORMAT,
   base64WireToUtf8Display,
   customFormatName,
-  defaultFieldViewFmt,
   fieldViewOptions,
   isCustomView,
   isReadonlyView,
@@ -34,8 +35,6 @@ type FieldSetForm = RedisFieldSet_Deserialize & { type: string; wireFieldKey?: s
 type FieldSetOpen = Partial<FieldSetForm> & {
   /** fieldScan 返回的 wire 形态（恒 base64） */
   keyWireFmt?: BytesFormat
-  /** 键级展示编码，用于默认字段 view */
-  keyViewFmt?: ViewBytesFormat
   /** Stream 条目 ID */
   streamId?: string
   /** 查看模式：表单只读，隐藏保存 */
@@ -77,9 +76,8 @@ const form = ref<FieldSetForm>(cloneDeep(initForm))
 
 /** fieldScan 原始 base64 wire，切换字段编码时始终以此为源 */
 const srcFieldWire = ref('')
-/** 键级展示编码 */
-const keyViewFmt = ref<ViewBytesFormat>('utf8')
-const fieldViewFmt = ref<ViewBytesFormat>('utf8')
+/** 下拉选中项；默认 Auto，与 STRING 键级一致 */
+const fieldViewFmt = ref<ViewBytesFormat>('auto')
 const fieldPretty = ref(true)
 const editorLoading = ref(false)
 const isRefreshing = ref(false)
@@ -90,11 +88,20 @@ const initialFieldDisplay = ref('')
 
 const customNames = computed(() => (window.meTauri.settings.customCodecs ?? []).map(f => f.name))
 const fieldViewOptionList = computed(() => fieldViewOptions(customNames.value))
+/** Auto 识别结果；非 Auto 时不展示旁侧标签 */
+const detectedView = computed(() => detectViewFormat(srcFieldWire.value))
+/** Auto 时为识别结果，否则等于下拉选中项；驱动展示 / 保存 / 只读 */
+const effectiveFieldViewFmt = computed<ViewBytesFormat>(() =>
+  fieldViewFmt.value === 'auto' ? detectedView.value : fieldViewFmt.value,
+)
+const detectedViewText = computed(() =>
+  fieldViewFmt.value === 'auto' ? detectedViewLabel(detectedView.value) : '',
+)
 const prettyEnabled = computed(
-  () => fieldViewFmt.value === 'utf8' || fieldViewFmt.value === 'strjson',
+  () => effectiveFieldViewFmt.value === 'utf8' || effectiveFieldViewFmt.value === 'strjson',
 )
 /** JavaSerial / Pickle：不支持写回 → 按钮禁用 + tooltip（连接只读则整钮隐藏，见模板） */
-const isViewReadonlyFmt = computed(() => isReadonlyView(fieldViewFmt.value))
+const isViewReadonlyFmt = computed(() => isReadonlyView(effectiveFieldViewFmt.value))
 const fieldDirty = computed(() => form.value.fieldValue !== initialFieldDisplay.value)
 const canSaveField = computed(
   () =>
@@ -107,7 +114,9 @@ const canSaveField = computed(
 /** 禁用原因提示；可保存时为普通「保存」 */
 const saveFieldTip = computed(() => {
   if (isViewReadonlyFmt.value) {
-    return fieldViewFmt.value === 'pickle' ? t('util.pickleReadonly') : t('util.javaSerialReadonly')
+    return effectiveFieldViewFmt.value === 'pickle'
+      ? t('util.pickleReadonly')
+      : t('util.javaSerialReadonly')
   }
   if (decodeFailed.value) return t('util.saveDecodeFailed')
   if (!fieldDirty.value) return t('util.saveNoChange')
@@ -121,10 +130,10 @@ const supportsFieldRefresh = computed(() => {
   return type === 'hash' || type === 'list' || type === 'zset'
 })
 
-/** wire + 字段 view → 编辑区文本 */
+/** wire + 生效 view → 编辑区文本 */
 async function syncFieldEditor() {
   const wire = srcFieldWire.value
-  const fmt = fieldViewFmt.value
+  const fmt = effectiveFieldViewFmt.value
   if (!wire) {
     form.value.fieldValue = ''
     initialFieldDisplay.value = ''
@@ -166,14 +175,13 @@ function open(data: FieldSetOpen) {
   Object.assign(form.value, cloneDeep(initForm))
   Object.assign(form.value, data)
   srcFieldWire.value = String(data.srcFieldValue ?? '')
-  keyViewFmt.value = data.keyViewFmt ?? 'utf8'
   // Hash 字段名：wireFieldKey 为 base64；fieldKey 仅展示
   const wireKey = String(data.wireFieldKey || data.fieldKey || '')
   if (form.value.type === 'hash' && wireKey) {
     form.value.wireFieldKey = wireKey
     form.value.fieldKey = meFormatViewValue(wireKey, 'utf8')
   }
-  fieldViewFmt.value = defaultFieldViewFmt(srcFieldWire.value, keyViewFmt.value)
+  fieldViewFmt.value = 'auto'
   fieldPretty.value = props.pretty
   void syncFieldEditor()
 }
@@ -194,12 +202,12 @@ function close() {
   visible.value = false
 }
 
-/** 自定义编解码被删后，当前字段 view 失效则回退 */
+/** 自定义编解码被删后，当前字段 view 失效则回退 Auto */
 watch(customNames, names => {
   if (!visible.value || !isCustomView(fieldViewFmt.value)) return
   const name = customFormatName(fieldViewFmt.value)
   if (!name || !names.includes(name)) {
-    fieldViewFmt.value = defaultFieldViewFmt(srcFieldWire.value, keyViewFmt.value)
+    fieldViewFmt.value = 'auto'
     void syncFieldEditor()
   }
 })
@@ -234,7 +242,7 @@ function submit() {
     isSaving.value = true
     try {
       const { type: _type, wireFieldKey, ...rest } = form.value
-      const fmt = fieldViewFmt.value
+      const fmt = effectiveFieldViewFmt.value
       let fieldValue = form.value.fieldValue
       if (needsJsonNormalize(fmt)) {
         fieldValue = fieldValue === '' ? '' : meJsonNormal(fieldValue)
@@ -352,7 +360,7 @@ async function refreshField() {
         <me-code
           :key="codeRemountKey"
           v-model="form.fieldValue"
-          :read-only="editorLoading || readonly || isReadonlyView(fieldViewFmt)"
+          :read-only="editorLoading || readonly || isReadonlyView(effectiveFieldViewFmt)"
           class="field-code-editor" />
       </el-form-item>
     </el-form>
@@ -385,18 +393,27 @@ async function refreshField() {
             icon="el-icon-refresh-right"
             :style="{ opacity: isRefreshing ? 0.5 : 1, cursor: isRefreshing ? 'wait' : 'pointer' }"
             @click="refreshField" />
-          <el-select
-            v-model="fieldViewFmt"
-            size="small"
-            class="field-set-enc-select"
-            :disabled="editorLoading"
-            @change="onFieldViewFmtChange">
-            <el-option
-              v-for="item in fieldViewOptionList"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value" />
-          </el-select>
+          <!-- Auto 识别结果：下拉右侧；下拉本身保持 Auto -->
+          <div class="field-set-enc me-flex">
+            <el-select
+              v-model="fieldViewFmt"
+              class="field-set-enc-select me-select-plain"
+              :suffix-icon="MeSelectUpDownIcon"
+              :disabled="editorLoading"
+              @change="onFieldViewFmtChange">
+              <el-option
+                v-for="item in fieldViewOptionList"
+                :key="item.value"
+                :label="item.label"
+                :value="item.value" />
+            </el-select>
+            <el-text
+              v-if="detectedViewText"
+              class="field-set-auto-label"
+              :title="t('redisValue.autoDetected')">
+              {{ detectedViewText }}
+            </el-text>
+          </div>
         </div>
         <div>
           <el-button @click="cancel">{{ t('cancel') }}</el-button>
@@ -459,13 +476,25 @@ async function refreshField() {
     font-size: 20px;
   }
 
+  .field-set-enc {
+    align-items: center;
+    // margin-left: 12px;
+  }
+
+  .field-set-auto-label {
+    margin-left: 8px;
+    white-space: nowrap;
+    color: var(--el-color-primary);
+    font-weight: 600;
+  }
+
   .field-set-enc-select {
-    width: 100px;
-    margin-left: 12px;
     font-size: var(--el-font-size-base);
 
     :deep(.el-select__wrapper) {
-      min-height: 28px;
+      min-height: 0;
+      height: 30px;
+      padding: 4px;
     }
   }
 

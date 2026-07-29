@@ -1,3 +1,49 @@
+/* 无边框下拉：按选中文案收缩；后缀用 MeSelectUpDownIcon（db / 编解码等） */
+.me-select-plain {
+  flex: 0 0 auto;
+  --el-select-width: max-content;
+}
+
+.me-select-plain .el-select__wrapper {
+  width: max-content;
+  box-shadow: none !important;
+  background: transparent;
+  gap: 2px;
+}
+
+.me-select-plain .el-select__selection {
+  flex: 0 0 auto;
+  padding: 0 4px;
+}
+
+/* 默认 absolute+width:100%，文案不进 max-content，须改回文档流 */
+.me-select-plain .el-select__selected-item.el-select__placeholder {
+  position: static;
+  transform: none;
+  width: auto;
+}
+
+/* 展开过滤时 input 默认占位，改为叠在文案上避免撑宽 */
+.me-select-plain .el-select__input-wrapper {
+  position: absolute;
+  inset: 0 18px 0 4px;
+}
+
+.me-select-plain .el-select__suffix .el-icon {
+  font-size: 12px;
+  color: var(--el-text-color-placeholder);
+}
+
+/* upDown 图标固定方向，不随展开旋转 */
+.me-select-plain .el-select__suffix .el-icon.is-reverse {
+  transform: none;
+}
+
+.me-select-plain .me-select-plain-arrow {
+  width: 1em;
+  height: 1em;
+}
+
 /* 文本选择: 整体禁用，个别地方放开 */
 html {
   user-select: none;

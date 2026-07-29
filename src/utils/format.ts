@@ -12,7 +12,7 @@ import JSON5 from 'json5'
 
 import i18n from '@/locales'
 import type { BytesFormat } from '@/types/tauri-specta'
-import { base64ToUtf8Text, detectViewFormat } from '@/utils/detect-view-format'
+import { base64ToUtf8Text } from '@/utils/detect-view-format'
 import { formatJavaSerDisplay, javaSerBase64ToValue } from '@/utils/javaserial'
 import { formatPickleDisplay, pickleBase64ToValue } from '@/utils/pickle'
 
@@ -253,7 +253,7 @@ export async function testCodec(
 /** 键重命名等基础字节视图；KeyRename、FieldAdd */
 export const BYTES_FORMAT = ['UTF8', 'Hex', 'Binary', 'Base64'] as const
 
-/** 前端值/键展示格式；IPC wire 恒 base64，本类型仅控展示（auto 仅 STRING 键级） */
+/** 前端值/键展示格式；IPC wire 恒 base64，本类型仅控展示（auto：STRING 键级 / 字段弹窗） */
 export type ViewBytesFormat =
   | 'auto'
   | 'utf8'
@@ -345,49 +345,17 @@ export function viewFmtForField(view: ViewBytesFormat): ViewBytesFormat {
 
 export type FieldViewOption = { label: string; value: ViewBytesFormat }
 
-/** 字段编辑下拉选项（wire 恒 base64，选项与键级 utf8 无关）；FieldSet */
+/** 字段编辑下拉选项（与 STRING 键级一致：Auto 置顶）；FieldSet */
 export function fieldViewOptions(customNames: string[] = []): FieldViewOption[] {
   const opts: FieldViewOption[] = [
-    { label: 'UTF8', value: 'utf8' },
-    ...BYTES_FORMAT.filter(label => label !== 'UTF8').map(label => ({
-      label,
-      value: label.toLowerCase() as ViewBytesFormat,
-    })),
-    { label: 'StrJson', value: 'strjson' },
-    { label: 'MsgPack', value: 'msgpack' },
-    { label: 'JavaSerial', value: 'javaserial' },
-    { label: 'Pickle', value: 'pickle' },
+    { label: 'Auto', value: 'auto' },
+    ...BYTES_FORMAT.map(label => ({ label, value: label.toLowerCase() as ViewBytesFormat })),
+    ...EXT_FORMAT.map(label => ({ label, value: label.toLowerCase() as ViewBytesFormat })),
   ]
   for (const name of customNames) {
     opts.push({ label: name, value: customFormatValue(name) })
   }
   return opts
-}
-
-/**
- * 字段弹窗默认 view：魔数格式优先，否则跟随键级基础展示，再否则 utf8。
- * FieldSet open
- */
-export function defaultFieldViewFmt(wire: string, keyView: ViewBytesFormat): ViewBytesFormat {
-  const detected = detectViewFormat(wire)
-  if (
-    detected === 'javaserial' ||
-    detected === 'pickle' ||
-    detected === 'msgpack' ||
-    detected === 'strjson'
-  ) {
-    return detected
-  }
-  const tableView = viewFmtForField(keyView)
-  if (
-    tableView === 'utf8' ||
-    tableView === 'hex' ||
-    tableView === 'binary' ||
-    tableView === 'base64'
-  ) {
-    return tableView
-  }
-  return detected === 'hex' ? 'hex' : 'utf8'
 }
 
 /** 保存前需 JSON compact；FieldSet / RedisValue */
