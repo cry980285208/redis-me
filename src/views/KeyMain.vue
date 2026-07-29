@@ -452,14 +452,6 @@ function formatDbOptionLabel(db: number): string {
   return formatDbLabel(db) + (share.conn?.meta?.['db' + db] || '')
 }
 
-/** el-select 默认 width:100%，按文案估算宽度；fit-input-width 只管下拉面板宽度 */
-const dbSelectWidth = computed(() => {
-  if (!share.conn) return '88px'
-  const len = formatDbLabel(share.conn.db).length
-  // +16 留给 upDown 后缀图标
-  return `${Math.min(136, Math.max(88, len * 7 + 35 + 16))}px`
-})
-
 /** 集群 Valkey 9+ 多库：el-select 位置仅展示当前 db，不支持切换 */
 const showClusterDbLabel = computed(() =>
   Boolean(share.conn?.cluster && share.capabilities.clusterDbSupported),
@@ -1031,7 +1023,6 @@ function editDbName(db: number): void {
             v-model="share.conn.db"
             @change="selectDB"
             class="db-select"
-            :style="{ width: dbSelectWidth }"
             :suffix-icon="dbSelectSuffixIcon"
             filterable
             v-else-if="!share.conn.cluster">
@@ -1452,17 +1443,51 @@ function editDbName(db: number): void {
     :deep(.el-select__wrapper) {
       min-height: 0;
       height: 30px;
-      padding: 4px 4px 4px 10px;
+      padding: 4px;
     }
 
+    /* 按当前显示的「dbN (count)」收缩；下拉面板仍按选项内容撑开 */
     .db-select {
-      flex-shrink: 0;
+      flex: 0 0 auto;
+      width: max-content;
+      --el-select-width: max-content;
 
       :deep(.el-select__wrapper) {
+        width: max-content;
         box-shadow: none;
         background: transparent;
-        padding-left: 4px;
-        padding-right: 4px;
+        gap: 2px;
+      }
+
+      :deep(.el-select__selection) {
+        flex: 0 0 auto;
+        min-width: 0;
+        display: flex;
+        flex-wrap: nowrap;
+        padding: 0 4px;
+      }
+
+      /*
+       * EP 默认 .el-select__placeholder 为 absolute + width:100%，
+       * 文案不参与 max-content，选择框会被父级/100% 撑出空白。
+       * 改回 static，宽度只跟当前显示文案走。
+       */
+      :deep(.el-select__selected-item.el-select__placeholder) {
+        position: static;
+        inset: auto;
+        transform: none;
+        width: auto;
+        max-width: none;
+        overflow: visible;
+        z-index: auto;
+      }
+
+      /* 过滤输入不参与布局，避免撑宽 */
+      :deep(.el-select__input-wrapper) {
+        position: absolute;
+        inset: 0 18px 0 4px;
+        flex: none;
+        width: auto !important;
       }
 
       :deep(.el-select__suffix) {
@@ -1483,14 +1508,7 @@ function editDbName(db: number): void {
       }
 
       :deep(.icon-main) {
-        min-width: 0;
-        overflow: hidden;
-
-        span {
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-        }
+        white-space: nowrap;
       }
     }
 
