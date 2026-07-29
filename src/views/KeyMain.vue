@@ -1446,10 +1446,9 @@ function editDbName(db: number): void {
       padding: 4px;
     }
 
-    /* 按当前显示的「dbN (count)」收缩；下拉面板仍按选项内容撑开 */
+    /* 按当前显示的「dbN (count)」收缩；下拉仍按选项内容撑开 */
     .db-select {
       flex: 0 0 auto;
-      width: max-content;
       --el-select-width: max-content;
 
       :deep(.el-select__wrapper) {
@@ -1459,35 +1458,23 @@ function editDbName(db: number): void {
         gap: 2px;
       }
 
+      /* 默认 flex:1 会撑满；收成内容宽 */
       :deep(.el-select__selection) {
         flex: 0 0 auto;
-        min-width: 0;
-        display: flex;
-        flex-wrap: nowrap;
         padding: 0 4px;
       }
 
-      /*
-       * EP 默认 .el-select__placeholder 为 absolute + width:100%，
-       * 文案不参与 max-content，选择框会被父级/100% 撑出空白。
-       * 改回 static，宽度只跟当前显示文案走。
-       */
+      /* 默认 absolute+width:100%，文案不进 max-content，须改回文档流 */
       :deep(.el-select__selected-item.el-select__placeholder) {
         position: static;
-        inset: auto;
         transform: none;
         width: auto;
-        max-width: none;
-        overflow: visible;
-        z-index: auto;
       }
 
-      /* 过滤输入不参与布局，避免撑宽 */
+      /* 展开过滤时 input 默认占位，改为叠在文案上避免撑宽 */
       :deep(.el-select__input-wrapper) {
         position: absolute;
         inset: 0 18px 0 4px;
-        flex: none;
-        width: auto !important;
       }
 
       :deep(.el-select__suffix) {
