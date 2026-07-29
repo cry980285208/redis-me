@@ -1932,12 +1932,7 @@ onUnmounted(() => {
               @row-click="rowClick"
               @row-dblclick="rowDblClick">
               <!-- 索引 -->
-              <el-table-column
-                label="#"
-                type="index"
-                width="50"
-                align="center"
-                show-overflow-tooltip>
+              <el-table-column label="#" type="index" width="50" align="center">
                 <template #default="scope">
                   <div class="index-cell">
                     <template v-if="fieldSetIndex !== scope.$index">{{
@@ -1957,7 +1952,6 @@ onUnmounted(() => {
                 prop="id"
                 width="350"
                 sortable
-                show-overflow-tooltip
                 v-if="redisValue.type === 'stream'">
                 <template #default="{ row }">
                   <div class="me-flex" style="width: 100%">
@@ -1974,7 +1968,6 @@ onUnmounted(() => {
                 :label="t('redisValue.key')"
                 prop="key"
                 sortable
-                show-overflow-tooltip
                 v-if="redisValue.type === 'hash'">
                 <template #default="scope">
                   {{ formatTableCell(scope.row.key) }}
@@ -1987,7 +1980,6 @@ onUnmounted(() => {
                 prop="index"
                 width="100"
                 sortable
-                show-overflow-tooltip
                 v-if="redisValue.type === 'list'" />
 
               <!-- 字段值 -->
@@ -1996,8 +1988,7 @@ onUnmounted(() => {
                 prop="value"
                 min-width="200"
                 sortable
-                :sort-method="compareFieldRowValue"
-                show-overflow-tooltip>
+                :sort-method="compareFieldRowValue">
                 <template #default="scope">
                   {{ fieldRowDisplayValue(scope.row) }}
                 </template>
@@ -2009,7 +2000,6 @@ onUnmounted(() => {
                 prop="score"
                 width="140"
                 sortable
-                show-overflow-tooltip
                 v-if="redisValue.type === 'zset'" />
 
               <!-- TTL -->
@@ -2486,6 +2476,14 @@ onUnmounted(() => {
       position: relative;
 
       :deep(.el-table) {
+        /* 单行省略：不依赖 show-overflow-tooltip（避免悬停气泡） */
+        .cell {
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          word-break: keep-all;
+        }
+
         .field-set-row {
           --el-table-tr-bg-color: var(--el-color-warning-light-9);
         }
