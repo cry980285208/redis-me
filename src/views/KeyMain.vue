@@ -263,32 +263,17 @@ const filterPattern = computed(() =>
   buildLocalFilterPattern(keyword.value, exact.value && !loadFolder.value, match.value),
 )
 
-/** 扫描工作缓冲：push 追加；定时 flush 到 keyList；本轮结束（含暂停）再排序 */
-const SCAN_UI_FLUSH_MS = 100
+/**
+ * 扫描工作缓冲：每轮 SCAN 结束后 push → 排序 → flush 到 keyList（边扫边看）。
+ */
 let scanBuffer: RedisKey_Deserialize[] = []
-let scanDirty = false
-let scanFlushTimer: ReturnType<typeof setInterval> | null = null
 
 const keyList = shallowRef<RedisKey_Deserialize[]>([])
 
-function flushScanToUi(sortNow: boolean) {
-  if (sortNow) scanBuffer = sortBy(scanBuffer, ['key'])
+function flushScanToUi() {
+  scanBuffer = sortBy(scanBuffer, ['key'])
   // 必须新数组引用：否则 KeyTree 的 prop 引用不变，树不会重建
   keyList.value = scanBuffer.slice()
-  scanDirty = false
-}
-
-function startScanFlush() {
-  stopScanFlush()
-  scanFlushTimer = setInterval(() => {
-    if (scanDirty) flushScanToUi(false)
-  }, SCAN_UI_FLUSH_MS)
-}
-
-function stopScanFlush() {
-  if (scanFlushTimer == null) return
-  clearInterval(scanFlushTimer)
-  scanFlushTimer = null
 }
 
 const filterKeyList = computed(() => {
@@ -321,7 +306,6 @@ async function scanKey(useCursor = false, loadAll = false, restart = false): Pro
   loading.value = true
   scanCancelled.value = false // 每次扫描都重置取消标志
   if (!useCursor) scanPaused.value = false
-  startScanFlush()
   try {
     if (!useCursor) {
       addSearchHistory(keyword.value)
@@ -330,7 +314,7 @@ async function scanKey(useCursor = false, loadAll = false, restart = false): Pro
       scanBuffer = []
     }
 
-    const firstScanKeys = await scanKeyCore(useCursor)
+    const firstScanKeys = await scanKeyCore()
 
     // loadAll=false 时自动继续加载（达到阈值停止）
     if (!loadAll) {
@@ -339,16 +323,13 @@ async function scanKey(useCursor = false, loadAll = false, restart = false): Pro
       await scanKeyAll()
     }
   } finally {
-    stopScanFlush()
-    // 本轮扫描结束（含暂停）：排一次序，方便立刻定位；续扫追加后再结束会再排
-    flushScanToUi(true)
     loading.value = false
     if (cursor.value?.finished) scanPaused.value = false
   }
 }
 
 // 核心：执行一次 SCAN 请求，返回新扫描的 key 数量
-async function scanKeyCore(useCursor = false): Promise<number> {
+async function scanKeyCore(): Promise<number> {
   const params = {
     match: match.value,
     type: keyType.value === 'ALL' ? '' : keyType.value.toLowerCase(),
@@ -364,12 +345,9 @@ async function scanKeyCore(useCursor = false): Promise<number> {
   cursor.value = data.cursor
   scanBatchCount.value++
 
-  // 新搜索替换缓冲；续扫 push 追加（避免每批 spread + sortBy）
-  if (!useCursor) scanBuffer = []
+  // 新搜索由 scanKey 已清空缓冲；续扫 push 追加后排序上屏
   for (const k of data.keyList) scanBuffer.push(k)
-  scanDirty = true
-  // 首批立刻上屏，避免等第一个 100ms 间隔
-  if (scanBatchCount.value === 1) flushScanToUi(false)
+  flushScanToUi()
 
   return data.keyList.length
 }
@@ -380,7 +358,7 @@ async function scanKeyAuto(fetchedCount: number = 0): Promise<void> {
   if (scanCancelled.value) return
   if (fetchedCount >= SCAN_FETCH_COUNT.value) return
 
-  const newKeys = await scanKeyCore(true)
+  const newKeys = await scanKeyCore()
   await scanKeyAuto(fetchedCount + newKeys)
 }
 
@@ -389,13 +367,13 @@ async function scanKeyAll(): Promise<void> {
   if (!cursor.value || cursor.value.finished) return
   if (scanCancelled.value) return
 
-  await scanKeyCore(true)
+  await scanKeyCore()
   await scanKeyAll() // 继续递归
 }
 
 function deleteKey(redisKey: RedisKey_Deserialize): void {
   scanBuffer = scanBuffer.filter(rk => !sameRedisKey(rk, redisKey))
-  keyList.value = scanBuffer.slice()
+  flushScanToUi()
   share.redisKey = null
 }
 
@@ -550,7 +528,6 @@ onMounted(() => {
   }
 })
 onUnmounted(() => {
-  stopScanFlush()
   bus.off(KEY_DELETE, deleteKey)
   bus.off(CONN_REFRESH, refresh)
   window.removeEventListener('keydown', onKeyListRefreshHotkey, true)
@@ -564,8 +541,8 @@ function addKey(): void {
 
 const keyTreeRef = useTemplateRef<InstanceType<typeof KeyTree>>('keyTreeRef')
 function addKeyOk(redisKey: RedisKey_Deserialize): void {
-  scanBuffer.unshift(redisKey)
-  keyList.value = scanBuffer.slice()
+  scanBuffer.push(redisKey)
+  flushScanToUi()
   chooseKey(redisKey)
   nextTick(() => {
     keyTreeRef.value?.setCurrentKey(redisKey)

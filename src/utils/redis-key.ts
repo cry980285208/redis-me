@@ -1,8 +1,6 @@
 /**
  * Redis 键身份：SCAN 对合法 UTF-8 可省略 bytes（空串），比对不能只用 bytes ===。
- * - 双方都有 bytes → 比 base64（二进制 / 旧数据）
- * - 双方都无 bytes → 比 key
- * - 仅一方有 bytes → 尝试把 base64 严格解成 UTF-8 再与另一方 key 比（兼容旧收藏）
+ * 统一走 redisKeyId（UTF-8 有无 bytes 归一），保证收藏/缓存/列表删除一致。
  */
 import { base64ToUtf8Text } from '@/utils/detect-view-format'
 import { utf8TextToBase64 } from '@/utils/format'
@@ -10,12 +8,7 @@ import { utf8TextToBase64 } from '@/utils/format'
 export type RedisKeyLike = { key: string; bytes: string }
 
 export function sameRedisKey(a: RedisKeyLike, b: RedisKeyLike): boolean {
-  if (a.bytes && b.bytes) return a.bytes === b.bytes
-  if (!a.bytes && !b.bytes) return a.key === b.key
-  const withBytes = a.bytes ? a : b
-  const without = a.bytes ? b : a
-  const decoded = base64ToUtf8Text(withBytes.bytes)
-  return decoded !== null && decoded === without.key
+  return redisKeyId(a) === redisKeyId(b)
 }
 
 /**

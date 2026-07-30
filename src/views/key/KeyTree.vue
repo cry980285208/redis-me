@@ -359,11 +359,9 @@ function quickDeleteKey(redisKey: RedisKey_Deserialize): void {
   meDeleteKey(share.conn.id, redisKey)
 }
 
-const favoritedKeyList = computed(() => props.favorites)
-
 function isFavoritedLocal(redisKey: RedisKey_Deserialize | undefined): boolean {
   if (!redisKey) return false
-  return favoritedKeyList.value.some(f => sameRedisKey(f, redisKey))
+  return props.favorites.some(f => sameRedisKey(f, redisKey))
 }
 
 const isContextNodeFavorited = computed(() => {
