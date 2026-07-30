@@ -32,6 +32,7 @@ import {
   computeScanProgress,
   MINIMATCH_SCAN_OPTS,
 } from '@/utils/redis-glob'
+import { sameRedisKey } from '@/utils/redis-key'
 import {
   bus,
   CONN_REFRESH,
@@ -393,7 +394,7 @@ async function scanKeyAll(): Promise<void> {
 }
 
 function deleteKey(redisKey: RedisKey_Deserialize): void {
-  scanBuffer = scanBuffer.filter(rk => rk.bytes !== redisKey.bytes)
+  scanBuffer = scanBuffer.filter(rk => !sameRedisKey(rk, redisKey))
   keyList.value = scanBuffer.slice()
   share.redisKey = null
 }
@@ -494,7 +495,7 @@ function contextKey(command: string, redisKey: RedisKey_Deserialize): void {
     favorites.value = addFavorite(favorites.value, share.conn.id, share.conn.db, redisKey)
     meOk(t('keyTree.favoriteOk'))
   } else if (command === 'unfavoriteKey') {
-    favorites.value = removeFavorite(favorites.value, share.conn.id, share.conn.db, redisKey.bytes)
+    favorites.value = removeFavorite(favorites.value, share.conn.id, share.conn.db, redisKey)
     meOk(t('keyTree.unfavoriteOk'))
   } else {
     meOk(`TODO: ${command}`)
@@ -796,7 +797,7 @@ function favoriteChecked(): void {
   const connId = share.conn.id
   const db = share.conn.db
   const allAlready = checkedKeyList.value.every(redisKey =>
-    isFavorited(favorites.value, connId, db, redisKey.bytes),
+    isFavorited(favorites.value, connId, db, redisKey),
   )
   if (allAlready) {
     meWarn(t('keyMain.favoriteCheckedAllAlready'))
@@ -820,7 +821,7 @@ function unfavoriteChecked(): void {
   const connId = share.conn.id
   const db = share.conn.db
   const noneFavorited = checkedKeyList.value.every(
-    redisKey => !isFavorited(favorites.value, connId, db, redisKey.bytes),
+    redisKey => !isFavorited(favorites.value, connId, db, redisKey),
   )
   if (noneFavorited) {
     meWarn(t('keyMain.unfavoriteCheckedNoneAlready'))
@@ -829,7 +830,7 @@ function unfavoriteChecked(): void {
   let newFavorites = favorites.value
   const beforeLen = newFavorites.length
   checkedKeyList.value.forEach(redisKey => {
-    newFavorites = removeFavorite(newFavorites, connId, db, redisKey.bytes)
+    newFavorites = removeFavorite(newFavorites, connId, db, redisKey)
   })
   const count = beforeLen - newFavorites.length
   if (count > 0) {

@@ -14,7 +14,7 @@ const props = defineProps<{
 
 const keyType = ref<string | undefined>()
 
-// scan 无 keyType；有 bytes 的 SCAN 键走缓存，无 bytes 的 UI 新建键每次拉 TYPE
+// scan 无 keyType；resolveKeyType 按 redisKeyId 缓存（UTF-8 有无 bytes 已归一）
 watch(
   () => [props.redisKey?.key, props.redisKey?.bytes, share.conn?.id, share.conn?.db] as const,
   async () => {

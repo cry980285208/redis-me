@@ -1121,7 +1121,7 @@ const isCurrentKeyFavorited = computed(() => {
   const conn = share.conn
   const rk = share.redisKey
   if (!conn || !rk) return false
-  return isFavorited(favorites.value, conn.id, conn.db, rk.bytes)
+  return isFavorited(favorites.value, conn.id, conn.db, rk)
 })
 
 function toggleFavorite() {
@@ -1129,7 +1129,7 @@ function toggleFavorite() {
   const rk = share.redisKey
   if (!conn || !rk) return
   if (isCurrentKeyFavorited.value) {
-    favorites.value = removeFavorite(favorites.value, conn.id, conn.db, rk.bytes)
+    favorites.value = removeFavorite(favorites.value, conn.id, conn.db, rk)
     meOk(t('keyTree.unfavoriteOk'))
   } else {
     favorites.value = addFavorite(favorites.value, conn.id, conn.db, rk)

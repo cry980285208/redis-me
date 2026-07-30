@@ -152,12 +152,8 @@ pub fn tuple_to_key_size(keys: Vec<(Vec<u8>, u64, String)>) -> Vec<RedisKeySize>
 }
 
 pub fn ui_key_list(keys: Vec<Vec<u8>>) -> Vec<RedisKey> {
-    keys.into_iter()
-        .map(|key| RedisKey {
-            key: vec8_to_display_string(&key),
-            bytes: key,
-        })
-        .collect()
+    // UTF-8 键省略 bytes，见 RedisKey::from(Vec<u8>)
+    keys.into_iter().map(RedisKey::from).collect()
 }
 
 pub fn ui_list_items(
@@ -680,6 +676,37 @@ mod tests {
         println!("base64: {}", base64);
         // base64: aGVwZW5nanU=
         Ok(())
+    }
+
+    #[test]
+    fn test_redis_key_from_utf8_omits_bytes() {
+        let rk = RedisKey::from(b"user:1".to_vec());
+        assert_eq!(rk.key, "user:1");
+        assert!(rk.bytes.is_empty());
+        assert_eq!(rk.to_bytes(), b"user:1");
+
+        let rk = RedisKey::from("hello".to_string());
+        assert_eq!(rk.key, "hello");
+        assert!(rk.bytes.is_empty());
+        assert_eq!(rk.to_bytes(), b"hello");
+    }
+
+    #[test]
+    fn test_redis_key_from_binary_keeps_bytes() {
+        let raw = vec![0xff, 0x00, 0xfe];
+        let rk = RedisKey::from(raw.clone());
+        assert_eq!(rk.bytes, raw);
+        assert_eq!(rk.to_bytes(), raw.as_slice());
+        assert!(!rk.key.is_empty()); // lossy 展示非空
+    }
+
+    #[test]
+    fn test_ui_key_list_omits_utf8_bytes() {
+        let list = ui_key_list(vec![b"a".to_vec(), vec![0xff]]);
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].key, "a");
+        assert!(list[0].bytes.is_empty());
+        assert_eq!(list[1].bytes, vec![0xff]);
     }
 
     #[test]

@@ -6,6 +6,7 @@ import { shareProvideKey } from '@/types/me-interface'
 import type { RedisKey_Deserialize } from '@/types/tauri-specta'
 import { BYTES_FORMAT, meFormatBytes, meToBase64 } from '@/utils/format'
 import { invalidateKeyType } from '@/utils/key-type-cache'
+import { redisKeyWireBase64 } from '@/utils/redis-key'
 import { meCommands, meErr, meOk } from '@/utils/util'
 
 const { t } = useI18n()
@@ -28,7 +29,8 @@ function open(data: { redisKey: RedisKey_Deserialize }) {
 watch(codec, () => {
   const k = targetKey.value
   if (!k || !visible.value) return
-  inputValue.value = codec.value === 'utf8' ? k.key : meFormatBytes(k.bytes, codec.value)
+  inputValue.value =
+    codec.value === 'utf8' ? k.key : meFormatBytes(redisKeyWireBase64(k), codec.value)
 })
 
 async function submit() {

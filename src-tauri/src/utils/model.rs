@@ -397,19 +397,19 @@ api_model!(FieldScanResult {
 });
 
 // Redis键: 由于键是字节存储的，考虑转换为utf-8字符串显示后可能会丢失信息，因此封装为对象
-// 备注: 为了方便传输与前端对比是否相等，将bytes序列化为base64字符串。
-//     （jackson针对bytes序列化, 默认会进行base64编码, 返回是字符串）
+// 备注: bytes 序列化为 base64。合法 UTF-8 键可省略 bytes（空 Vec），to_bytes 回退 key.as_bytes()；
+//       非法 UTF-8 / 二进制键必须带 bytes，key 仅作 lossy 展示。
 api_model!(RedisKey {
     key: String,    // 显示
 
     #[serde(with = "v8_base64")]
     #[specta(type = String)]
-    bytes: Vec<u8>, // 修改、删除等依据 ==> 查询出来的二进制键（JSON 为 Base64 字符串）
+    bytes: Vec<u8>, // 修改、删除等依据；UTF-8 可省略（JSON 为 Base64 字符串）
 });
 
 impl RedisKey {
     pub fn to_bytes(&self) -> &[u8] {
-        // 扫描出来的键进行修改或删除时, 传入bytes. 完全新增的键，传入字符串, bytes为空
+        // 扫描 UTF-8 键 / 手动新增键：bytes 为空，用 key；二进制键：必须用 bytes
         if self.bytes.is_empty() {
             self.key.as_bytes()
         } else {
@@ -430,25 +430,36 @@ impl RedisKey {
 
 impl From<&str> for RedisKey {
     fn from(s: &str) -> Self {
+        // 字符串构造的键本身是 UTF-8，无需再带一份 bytes
         RedisKey {
             key: s.to_string(),
-            bytes: Vec::from(s),
+            bytes: Vec::new(),
         }
     }
 }
 impl From<String> for RedisKey {
     fn from(s: String) -> Self {
         RedisKey {
-            key: s.clone(),
-            bytes: Vec::from(s),
+            key: s,
+            bytes: Vec::new(),
         }
     }
 }
 impl From<Vec<u8>> for RedisKey {
     fn from(bytes: Vec<u8>) -> Self {
-        RedisKey {
-            key: vec8_to_display_string(&bytes),
-            bytes,
+        // 合法 UTF-8：只留 key，省略 bytes，降低 SCAN 全量时的 IPC/前端内存
+        match String::from_utf8(bytes) {
+            Ok(key) => RedisKey {
+                key,
+                bytes: Vec::new(),
+            },
+            Err(e) => {
+                let bytes = e.into_bytes();
+                RedisKey {
+                    key: vec8_to_display_string(&bytes),
+                    bytes,
+                }
+            }
         }
     }
 }
@@ -755,9 +766,11 @@ api_model!(RedisKeySize {
 
 impl From<(Vec<u8>, u64, String)> for RedisKeySize {
     fn from((key, size, key_type): (Vec<u8>, u64, String)) -> Self {
+        // 与 RedisKey::from 一致：UTF-8 省略 bytes
+        let rk = RedisKey::from(key);
         RedisKeySize {
-            key: vec8_to_display_string(&key),
-            bytes: key,
+            key: rk.key,
+            bytes: rk.bytes,
             size,
             key_type,
         }

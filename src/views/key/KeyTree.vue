@@ -7,6 +7,7 @@ import { useI18n } from 'vue-i18n'
 
 import { shareProvideKey } from '@/types/me-interface'
 import type { RedisKey_Deserialize } from '@/types/tauri-specta'
+import { sameRedisKey } from '@/utils/redis-key'
 import { meDeleteKey, TREE_KEY_ID_PREFIX } from '@/utils/util'
 
 import KeyTypeTag from './KeyTypeTag.vue'
@@ -358,17 +359,16 @@ function quickDeleteKey(redisKey: RedisKey_Deserialize): void {
   meDeleteKey(share.conn.id, redisKey)
 }
 
-const favoritedBytesSet = computed(() => new Set(props.favorites.map(f => f.bytes)))
+const favoritedKeyList = computed(() => props.favorites)
 
-function isFavoritedLocal(bytes: string): boolean {
-  return favoritedBytesSet.value.has(bytes)
+function isFavoritedLocal(redisKey: RedisKey_Deserialize | undefined): boolean {
+  if (!redisKey) return false
+  return favoritedKeyList.value.some(f => sameRedisKey(f, redisKey))
 }
 
 const isContextNodeFavorited = computed(() => {
   if (!contextMenuNode.value?.isLeaf) return false
-  const bytes = contextMenuNode.value.data.redisKey?.bytes
-  if (!bytes) return false
-  return isFavoritedLocal(bytes)
+  return isFavoritedLocal(contextMenuNode.value.data.redisKey)
 })
 </script>
 
@@ -413,7 +413,7 @@ const isContextNodeFavorited = computed(() => {
                 class="key-delete-btn"
                 @click.stop="quickDeleteKey(node.data.redisKey)" />
               <me-icon
-                v-if="isFavoritedLocal(node.data.redisKey.bytes)"
+                v-if="isFavoritedLocal(node.data.redisKey)"
                 icon="el-icon-star-filled"
                 style="color: #f7ba2a"
                 class="key-favorite-btn"
