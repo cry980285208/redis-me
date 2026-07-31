@@ -7,7 +7,7 @@ import type { RedisKey_Deserialize } from '@/types/tauri-specta'
 import { BYTES_FORMAT, meFormatBytes, meToBase64 } from '@/utils/format'
 import { invalidateKeyType } from '@/utils/key-type-cache'
 import { redisKeyWireBase64 } from '@/utils/redis-key'
-import { meCommands, meErr, meOk } from '@/utils/util'
+import { bus, KEY_RENAME, meCommands, meErr, meOk } from '@/utils/util'
 
 const { t } = useI18n()
 const share = inject(shareProvideKey)!
@@ -58,6 +58,8 @@ async function submit() {
     invalidateKeyType(id, oldKey)
     k.key = apiNewKey.key
     k.bytes = apiNewKey.bytes
+    // 右侧详情直接绑 redisKey；左侧树靠 shallowRef 重建，需通知 KeyMain flush
+    bus.emit(KEY_RENAME, { oldKey, newKey: { key: apiNewKey.key, bytes: apiNewKey.bytes } })
     meOk(t('actionOk'))
     visible.value = false
   } finally {

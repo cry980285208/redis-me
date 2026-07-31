@@ -38,6 +38,7 @@ import {
   CONN_REFRESH,
   INFO_REFRESH,
   KEY_DELETE,
+  KEY_RENAME,
   KEY_REFRESH,
   KEY_TYPE_LIST,
   meConfirm,
@@ -377,6 +378,32 @@ function deleteKey(redisKey: RedisKey_Deserialize): void {
   share.redisKey = null
 }
 
+/** 重命名后：flush 键树（label/id 按新 key 重建），并同步收藏里的键身份 */
+function renameKey(payload: { oldKey: RedisKey_Deserialize; newKey: RedisKey_Deserialize }): void {
+  const { oldKey, newKey } = payload
+  // KeyRename 已原地改过列表里的对象；再写一遍以兼容非同一引用
+  for (const rk of scanBuffer) {
+    if (sameRedisKey(rk, oldKey) || sameRedisKey(rk, newKey)) {
+      rk.key = newKey.key
+      rk.bytes = newKey.bytes
+    }
+  }
+  flushScanToUi()
+
+  if (share.conn) {
+    const { id, db } = share.conn
+    favorites.value = favorites.value.map(f => {
+      if (f.connId !== id || f.db !== db) return f
+      if (!sameRedisKey(f.redisKey, oldKey) && !sameRedisKey(f.redisKey, newKey)) return f
+      return { ...f, redisKey: { key: newKey.key, bytes: newKey.bytes } }
+    })
+  }
+
+  nextTick(() => {
+    keyTreeRef.value?.setCurrentKey(newKey)
+  })
+}
+
 const dbList = ref<RedisDB[]>([])
 
 /** 当前 db 不在可见列表时切到第一项，并同步 Redis SELECT */
@@ -518,6 +545,7 @@ const keyCopyRef = useTemplateRef<InstanceType<typeof KeyCopy>>('keyCopyRef')
 
 onMounted(() => {
   bus.on(KEY_DELETE, deleteKey)
+  bus.on(KEY_RENAME, renameKey)
   bus.on(CONN_REFRESH, refresh)
   window.addEventListener('keydown', onKeyListRefreshHotkey, true)
   connUi.openKeyCopy = (redisKey: RedisKey_Deserialize) => {
@@ -529,6 +557,7 @@ onMounted(() => {
 })
 onUnmounted(() => {
   bus.off(KEY_DELETE, deleteKey)
+  bus.off(KEY_RENAME, renameKey)
   bus.off(CONN_REFRESH, refresh)
   window.removeEventListener('keydown', onKeyListRefreshHotkey, true)
 })
