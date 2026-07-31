@@ -26,3 +26,7 @@ dist-ssr
 # hepengju
 docs/.vitepress/dist
 docs/.vitepress/cache
+
+# Python seed scripts
+**/__pycache__/
+*.pyc

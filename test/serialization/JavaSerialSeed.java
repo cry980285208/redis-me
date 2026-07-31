@@ -52,8 +52,8 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * 向 Redis 写入若干 JDK 序列化样例键，供 RedisME「JavaSerial」查看验证。
  *
- * <p>需 JDK 11+，无第三方依赖（纯 Socket + RESP）。默认连本仓库 docker-compose 单机：
- * {@code localhost:6379}，密码 {@code hepengju}。
+ * <p>需 JDK 11+，无第三方依赖（纯 Socket + RESP）。连接参数优先级：命令行 &gt; 环境变量 &gt;
+ * 默认本机。环境变量：{@code REDIS_SERVER} / {@code REDIS_PROT} / {@code REDIS_PASSWORD}。
  *
  * <pre>
  *   java JavaSerialSeed.java
@@ -68,10 +68,19 @@ public class JavaSerialSeed {
 
   private static final String PREFIX = "encoding:javaserial:";
 
+  /** 命令行 > REDIS_SERVER / REDIS_PROT / REDIS_PASSWORD > 本机默认 */
+  static String envOr(String name, String def) {
+    String v = System.getenv(name);
+    return (v == null || v.isEmpty()) ? def : v;
+  }
+
   public static void main(String[] args) throws Exception {
-    String host = args.length > 0 ? args[0] : "127.0.0.1";
-    int port = args.length > 1 ? Integer.parseInt(args[1]) : 6379;
-    String password = args.length > 2 ? args[2] : "hepengju";
+    String host = args.length > 0 ? args[0] : envOr("REDIS_SERVER", "127.0.0.1");
+    int port =
+        args.length > 1
+            ? Integer.parseInt(args[1])
+            : Integer.parseInt(envOr("REDIS_PROT", "6379"));
+    String password = args.length > 2 ? args[2] : envOr("REDIS_PASSWORD", "hepengju");
 
     Map<String, Object> samples = buildSamples();
     try (RedisCli redis = new RedisCli(host, port)) {

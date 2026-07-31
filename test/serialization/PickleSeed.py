@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """向 Redis 写入若干 pickle 样例键，供 RedisME「Pickle」查看验证。
 
-需 Python 3.8+，无第三方依赖（纯 socket + RESP）。默认连本仓库 docker-compose 单机：
-localhost:6379，密码 hepengju。
+需 Python 3.8+，无第三方依赖（纯 socket + RESP）。连接参数优先级：命令行 > 环境变量 >
+默认本机。环境变量：REDIS_SERVER / REDIS_PROT / REDIS_PASSWORD。
 
 用法::
 
@@ -16,6 +16,7 @@ Hash/List/Set/ZSet 打开字段弹窗即可（可测字段级 Auto，并混有 U
 
 from __future__ import annotations
 
+import os
 import pickle
 import socket
 import sys
@@ -254,10 +255,16 @@ def seed_compound_types(redis: RedisCli) -> None:
     print(f"ZADD {zset_key} (2×Pickle + 1×UTF8)")
 
 
+def redis_conn_from_argv(argv: list[str]) -> tuple[str, int, str]:
+    """命令行 > REDIS_SERVER / REDIS_PROT / REDIS_PASSWORD > 本机默认。"""
+    host = argv[1] if len(argv) > 1 else os.environ.get("REDIS_SERVER", "127.0.0.1")
+    port = int(argv[2] if len(argv) > 2 else os.environ.get("REDIS_PROT", "6379"))
+    password = argv[3] if len(argv) > 3 else os.environ.get("REDIS_PASSWORD", "hepengju")
+    return host, port, password
+
+
 def main(argv: list[str]) -> int:
-    host = argv[1] if len(argv) > 1 else "127.0.0.1"
-    port = int(argv[2]) if len(argv) > 2 else 6379
-    password = argv[3] if len(argv) > 3 else "hepengju"
+    host, port, password = redis_conn_from_argv(argv)
 
     samples = build_samples()
     with RedisCli(host, port) as redis:
