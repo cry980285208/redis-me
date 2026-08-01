@@ -101,6 +101,8 @@ body {
   height: 100%; /*app的height单独加高度100%不生效*/
 
   font-family: var(--ui-font);
+  /* 未设置时浏览器默认 16px；与 Element Plus / 键树统一为 14px */
+  font-size: var(--el-font-size-base);
   overflow: hidden;
 }
 

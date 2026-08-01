@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1em" height="1em">
+  <!-- 上层袋口：空心描边感（evenodd），看起来是打开的 -->
+  <path
+    fill="currentColor"
+    fill-rule="evenodd"
+    d="M112 200h256l104 104h440v120H112V200zm56 56v120h696V352H452L348 248H168z" />
+  <!-- 下层翻盖：实心 -->
+  <path
+    fill="currentColor"
+    d="M96 424h832l-112 440H208L96 424z" />
+</svg>
