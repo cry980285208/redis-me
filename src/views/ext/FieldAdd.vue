@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import type { FormItemRule } from 'element-plus'
 import { cloneDeep } from 'lodash'
-import { computed, inject, ref, toRaw, useTemplateRef, watch } from 'vue'
+import { computed, inject, nextTick, ref, toRaw, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { shareProvideKey } from '@/types/me-interface'
 import type { RedisFieldAdd_Deserialize, RedisKey_Deserialize } from '@/types/tauri-specta'
 import { BYTES_FORMAT, IPC_WIRE_FORMAT, meViewToWire, type ViewBytesFormat } from '@/utils/format'
+import { redisKeyWireBase64 } from '@/utils/redis-key'
 import {
   KEY_TYPE_LIST,
   meCommands,
@@ -60,8 +61,45 @@ const form = ref(cloneDeep(toRaw(initForm.value)))
 const stringOrJsonType = computed(() => form.value.type === 'string' || form.value.type === 'json')
 const jsonType = computed(() => form.value.type === 'json')
 
+/** Hex/Binary 等按当前编码试转 wire；失败文案挂到输入框下方（勿 catch meCommands，会与全局 meErr 重复） */
+function validateViewBytes(
+  text: unknown,
+  view: ViewBytesFormat,
+  callback: (error?: string | Error) => void,
+): void {
+  try {
+    meViewToWire(String(text ?? ''), view)
+    callback()
+  } catch (e) {
+    callback(new Error(e instanceof Error ? e.message : String(e)))
+  }
+}
+
+const keyViewBytesRules = computed<FormItemRule[]>(() => [
+  {
+    validator: (_rule, value, callback) => {
+      // 加字段时键名只读，wire 另走 redisKeyWireBase64
+      if (form.value.mode !== 'key') {
+        callback()
+        return
+      }
+      validateViewBytes(value, form.value.keyFmt as ViewBytesFormat, callback)
+    },
+    trigger: ['blur', 'change'],
+  },
+])
+
+const valViewBytesRules = computed<FormItemRule[]>(() => [
+  {
+    validator: (_rule, value, callback) => {
+      validateViewBytes(value, form.value.valFmt as ViewBytesFormat, callback)
+    },
+    trigger: ['blur', 'change'],
+  },
+])
+
 const rules = computed(() => ({
-  'key.key': [{ required: true, message: t('fieldAdd.keyRequired') }],
+  'key.key': [{ required: true, message: t('fieldAdd.keyRequired') }, ...keyViewBytesRules.value],
   type: [{ required: true, message: t('fieldAdd.typeRequired') }],
   ttl: [
     { required: true, message: t('fieldAdd.ttlRequired') },
@@ -98,9 +136,12 @@ const rules = computed(() => ({
             callback(new Error(t('fieldAdd.jsonValidator')))
             return
           }
+          callback()
+          return
         }
-        callback()
+        validateViewBytes(value, form.value.valFmt as ViewBytesFormat, callback)
       },
+      trigger: ['blur', 'change'],
     },
   ],
   streamId: [
@@ -157,12 +198,18 @@ function submit() {
         if (item.fieldTtl === null) item.fieldTtl = -1
       })
 
-      // 键名：无 bytes 时按 keyFmt 解析；统一提交 base64（JSON 类型键名同样）
-      const key: RedisKey_Deserialize =
-        form.value.mode === 'key' && !form.value.key.bytes
-          ? { key: meViewToWire(form.value.key.key, keyViewFmt), bytes: '' }
-          : form.value.key
+      // 键名统一 base64 wire：新建键按 keyFmt；加字段在 SCAN 省略 bytes 时用展示名转 wire
+      const key: RedisKey_Deserialize = !form.value.key.bytes
+        ? {
+            key:
+              form.value.mode === 'key'
+                ? meViewToWire(form.value.key.key, keyViewFmt)
+                : redisKeyWireBase64(form.value.key),
+            bytes: '',
+          }
+        : form.value.key
 
+      // 失败由 meCommands 统一 meErr；此处不 catch，避免重复弹框
       const redisKey = await meCommands.fieldAdd(share.conn!.id, {
         ...form.value,
         key,
@@ -189,13 +236,15 @@ const hint = computed(() => {
   return ''
 })
 
-// me-code 的值发生变化时进行自动验证
-watch(
-  () => form.value.value,
-  () => {
-    formRef?.value?.validate()
-  },
-)
+function revalidateForm(): void {
+  nextTick(() => {
+    void formRef.value?.validate().catch(() => {})
+  })
+}
+
+// me-code / 切换编码后重新校验（Hex 奇数长度等即时显示在输入框下）
+watch(() => form.value.value, revalidateForm)
+watch(() => [form.value.valFmt, form.value.keyFmt] as const, revalidateForm)
 
 // json和stream类型不支持编码
 function handleKeyTypeChange() {
@@ -281,46 +330,45 @@ function handleKeyTypeChange() {
         <el-input v-model="form.streamId" clearable />
       </el-form-item>
 
-      <!-- key, value, score: 非 string 和 json 类型 -->
+      <!-- key, value, score: 非 string 和 json 类型；编码校验挂在各输入框下 -->
       <el-form-item :label="t('fieldAdd.element') + ' ' + hint" v-if="!stringOrJsonType">
-        <div
-          v-for="(item, index) in form.fieldValueList"
-          class="me-flex"
-          style="margin-bottom: 10px; width: 100%"
-          key="id">
-          <el-input
-            type="text"
-            v-model="item.fieldKey"
-            :placeholder="form.type === 'hash' ? t('fieldAdd.hashKey') : t('fieldAdd.field')"
-            style="margin-right: 10px"
+        <div v-for="(item, index) in form.fieldValueList" :key="index" class="field-add-row">
+          <el-form-item
             v-if="form.type === 'hash' || form.type === 'stream'"
-            :validate-event="false" />
-          <el-input
-            type="text"
-            v-model="item.fieldValue"
-            :placeholder="t('fieldAdd.value')"
-            style="margin-right: 10px"
-            :validate-event="false" />
+            :prop="`fieldValueList.${index}.fieldKey`"
+            :rules="valViewBytesRules"
+            class="field-add-cell">
+            <el-input
+              type="text"
+              v-model="item.fieldKey"
+              :placeholder="form.type === 'hash' ? t('fieldAdd.hashKey') : t('fieldAdd.field')" />
+          </el-form-item>
+          <el-form-item
+            :prop="`fieldValueList.${index}.fieldValue`"
+            :rules="valViewBytesRules"
+            class="field-add-cell">
+            <el-input type="text" v-model="item.fieldValue" :placeholder="t('fieldAdd.value')" />
+          </el-form-item>
           <el-input-number
+            v-if="form.type === 'zset'"
             :controls="false"
             v-model="item.fieldScore"
-            style="margin-right: 10px"
-            v-if="form.type === 'zset'"
-            :validate-event="false" />
+            class="field-add-score" />
           <el-input-number
             v-if="form.type === 'hash' && share.capabilities.httlSupported"
             v-model="item.fieldTtl"
             :min="-1"
             :controls="false"
             :placeholder="t('fieldAdd.fieldTtl')"
-            style="margin-right: 10px; width: 250px"
-            :validate-event="false" />
-          <el-button
-            icon="el-icon-delete"
-            circle
-            @click="deleteElement(index)"
-            v-if="form.fieldValueList.length > 1" />
-          <el-button icon="el-icon-plus" circle @click="newElement(index)" />
+            class="field-add-ttl" />
+          <div class="field-add-actions">
+            <el-button
+              icon="el-icon-delete"
+              circle
+              @click="deleteElement(index)"
+              v-if="form.fieldValueList.length > 1" />
+            <el-button icon="el-icon-plus" circle @click="newElement(index)" />
+          </div>
         </div>
       </el-form-item>
     </el-form>
@@ -360,17 +408,44 @@ function handleKeyTypeChange() {
 </template>
 
 <style scoped lang="scss">
-.field-add-footer-codec {
+.field-add-row {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  margin-bottom: 4px;
 }
 
-.field-add-footer-codec-label {
+.field-add-cell {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 18px;
+
+  :deep(.el-form-item__content) {
+    margin-left: 0 !important;
+  }
+
+  :deep(.el-form-item__error) {
+    position: static;
+    padding-top: 2px;
+  }
+}
+
+.field-add-score {
+  width: 120px;
   flex-shrink: 0;
-  font-size: var(--el-font-size-extra-small);
+}
+
+.field-add-ttl {
+  width: 120px;
+  flex-shrink: 0;
+}
+
+.field-add-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+  padding-top: 4px;
 }
 
 :deep(.el-input-group__prepend) {

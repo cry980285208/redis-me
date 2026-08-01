@@ -447,8 +447,15 @@ async function scanKeyCore(): Promise<number> {
   cursor.value = data.cursor
   scanBatchCount.value++
 
-  // 新搜索由 scanKey 已清空缓冲；续扫 push 追加后排序上屏
-  for (const k of data.keyList) scanBuffer.push(k)
+  // Redis SCAN 保证「全程存在的键至少出现一次」，但不保证不重复（rehash 等场景会跨 cursor 重复）。
+  // 新搜索由 scanKey 已清空缓冲；续扫按 redisKeyId 去重后再排序上屏（与收藏目录 mergeScanKeys 一致）。
+  const seen = new Set(scanBuffer.map(redisKeyId))
+  for (const k of data.keyList) {
+    const id = redisKeyId(k)
+    if (seen.has(id)) continue
+    seen.add(id)
+    scanBuffer.push(k)
+  }
   flushScanToUi()
 
   return data.keyList.length
@@ -912,9 +919,9 @@ async function mockData(): Promise<void> {
   )
 }
 
-// 多选选择（正常模式用 showCheckbox；收藏模式上下区互斥，用 favoriteCheckedZone）
+// 多选：正常模式用 showCheckbox；收藏模式用 favoriteCheckedZone（上下区互斥勾选，两侧列表始终展示）
 const showCheckbox = ref(false)
-/** 收藏模式：none | 仅上区目录 | 仅下区键 */
+/** 收藏模式：none | 仅上区目录勾选 | 仅下区键勾选 */
 const favoriteCheckedZone = ref<'none' | 'folders' | 'keys'>('none')
 const checkedKeyList = ref<RedisKey_Deserialize[]>([])
 
@@ -925,12 +932,6 @@ const folderPaneCheckbox = computed(
   () => favoriteMode.value && favoriteCheckedZone.value === 'folders',
 )
 const keysPaneCheckbox = computed(() => favoriteMode.value && favoriteCheckedZone.value === 'keys')
-const folderPaneAllowEnterChecked = computed(
-  () => !favoriteMode.value || favoriteCheckedZone.value !== 'keys',
-)
-const keysPaneAllowEnterChecked = computed(
-  () => !favoriteMode.value || favoriteCheckedZone.value !== 'folders',
-)
 
 function syncFavoriteChecked(): void {
   if (favoriteCheckedZone.value === 'folders') {
@@ -993,8 +994,7 @@ async function toggleFavoriteMode(): Promise<void> {
 function enterCheckedMode(zone: 'folders' | 'keys' | 'main' = 'main'): void {
   if (favoriteMode.value) {
     if (zone === 'main') return
-    // 另一区已在多选则忽略，避免上下同时勾选
-    if (favoriteCheckedZone.value !== 'none' && favoriteCheckedZone.value !== zone) return
+    // 切到目标区勾选：另一区退出勾选模式，但分区内容仍展示
     favoriteCheckedZone.value = zone
     clearFavoriteChecked()
     return
@@ -1304,7 +1304,6 @@ function editDbName(db: number): void {
                 :key-show-tree="keyShowTree"
                 :sort-by-count="sortByCount"
                 :show-checkbox="folderPaneCheckbox"
-                :allow-enter-checked-mode="folderPaneAllowEnterChecked"
                 :color="share.color"
                 @chooseKey="chooseKey"
                 @contextKey="onFolderPanelContextKey"
@@ -1331,7 +1330,6 @@ function editDbName(db: number): void {
               <KeyTree
                 ref="keyTreeRef"
                 :show-checkbox="keysPaneCheckbox"
-                :allow-enter-checked-mode="keysPaneAllowEnterChecked"
                 :filter-key-list="filterKeyList"
                 :redis-key="share.redisKey"
                 :key-show-tree="keyShowTree"
@@ -1590,7 +1588,7 @@ function editDbName(db: number): void {
                 divided>
                 <me-icon :name="t('keyMain.clearFavorites')" icon="el-icon-delete" />
               </el-dropdown-item>
-              <!-- 收藏模式仅右键进多选，避免上下区同时勾选歧义 -->
+              <!-- 收藏模式仅右键进多选（进一边会清另一边勾选） -->
               <el-dropdown-item v-if="!favoriteMode" command="checkedMode">
                 <me-icon :name="t('keyMain.checkedMode')" icon="me-icon-checked" />
               </el-dropdown-item>
