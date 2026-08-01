@@ -1416,6 +1416,14 @@ function editDbName(db: number): void {
             :suffix-icon="MeSelectUpDownIcon"
             filterable
             v-else-if="!share.conn.cluster">
+            <!-- 隐藏 prefix 只定宽：filterable 输入时 EP 会卸掉 #label，避免宽度跟着输入字收缩 -->
+            <template #prefix>
+              <me-icon
+                class="db-select-sizer"
+                aria-hidden="true"
+                icon="me-icon-db"
+                :name="formatDbLabel(share.conn.db)" />
+            </template>
             <template #header>
               <div
                 style="
@@ -1935,9 +1943,41 @@ function editDbName(db: number): void {
       padding: 4px;
     }
 
+    /* 隐藏 sizer(prefix) 定宽；可见 #label 叠层显示；输入过滤不改变宽度 */
     .db-select {
       :deep(.icon-main) {
         white-space: nowrap;
+      }
+
+      :deep(.el-select__prefix) {
+        flex-shrink: 0;
+        padding: 0 4px;
+        visibility: hidden;
+        pointer-events: none;
+      }
+
+      /* selection 不占宽；label/input 相对 wrapper 叠在 sizer 上 */
+      :deep(.el-select__selection) {
+        position: static;
+        flex: 0 0 0;
+        width: 0;
+        min-width: 0;
+        padding: 0;
+        overflow: visible;
+      }
+
+      :deep(.el-select__selected-item.el-select__placeholder) {
+        position: absolute;
+        inset: 0 18px 0 4px;
+        display: flex;
+        align-items: center;
+        width: auto;
+        transform: none;
+        z-index: 1; /* 覆盖 EP 默认 -1，避免透明背景下看不见 */
+      }
+
+      :deep(.el-select__input-wrapper) {
+        inset: 0 18px 0 4px;
       }
     }
 

@@ -23,7 +23,7 @@
   width: auto;
 }
 
-/* 展开过滤时 input 默认占位，改为叠在文案上避免撑宽 */
+/* 展开时 input 叠层；filterable 输入会卸掉 placeholder，定宽场景（如 db-select）需另用 prefix 占位 */
 .me-select-plain .el-select__input-wrapper {
   position: absolute;
   inset: 0 18px 0 4px;
