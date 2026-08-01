@@ -239,11 +239,11 @@ function submit() {
   formRef.value.validate(async (valid: boolean) => {
     if (!valid) return
 
-    isSaving.value = true
+    const { type: _type, wireFieldKey, ...rest } = form.value
+    const fmt = effectiveFieldViewFmt.value
+    let fieldValue = form.value.fieldValue
+    // 与 KeyRename / FieldAdd 一致：提交前先编码检查，失败 meErr 并 return
     try {
-      const { type: _type, wireFieldKey, ...rest } = form.value
-      const fmt = effectiveFieldViewFmt.value
-      let fieldValue = form.value.fieldValue
       if (needsJsonNormalize(fmt)) {
         fieldValue = fieldValue === '' ? '' : meJsonNormal(fieldValue)
       }
@@ -252,11 +252,19 @@ function submit() {
       } else {
         fieldValue = meViewToWire(fieldValue, fmt)
       }
-      // srcFieldValue：Set/ZSet 替换成员时定位用，须与 valFmt 同为 base64
-      const srcFieldValue =
-        form.value.type === 'zset' || form.value.type === 'set'
-          ? srcFieldWire.value
-          : form.value.srcFieldValue
+    } catch (e) {
+      meErr(e instanceof Error ? e.message : String(e))
+      return
+    }
+
+    // srcFieldValue：Set/ZSet 替换成员时定位用，须与 valFmt 同为 base64
+    const srcFieldValue =
+      form.value.type === 'zset' || form.value.type === 'set'
+        ? srcFieldWire.value
+        : form.value.srcFieldValue
+
+    isSaving.value = true
+    try {
       await meCommands.fieldSet(share.conn!.id, {
         ...rest,
         srcFieldValue,
@@ -268,8 +276,6 @@ function submit() {
       visible.value = false
       emit('success')
       meOk(t('editOk'))
-    } catch (e) {
-      meErr(e instanceof Error ? e.message : String(e))
     } finally {
       isSaving.value = false
     }
