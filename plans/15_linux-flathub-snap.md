@@ -103,7 +103,7 @@ snap/
 | AppImage | 默认 `src-tauri/target/release/bundle/appimage/RedisME_<ver>_amd64.AppImage`（Tauri 默认路径，一般不用配） |
 | 覆盖路径 | 仅调试时可设 `REDIS_ME_APPIMAGE`                                                                           |
 
-**目标流程（后续接 CI）**：打 tag → 现有 `release.yml` 打出 AppImage → 同 job / 下游 job 跑 `snapcraft` → 用 `SNAPCRAFT_STORE_CREDENTIALS` 上传 edge/stable。本地 1.5 只为先把包装与权限跑通。
+**目标流程（后续接 CI）**：打 tag → 现有 `release.yml` 打出 AppImage → 同 job / 下游 job 跑 `snapcraft pack` → 用 `SNAPCRAFT_STORE_CREDENTIALS` 上传 edge/stable。本地 1.5 只为先把包装与权限跑通。
 
 注意：
 
@@ -120,8 +120,8 @@ snap/
 ```bash
 cd /path/to/redis-me
 # 若还没有 AppImage：vp run tauri build   # 或你们惯用的 tauri 构建命令
-snapcraft
-# 得到类似 redis-me_4.6.0_amd64.snap
+snapcraft pack   # 勿裸跑 snapcraft（新版本会弃用）
+# 得到类似 redis-me_4.6.1_amd64.snap
 
 sudo snap install ./redis-me_*.snap --dangerous
 redis-me
@@ -149,7 +149,7 @@ snapcraft release redis-me <revision> stable
 在 `release.yml` 的 **ubuntu amd64** 矩阵任务末尾（`tauri-action` 已产出 AppImage 之后），或独立 `needs: publish-tauri` 的 job：
 
 1. 安装 `snapcraft`
-2. `snapcraft`（读默认 Tauri AppImage 路径 + `package.json` 版本）
+2. `snapcraft pack`（读默认 Tauri AppImage 路径 + `package.json` 版本）
 3. `snapcraft upload *.snap --release=edge`（凭据来自 secret）
 4. 稳定后改为 `stable`，或保留手动晋升
 

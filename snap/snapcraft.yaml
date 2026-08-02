@@ -1,6 +1,6 @@
 # RedisME Snap：包装 Tauri 已打好的 AppImage（本地试装与 GitHub Actions 共用此配方）
 # 版本：从 package.json 读取；AppImage 默认用 Tauri 产物路径，一般无需再配
-# 前置：先 tauri build（或 CI 已产出 AppImage），再 snapcraft
+# 前置：先 tauri build（或 CI 已产出 AppImage），再 snapcraft pack
 name: redis-me
 title: RedisME
 base: core24
