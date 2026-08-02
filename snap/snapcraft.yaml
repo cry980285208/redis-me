@@ -1,4 +1,4 @@
-# 包装 Tauri amd64 deb。先 tauri build，再 snapcraft pack --destructive-mode
+# 包装 Tauri amd64 deb。先 tauri build，再 snapcraft pack --destructive-mode（勿 sudo）
 # https://v2.tauri.app/distribute/snapcraft/
 name: redis-me
 title: RedisME
@@ -17,6 +17,31 @@ icon: snap/gui/redis-me.png
 grade: devel
 confinement: strict
 
+# stage-packages / WebKit 间接带入的库多由 gnome 平台提供，linter 误报 unused
+lint:
+  ignore:
+    - library:
+        - usr/lib/**/libX*.so*
+        - usr/lib/**/libxcb*.so*
+        - usr/lib/**/libLerc.so*
+        - usr/lib/**/libtiff.so*
+        - usr/lib/**/libjpeg.so*
+        - usr/lib/**/libpng*.so*
+        - usr/lib/**/libwebp*.so*
+        - usr/lib/**/libgtk*.so*
+        - usr/lib/**/libgdk*.so*
+        - usr/lib/**/libcairo*.so*
+        - usr/lib/**/libpango*.so*
+        - usr/lib/**/libgio*.so*
+        - usr/lib/**/libglib*.so*
+        - usr/lib/**/libgobject*.so*
+        - usr/lib/**/libatk*.so*
+        - usr/lib/**/libharfbuzz*.so*
+        - usr/lib/**/libfreetype.so*
+        - usr/lib/**/libfontconfig.so*
+        - usr/lib/**/libepoxy.so*
+        - usr/lib/**/libwayland*.so*
+
 platforms:
   amd64:
     build-on: [amd64]
@@ -34,10 +59,14 @@ apps:
     desktop: usr/share/applications/redis-me.desktop
     plugs:
       - network # 连 Redis
-      - home # 导入导出选用户目录
+      - home # 导入导出写用户目录（下载/文档等）
+      - removable-media # U 盘 / 额外挂载点
       - unity7 # 托盘（官方 gnome 未含；faire / addiction-tracker 有）
     environment:
       WEBKIT_DISABLE_DMABUF_RENDERER: '1' # NVIDIA + WebKit
+      # 导入导出走 xdg-desktop-portal 系统文件框（strict 下必开）
+      GTK_USE_PORTAL: '1'
+      GIO_USE_PORTALS: '1'
 
 package-repositories:
   - type: apt

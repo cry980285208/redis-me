@@ -97,8 +97,8 @@ snapcraft register redis-me
 | 版本  | `version` 与 `package.json` 一致（build 校验）                                    |
 | 输入  | `src-tauri/target/release/bundle/deb/RedisME_<ver>_amd64.deb`；可 `REDIS_ME_DEB=` |
 | 图标  | deb 内 hicolor + `Icon=/usr/share/icons/hicolor/...`                              |
-| plugs | `gnome` + 显式 `desktop` / `home` / `unity7` / `wayland` / `x11` 等               |
-| 本地  | `snapcraft pack --destructive-mode`                                               |
+| plugs | `gnome` + `network` / `home` / `removable-media` / `unity7`；`GTK_USE_PORTAL=1`   |
+| 本地  | `snapcraft pack --destructive-mode`（**勿 sudo**；sudo 易搞坏 apt 缓存与 portal） |
 
 ### 1.5 本地构建与试装
 
