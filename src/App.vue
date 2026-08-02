@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { isDark } from '@/utils/util'
 import AppMain from '@/views/AppMain.vue'
 import AppTitle from '@/views/ext/AppTitle.vue'
+import WindowResize from '@/views/ext/WindowResize.vue'
 
 const { locale: i18nLocale } = useI18n()
 
@@ -55,6 +56,7 @@ watch(
 <template>
   <el-config-provider :locale>
     <AppTitle />
+    <WindowResize />
     <AppMain />
   </el-config-provider>
 </template>
