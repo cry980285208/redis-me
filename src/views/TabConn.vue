@@ -228,57 +228,57 @@ function clickNew(): void {
 
 <template>
   <div class="redis-conn">
+    <!-- 空态也保留顶栏「新增连接」，位置与有连接时一致 -->
+    <div class="me-flex header">
+      <div class="me-flex">
+        <el-button icon="el-icon-plus" type="primary" @click="connUi.openConnSave('add')">{{
+          t('conn.add')
+        }}</el-button>
+        <el-button
+          v-if="!connListEmpty && connShowGroup"
+          icon="el-icon-folder-add"
+          @click="addFolder">
+          {{ t('conn.newFolder') }}
+        </el-button>
+      </div>
+      <div v-if="!connListEmpty && !share.loading" class="me-flex">
+        <me-icon icon="me-icon-new" class="icon-new" @click="clickNew" v-if="app.update?.version" />
+        <el-dropdown placement="bottom-start" @command="handleCommand" style="margin-right: 10px">
+          <el-button>...</el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item v-if="connShowGroup" command="connShowFlat">
+                <me-icon :name="t('conn.showFlat')" icon="me-icon-list" />
+              </el-dropdown-item>
+              <el-dropdown-item v-if="!connShowGroup" command="connShowGroup">
+                <me-icon :name="t('conn.showGroup')" icon="el-icon-folder" />
+              </el-dropdown-item>
+              <el-dropdown-item command="export" divided>
+                <me-icon :name="t('conn.export')" icon="me-icon-export" />
+              </el-dropdown-item>
+              <el-dropdown-item command="import">
+                <me-icon :name="t('conn.import')" icon="me-icon-import" />
+              </el-dropdown-item>
+              <el-dropdown-item v-if="isDev" command="clear" divided>
+                <me-icon :name="t('conn.clearConnections')" icon="el-icon-delete" />
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+        <el-input
+          v-model="keyword"
+          :placeholder="t('conn.keyword')"
+          style="width: 300px"
+          clearable />
+      </div>
+    </div>
+
     <ConnEmpty
       v-if="connListEmpty || share.loading"
       class="conn-empty-wrap"
       @action="onEmptyAction" />
 
     <template v-else>
-      <div class="me-flex header">
-        <div class="me-flex">
-          <el-button icon="el-icon-plus" type="primary" @click="connUi.openConnSave('add')">{{
-            t('conn.add')
-          }}</el-button>
-          <el-button v-if="connShowGroup" icon="el-icon-folder-add" @click="addFolder">{{
-            t('conn.newFolder')
-          }}</el-button>
-        </div>
-        <div class="me-flex">
-          <me-icon
-            icon="me-icon-new"
-            class="icon-new"
-            @click="clickNew"
-            v-if="app.update?.version" />
-          <el-dropdown placement="bottom-start" @command="handleCommand" style="margin-right: 10px">
-            <el-button>...</el-button>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item v-if="connShowGroup" command="connShowFlat">
-                  <me-icon :name="t('conn.showFlat')" icon="me-icon-list" />
-                </el-dropdown-item>
-                <el-dropdown-item v-if="!connShowGroup" command="connShowGroup">
-                  <me-icon :name="t('conn.showGroup')" icon="el-icon-folder" />
-                </el-dropdown-item>
-                <el-dropdown-item command="export" divided>
-                  <me-icon :name="t('conn.export')" icon="me-icon-export" />
-                </el-dropdown-item>
-                <el-dropdown-item command="import">
-                  <me-icon :name="t('conn.import')" icon="me-icon-import" />
-                </el-dropdown-item>
-                <el-dropdown-item v-if="isDev" command="clear" divided>
-                  <me-icon :name="t('conn.clearConnections')" icon="el-icon-delete" />
-                </el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-          <el-input
-            v-model="keyword"
-            :placeholder="t('conn.keyword')"
-            style="width: 300px"
-            clearable />
-        </div>
-      </div>
-
       <ConnTable
         v-if="!connShowGroup"
         ref="flatTableRef"
