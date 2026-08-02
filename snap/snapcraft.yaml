@@ -1,8 +1,11 @@
-# 包装 Tauri amd64 deb。先 tauri build，再 snapcraft pack --destructive-mode（勿 sudo）
-# https://v2.tauri.app/distribute/snapcraft/
+# 对齐已上架 Tauri snap（勿再自创 WebKit 路径）：
+# - https://snapcraft.io/faire-todo-app
+# - https://snapcraft.io/addiction-tracker
+# - https://github.com/tauri-apps/tauri/discussions/10326
+# 本地：先 tauri build 出 deb，再 snapcraft pack --destructive-mode（勿 sudo）
 name: redis-me
 title: RedisME
-base: core24
+base: core22
 version: '4.6.1' # 与 package.json 保持一致
 summary: Redis / Valkey desktop client
 description: |
@@ -17,36 +20,49 @@ icon: snap/gui/redis-me.png
 grade: devel
 confinement: strict
 
-# WebKit stage-packages 与 gnome 平台库重叠，unused 误报多，直接关 library linter
-lint:
-  ignore:
-    - library
-
-platforms:
-  amd64:
-    build-on: [amd64]
+architectures:
+  - build-on: [amd64]
     build-for: [amd64]
 
+# 与 faire / addiction-tracker 相同：symlink 到 stage 的 webkit，不要 bind、不要指 gnome-platform
 layout:
-  /usr/lib/$CRAFT_ARCH_TRIPLET/webkit2gtk-4.1:
-    bind: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET/webkit2gtk-4.1
+  /usr/libexec/webkit2gtk-4.1:
+    symlink: $SNAP/usr/libexec/webkit2gtk-4.1
+  /usr/lib/x86_64-linux-gnu/webkit2gtk-4.1:
+    symlink: $SNAP/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1
+  /usr/lib/webkit2gtk-4.1/injected-bundle:
+    symlink: $SNAP/usr/lib/webkit2gtk-4.1/injected-bundle
+
+# single-instance：identifier com.hepengju.redis → org.com_hepengju_redis.SingleInstance
+# https://v2.tauri.app/plugin/single-instance/
+slots:
+  single-instance:
+    interface: dbus
+    bus: session
+    name: org.com_hepengju_redis.SingleInstance
+
+plugs:
+  single-instance-plug:
+    interface: dbus
+    bus: session
+    name: org.com_hepengju_redis.SingleInstance
 
 apps:
   redis-me:
     extensions: [gnome]
-    # gnome 已含：desktop, desktop-legacy, wayland, x11, opengl, gsettings, mount-observe
     command: usr/bin/RedisME
     desktop: usr/share/applications/redis-me.desktop
     plugs:
-      - network # 连 Redis
-      - home # 导入导出写用户目录（下载/文档等）
-      - removable-media # U 盘 / 额外挂载点
-      - unity7 # 托盘（官方 gnome 未含；faire / addiction-tracker 有）
-    environment:
-      WEBKIT_DISABLE_DMABUF_RENDERER: '1' # NVIDIA + WebKit
-      # 导入导出走 xdg-desktop-portal 系统文件框（strict 下必开）
-      GTK_USE_PORTAL: '1'
-      GIO_USE_PORTALS: '1'
+      - wayland
+      - x11
+      - home
+      - desktop
+      - unity7
+      - network
+      - removable-media # 导入导出额外挂载点（faire 无；我们业务需要）
+      - single-instance-plug
+    slots:
+      - single-instance
 
 package-repositories:
   - type: apt
@@ -60,9 +76,12 @@ parts:
     plugin: nil
     source: snap
     build-packages: [dpkg]
+    # stage-packages 与 addiction-tracker 一致
     stage-packages:
       - libwebkit2gtk-4.1-0
       - libayatana-appindicator3-1
+      - libglu1-mesa
+      - freeglut3
     override-build: |
       set -eu
       DEB="$CRAFT_PROJECT_DIR/src-tauri/target/release/bundle/deb/RedisME_${CRAFT_PROJECT_VERSION}_amd64.deb"

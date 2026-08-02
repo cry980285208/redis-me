@@ -90,15 +90,16 @@ snapcraft register redis-me
 
 ### 1.4 `snap/snapcraft.yaml`（对齐 Tauri 官方：包装 deb）
 
-对照：[Tauri Snap 文档](https://v2.tauri.app/distribute/snapcraft/)、[faire-todo-app](https://github.com/charlesschaefer/faire-todo-app)、addiction-tracker——均为 `tauri build --bundles deb` → `dpkg -x`。**不用 AppImage**（自带 GTK 易与 portal / 文件对话框冲突）。
+对照已上架配方（勿自创 WebKit 路径）：
+[faire-todo-app](https://snapcraft.io/faire-todo-app) · [addiction-tracker](https://snapcraft.io/addiction-tracker) · [Tauri#10326](https://github.com/tauri-apps/tauri/discussions/10326)
 
-| 项    | 约定                                                                              |
-| ----- | --------------------------------------------------------------------------------- |
-| 版本  | `version` 与 `package.json` 一致（build 校验）                                    |
-| 输入  | `src-tauri/target/release/bundle/deb/RedisME_<ver>_amd64.deb`；可 `REDIS_ME_DEB=` |
-| 图标  | deb 内 hicolor + `Icon=/usr/share/icons/hicolor/...`                              |
-| plugs | `gnome` + `network` / `home` / `removable-media` / `unity7`；`GTK_USE_PORTAL=1`   |
-| 本地  | `snapcraft pack --destructive-mode`（**勿 sudo**；sudo 易搞坏 apt 缓存与 portal） |
+| 项     | 约定                                                                       |
+| ------ | -------------------------------------------------------------------------- |
+| base   | **core22**（与 faire / addiction-tracker 一致，勿用 core24 瞎试）          |
+| layout | symlink → `$SNAP/usr/lib.../webkit2gtk-4.1`（含 libexec、injected-bundle） |
+| 输入   | 本地已有 deb：`dpkg -x`（他们是 snap 内 build；运行时形状相同）            |
+| plugs  | `wayland` `x11` `home` `desktop` `unity7` `network` + single-instance dbus |
+| 本地   | `pack`/`clean` 都加 `--destructive-mode`（勿 sudo）                        |
 
 ### 1.5 本地构建与试装
 
