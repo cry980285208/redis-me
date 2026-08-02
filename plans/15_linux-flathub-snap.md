@@ -70,7 +70,7 @@ snapcraft whoami   # 确认登录成功
 CI 以后可用导出凭据（勿提交仓库）：
 
 ```bash
-snapcraft export-login snapcraft- creds.txt
+snapcraft export-login snapcraft-creds.txt
 # Actions 里：SNAPCRAFT_STORE_CREDENTIALS=$(cat snapcraft-creds.txt)
 ```
 
@@ -88,66 +88,40 @@ snapcraft register redis-me
 
 商店里给人看的标题用 `title: RedisME`（可与 `name` 不同）。
 
-### 1.4 在仓库加 `snap/snapcraft.yaml`（首版建议包装 AppImage）
+### 1.4 `snap/snapcraft.yaml`（正式配方，非一次性试验）
 
 目录：
 
 ```text
 snap/
-  snapcraft.yaml
+  snapcraft.yaml   # 本地试装与 GitHub Actions 共用
 ```
 
-要点（具体内容实现时再写死版本 URL）：
+| 项       | 约定                                                                                                       |
+| -------- | ---------------------------------------------------------------------------------------------------------- |
+| 版本     | 构建时读 `package.json`，发版仍只改它                                                                      |
+| AppImage | 默认 `src-tauri/target/release/bundle/appimage/RedisME_<ver>_amd64.AppImage`（Tauri 默认路径，一般不用配） |
+| 覆盖路径 | 仅调试时可设 `REDIS_ME_APPIMAGE`                                                                           |
 
-```yaml
-name: redis-me # 与 register 一致
-title: RedisME
-base: core24
-version: '4.5.0' # 跟 package.json / Release
-summary: Redis / Valkey desktop client
-description: |
-  RedisME is a desktop GUI for Redis and Valkey.
-grade: stable # 试发可用 devel + 只推 edge
-confinement: strict # 尽量 strict；不够再考虑 classic（审核更严）
-
-apps:
-  redis-me:
-    command: bin/redis-me # 按实际 wrapper 调整
-    desktop: usr/share/applications/com.hepengju.redis.desktop
-    extensions: [gnome] # 常见桌面集成；按 snapcraft 文档调整
-    plugs:
-      - network
-      - network-bind # 一般不需要监听，可不加
-      - home
-      - desktop
-      - desktop-legacy
-      - wayland
-      - x11
-      - opengl
-
-parts:
-  redis-me:
-    plugin: dump
-    # 方案 A：从 GitHub Release 拉 AppImage，extract 后装进 $SNAPCRAFT_PART_INSTALL
-    source: https://github.com/hepengju/redis-me/releases/download/v4.5.0/RedisME_4.5.0_amd64.AppImage
-    # 另写 override-build：chmod +x、--appimage-extract、拷贝文件、写 wrapper
-```
+**目标流程（后续接 CI）**：打 tag → 现有 `release.yml` 打出 AppImage → 同 job / 下游 job 跑 `snapcraft` → 用 `SNAPCRAFT_STORE_CREDENTIALS` 上传 edge/stable。本地 1.5 只为先把包装与权限跑通。
 
 注意：
 
-- 首版 **x86_64** 先通；arm64 可第二轮加 `architectures` / 多 build。
-- Tauri + WebKit 在 snap 里偶发缺库，用 `stage-packages` 补（按运行报错补）。
-- 权限从少到多：先 `network` + `home` + 桌面相关，SSH 读 `~/.ssh` 再视需要加。
+- 首版 **amd64**；arm64 第二轮再加。
+- `grade: devel`，先推 **edge**；稳定后再晋升 `stable`。
+- 权限起步：`network` + `home` + gnome extension。
 
-参考实现文章：[Tauri v2 Flatpak/Snap](https://vincent.jousse.org/blog/en/packaging-tauri-v2-flatpak-snapcraft-elm/)；Insight 商店页：[snapcraft.io/redisinsight](https://snapcraft.io/redisinsight)。
+参考：[Tauri v2 Flatpak/Snap](https://vincent.jousse.org/blog/en/packaging-tauri-v2-flatpak-snapcraft-elm/)；Insight：[snapcraft.io/redisinsight](https://snapcraft.io/redisinsight)。
 
-### 1.5 本地构建与试装
+### 1.5 本地构建与试装（可选，验证配方）
+
+在已能 `tauri build` 的 Ubuntu 上（AppImage 已在默认路径）：
 
 ```bash
 cd /path/to/redis-me
-snapcraft clean
+# 若还没有 AppImage：vp run tauri build   # 或你们惯用的 tauri 构建命令
 snapcraft
-# 得到类似 redis-me_4.5.0_amd64.snap
+# 得到类似 redis-me_4.6.0_amd64.snap
 
 sudo snap install ./redis-me_*.snap --dangerous
 redis-me
@@ -158,18 +132,28 @@ sudo snap remove redis-me
 
 ### 1.6 上传与渠道发布
 
+首版可手动；配方稳定后改由 Actions 上传（secret：`SNAPCRAFT_STORE_CREDENTIALS`，见 1.2）。
+
 ```bash
 # 先上 edge，自己再 snap install redis-me --edge 验证
 snapcraft upload ./redis-me_*.snap --release=edge
 
 # 无问题后晋升（revision 以 upload 输出为准）
 snapcraft release redis-me <revision> stable
-
-# 或一步到位（稳妥后再用）：
-# snapcraft upload ./redis-me_*.snap --release=stable
 ```
 
 网页可在 https://snapcraft.io/redis-me/releases 看修订与渠道。
+
+### 1.6.1 GitHub Actions 自动打 Snap（待接，目标形态）
+
+在 `release.yml` 的 **ubuntu amd64** 矩阵任务末尾（`tauri-action` 已产出 AppImage 之后），或独立 `needs: publish-tauri` 的 job：
+
+1. 安装 `snapcraft`
+2. `snapcraft`（读默认 Tauri AppImage 路径 + `package.json` 版本）
+3. `snapcraft upload *.snap --release=edge`（凭据来自 secret）
+4. 稳定后改为 `stable`，或保留手动晋升
+
+Release 说明里可补一行 Snap 安装：`sudo snap install redis-me`。
 
 ### 1.7 商店列表信息（网页）
 

@@ -1,0 +1,106 @@
+# RedisME Snap：包装 Tauri 已打好的 AppImage（本地试装与 GitHub Actions 共用此配方）
+# 版本：从 package.json 读取；AppImage 默认用 Tauri 产物路径，一般无需再配
+# 前置：先 tauri build（或 CI 已产出 AppImage），再 snapcraft
+name: redis-me
+title: RedisME
+base: core24
+# 占位；真实版本在 part 里 craftctl set（与 package.json 同步）
+version: '0.0.0'
+summary: Redis / Valkey desktop client
+description: |
+  RedisME is a desktop GUI for Redis and Valkey.
+  Connect, browse keys, edit values, and manage multiple connections.
+license: GPL-3.0
+website: https://www.hepengju.com
+source-code: https://github.com/hepengju/redis-me
+issues: https://github.com/hepengju/redis-me/issues
+contact: he_pengju@163.com
+
+grade: devel
+confinement: strict
+
+# 首版只打 amd64；arm64 第二轮再加
+platforms:
+  amd64:
+    build-on: [amd64]
+    build-for: [amd64]
+
+apps:
+  redis-me:
+    command: bin/redis-me
+    desktop: usr/share/applications/redis-me.desktop
+    extensions: [gnome]
+    # gnome 已含 desktop / wayland / x11 / opengl 等；这里只补业务需要的
+    plugs:
+      - network
+      - home
+    environment:
+      # NVIDIA + WebKit 常见崩溃缓解（可被用户环境覆盖）
+      WEBKIT_DISABLE_DMABUF_RENDERER: '1'
+
+parts:
+  redis-me:
+    plugin: nil
+    # 只拉 snap/，避免整仓 node_modules；AppImage / package.json 走 CRAFT_PROJECT_DIR
+    source: snap
+    build-packages: [python3]
+    override-build: |
+      set -eu
+      # 与发版习惯对齐：只认 package.json 的 version
+      VERSION="$(python3 -c "import json; print(json.load(open('$CRAFT_PROJECT_DIR/package.json'))['version'])")"
+      craftctl set version="$VERSION"
+
+      # 默认：Tauri 标准产物路径；可选 REDIS_ME_APPIMAGE 覆盖（CI/调试用）
+      if [ -n "${REDIS_ME_APPIMAGE:-}" ]; then
+        APPIMAGE="$REDIS_ME_APPIMAGE"
+      else
+        APPIMAGE="$CRAFT_PROJECT_DIR/src-tauri/target/release/bundle/appimage/RedisME_${VERSION}_amd64.AppImage"
+      fi
+      if [ ! -f "$APPIMAGE" ]; then
+        echo "AppImage not found: $APPIMAGE" >&2
+        echo "Run tauri build first, or set REDIS_ME_APPIMAGE to an existing .AppImage." >&2
+        exit 1
+      fi
+
+      chmod +x "$APPIMAGE"
+      cd "$CRAFT_PART_BUILD"
+      rm -rf squashfs-root
+      "$APPIMAGE" --appimage-extract
+
+      install -d "$CRAFT_PART_INSTALL/opt/redis-me"
+      cp -a squashfs-root/. "$CRAFT_PART_INSTALL/opt/redis-me/"
+
+      install -d "$CRAFT_PART_INSTALL/bin"
+      cat > "$CRAFT_PART_INSTALL/bin/redis-me" << 'EOF'
+      #!/bin/bash
+      set -euo pipefail
+      export APPDIR="$SNAP/opt/redis-me"
+      exec "$APPDIR/AppRun" "$@"
+      EOF
+      chmod +x "$CRAFT_PART_INSTALL/bin/redis-me"
+
+      # desktop：统一成 redis-me，供 snap 桌面集成
+      install -d "$CRAFT_PART_INSTALL/usr/share/applications"
+      DESKTOP_SRC="$(find "$CRAFT_PART_INSTALL/opt/redis-me" -path '*/usr/share/applications/*.desktop' -type f | head -n1)"
+      if [ -z "$DESKTOP_SRC" ]; then
+        DESKTOP_SRC="$(find "$CRAFT_PART_INSTALL/opt/redis-me" -name '*.desktop' -type f | head -n1)"
+      fi
+      install -m644 "$DESKTOP_SRC" "$CRAFT_PART_INSTALL/usr/share/applications/redis-me.desktop"
+      sed -i \
+        -e 's|^Exec=.*|Exec=redis-me %U|' \
+        -e 's|^Icon=.*|Icon=redis-me|' \
+        "$CRAFT_PART_INSTALL/usr/share/applications/redis-me.desktop"
+
+      # 图标：从 AppDir 拷到标准 hicolor，并改名为 redis-me.*
+      if [ -d "$CRAFT_PART_INSTALL/opt/redis-me/usr/share/icons" ]; then
+        mkdir -p "$CRAFT_PART_INSTALL/usr/share/icons"
+        cp -a "$CRAFT_PART_INSTALL/opt/redis-me/usr/share/icons/." "$CRAFT_PART_INSTALL/usr/share/icons/"
+        find "$CRAFT_PART_INSTALL/usr/share/icons" -type f \( -name 'RedisME.*' -o -name 'redis-me.*' \) | while read -r f; do
+          dir="$(dirname "$f")"
+          base="$(basename "$f")"
+          ext="${base##*.}"
+          if [ "$base" != "redis-me.$ext" ]; then
+            mv "$f" "$dir/redis-me.$ext"
+          fi
+        done
+      fi
