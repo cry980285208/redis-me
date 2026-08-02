@@ -692,10 +692,7 @@ function folderIconName(node: TreeNode): string {
 
         <!-- 目录（含收藏目录根） -->
         <template v-else>
-          <!-- 仅收藏目录根：刷新/加载更多置顶 -->
-          <el-dropdown-item v-if="isContextFavoriteFolderRoot" command="reloadFolder">
-            <me-icon icon="el-icon-refresh" :name="t('keyTree.reloadFolder')" />
-          </el-dropdown-item>
+          <!-- 仅收藏目录根：加载更多/重新加载置顶 -->
           <el-dropdown-item
             v-if="isContextFavoriteFolderRoot && contextFolderHasMore"
             command="loadMoreFolder">
@@ -706,11 +703,17 @@ function folderIconName(node: TreeNode): string {
             command="loadAllFolder">
             <me-icon icon="me-icon-load-all" :name="t('keyMain.loadAll')" />
           </el-dropdown-item>
+          <el-dropdown-item v-if="isContextFavoriteFolderRoot" command="reloadFolder">
+            <me-icon icon="el-icon-refresh" :name="t('keyTree.reloadFolder')" />
+          </el-dropdown-item>
+          <el-dropdown-item v-if="isContextFavoriteFolderRoot" command="reloadAllFolder">
+            <me-icon icon="me-icon-load-all" :name="t('keyTree.reloadAllFolder')" />
+          </el-dropdown-item>
 
-          <el-dropdown-item v-if="canEdit" command="addKey">
+          <el-dropdown-item v-if="canEdit" command="addKey" :divided="isContextFavoriteFolderRoot">
             <me-icon icon="el-icon-circle-plus" :name="t('keyTree.addKey')" />
           </el-dropdown-item>
-          <el-dropdown-item command="copyFolder">
+          <el-dropdown-item command="copyFolder" :divided="isContextFavoriteFolderRoot && !canEdit">
             <me-icon icon="el-icon-document-copy" :name="t('keyTree.copyFolder')" />
           </el-dropdown-item>
           <el-dropdown-item v-if="!showCheckbox && allowEnterCheckedMode" command="checkedMode">

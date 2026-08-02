@@ -219,7 +219,8 @@ async function loadMore(path: string, loadAll: boolean): Promise<void> {
   await scanFolder(path, true, loadAll)
 }
 
-async function reloadFolder(path: string): Promise<void> {
+/** 重新扫描目录；loadAll 时扫完全部键，否则按阈值自动续扫 */
+async function reloadFolder(path: string, loadAll = false): Promise<void> {
   const s = ensureState(path)
   if (s.loading) {
     s.cancelled = true
@@ -229,7 +230,7 @@ async function reloadFolder(path: string): Promise<void> {
   const next = new Set(expanded.value)
   next.add(path)
   expanded.value = next
-  await scanFolder(path, false, false)
+  await scanFolder(path, false, loadAll)
 }
 
 /** 刷新所有已展开目录（F5）；串行避免多目录同时 cancel/重扫把状态打乱 */
@@ -290,7 +291,8 @@ function patchCheckedAfterRename(
 }
 
 function onContextFolder(command: string, folder: string): void {
-  if (command === 'reloadFolder') void reloadFolder(folder)
+  if (command === 'reloadFolder') void reloadFolder(folder, false)
+  else if (command === 'reloadAllFolder') void reloadFolder(folder, true)
   else if (command === 'loadMoreFolder') void loadMore(folder, false)
   else if (command === 'loadAllFolder') void loadMore(folder, true)
   else if (command === 'copyFolder') meCopy(folder)

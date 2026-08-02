@@ -127,7 +127,7 @@ const loading = ref(false)
 const loadFolder = ref(false)
 const scanCancelled = ref(false) // 扫描是否被取消
 const scanPaused = ref(false) // 用户主动暂停后可用继续扫描
-const scanLoadAll = ref(false) // 暂停前是「加载更多」还是「加载剩余所有键」
+const scanLoadAll = ref(false) // 暂停前是「加载更多」还是「加载全部」
 const scanBatchCount = ref(0) // 本轮搜索已执行的 SCAN 次数（用于进度估算）
 // 前若干轮扫描通常很快完成，不必闪一下暂停/继续控件
 const SCAN_CONTROL_MIN_BATCHES = 10
