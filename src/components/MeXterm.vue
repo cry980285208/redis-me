@@ -138,9 +138,12 @@ code,
   font-family: var(--code-font) !important;
 }
 
-/* 保留空格等空白字符，避免 GET 仅空白值时看起来无输出 */
+/* 保留空白并强制长串换行，避免横向滚动条 */
 .t-window p,
-.t-window div {
+.t-window div,
+.t-log-box {
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-all;
 }
 </style>
