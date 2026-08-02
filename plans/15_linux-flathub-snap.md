@@ -109,7 +109,7 @@ snap/
 
 - 首版 **amd64**；arm64 第二轮再加。
 - `grade: devel`，先推 **edge**；稳定后再晋升 `stable`。
-- 权限起步：`network` + `home` + gnome extension。
+- 权限起步：`extensions: [gnome]` + `network` / `home`（构建时会拉 `gpu-snap`，需能访问 GitHub）。
 
 参考：[Tauri v2 Flatpak/Snap](https://vincent.jousse.org/blog/en/packaging-tauri-v2-flatpak-snapcraft-elm/)；Insight：[snapcraft.io/redisinsight](https://snapcraft.io/redisinsight)。
 

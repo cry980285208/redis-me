@@ -4,8 +4,8 @@
 name: redis-me
 title: RedisME
 base: core24
-# 占位；真实版本在 part 里 craftctl set（与 package.json 同步）
-version: '0.0.0'
+# 版本由 part redis-me 从 package.json craftctl set（须配 adopt-info）
+adopt-info: redis-me
 summary: Redis / Valkey desktop client
 description: |
   RedisME is a desktop GUI for Redis and Valkey.
@@ -30,7 +30,7 @@ apps:
     command: bin/redis-me
     desktop: usr/share/applications/redis-me.desktop
     extensions: [gnome]
-    # gnome 已含 desktop / wayland / x11 / opengl 等；这里只补业务需要的
+    # gnome 已含 desktop / wayland / x11 / opengl 等；业务再补 network / home
     plugs:
       - network
       - home
