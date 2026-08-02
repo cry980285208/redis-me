@@ -1,11 +1,9 @@
-# RedisME Snap：包装 Tauri 已打好的 AppImage（本地试装与 GitHub Actions 共用此配方）
-# 版本：与 package.json 保持一致（build 会校验）；AppImage 用 Tauri 默认产物路径
-# 前置：先 tauri build，再 snapcraft pack --destructive-mode
+# 包装 Tauri amd64 deb。先 tauri build，再 snapcraft pack --destructive-mode
+# https://v2.tauri.app/distribute/snapcraft/
 name: redis-me
 title: RedisME
 base: core24
-# 须与根目录 package.json 的 version 一致（勿用 craftctl：与 gnome 扩展冲突）
-version: '4.6.1'
+version: '4.6.1' # 与 package.json 保持一致
 summary: Redis / Valkey desktop client
 description: |
   RedisME is a desktop GUI for Redis and Valkey.
@@ -13,128 +11,56 @@ description: |
 license: GPL-3.0
 website: https://www.hepengju.com
 source-code: https://github.com/hepengju/redis-me
-issues: https://github.com/hepengju/redis-me/issues
 contact: he_pengju@163.com
+icon: snap/gui/redis-me.png
 
 grade: devel
 confinement: strict
 
-# AppImage 自带大量动态加载库，library linter 会误报 unused
-lint:
-  ignore:
-    - library:
-        - opt/redis-me/**
-
-# 首版只打 amd64；arm64 第二轮再加
 platforms:
   amd64:
     build-on: [amd64]
     build-for: [amd64]
 
-# 仅用于设置页「打开配置/数据/日志目录」（点目录不在 home 接口内）
-# 导入导出不靠这些路径限制，而走 xdg-desktop-portal，由用户在系统对话框里任选目录
-plugs:
-  dot-config-redisme:
-    interface: personal-files
-    write:
-      - $HOME/.config/com.hepengju.redis
-      - $HOME/.config/RedisME
-  dot-local-redisme:
-    interface: personal-files
-    write:
-      - $HOME/.local/share/com.hepengju.redis
-      - $HOME/.local/share/RedisME
-      - $HOME/.cache/com.hepengju.redis
-      - $HOME/.cache/RedisME
+layout:
+  /usr/lib/$CRAFT_ARCH_TRIPLET/webkit2gtk-4.1:
+    bind: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET/webkit2gtk-4.1
 
 apps:
   redis-me:
-    command: bin/redis-me
-    desktop: usr/share/applications/redis-me.desktop
     extensions: [gnome]
+    # gnome 已含：desktop, desktop-legacy, wayland, x11, opengl, gsettings, mount-observe
+    command: usr/bin/RedisME
+    desktop: usr/share/applications/redis-me.desktop
     plugs:
-      - network
-      - home
-      - removable-media
-      - dot-config-redisme
-      - dot-local-redisme
+      - network # 连 Redis
+      - home # 导入导出选用户目录
+      - unity7 # 托盘（官方 gnome 未含；faire / addiction-tracker 有）
     environment:
-      # NVIDIA + WebKit 常见崩溃缓解
-      WEBKIT_DISABLE_DMABUF_RENDERER: '1'
-      # 导入/导出：系统文件选择器（portal），可选任意用户有权访问的路径
-      GTK_USE_PORTAL: '1'
-      GIO_USE_PORTALS: '1'
+      WEBKIT_DISABLE_DMABUF_RENDERER: '1' # NVIDIA + WebKit
+
+package-repositories:
+  - type: apt
+    components: [main]
+    suites: [noble]
+    key-id: 78E1918602959B9C59103100F1831DDAFC42E99D
+    url: http://ppa.launchpad.net/snappy-dev/snapcraft-daily/ubuntu
 
 parts:
   redis-me:
     plugin: nil
-    # 只拉 snap/，避免整仓 node_modules；AppImage / package.json 走 CRAFT_PROJECT_DIR
     source: snap
-    build-packages: [python3]
+    build-packages: [dpkg]
+    stage-packages:
+      - libwebkit2gtk-4.1-0
+      - libayatana-appindicator3-1
     override-build: |
       set -eu
-      VERSION="$(python3 -c "import json; print(json.load(open('$CRAFT_PROJECT_DIR/package.json'))['version'])")"
-      if [ "$VERSION" != "$CRAFT_PROJECT_VERSION" ]; then
-        echo "version mismatch: package.json=$VERSION snapcraft.yaml=$CRAFT_PROJECT_VERSION" >&2
-        echo "Keep snap/snapcraft.yaml version in sync with package.json." >&2
-        exit 1
-      fi
-
-      # 默认：Tauri 标准产物路径；可选 REDIS_ME_APPIMAGE 覆盖（CI/调试用）
-      if [ -n "${REDIS_ME_APPIMAGE:-}" ]; then
-        APPIMAGE="$REDIS_ME_APPIMAGE"
-      else
-        APPIMAGE="$CRAFT_PROJECT_DIR/src-tauri/target/release/bundle/appimage/RedisME_${VERSION}_amd64.AppImage"
-      fi
-      if [ ! -f "$APPIMAGE" ]; then
-        echo "AppImage not found: $APPIMAGE" >&2
-        echo "Run tauri build first, or set REDIS_ME_APPIMAGE to an existing .AppImage." >&2
-        exit 1
-      fi
-
-      chmod +x "$APPIMAGE"
-      cd "$CRAFT_PART_BUILD"
-      rm -rf squashfs-root
-      "$APPIMAGE" --appimage-extract
-
-      install -d "$CRAFT_PART_INSTALL/opt/redis-me"
-      cp -a squashfs-root/. "$CRAFT_PART_INSTALL/opt/redis-me/"
-      # snap 打包后偶发丢掉可执行位 → AppRun.wrapped: Permission denied
-      chmod +x "$CRAFT_PART_INSTALL/opt/redis-me/AppRun" \
-        "$CRAFT_PART_INSTALL/opt/redis-me/AppRun.wrapped" 2>/dev/null || true
-      find "$CRAFT_PART_INSTALL/opt/redis-me" -type f \( \
-          -name 'RedisME' -o -name 'AppRun*' -o -path '*/usr/bin/*' \
-        \) -exec chmod +x {} +
-
-      install -d "$CRAFT_PART_INSTALL/bin"
-      cat > "$CRAFT_PART_INSTALL/bin/redis-me" << 'EOF'
-      #!/bin/bash
-      set -euo pipefail
-      export APPDIR="$SNAP/opt/redis-me"
-      # 强制走主机 portal，避免 AppImage 自带 Gtk 文件框只能看到 snap 可见路径
-      export GTK_USE_PORTAL="${GTK_USE_PORTAL:-1}"
-      export GIO_USE_PORTALS="${GIO_USE_PORTALS:-1}"
-      exec "$APPDIR/AppRun" "$@"
-      EOF
-      chmod +x "$CRAFT_PART_INSTALL/bin/redis-me"
-
-      # desktop：统一成 redis-me；图标由 snap/gui/redis-me.png → meta/gui/
-      install -d "$CRAFT_PART_INSTALL/usr/share/applications"
-      DESKTOP_SRC="$(find "$CRAFT_PART_INSTALL/opt/redis-me" -path '*/usr/share/applications/*.desktop' -type f | head -n1)"
-      if [ -z "$DESKTOP_SRC" ]; then
-        DESKTOP_SRC="$(find "$CRAFT_PART_INSTALL/opt/redis-me" -name '*.desktop' -type f | head -n1)"
-      fi
-      install -m644 "$DESKTOP_SRC" "$CRAFT_PART_INSTALL/usr/share/applications/redis-me.desktop"
+      DEB="$CRAFT_PROJECT_DIR/src-tauri/target/release/bundle/deb/RedisME_${CRAFT_PROJECT_VERSION}_amd64.deb"
+      dpkg -x "$DEB" "$CRAFT_PART_INSTALL/"
+      cp "$CRAFT_PART_INSTALL/usr/share/applications/"*.desktop \
+        "$CRAFT_PART_INSTALL/usr/share/applications/redis-me.desktop"
       sed -i \
         -e 's|^Exec=.*|Exec=redis-me %U|' \
-        -e 's|^Icon=.*|Icon=redis-me|' \
+        -e 's|^Icon=.*|Icon=/usr/share/icons/hicolor/128x128/apps/RedisME.png|' \
         "$CRAFT_PART_INSTALL/usr/share/applications/redis-me.desktop"
-    override-prime: |
-      set -eu
-      craftctl default
-      chmod +x "$CRAFT_PRIME/opt/redis-me/AppRun" \
-        "$CRAFT_PRIME/opt/redis-me/AppRun.wrapped" 2>/dev/null || true
-      find "$CRAFT_PRIME/opt/redis-me" -type f \( \
-          -name 'RedisME' -o -name 'AppRun*' -o -path '*/usr/bin/*' \
-        \) -exec chmod +x {} +
-      chmod +x "$CRAFT_PRIME/bin/redis-me"

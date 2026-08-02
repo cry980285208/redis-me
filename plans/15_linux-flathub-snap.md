@@ -88,47 +88,33 @@ snapcraft register redis-me
 
 商店里给人看的标题用 `title: RedisME`（可与 `name` 不同）。
 
-### 1.4 `snap/snapcraft.yaml`（正式配方，非一次性试验）
+### 1.4 `snap/snapcraft.yaml`（对齐 Tauri 官方：包装 deb）
 
-目录：
+对照：[Tauri Snap 文档](https://v2.tauri.app/distribute/snapcraft/)、[faire-todo-app](https://github.com/charlesschaefer/faire-todo-app)、addiction-tracker——均为 `tauri build --bundles deb` → `dpkg -x`。**不用 AppImage**（自带 GTK 易与 portal / 文件对话框冲突）。
 
-```text
-snap/
-  snapcraft.yaml   # 本地试装与 GitHub Actions 共用
-```
+| 项    | 约定                                                                              |
+| ----- | --------------------------------------------------------------------------------- |
+| 版本  | `version` 与 `package.json` 一致（build 校验）                                    |
+| 输入  | `src-tauri/target/release/bundle/deb/RedisME_<ver>_amd64.deb`；可 `REDIS_ME_DEB=` |
+| 图标  | deb 内 hicolor + `Icon=/usr/share/icons/hicolor/...`                              |
+| plugs | `gnome` + 显式 `desktop` / `home` / `unity7` / `wayland` / `x11` 等               |
+| 本地  | `snapcraft pack --destructive-mode`                                               |
 
-| 项       | 约定                                                                                                       |
-| -------- | ---------------------------------------------------------------------------------------------------------- |
-| 版本     | `snap/snapcraft.yaml` 的 `version` 与 `package.json` 一致（build 会校验；勿用 craftctl，与 gnome 冲突）    |
-| AppImage | 默认 `src-tauri/target/release/bundle/appimage/RedisME_<ver>_amd64.AppImage`（Tauri 默认路径，一般不用配） |
-| 覆盖路径 | 仅调试时可设 `REDIS_ME_APPIMAGE`                                                                           |
-| 本地打包 | `snapcraft pack --destructive-mode`（免 LXD；需代理时 export `http_proxy` / `https_proxy`）                |
-
-**目标流程（后续接 CI）**：打 tag → 现有 `release.yml` 打出 AppImage → 同 job / 下游 job 跑 `snapcraft pack` → 用 `SNAPCRAFT_STORE_CREDENTIALS` 上传 edge/stable。本地 1.5 只为先把包装与权限跑通。
-
-注意：
-
-- 首版 **amd64**；arm64 第二轮再加。
-- `grade: devel`，先推 **edge**；稳定后再晋升 `stable`。
-- 权限起步：`extensions: [gnome]` + `network` / `home`（构建时会拉 `gpu-snap`，需能访问 GitHub）。
-
-参考：[Tauri v2 Flatpak/Snap](https://vincent.jousse.org/blog/en/packaging-tauri-v2-flatpak-snapcraft-elm/)；Insight：[snapcraft.io/redisinsight](https://snapcraft.io/redisinsight)。
-
-### 1.5 本地构建与试装（可选，验证配方）
-
-在已能 `tauri build` 的 Ubuntu 上（AppImage 已在默认路径）：
+### 1.5 本地构建与试装
 
 ```bash
-cd /path/to/redis-me
-# 若还没有 AppImage：vp run tauri build   # 或你们惯用的 tauri 构建命令
-snapcraft pack   # 勿裸跑 snapcraft（新版本会弃用）
-# 得到类似 redis-me_4.6.1_amd64.snap
+cd ~/redis-me
+vp run tauri build
+ls src-tauri/target/release/bundle/deb/RedisME_*_amd64.deb
 
+export https_proxy=http://192.168.1.111:7897
+export http_proxy=http://192.168.1.111:7897
+snapcraft pack --destructive-mode
+
+sudo snap remove redis-me || true
 sudo snap install ./redis-me_*.snap --dangerous
 redis-me
-# 测：连本机 Redis、导入导出、设置页是否为商店版（无自更新）
-
-sudo snap remove redis-me
+# 测：图标、导出连接路径对话框、连 Redis、商店版无自更新
 ```
 
 ### 1.6 上传与渠道发布
@@ -147,14 +133,14 @@ snapcraft release redis-me <revision> stable
 
 ### 1.6.1 GitHub Actions 自动打 Snap（待接，目标形态）
 
-在 `release.yml` 的 **ubuntu amd64** 矩阵任务末尾（`tauri-action` 已产出 AppImage 之后），或独立 `needs: publish-tauri` 的 job：
+在 `release.yml` 的 **ubuntu amd64** 矩阵任务末尾（`tauri-action` 已产出 **deb** 之后），或独立 `needs: publish-tauri` 的 job：
 
 1. 安装 `snapcraft`
-2. `snapcraft pack`（读默认 Tauri AppImage 路径 + `package.json` 版本）
+2. `snapcraft pack --destructive-mode`（读默认 Tauri **deb** 路径）
 3. `snapcraft upload *.snap --release=edge`（凭据来自 secret）
 4. 稳定后改为 `stable`，或保留手动晋升
 
-Release 说明里可补一行 Snap 安装：`sudo snap install redis-me`。
+Release 说明里可补一行：`sudo snap install redis-me`。
 
 ### 1.7 商店列表信息（网页）
 
