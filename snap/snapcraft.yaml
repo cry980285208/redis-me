@@ -17,30 +17,10 @@ icon: snap/gui/redis-me.png
 grade: devel
 confinement: strict
 
-# stage-packages / WebKit 间接带入的库多由 gnome 平台提供，linter 误报 unused
+# WebKit stage-packages 与 gnome 平台库重叠，unused 误报多，直接关 library linter
 lint:
   ignore:
-    - library:
-        - usr/lib/**/libX*.so*
-        - usr/lib/**/libxcb*.so*
-        - usr/lib/**/libLerc.so*
-        - usr/lib/**/libtiff.so*
-        - usr/lib/**/libjpeg.so*
-        - usr/lib/**/libpng*.so*
-        - usr/lib/**/libwebp*.so*
-        - usr/lib/**/libgtk*.so*
-        - usr/lib/**/libgdk*.so*
-        - usr/lib/**/libcairo*.so*
-        - usr/lib/**/libpango*.so*
-        - usr/lib/**/libgio*.so*
-        - usr/lib/**/libglib*.so*
-        - usr/lib/**/libgobject*.so*
-        - usr/lib/**/libatk*.so*
-        - usr/lib/**/libharfbuzz*.so*
-        - usr/lib/**/libfreetype.so*
-        - usr/lib/**/libfontconfig.so*
-        - usr/lib/**/libepoxy.so*
-        - usr/lib/**/libwayland*.so*
+    - library
 
 platforms:
   amd64:
