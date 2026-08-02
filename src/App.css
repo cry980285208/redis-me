@@ -13,7 +13,7 @@
 
 .me-select-plain .el-select__selection {
   flex: 0 0 auto;
-  padding: 0 4px;
+  padding: 0 2px 0 4px;
 }
 
 /* 默认 absolute+width:100%，文案不进 max-content，须改回文档流 */
@@ -26,7 +26,14 @@
 /* 展开时 input 叠层；filterable 输入会卸掉 placeholder，定宽场景（如 db-select）需另用 prefix 占位 */
 .me-select-plain .el-select__input-wrapper {
   position: absolute;
-  inset: 0 18px 0 4px;
+  inset: 0 14px 0 4px;
+  display: flex;
+  align-items: center;
+}
+
+/* EP 默认 input height:24px，在 30px 框里会偏上；拉满后由 input 自身垂直居中文字 */
+.me-select-plain .el-select__input {
+  height: 100%;
 }
 
 .me-select-plain .el-select__suffix .el-icon {
@@ -77,6 +84,13 @@ html {
      system-ui: 兜底
   */
   --code-font: Menlo, Monaco, Consolas, 黑体, system-ui;
+}
+
+/* Linux WebKitGTK：减轻假粗/发糊（Yaak/JetPilot 同类补丁；勿用于 macOS） */
+html[data-platform='linux'] {
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
 }
 
 /* 黑色主题 */

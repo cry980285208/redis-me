@@ -70,7 +70,7 @@ snapcraft whoami   # 确认登录成功
 CI 以后可用导出凭据（勿提交仓库）：
 
 ```bash
-snapcraft export-login snapcraft- creds.txt
+snapcraft export-login snapcraft-creds.txt
 # Actions 里：SNAPCRAFT_STORE_CREDENTIALS=$(cat snapcraft-creds.txt)
 ```
 
@@ -88,75 +88,39 @@ snapcraft register redis-me
 
 商店里给人看的标题用 `title: RedisME`（可与 `name` 不同）。
 
-### 1.4 在仓库加 `snap/snapcraft.yaml`（首版建议包装 AppImage）
+### 1.4 `snap/snapcraft.yaml`（对齐 Tauri 官方：包装 deb）
 
-目录：
+对照已上架配方（勿自创 WebKit 路径）：
+[faire-todo-app](https://snapcraft.io/faire-todo-app) · [addiction-tracker](https://snapcraft.io/addiction-tracker) · [Tauri#10326](https://github.com/tauri-apps/tauri/discussions/10326)
 
-```text
-snap/
-  snapcraft.yaml
-```
-
-要点（具体内容实现时再写死版本 URL）：
-
-```yaml
-name: redis-me # 与 register 一致
-title: RedisME
-base: core24
-version: '4.5.0' # 跟 package.json / Release
-summary: Redis / Valkey desktop client
-description: |
-  RedisME is a desktop GUI for Redis and Valkey.
-grade: stable # 试发可用 devel + 只推 edge
-confinement: strict # 尽量 strict；不够再考虑 classic（审核更严）
-
-apps:
-  redis-me:
-    command: bin/redis-me # 按实际 wrapper 调整
-    desktop: usr/share/applications/com.hepengju.redis.desktop
-    extensions: [gnome] # 常见桌面集成；按 snapcraft 文档调整
-    plugs:
-      - network
-      - network-bind # 一般不需要监听，可不加
-      - home
-      - desktop
-      - desktop-legacy
-      - wayland
-      - x11
-      - opengl
-
-parts:
-  redis-me:
-    plugin: dump
-    # 方案 A：从 GitHub Release 拉 AppImage，extract 后装进 $SNAPCRAFT_PART_INSTALL
-    source: https://github.com/hepengju/redis-me/releases/download/v4.5.0/RedisME_4.5.0_amd64.AppImage
-    # 另写 override-build：chmod +x、--appimage-extract、拷贝文件、写 wrapper
-```
-
-注意：
-
-- 首版 **x86_64** 先通；arm64 可第二轮加 `architectures` / 多 build。
-- Tauri + WebKit 在 snap 里偶发缺库，用 `stage-packages` 补（按运行报错补）。
-- 权限从少到多：先 `network` + `home` + 桌面相关，SSH 读 `~/.ssh` 再视需要加。
-
-参考实现文章：[Tauri v2 Flatpak/Snap](https://vincent.jousse.org/blog/en/packaging-tauri-v2-flatpak-snapcraft-elm/)；Insight 商店页：[snapcraft.io/redisinsight](https://snapcraft.io/redisinsight)。
+| 项     | 约定                                                                       |
+| ------ | -------------------------------------------------------------------------- |
+| base   | **core22**（与 faire / addiction-tracker 一致，勿用 core24 瞎试）          |
+| layout | symlink → `$SNAP/usr/lib.../webkit2gtk-4.1`（含 libexec、injected-bundle） |
+| 输入   | 本地已有 deb：`dpkg -x`（他们是 snap 内 build；运行时形状相同）            |
+| plugs  | `wayland` `x11` `home` `desktop` `unity7` `network` + single-instance dbus |
+| 本地   | `pack`/`clean` 都加 `--destructive-mode`（勿 sudo）                        |
 
 ### 1.5 本地构建与试装
 
 ```bash
-cd /path/to/redis-me
-snapcraft clean
-snapcraft
-# 得到类似 redis-me_4.5.0_amd64.snap
+cd ~/redis-me
+vp run tauri build
+ls src-tauri/target/release/bundle/deb/RedisME_*_amd64.deb
 
+export https_proxy=http://192.168.1.111:7897
+export http_proxy=http://192.168.1.111:7897
+snapcraft pack --destructive-mode
+
+sudo snap remove redis-me || true
 sudo snap install ./redis-me_*.snap --dangerous
 redis-me
-# 测：连本机 Redis、导入导出、设置页是否为商店版（无自更新）
-
-sudo snap remove redis-me
+# 测：图标、导出连接路径对话框、连 Redis、商店版无自更新
 ```
 
 ### 1.6 上传与渠道发布
+
+首版可手动；配方稳定后改由 Actions 上传（secret：`SNAPCRAFT_STORE_CREDENTIALS`，见 1.2）。
 
 ```bash
 # 先上 edge，自己再 snap install redis-me --edge 验证
@@ -164,12 +128,20 @@ snapcraft upload ./redis-me_*.snap --release=edge
 
 # 无问题后晋升（revision 以 upload 输出为准）
 snapcraft release redis-me <revision> stable
-
-# 或一步到位（稳妥后再用）：
-# snapcraft upload ./redis-me_*.snap --release=stable
 ```
 
 网页可在 https://snapcraft.io/redis-me/releases 看修订与渠道。
+
+### 1.6.1 GitHub Actions 自动打 Snap（待接，目标形态）
+
+在 `release.yml` 的 **ubuntu amd64** 矩阵任务末尾（`tauri-action` 已产出 **deb** 之后），或独立 `needs: publish-tauri` 的 job：
+
+1. 安装 `snapcraft`
+2. `snapcraft pack --destructive-mode`（读默认 Tauri **deb** 路径）
+3. `snapcraft upload *.snap --release=edge`（凭据来自 secret）
+4. 稳定后改为 `stable`，或保留手动晋升
+
+Release 说明里可补一行：`sudo snap install redis-me`。
 
 ### 1.7 商店列表信息（网页）
 

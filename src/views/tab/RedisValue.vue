@@ -2189,7 +2189,7 @@ onUnmounted(() => {
           <el-text
             v-if="detectedViewText"
             class="bytes-format-auto-label"
-            style="margin-left: 8px; white-space: nowrap"
+            style="margin-left: 2px; white-space: nowrap"
             :title="t('redisValue.autoDetected')">
             {{ detectedViewText }}
           </el-text>
@@ -2495,8 +2495,9 @@ onUnmounted(() => {
           justify-content: center;
         }
 
+        // 已在 :deep(.el-table) 内，勿再套 :deep（否则会残留给 lightningcss）
         .field-row-actions {
-          :deep(.icon-btn) {
+          .icon-btn {
             font-size: 16px;
           }
         }

@@ -1,12 +1,18 @@
 <script setup lang="ts">
-import { computed, shallowRef, watch } from 'vue'
+import { type as getOsType } from '@tauri-apps/plugin-os'
+import { shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { isDark } from '@/utils/util'
 import AppMain from '@/views/AppMain.vue'
 import AppTitle from '@/views/ext/AppTitle.vue'
+import WindowResize from '@/views/ext/WindowResize.vue'
 
 const { locale: i18nLocale } = useI18n()
+
+/** 供 CSS 按平台作用：Linux WebKitGTK 字体补丁等（非 WebView 自动注入） */
+const osType = getOsType()
+document.documentElement.setAttribute('data-platform', osType)
 
 // 主题切换
 watch(
@@ -30,24 +36,27 @@ watch(
   { immediate: true },
 )
 
-// 字体切换
-const defaultUiFont =
-  "system-ui, Inter, 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', '微软雅黑', Arial, sans-serif"
-const defaultCodeFont = 'Menlo, Monaco, Consolas, 黑体, system-ui'
-
-function fontStackToCss(v: string | string[] | undefined, fallback: string): string {
-  if (v == null || v === '') return fallback
-  return Array.isArray(v) ? v.join(', ') : v
+/** 设置里的字体栈 → CSS；未选择返回空，由 App.css :root 兜底 */
+function fontStackToCss(v: string | string[] | undefined): string {
+  if (v == null || v === '') return ''
+  if (Array.isArray(v)) return v.filter(Boolean).join(', ')
+  return v
 }
 
-const appUiFont = computed(() => fontStackToCss(meTauri.settings.uiFont, defaultUiFont))
-const appCodeFont = computed(() => fontStackToCss(meTauri.settings.codeFont, defaultCodeFont))
-watch(appUiFont, () => document.documentElement.style.setProperty('--ui-font', appUiFont.value), {
-  immediate: true,
-})
+function applyCssVar(name: string, value: string) {
+  if (value) document.documentElement.style.setProperty(name, value)
+  else document.documentElement.style.removeProperty(name)
+}
+
+// 字体切换：有选择才覆盖，否则沿用 App.css --ui-font / --code-font
 watch(
-  appCodeFont,
-  () => document.documentElement.style.setProperty('--code-font', appCodeFont.value),
+  () => fontStackToCss(meTauri.settings.uiFont),
+  v => applyCssVar('--ui-font', v),
+  { immediate: true },
+)
+watch(
+  () => fontStackToCss(meTauri.settings.codeFont),
+  v => applyCssVar('--code-font', v),
   { immediate: true },
 )
 </script>
@@ -55,6 +64,7 @@ watch(
 <template>
   <el-config-provider :locale>
     <AppTitle />
+    <WindowResize />
     <AppMain />
   </el-config-provider>
 </template>

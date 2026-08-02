@@ -528,6 +528,7 @@ export default {
     favoriteFolder: 'Favorite Folder',
     unfavoriteFolder: 'Unfavorite',
     reloadFolder: 'Reload Folder',
+    reloadAllFolder: 'Reload All',
     favoriteOk: 'Added to Favorites',
     unfavoriteOk: 'Removed from Favorites',
   },

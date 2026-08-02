@@ -106,6 +106,11 @@ const folderLoadMorePaths = computed(() =>
   }),
 )
 
+/** SCAN 中的收藏目录 path（目录图标换成 loading） */
+const folderLoadingPaths = computed(() =>
+  visibleFolders.value.filter(path => scanMap.get(path)?.loading),
+)
+
 const anyScanning = computed(() => Array.from(scanMap.values()).some(s => s.loading && !s.loaded))
 
 /** 收藏列表移除某目录时清掉其扫描残留 */
@@ -153,9 +158,10 @@ async function scanFolder(path: string, useCursor: boolean, loadAll: boolean): P
     }
     const first = await scanOnce(path, s)
     if (s.cancelled) return
+    // 首批到位即可上屏；此前 loaded=false 只显示占位。后续批边扫边追加（对齐普通模式）
+    s.loaded = true
     if (!loadAll) await scanAuto(path, s, first)
     else await scanAll(path, s)
-    if (!s.cancelled) s.loaded = true
   } catch (e) {
     if (!s.cancelled) {
       meWarn(e instanceof Error ? e.message : String(e))
@@ -219,7 +225,8 @@ async function loadMore(path: string, loadAll: boolean): Promise<void> {
   await scanFolder(path, true, loadAll)
 }
 
-async function reloadFolder(path: string): Promise<void> {
+/** 重新扫描目录；loadAll 时扫完全部键，否则按阈值自动续扫 */
+async function reloadFolder(path: string, loadAll = false): Promise<void> {
   const s = ensureState(path)
   if (s.loading) {
     s.cancelled = true
@@ -229,7 +236,7 @@ async function reloadFolder(path: string): Promise<void> {
   const next = new Set(expanded.value)
   next.add(path)
   expanded.value = next
-  await scanFolder(path, false, false)
+  await scanFolder(path, false, loadAll)
 }
 
 /** 刷新所有已展开目录（F5）；串行避免多目录同时 cancel/重扫把状态打乱 */
@@ -290,7 +297,8 @@ function patchCheckedAfterRename(
 }
 
 function onContextFolder(command: string, folder: string): void {
-  if (command === 'reloadFolder') void reloadFolder(folder)
+  if (command === 'reloadFolder') void reloadFolder(folder, false)
+  else if (command === 'reloadAllFolder') void reloadFolder(folder, true)
   else if (command === 'loadMoreFolder') void loadMore(folder, false)
   else if (command === 'loadAllFolder') void loadMore(folder, true)
   else if (command === 'copyFolder') meCopy(folder)
@@ -341,6 +349,7 @@ defineExpose({
       :allow-enter-checked-mode="allowEnterCheckedMode"
       :folder-key-groups="folderKeyGroups"
       :folder-load-more-paths="folderLoadMorePaths"
+      :folder-loading-paths="folderLoadingPaths"
       :redis-key="share.redisKey"
       :key-show-tree="keyShowTree"
       :sort-by-count="sortByCount"

@@ -68,6 +68,8 @@ const props = withDefaults(
     folderKeyGroups?: { path: string; keys: RedisKey_Deserialize[]; loaded?: boolean }[]
     /** 尚有 SCAN cursor 未扫完的收藏目录 path（右键显示加载更多） */
     folderLoadMorePaths?: string[]
+    /** 正在 SCAN 的收藏目录 path（目录图标换成 loading） */
+    folderLoadingPaths?: string[]
     /** 为 false 时右键不提供「多选模式」（另一区已在多选时） */
     allowEnterCheckedMode?: boolean
   }>(),
@@ -84,6 +86,7 @@ const props = withDefaults(
     trimRoot: '',
     folderKeyGroups: () => [],
     folderLoadMorePaths: () => [],
+    folderLoadingPaths: () => [],
     allowEnterCheckedMode: true,
   },
 )
@@ -579,9 +582,17 @@ const contextFolderHasMore = computed(() => {
   return props.folderLoadMorePaths.includes(path)
 })
 
-/** 收藏目录用实心 me-icon；普通目录仍用 Element 线框图标 */
+/** 收藏目录根是否正在 SCAN */
+function isFavoriteFolderLoading(node: TreeNode): boolean {
+  if (!node.data?.isFavoriteFolderRoot) return false
+  const path = node.data.favFolderPath ?? logicalFolderPath(node)
+  return props.folderLoadingPaths.includes(path)
+}
+
+/** 收藏目录用实心 me-icon；普通目录仍用 Element 线框图标；SCAN 中换 loading */
 function folderIconName(node: TreeNode): string {
   if (node.data.isRootNode) return 'me-icon-db'
+  if (isFavoriteFolderLoading(node)) return 'el-icon-loading'
   const favorited =
     node.data.isFavoriteFolderRoot ||
     (!props.favoriteMode && isFolderFavoritedLocal(String(node.key)))
@@ -646,12 +657,14 @@ function folderIconName(node: TreeNode): string {
             </div>
           </div>
           <div v-else :class="getNodeClass(node)" class="me-flex folder-row">
-            <!-- 已收藏 / 收藏目录根：实心金色文件夹图标 -->
+            <!-- 已收藏 / 收藏目录根：实心金色文件夹；SCAN 中换 loading 并旋转（不着金色） -->
             <me-icon
               class="folder-icon"
               :class="{
+                rotating: isFavoriteFolderLoading(node),
                 'is-favorited':
                   !node.data.isRootNode &&
+                  !isFavoriteFolderLoading(node) &&
                   (node.data.isFavoriteFolderRoot ||
                     (!favoriteMode && isFolderFavoritedLocal(String(node.key)))),
               }"
@@ -692,10 +705,7 @@ function folderIconName(node: TreeNode): string {
 
         <!-- 目录（含收藏目录根） -->
         <template v-else>
-          <!-- 仅收藏目录根：刷新/加载更多置顶 -->
-          <el-dropdown-item v-if="isContextFavoriteFolderRoot" command="reloadFolder">
-            <me-icon icon="el-icon-refresh" :name="t('keyTree.reloadFolder')" />
-          </el-dropdown-item>
+          <!-- 仅收藏目录根：加载更多/重新加载置顶 -->
           <el-dropdown-item
             v-if="isContextFavoriteFolderRoot && contextFolderHasMore"
             command="loadMoreFolder">
@@ -706,11 +716,17 @@ function folderIconName(node: TreeNode): string {
             command="loadAllFolder">
             <me-icon icon="me-icon-load-all" :name="t('keyMain.loadAll')" />
           </el-dropdown-item>
+          <el-dropdown-item v-if="isContextFavoriteFolderRoot" command="reloadFolder">
+            <me-icon icon="el-icon-refresh" :name="t('keyTree.reloadFolder')" />
+          </el-dropdown-item>
+          <el-dropdown-item v-if="isContextFavoriteFolderRoot" command="reloadAllFolder">
+            <me-icon icon="me-icon-load-all" :name="t('keyTree.reloadAllFolder')" />
+          </el-dropdown-item>
 
-          <el-dropdown-item v-if="canEdit" command="addKey">
+          <el-dropdown-item v-if="canEdit" command="addKey" :divided="isContextFavoriteFolderRoot">
             <me-icon icon="el-icon-circle-plus" :name="t('keyTree.addKey')" />
           </el-dropdown-item>
-          <el-dropdown-item command="copyFolder">
+          <el-dropdown-item command="copyFolder" :divided="isContextFavoriteFolderRoot && !canEdit">
             <me-icon icon="el-icon-document-copy" :name="t('keyTree.copyFolder')" />
           </el-dropdown-item>
           <el-dropdown-item v-if="!showCheckbox && allowEnterCheckedMode" command="checkedMode">
@@ -822,6 +838,19 @@ function folderIconName(node: TreeNode): string {
 
   &.is-favorited {
     color: #f7ba2a;
+  }
+
+  &.rotating {
+    animation: folder-icon-rotate 1s linear infinite;
+  }
+}
+
+@keyframes folder-icon-rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
   }
 }
 

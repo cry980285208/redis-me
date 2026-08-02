@@ -127,7 +127,7 @@ const loading = ref(false)
 const loadFolder = ref(false)
 const scanCancelled = ref(false) // 扫描是否被取消
 const scanPaused = ref(false) // 用户主动暂停后可用继续扫描
-const scanLoadAll = ref(false) // 暂停前是「加载更多」还是「加载剩余所有键」
+const scanLoadAll = ref(false) // 暂停前是「加载更多」还是「加载全部」
 const scanBatchCount = ref(0) // 本轮搜索已执行的 SCAN 次数（用于进度估算）
 // 前若干轮扫描通常很快完成，不必闪一下暂停/继续控件
 const SCAN_CONTROL_MIN_BATCHES = 10
@@ -1978,6 +1978,16 @@ function editDbName(db: number): void {
     align-items: center;
     justify-content: space-between;
 
+    /* Linux system-ui 字面度量与 Win 不同，收紧行高并统一交叉轴居中 */
+    .me-flex {
+      align-items: center;
+    }
+
+    .center {
+      display: flex;
+      align-items: center;
+    }
+
     :deep(.icon-btn) {
       font-size: 18px;
     }
@@ -1990,17 +2000,19 @@ function editDbName(db: number): void {
       min-height: 0;
       height: 30px;
       padding: 4px;
+      line-height: 1;
     }
 
     /* 隐藏 sizer(prefix) 定宽；可见 #label 叠层显示；输入过滤不改变宽度 */
     .db-select {
       :deep(.icon-main) {
         white-space: nowrap;
+        line-height: 1;
       }
 
+      /* 无额外 padding：避免 sizer 比可见文案更宽，箭头前留白过大 */
       :deep(.el-select__prefix) {
         flex-shrink: 0;
-        padding: 0 4px;
         visibility: hidden;
         pointer-events: none;
       }
@@ -2017,7 +2029,7 @@ function editDbName(db: number): void {
 
       :deep(.el-select__selected-item.el-select__placeholder) {
         position: absolute;
-        inset: 0 18px 0 4px;
+        inset: 0 14px 0 4px;
         display: flex;
         align-items: center;
         width: auto;
@@ -2026,7 +2038,7 @@ function editDbName(db: number): void {
       }
 
       :deep(.el-select__input-wrapper) {
-        inset: 0 18px 0 4px;
+        inset: 0 14px 0 4px;
       }
     }
 
@@ -2034,6 +2046,7 @@ function editDbName(db: number): void {
       flex-shrink: 0;
       padding: 0 4px;
       font-size: 14px;
+      line-height: 1;
       color: var(--el-text-color-regular);
     }
 
@@ -2049,6 +2062,7 @@ function editDbName(db: number): void {
 
     .tip {
       white-space: nowrap;
+      line-height: 1;
     }
 
     :deep(.el-select-dropdown__item) {

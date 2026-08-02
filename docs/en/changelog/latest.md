@@ -1,5 +1,22 @@
 # 4.x Changelog
 
+## v4.6.1 (2026-08-02)
+
+### ✨ New Features
+
+- Favorite folders
+  - Show a spinner during SCAN, and paint results as keys arrive
+  - Right-click load menu adjusted; added **Reload all**
+- Linux style: **WebKitGTK font antialiasing**
+- Other details
+  - Release notes download table split by x64 / arm64 columns
+  - Style polish for DB / codec / terminal output-format selectors
+  - CodeMirror wraps by default; terminal forces wrap on long lines
+
+### 🐞 Bug Fixes
+
+- Linux: edge resize for borderless windows
+
 ## [v4.6.0](https://mp.weixin.qq.com/s/SxpCUDobWtdUZMaJQo3uvw) (2026-08-02)
 
 ### ✨ New Features

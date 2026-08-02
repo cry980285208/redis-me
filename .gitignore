@@ -27,6 +27,12 @@ dist-ssr
 docs/.vitepress/dist
 docs/.vitepress/cache
 
+# Snap 本地构建产物 / 凭据（勿提交）
+*.snap
+snapcraft-creds.txt
+RedisME_*.AppImage
+.tmp-appimage/
+
 # Python seed scripts
 **/__pycache__/
 *.pyc
