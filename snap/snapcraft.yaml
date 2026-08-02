@@ -78,6 +78,12 @@ parts:
 
       install -d "$CRAFT_PART_INSTALL/opt/redis-me"
       cp -a squashfs-root/. "$CRAFT_PART_INSTALL/opt/redis-me/"
+      # snap 打包后偶发丢掉可执行位 → AppRun.wrapped: Permission denied
+      chmod +x "$CRAFT_PART_INSTALL/opt/redis-me/AppRun" \
+        "$CRAFT_PART_INSTALL/opt/redis-me/AppRun.wrapped" 2>/dev/null || true
+      find "$CRAFT_PART_INSTALL/opt/redis-me" -type f \( \
+          -name 'RedisME' -o -name 'AppRun*' -o -path '*/usr/bin/*' \
+        \) -exec chmod +x {} +
 
       install -d "$CRAFT_PART_INSTALL/bin"
       cat > "$CRAFT_PART_INSTALL/bin/redis-me" << 'EOF'
@@ -100,16 +106,27 @@ parts:
         -e 's|^Icon=.*|Icon=redis-me|' \
         "$CRAFT_PART_INSTALL/usr/share/applications/redis-me.desktop"
 
-      # 图标：与 Tauri 打包同源 src-tauri/resources/icons，装到 hicolor（供 Icon=redis-me）
+      # 图标：同源 src-tauri/resources/icons → hicolor（运行时主题）
       ICONS_DIR="$CRAFT_PROJECT_DIR/src-tauri/resources/icons"
-      if [ -f "$ICONS_DIR/128x128.png" ]; then
-        install -Dm644 "$ICONS_DIR/128x128.png" \
-          "$CRAFT_PART_INSTALL/usr/share/icons/hicolor/128x128/apps/redis-me.png"
+      if [ ! -f "$ICONS_DIR/128x128.png" ]; then
+        echo "icon not found: $ICONS_DIR/128x128.png" >&2
+        exit 1
       fi
+      install -Dm644 "$ICONS_DIR/128x128.png" \
+        "$CRAFT_PART_INSTALL/usr/share/icons/hicolor/128x128/apps/redis-me.png"
       if [ -f "$ICONS_DIR/512x512.png" ]; then
         install -Dm644 "$ICONS_DIR/512x512.png" \
           "$CRAFT_PART_INSTALL/usr/share/icons/hicolor/512x512/apps/redis-me.png"
-      elif [ -f "$ICONS_DIR/128x128.png" ]; then
-        install -Dm644 "$ICONS_DIR/128x128.png" \
-          "$CRAFT_PART_INSTALL/usr/share/icons/hicolor/256x256/apps/redis-me.png"
       fi
+    # snapcraft 打包检查认 meta/gui/；prime 后再补可执行位
+    override-prime: |
+      set -eu
+      craftctl default
+      install -Dm644 "$CRAFT_PROJECT_DIR/src-tauri/resources/icons/128x128.png" \
+        "$CRAFT_PRIME/meta/gui/redis-me.png"
+      chmod +x "$CRAFT_PRIME/opt/redis-me/AppRun" \
+        "$CRAFT_PRIME/opt/redis-me/AppRun.wrapped" 2>/dev/null || true
+      find "$CRAFT_PRIME/opt/redis-me" -type f \( \
+          -name 'RedisME' -o -name 'AppRun*' -o -path '*/usr/bin/*' \
+        \) -exec chmod +x {} +
+      chmod +x "$CRAFT_PRIME/bin/redis-me"
