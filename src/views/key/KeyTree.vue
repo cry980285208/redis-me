@@ -681,10 +681,7 @@ function folderIconName(node: TreeNode): string {
           <el-dropdown-item v-if="showCheckbox" command="exitCheckedMode">
             <me-icon icon="el-icon-circle-close" :name="t('keyMain.exitCheckedMode')" />
           </el-dropdown-item>
-          <!-- 普通模式 divided 分隔；收藏模式紧跟多选 -->
-          <el-dropdown-item
-            :command="isContextNodeFavorited ? 'unfavoriteKey' : 'favoriteKey'"
-            :divided="!favoriteMode">
+          <el-dropdown-item :command="isContextNodeFavorited ? 'unfavoriteKey' : 'favoriteKey'">
             <me-icon
               icon="el-icon-star-filled"
               :name="
