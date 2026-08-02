@@ -754,7 +754,11 @@ function exportFolder(folder: string): void {
 function batchKeyOk(mode: string): void {
   if (mode === 'delete') {
     // 收藏模式上区有独立 SCAN 缓存，需与 F5 一样重扫已展开目录
-    if (favoriteMode.value) void favFolderPanelRef.value?.reloadExpanded()
+    if (favoriteMode.value) {
+      void favFolderPanelRef.value?.reloadExpanded()
+      // 与批量取消收藏一致：删完退出多选，避免勾选残留已删键
+      exitCheckedMode()
+    }
     scanKey(false, false)
     bus.emit(INFO_REFRESH)
   } else {
@@ -1089,23 +1093,48 @@ function onKeysPanelContextFolder(command: string, folder: string): void {
   contextFolder(command, folder)
 }
 
-// 多选后的批量操作
+/**
+ * 多选底栏批处理设计：
+ * - 普通模式：导出 | TTL | 删除 | 收藏；对象=勾选叶子键
+ * - 收藏上区（目录）：导出 | TTL | 删除 | 取消收藏
+ * - 收藏下区（键）：仅取消收藏
+ * - 导出/TTL/删除只处理「已 SCAN 上屏且已勾选」的叶子键（扫描多少处理多少），
+ *   不因勾选目录根再去 path:* 二次 SCAN；仅勾选空目录根时这三项禁用
+ * - 取消收藏：目录根 path + 勾选键都算（目录根不依赖是否已扫出子键）
+ */
+/** 取消收藏等：键或目录根任一即可 */
 const checkedDisabled = computed(() => {
   if (share.exportImporting) return true
   if (favoriteMode.value) return favoriteCheckedCount.value === 0
   return checkedKeyList.value.length === 0
 })
+/** 导出/TTL/删除：必须有已上屏的勾选叶子键 */
+const checkedKeysDisabled = computed(() => {
+  if (share.exportImporting) return true
+  return checkedKeyList.value.length === 0
+})
 const checkedBtnClass = computed(() => (checkedDisabled.value ? ['icon-disabled'] : ['icon-btn']))
-function exportChecked() {
+const checkedKeysBtnClass = computed(() =>
+  checkedKeysDisabled.value ? ['icon-disabled'] : ['icon-btn'],
+)
+/** 收藏上区多选：展示导出/TTL/删除；下区走仅取消收藏的分支 */
+const favFolderBatchOps = computed(
+  () => favoriteMode.value && favoriteCheckedZone.value === 'folders',
+)
+
+function exportChecked(): void {
+  if (checkedKeyList.value.length === 0) return
   keyBatchRef.value?.open({ match: '', keyList: checkedKeyList.value }, 'export')
 }
 
 const ttlSetRef = useTemplateRef<InstanceType<typeof TTLSet>>('ttlSetRef')
 function ttlChecked(): void {
+  if (checkedKeyList.value.length === 0) return
   ttlSetRef.value?.open({ keyList: checkedKeyList.value })
 }
 
 function deleteChecked(): void {
+  if (checkedKeyList.value.length === 0) return
   keyBatchRef.value?.open({ match: '', keyList: checkedKeyList.value }, 'delete')
 }
 
@@ -1485,38 +1514,47 @@ function editDbName(db: number): void {
         </template>
       </div>
 
-      <!-- 左侧: 导出|TTL|删除|收藏 （多选时显示） -->
+      <!-- 多选底栏：见 script 中「多选底栏批处理设计」；导出/TTL/删除仅针对已上屏勾选键 -->
       <div class="me-flex" v-else style="margin-left: 10px; gap: 5px">
-        <template v-if="!favoriteMode">
-          <el-link underline="never" :disabled="checkedDisabled" @click="exportChecked">
+        <template v-if="!favoriteMode || favFolderBatchOps">
+          <el-link underline="never" :disabled="checkedKeysDisabled" @click="exportChecked">
             <me-icon
               :name="t('keyMain.exportChecked')"
               icon="me-icon-export"
               hint
-              :class="checkedBtnClass"
-              placement="top" />
-          </el-link>
-          <el-link underline="never" :disabled="checkedDisabled" @click="ttlChecked" v-if="canEdit">
-            <me-icon
-              :name="t('keyMain.ttlChecked')"
-              icon="el-icon-timer"
-              hint
-              :class="checkedBtnClass"
+              :class="checkedKeysBtnClass"
               placement="top" />
           </el-link>
           <el-link
             underline="never"
-            :disabled="checkedDisabled"
+            :disabled="checkedKeysDisabled"
+            @click="ttlChecked"
+            v-if="canEdit">
+            <me-icon
+              :name="t('keyMain.ttlChecked')"
+              icon="el-icon-timer"
+              hint
+              :class="checkedKeysBtnClass"
+              placement="top" />
+          </el-link>
+          <el-link
+            underline="never"
+            :disabled="checkedKeysDisabled"
             @click="deleteChecked"
             v-if="canEdit">
             <me-icon
               :name="t('keyMain.deleteChecked')"
               icon="el-icon-delete"
               hint
-              :class="checkedBtnClass"
+              :class="checkedKeysBtnClass"
               placement="top" />
           </el-link>
-          <el-link underline="never" :disabled="checkedDisabled" @click="favoriteChecked">
+          <!-- 普通：批量收藏；收藏上区：批量取消收藏（含目录根） -->
+          <el-link
+            v-if="!favoriteMode"
+            underline="never"
+            :disabled="checkedDisabled"
+            @click="favoriteChecked">
             <me-icon
               :name="t('keyMain.favoriteChecked')"
               icon="el-icon-star-filled"
@@ -1524,7 +1562,16 @@ function editDbName(db: number): void {
               :class="checkedBtnClass"
               placement="top" />
           </el-link>
+          <el-link v-else underline="never" :disabled="checkedDisabled" @click="unfavoriteChecked">
+            <me-icon
+              :name="t('keyMain.unfavoriteChecked')"
+              icon="el-icon-star"
+              hint
+              :class="checkedBtnClass"
+              placement="top" />
+          </el-link>
         </template>
+        <!-- 收藏下区：仅取消收藏 -->
         <template v-else>
           <el-link underline="never" :disabled="checkedDisabled" @click="unfavoriteChecked">
             <me-icon
