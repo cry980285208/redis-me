@@ -790,6 +790,7 @@ export default {
       execute: '执行命令',
       complete: '命令补全',
       history: '历史记录',
+      toggleWrap: '切换自动换行',
       clearScreen: '清屏',
       clearInput: '清除输入',
       cursorStart: '光标到行首',
