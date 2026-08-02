@@ -99,9 +99,10 @@ snap/
 
 | 项       | 约定                                                                                                       |
 | -------- | ---------------------------------------------------------------------------------------------------------- |
-| 版本     | 构建时读 `package.json`，发版仍只改它                                                                      |
+| 版本     | `snap/snapcraft.yaml` 的 `version` 与 `package.json` 一致（build 会校验；勿用 craftctl，与 gnome 冲突）    |
 | AppImage | 默认 `src-tauri/target/release/bundle/appimage/RedisME_<ver>_amd64.AppImage`（Tauri 默认路径，一般不用配） |
 | 覆盖路径 | 仅调试时可设 `REDIS_ME_APPIMAGE`                                                                           |
+| 本地打包 | `snapcraft pack --destructive-mode`（免 LXD；需代理时 export `http_proxy` / `https_proxy`）                |
 
 **目标流程（后续接 CI）**：打 tag → 现有 `release.yml` 打出 AppImage → 同 job / 下游 job 跑 `snapcraft pack` → 用 `SNAPCRAFT_STORE_CREDENTIALS` 上传 edge/stable。本地 1.5 只为先把包装与权限跑通。
 

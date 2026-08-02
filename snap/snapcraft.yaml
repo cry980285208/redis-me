@@ -1,11 +1,11 @@
 # RedisME Snap：包装 Tauri 已打好的 AppImage（本地试装与 GitHub Actions 共用此配方）
-# 版本：从 package.json 读取；AppImage 默认用 Tauri 产物路径，一般无需再配
-# 前置：先 tauri build（或 CI 已产出 AppImage），再 snapcraft pack
+# 版本：与 package.json 保持一致（build 会校验）；AppImage 用 Tauri 默认产物路径
+# 前置：先 tauri build，再 snapcraft pack --destructive-mode
 name: redis-me
 title: RedisME
 base: core24
-# 版本由 part redis-me 从 package.json craftctl set（须配 adopt-info）
-adopt-info: redis-me
+# 须与根目录 package.json 的 version 一致（勿用 craftctl：与 gnome 扩展冲突）
+version: '4.6.1'
 summary: Redis / Valkey desktop client
 description: |
   RedisME is a desktop GUI for Redis and Valkey.
@@ -44,15 +44,14 @@ parts:
     # 只拉 snap/，避免整仓 node_modules；AppImage / package.json 走 CRAFT_PROJECT_DIR
     source: snap
     build-packages: [python3]
-    # version 只能 craftctl set 一次：放在 pull，build 里用 get（避免残留状态报 only once）
-    override-pull: |
-      set -eu
-      craftctl default
-      VERSION="$(python3 -c "import json; print(json.load(open('$CRAFT_PROJECT_DIR/package.json'))['version'])")"
-      craftctl set version="$VERSION"
     override-build: |
       set -eu
-      VERSION="$(craftctl get version)"
+      VERSION="$(python3 -c "import json; print(json.load(open('$CRAFT_PROJECT_DIR/package.json'))['version'])")"
+      if [ "$VERSION" != "$CRAFT_PROJECT_VERSION" ]; then
+        echo "version mismatch: package.json=$VERSION snapcraft.yaml=$CRAFT_PROJECT_VERSION" >&2
+        echo "Keep snap/snapcraft.yaml version in sync with package.json." >&2
+        exit 1
+      fi
 
       # 默认：Tauri 标准产物路径；可选 REDIS_ME_APPIMAGE 覆盖（CI/调试用）
       if [ -n "${REDIS_ME_APPIMAGE:-}" ]; then
