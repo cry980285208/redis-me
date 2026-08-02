@@ -664,17 +664,54 @@ function folderIconName(node: TreeNode): string {
         </template>
       </el-tree-v2>
 
-      <!-- 右键菜单：收藏根优先（无子键时 isLeaf=true 也要走目录菜单） -->
+      <!-- 右键按键/目录两大块；收藏与普通的小差异用 v-if -->
       <me-context ref="meContextRef" @handle-command="handleCommand" @handle-close="handleClose">
-        <template v-if="isContextFavoriteFolderRoot">
-          <el-dropdown-item command="reloadFolder">
+        <!-- 键（收藏目录根无子键时也是 leaf，归目录菜单） -->
+        <template v-if="contextMenuNode?.isLeaf && !isContextFavoriteFolderRoot">
+          <!-- 仅普通模式提供从键新建 -->
+          <el-dropdown-item v-if="!favoriteMode && canEdit" command="addKey">
+            <me-icon icon="el-icon-circle-plus" :name="t('keyTree.addKey')" />
+          </el-dropdown-item>
+          <el-dropdown-item command="copyKey">
+            <me-icon icon="el-icon-document-copy" :name="t('keyTree.copyKey')" />
+          </el-dropdown-item>
+          <el-dropdown-item v-if="!showCheckbox && allowEnterCheckedMode" command="checkedMode">
+            <me-icon icon="me-icon-checked" :name="t('keyMain.checkedMode')" />
+          </el-dropdown-item>
+          <el-dropdown-item v-if="showCheckbox" command="exitCheckedMode">
+            <me-icon icon="el-icon-circle-close" :name="t('keyMain.exitCheckedMode')" />
+          </el-dropdown-item>
+          <!-- 普通模式 divided 分隔；收藏模式紧跟多选 -->
+          <el-dropdown-item
+            :command="isContextNodeFavorited ? 'unfavoriteKey' : 'favoriteKey'"
+            :divided="!favoriteMode">
+            <me-icon
+              icon="el-icon-star-filled"
+              :name="
+                isContextNodeFavorited ? t('keyTree.unfavoriteKey') : t('keyTree.favoriteKey')
+              " />
+          </el-dropdown-item>
+        </template>
+
+        <!-- 目录（含收藏目录根） -->
+        <template v-else>
+          <!-- 仅收藏目录根：刷新/加载更多置顶 -->
+          <el-dropdown-item v-if="isContextFavoriteFolderRoot" command="reloadFolder">
             <me-icon icon="el-icon-refresh" :name="t('keyTree.reloadFolder')" />
           </el-dropdown-item>
-          <el-dropdown-item v-if="contextFolderHasMore" command="loadMoreFolder">
+          <el-dropdown-item
+            v-if="isContextFavoriteFolderRoot && contextFolderHasMore"
+            command="loadMoreFolder">
             <me-icon icon="me-icon-load-more" :name="t('keyMain.loadMore')" />
           </el-dropdown-item>
-          <el-dropdown-item v-if="contextFolderHasMore" command="loadAllFolder">
+          <el-dropdown-item
+            v-if="isContextFavoriteFolderRoot && contextFolderHasMore"
+            command="loadAllFolder">
             <me-icon icon="me-icon-load-all" :name="t('keyMain.loadAll')" />
+          </el-dropdown-item>
+
+          <el-dropdown-item v-if="canEdit" command="addKey">
+            <me-icon icon="el-icon-circle-plus" :name="t('keyTree.addKey')" />
           </el-dropdown-item>
           <el-dropdown-item command="copyFolder">
             <me-icon icon="el-icon-document-copy" :name="t('keyTree.copyFolder')" />
@@ -685,118 +722,42 @@ function folderIconName(node: TreeNode): string {
           <el-dropdown-item v-if="showCheckbox" command="exitCheckedMode">
             <me-icon icon="el-icon-circle-close" :name="t('keyMain.exitCheckedMode')" />
           </el-dropdown-item>
-          <el-dropdown-item command="unfavoriteFolder">
+
+          <!-- 收藏目录根：取消收藏；普通模式目录：收藏/取消 -->
+          <el-dropdown-item v-if="isContextFavoriteFolderRoot" command="unfavoriteFolder">
             <me-icon icon="el-icon-star-filled" :name="t('keyTree.unfavoriteFolder')" />
           </el-dropdown-item>
-        </template>
-        <template v-else-if="contextMenuNode?.isLeaf">
-          <!-- 收藏模式下的右键菜单 -->
-          <template v-if="favoriteMode">
-            <el-dropdown-item command="copyKey"
-              ><me-icon icon="el-icon-document-copy" :name="t('keyTree.copyKey')"
-            /></el-dropdown-item>
-            <el-dropdown-item v-if="!showCheckbox && allowEnterCheckedMode" command="checkedMode"
-              ><me-icon icon="me-icon-checked" :name="t('keyMain.checkedMode')"
-            /></el-dropdown-item>
-            <el-dropdown-item v-if="showCheckbox" command="exitCheckedMode"
-              ><me-icon icon="el-icon-circle-close" :name="t('keyMain.exitCheckedMode')"
-            /></el-dropdown-item>
-            <!-- 取消收藏统一文案、统一置底（与收藏目录根菜单一致） -->
-            <el-dropdown-item :command="isContextNodeFavorited ? 'unfavoriteKey' : 'favoriteKey'">
-              <me-icon
-                icon="el-icon-star-filled"
-                :name="
-                  isContextNodeFavorited ? t('keyTree.unfavoriteKey') : t('keyTree.favoriteKey')
-                " />
-            </el-dropdown-item>
-          </template>
-          <!-- 正常模式下的右键菜单 -->
-          <template v-else>
-            <el-dropdown-item command="addKey" v-if="canEdit"
-              ><me-icon icon="el-icon-circle-plus" :name="t('keyTree.addKey')"
-            /></el-dropdown-item>
-            <el-dropdown-item command="copyKey"
-              ><me-icon icon="el-icon-document-copy" :name="t('keyTree.copyKey')"
-            /></el-dropdown-item>
-            <!-- 使用频率低，改在值区扩展菜单提供 -->
-            <!--
-            <el-dropdown-item v-if="canEdit" command="renameKey"
-              ><me-icon icon="el-icon-edit" :name="t('keyList.renameKey')"
-            /></el-dropdown-item>
-            <el-dropdown-item v-if="canEdit" command="duplicateKey"
-              ><me-icon icon="el-icon-copy-document" :name="t('redisValue.duplicateKey')"
-            /></el-dropdown-item>
-            -->
-            <el-dropdown-item v-if="!showCheckbox && allowEnterCheckedMode" command="checkedMode"
-              ><me-icon icon="me-icon-checked" :name="t('keyMain.checkedMode')"
-            /></el-dropdown-item>
-            <el-dropdown-item v-if="showCheckbox" command="exitCheckedMode"
-              ><me-icon icon="el-icon-circle-close" :name="t('keyMain.exitCheckedMode')"
-            /></el-dropdown-item>
-            <el-dropdown-item
-              :command="isContextNodeFavorited ? 'unfavoriteKey' : 'favoriteKey'"
-              divided>
-              <me-icon
-                icon="el-icon-star-filled"
-                :name="
-                  isContextNodeFavorited ? t('keyTree.unfavoriteKey') : t('keyTree.favoriteKey')
-                " />
-            </el-dropdown-item>
-          </template>
-        </template>
-        <template v-else>
-          <template v-if="favoriteMode">
-            <el-dropdown-item command="copyFolder"
-              ><me-icon icon="el-icon-document-copy" :name="t('keyTree.copyFolder')"
-            /></el-dropdown-item>
-            <el-dropdown-item v-if="!showCheckbox && allowEnterCheckedMode" command="checkedMode"
-              ><me-icon icon="me-icon-checked" :name="t('keyMain.checkedMode')"
-            /></el-dropdown-item>
-            <el-dropdown-item v-if="showCheckbox" command="exitCheckedMode"
-              ><me-icon icon="el-icon-circle-close" :name="t('keyMain.exitCheckedMode')"
-            /></el-dropdown-item>
-          </template>
-          <template v-else>
-            <el-dropdown-item command="addKey" v-if="canEdit"
-              ><me-icon icon="el-icon-circle-plus" :name="t('keyTree.addKey')"
-            /></el-dropdown-item>
-            <el-dropdown-item command="copyFolder"
-              ><me-icon icon="el-icon-document-copy" :name="t('keyTree.copyFolder')"
-            /></el-dropdown-item>
-            <el-dropdown-item v-if="!showCheckbox && allowEnterCheckedMode" command="checkedMode"
-              ><me-icon icon="me-icon-checked" :name="t('keyMain.checkedMode')"
-            /></el-dropdown-item>
-            <el-dropdown-item v-if="showCheckbox" command="exitCheckedMode"
-              ><me-icon icon="el-icon-circle-close" :name="t('keyMain.exitCheckedMode')"
-            /></el-dropdown-item>
-            <el-dropdown-item command="loadFolder" divided
-              ><me-icon icon="el-icon-search" :name="t('keyTree.loadFolder')"
-            /></el-dropdown-item>
-            <el-dropdown-item command="memoryUsage"
-              ><me-icon icon="me-icon-memory" :name="t('keyTree.memoryUsage')"
-            /></el-dropdown-item>
-            <el-dropdown-item
-              :command="isContextFolderFavorited ? 'unfavoriteFolder' : 'favoriteFolder'"
-              divided>
-              <me-icon
-                icon="el-icon-star-filled"
-                :name="
-                  isContextFolderFavorited
-                    ? t('keyTree.unfavoriteFolder')
-                    : t('keyTree.favoriteFolder')
-                " />
-            </el-dropdown-item>
-            <el-dropdown-item command="exportFolder" :disabled="share.exportImporting"
-              ><me-icon icon="el-icon-upload" :name="t('keyTree.exportFolder')"
-            /></el-dropdown-item>
+          <el-dropdown-item
+            v-else-if="!favoriteMode"
+            :command="isContextFolderFavorited ? 'unfavoriteFolder' : 'favoriteFolder'">
+            <me-icon
+              icon="el-icon-star-filled"
+              :name="
+                isContextFolderFavorited
+                  ? t('keyTree.unfavoriteFolder')
+                  : t('keyTree.favoriteFolder')
+              " />
+          </el-dropdown-item>
 
-            <el-dropdown-item
-              command="deleteFolder"
-              v-if="canEdit"
-              :disabled="share.exportImporting"
-              ><me-icon icon="el-icon-delete" :name="t('keyTree.deleteFolder')"
-            /></el-dropdown-item>
-          </template>
+          <!-- 仅普通模式：只加载该目录 -->
+          <el-dropdown-item
+            v-if="!favoriteMode && !isContextFavoriteFolderRoot"
+            command="loadFolder"
+            divided>
+            <me-icon icon="el-icon-search" :name="t('keyTree.loadFolder')" />
+          </el-dropdown-item>
+          <!-- 收藏模式（含根）在上方项后分隔；普通模式已有「只加载」分隔 -->
+          <el-dropdown-item
+            command="memoryUsage"
+            :divided="favoriteMode || isContextFavoriteFolderRoot">
+            <me-icon icon="me-icon-memory" :name="t('keyTree.memoryUsage')" />
+          </el-dropdown-item>
+          <el-dropdown-item command="exportFolder" :disabled="share.exportImporting" divided>
+            <me-icon icon="el-icon-upload" :name="t('keyTree.exportFolder')" />
+          </el-dropdown-item>
+          <el-dropdown-item v-if="canEdit" command="deleteFolder" :disabled="share.exportImporting">
+            <me-icon icon="el-icon-delete" :name="t('keyTree.deleteFolder')" />
+          </el-dropdown-item>
         </template>
       </me-context>
     </template>

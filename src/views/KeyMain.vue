@@ -753,6 +753,8 @@ function exportFolder(folder: string): void {
 
 function batchKeyOk(mode: string): void {
   if (mode === 'delete') {
+    // 收藏模式上区有独立 SCAN 缓存，需与 F5 一样重扫已展开目录
+    if (favoriteMode.value) void favFolderPanelRef.value?.reloadExpanded()
     scanKey(false, false)
     bus.emit(INFO_REFRESH)
   } else {
