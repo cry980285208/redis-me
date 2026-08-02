@@ -44,11 +44,15 @@ parts:
     # 只拉 snap/，避免整仓 node_modules；AppImage / package.json 走 CRAFT_PROJECT_DIR
     source: snap
     build-packages: [python3]
-    override-build: |
+    # version 只能 craftctl set 一次：放在 pull，build 里用 get（避免残留状态报 only once）
+    override-pull: |
       set -eu
-      # 与发版习惯对齐：只认 package.json 的 version
+      craftctl default
       VERSION="$(python3 -c "import json; print(json.load(open('$CRAFT_PROJECT_DIR/package.json'))['version'])")"
       craftctl set version="$VERSION"
+    override-build: |
+      set -eu
+      VERSION="$(craftctl get version)"
 
       # 默认：Tauri 标准产物路径；可选 REDIS_ME_APPIMAGE 覆盖（CI/调试用）
       if [ -n "${REDIS_ME_APPIMAGE:-}" ]; then
