@@ -19,6 +19,12 @@ contact: he_pengju@163.com
 grade: devel
 confinement: strict
 
+# AppImage 自带大量动态加载库，library linter 会误报 unused
+lint:
+  ignore:
+    - library:
+        - opt/redis-me/**
+
 # 首版只打 amd64；arm64 第二轮再加
 platforms:
   amd64:
@@ -94,16 +100,16 @@ parts:
         -e 's|^Icon=.*|Icon=redis-me|' \
         "$CRAFT_PART_INSTALL/usr/share/applications/redis-me.desktop"
 
-      # 图标：从 AppDir 拷到标准 hicolor，并改名为 redis-me.*
-      if [ -d "$CRAFT_PART_INSTALL/opt/redis-me/usr/share/icons" ]; then
-        mkdir -p "$CRAFT_PART_INSTALL/usr/share/icons"
-        cp -a "$CRAFT_PART_INSTALL/opt/redis-me/usr/share/icons/." "$CRAFT_PART_INSTALL/usr/share/icons/"
-        find "$CRAFT_PART_INSTALL/usr/share/icons" -type f \( -name 'RedisME.*' -o -name 'redis-me.*' \) | while read -r f; do
-          dir="$(dirname "$f")"
-          base="$(basename "$f")"
-          ext="${base##*.}"
-          if [ "$base" != "redis-me.$ext" ]; then
-            mv "$f" "$dir/redis-me.$ext"
-          fi
-        done
+      # 图标：与 Tauri 打包同源 src-tauri/resources/icons，装到 hicolor（供 Icon=redis-me）
+      ICONS_DIR="$CRAFT_PROJECT_DIR/src-tauri/resources/icons"
+      if [ -f "$ICONS_DIR/128x128.png" ]; then
+        install -Dm644 "$ICONS_DIR/128x128.png" \
+          "$CRAFT_PART_INSTALL/usr/share/icons/hicolor/128x128/apps/redis-me.png"
+      fi
+      if [ -f "$ICONS_DIR/512x512.png" ]; then
+        install -Dm644 "$ICONS_DIR/512x512.png" \
+          "$CRAFT_PART_INSTALL/usr/share/icons/hicolor/512x512/apps/redis-me.png"
+      elif [ -f "$ICONS_DIR/128x128.png" ]; then
+        install -Dm644 "$ICONS_DIR/128x128.png" \
+          "$CRAFT_PART_INSTALL/usr/share/icons/hicolor/256x256/apps/redis-me.png"
       fi
