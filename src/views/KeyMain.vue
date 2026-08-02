@@ -5,8 +5,6 @@ import { sortBy } from 'lodash'
 import { minimatch } from 'minimatch'
 import {
   computed,
-  defineComponent,
-  h,
   inject,
   nextTick,
   onMounted,
@@ -16,16 +14,21 @@ import {
   useTemplateRef,
 } from 'vue'
 import { useI18n } from 'vue-i18n'
-import SvgIcon from '~virtual/svg-component'
 
+import { MeSelectUpDownIcon } from '@/components/MeSelectUpDownIcon'
 import { shareProvideKey, connUiProvideKey } from '@/types/me-interface'
 import type { RedisDB, RedisKey_Deserialize, ScanCursor } from '@/types/tauri-specta'
 import {
   useFavorites,
+  useFavoriteFolders,
+  useFavoriteSplitLayout,
   addFavorite,
   removeFavorite,
   clearFavoritesForDb,
   isFavorited,
+  addFavoriteFolder,
+  removeFavoriteFolder,
+  clearFavoriteFoldersForDb,
 } from '@/utils/favorite'
 import { clearKeyTypeCacheForConn } from '@/utils/key-type-cache'
 import {
@@ -34,11 +37,13 @@ import {
   computeScanProgress,
   MINIMATCH_SCAN_OPTS,
 } from '@/utils/redis-glob'
+import { redisKeyId, sameRedisKey } from '@/utils/redis-key'
 import {
   bus,
   CONN_REFRESH,
   INFO_REFRESH,
   KEY_DELETE,
+  KEY_RENAME,
   KEY_REFRESH,
   KEY_TYPE_LIST,
   meConfirm,
@@ -57,6 +62,7 @@ import KeyCopy from '@/views/key/KeyCopy.vue'
 import KeyImport from '@/views/key/KeyImport.vue'
 import KeyRename from '@/views/key/KeyRename.vue'
 
+import FavoriteFolderPanel from './key/FavoriteFolderPanel.vue'
 import KeyBatch from './key/KeyBatch.vue'
 import KeyMemory from './key/KeyMemory.vue'
 import KeyTree from './key/KeyTree.vue'
@@ -96,7 +102,11 @@ function initReset(): void {
   keyList.value = []
   cursor.value = null
   share.redisKey = null
+  if (favoriteMode.value) favFolderPanelRef.value?.resetScans()
   favoriteMode.value = false
+  showCheckbox.value = false
+  favoriteCheckedZone.value = 'none'
+  clearFavoriteChecked()
 }
 
 const keyType = ref('ALL')
@@ -132,11 +142,90 @@ const scanToggleTip = computed(() =>
 // 收藏相关
 const favoriteMode = ref(false)
 const favorites = useFavorites()
+const favoriteFolders = useFavoriteFolders()
+const favSplit = useFavoriteSplitLayout()
+// 纠正损坏的比例字符串
+if (typeof favSplit.value.folderSize !== 'string' || !/^\d+%$/.test(favSplit.value.folderSize)) {
+  favSplit.value = { ...favSplit.value, folderSize: '40%' }
+}
+const favFolderPanelRef =
+  useTemplateRef<InstanceType<typeof FavoriteFolderPanel>>('favFolderPanelRef')
+const favFlexRef = useTemplateRef<HTMLElement>('favFlexRef')
+
+/** 收藏模式跨区多选暂存（声明靠前供 initReset 使用） */
+const favFolderChecked = ref<RedisKey_Deserialize[]>([])
+const favKeysChecked = ref<RedisKey_Deserialize[]>([])
+/** 上区勾选的收藏目录根 path（批量取消收藏目录） */
+const favFolderPathsChecked = ref<string[]>([])
+
 const currentFavorites = computed(() => {
+  if (!share.conn) return []
   return favorites.value
     .filter(f => f.connId === share.conn!.id && f.db === share.conn!.db)
     .map(f => f.redisKey)
 })
+
+/** 当前库收藏目录 path（字典序） */
+const currentFavoriteFolderPaths = computed(() => {
+  if (!share.conn) return []
+  return favoriteFolders.value
+    .filter(f => f.connId === share.conn!.id && f.db === share.conn!.db)
+    .map(f => f.path)
+    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+})
+
+const hasAnyFavorite = computed(
+  () => currentFavorites.value.length > 0 || currentFavoriteFolderPaths.value.length > 0,
+)
+
+/** 两侧都展开时可拖分割条；折叠态用 flex，避免 el-splitter 把固定高度放大导致一侧「消失」 */
+const favBothExpanded = computed(
+  () => !favSplit.value.folderCollapsed && !favSplit.value.keysCollapsed,
+)
+
+const folderPaneClass = computed(() => ({
+  'is-collapsed': favSplit.value.folderCollapsed,
+  'is-grow': !favSplit.value.folderCollapsed && !favBothExpanded.value,
+  'is-fixed': favBothExpanded.value,
+}))
+
+const keysPaneClass = computed(() => ({
+  'is-collapsed': favSplit.value.keysCollapsed,
+  'is-grow': !favSplit.value.keysCollapsed,
+}))
+
+const folderPaneStyle = computed(() =>
+  favBothExpanded.value ? { flexBasis: favSplit.value.folderSize } : undefined,
+)
+
+function toggleFolderPane(): void {
+  favSplit.value = { ...favSplit.value, folderCollapsed: !favSplit.value.folderCollapsed }
+}
+
+function toggleKeysPane(): void {
+  favSplit.value = { ...favSplit.value, keysCollapsed: !favSplit.value.keysCollapsed }
+}
+
+function onFavResizeStart(e: MouseEvent): void {
+  if (!favBothExpanded.value) return
+  const root = favFlexRef.value
+  if (!root) return
+  e.preventDefault()
+  const top = root.getBoundingClientRect().top
+  const height = root.getBoundingClientRect().height
+  if (height <= 0) return
+
+  const onMove = (ev: MouseEvent) => {
+    const pct = Math.min(80, Math.max(20, Math.round(((ev.clientY - top) / height) * 100)))
+    favSplit.value = { ...favSplit.value, folderSize: `${pct}%` }
+  }
+  const onUp = () => {
+    window.removeEventListener('mousemove', onMove)
+    window.removeEventListener('mouseup', onUp)
+  }
+  window.addEventListener('mousemove', onMove)
+  window.addEventListener('mouseup', onUp)
+}
 
 function pauseScan() {
   scanCancelled.value = true
@@ -216,6 +305,11 @@ function hideSearchHistory() {
 
 async function onRefreshKey() {
   hideSearchHistory()
+  // 收藏模式 F5：重载已展开的收藏目录，不触发主列表 SCAN
+  if (favoriteMode.value) {
+    await favFolderPanelRef.value?.reloadExpanded()
+    return
+  }
   await scanKey(false, false, true)
 }
 
@@ -264,37 +358,29 @@ const filterPattern = computed(() =>
   buildLocalFilterPattern(keyword.value, exact.value && !loadFolder.value, match.value),
 )
 
-/** 扫描工作缓冲：push 追加；定时 flush 到 keyList；本轮结束（含暂停）再排序 */
-const SCAN_UI_FLUSH_MS = 100
+/**
+ * 扫描工作缓冲：每轮 SCAN 结束后 push → 排序 → flush 到 keyList（边扫边看）。
+ */
 let scanBuffer: RedisKey_Deserialize[] = []
-let scanDirty = false
-let scanFlushTimer: ReturnType<typeof setInterval> | null = null
 
 const keyList = shallowRef<RedisKey_Deserialize[]>([])
 
-function flushScanToUi(sortNow: boolean) {
-  if (sortNow) scanBuffer = sortBy(scanBuffer, ['key'])
+function flushScanToUi() {
+  scanBuffer = sortBy(scanBuffer, ['key'])
   // 必须新数组引用：否则 KeyTree 的 prop 引用不变，树不会重建
   keyList.value = scanBuffer.slice()
-  scanDirty = false
-}
-
-function startScanFlush() {
-  stopScanFlush()
-  scanFlushTimer = setInterval(() => {
-    if (scanDirty) flushScanToUi(false)
-  }, SCAN_UI_FLUSH_MS)
-}
-
-function stopScanFlush() {
-  if (scanFlushTimer == null) return
-  clearInterval(scanFlushTimer)
-  scanFlushTimer = null
 }
 
 const filterKeyList = computed(() => {
   // 收藏模式下，只显示当前连接的收藏键
   let source: RedisKey_Deserialize[] = favoriteMode.value ? currentFavorites.value : keyList.value
+
+  // 收藏模式与上区一致：子串 includes，不受 exact / minimatch 影响
+  if (favoriteMode.value) {
+    const q = keyword.value.trim().toLowerCase()
+    if (!q) return source
+    return source.filter(k => k.key.toLowerCase().includes(q))
+  }
 
   if (!filterPattern.value) return source
   return source.filter(k => minimatch(k.key, filterPattern.value, MINIMATCH_SCAN_OPTS))
@@ -322,7 +408,6 @@ async function scanKey(useCursor = false, loadAll = false, restart = false): Pro
   loading.value = true
   scanCancelled.value = false // 每次扫描都重置取消标志
   if (!useCursor) scanPaused.value = false
-  startScanFlush()
   try {
     if (!useCursor) {
       addSearchHistory(keyword.value)
@@ -331,7 +416,7 @@ async function scanKey(useCursor = false, loadAll = false, restart = false): Pro
       scanBuffer = []
     }
 
-    const firstScanKeys = await scanKeyCore(useCursor)
+    const firstScanKeys = await scanKeyCore()
 
     // loadAll=false 时自动继续加载（达到阈值停止）
     if (!loadAll) {
@@ -340,16 +425,13 @@ async function scanKey(useCursor = false, loadAll = false, restart = false): Pro
       await scanKeyAll()
     }
   } finally {
-    stopScanFlush()
-    // 本轮扫描结束（含暂停）：排一次序，方便立刻定位；续扫追加后再结束会再排
-    flushScanToUi(true)
     loading.value = false
     if (cursor.value?.finished) scanPaused.value = false
   }
 }
 
 // 核心：执行一次 SCAN 请求，返回新扫描的 key 数量
-async function scanKeyCore(useCursor = false): Promise<number> {
+async function scanKeyCore(): Promise<number> {
   const params = {
     match: match.value,
     type: keyType.value === 'ALL' ? '' : keyType.value.toLowerCase(),
@@ -365,12 +447,16 @@ async function scanKeyCore(useCursor = false): Promise<number> {
   cursor.value = data.cursor
   scanBatchCount.value++
 
-  // 新搜索替换缓冲；续扫 push 追加（避免每批 spread + sortBy）
-  if (!useCursor) scanBuffer = []
-  for (const k of data.keyList) scanBuffer.push(k)
-  scanDirty = true
-  // 首批立刻上屏，避免等第一个 100ms 间隔
-  if (scanBatchCount.value === 1) flushScanToUi(false)
+  // Redis SCAN 保证「全程存在的键至少出现一次」，但不保证不重复（rehash 等场景会跨 cursor 重复）。
+  // 新搜索由 scanKey 已清空缓冲；续扫按 redisKeyId 去重后再排序上屏（与收藏目录 mergeScanKeys 一致）。
+  const seen = new Set(scanBuffer.map(redisKeyId))
+  for (const k of data.keyList) {
+    const id = redisKeyId(k)
+    if (seen.has(id)) continue
+    seen.add(id)
+    scanBuffer.push(k)
+  }
+  flushScanToUi()
 
   return data.keyList.length
 }
@@ -381,7 +467,7 @@ async function scanKeyAuto(fetchedCount: number = 0): Promise<void> {
   if (scanCancelled.value) return
   if (fetchedCount >= SCAN_FETCH_COUNT.value) return
 
-  const newKeys = await scanKeyCore(true)
+  const newKeys = await scanKeyCore()
   await scanKeyAuto(fetchedCount + newKeys)
 }
 
@@ -390,14 +476,60 @@ async function scanKeyAll(): Promise<void> {
   if (!cursor.value || cursor.value.finished) return
   if (scanCancelled.value) return
 
-  await scanKeyCore(true)
+  await scanKeyCore()
   await scanKeyAll() // 继续递归
 }
 
 function deleteKey(redisKey: RedisKey_Deserialize): void {
-  scanBuffer = scanBuffer.filter(rk => rk.bytes !== redisKey.bytes)
-  keyList.value = scanBuffer.slice()
+  scanBuffer = scanBuffer.filter(rk => !sameRedisKey(rk, redisKey))
+  flushScanToUi()
   share.redisKey = null
+  favFolderPanelRef.value?.applyKeyDelete(redisKey)
+  if (favoriteMode.value) {
+    favFolderChecked.value = favFolderChecked.value.filter(k => !sameRedisKey(k, redisKey))
+    favKeysChecked.value = favKeysChecked.value.filter(k => !sameRedisKey(k, redisKey))
+    syncFavoriteChecked()
+  }
+}
+
+/** 重命名后：flush 键树（label/id 按新 key 重建），并同步收藏里的键身份 */
+function renameKey(payload: { oldKey: RedisKey_Deserialize; newKey: RedisKey_Deserialize }): void {
+  const { oldKey, newKey } = payload
+  // KeyRename 已原地改过列表里的对象；再写一遍以兼容非同一引用
+  for (const rk of scanBuffer) {
+    if (sameRedisKey(rk, oldKey) || sameRedisKey(rk, newKey)) {
+      rk.key = newKey.key
+      rk.bytes = newKey.bytes
+    }
+  }
+  flushScanToUi()
+
+  if (share.conn) {
+    const { id, db } = share.conn
+    favorites.value = favorites.value.map(f => {
+      if (f.connId !== id || f.db !== db) return f
+      if (!sameRedisKey(f.redisKey, oldKey) && !sameRedisKey(f.redisKey, newKey)) return f
+      return { ...f, redisKey: { key: newKey.key, bytes: newKey.bytes } }
+    })
+  }
+
+  // 上区缓存先改；勾选列表不能依赖树 checkChange（重建时常不触发）
+  favFolderPanelRef.value?.applyKeyRename(oldKey, newKey)
+  if (favoriteMode.value) {
+    favFolderChecked.value =
+      favFolderPanelRef.value?.patchCheckedAfterRename(favFolderChecked.value, oldKey, newKey) ??
+      favFolderChecked.value
+    favKeysChecked.value = favKeysChecked.value.map(k =>
+      sameRedisKey(k, oldKey) || sameRedisKey(k, newKey)
+        ? { key: newKey.key, bytes: newKey.bytes }
+        : k,
+    )
+    syncFavoriteChecked()
+  }
+
+  nextTick(() => {
+    scrollKeyToTrees(newKey)
+  })
 }
 
 const dbList = ref<RedisDB[]>([])
@@ -452,26 +584,10 @@ function formatDbOptionLabel(db: number): string {
   return formatDbLabel(db) + (share.conn?.meta?.['db' + db] || '')
 }
 
-/** el-select 默认 width:100%，按文案估算宽度；fit-input-width 只管下拉面板宽度 */
-const dbSelectWidth = computed(() => {
-  if (!share.conn) return '88px'
-  const len = formatDbLabel(share.conn.db).length
-  // +16 留给 upDown 后缀图标
-  return `${Math.min(136, Math.max(88, len * 7 + 35 + 16))}px`
-})
-
 /** 集群 Valkey 9+ 多库：el-select 位置仅展示当前 db，不支持切换 */
 const showClusterDbLabel = computed(() =>
   Boolean(share.conn?.cluster && share.capabilities.clusterDbSupported),
 )
-
-// el-select 后缀：项目 upDown 图标
-const dbSelectSuffixIcon = defineComponent({
-  name: 'DbSelectSuffixIcon',
-  setup() {
-    return () => h(SvgIcon, { name: 'me-icon-upDown', class: 'db-select-arrow' })
-  },
-})
 
 const keyPrefix = ref('')
 
@@ -512,7 +628,7 @@ function contextKey(command: string, redisKey: RedisKey_Deserialize): void {
     favorites.value = addFavorite(favorites.value, share.conn.id, share.conn.db, redisKey)
     meOk(t('keyTree.favoriteOk'))
   } else if (command === 'unfavoriteKey') {
-    favorites.value = removeFavorite(favorites.value, share.conn.id, share.conn.db, redisKey.bytes)
+    favorites.value = removeFavorite(favorites.value, share.conn.id, share.conn.db, redisKey)
     meOk(t('keyTree.unfavoriteOk'))
   } else {
     meOk(`TODO: ${command}`)
@@ -547,9 +663,36 @@ function contextFolder(command: string, folder: string): void {
     enterCheckedMode()
   } else if (command === 'exitCheckedMode') {
     exitCheckedMode()
+  } else if (command === 'favoriteFolder') {
+    favoriteFolders.value = addFavoriteFolder(
+      favoriteFolders.value,
+      share.conn.id,
+      share.conn.db,
+      folder,
+    )
+    meOk(t('keyTree.favoriteOk'))
+  } else if (command === 'unfavoriteFolder') {
+    favoriteFolders.value = removeFavoriteFolder(
+      favoriteFolders.value,
+      share.conn.id,
+      share.conn.db,
+      folder,
+    )
+    meOk(t('keyTree.unfavoriteOk'))
   } else {
     meOk(`TODO: ${command}`)
   }
+}
+
+function onUnfavoriteFolder(path: string): void {
+  if (!share.conn) return
+  favoriteFolders.value = removeFavoriteFolder(
+    favoriteFolders.value,
+    share.conn.id,
+    share.conn.db,
+    path,
+  )
+  meOk(t('keyTree.unfavoriteOk'))
 }
 
 const keyRenameRef = useTemplateRef<InstanceType<typeof KeyRename>>('keyRenameRef')
@@ -557,18 +700,19 @@ const keyCopyRef = useTemplateRef<InstanceType<typeof KeyCopy>>('keyCopyRef')
 
 onMounted(() => {
   bus.on(KEY_DELETE, deleteKey)
+  bus.on(KEY_RENAME, renameKey)
   bus.on(CONN_REFRESH, refresh)
   window.addEventListener('keydown', onKeyListRefreshHotkey, true)
   connUi.openKeyCopy = (redisKey: RedisKey_Deserialize) => {
     keyCopyRef.value?.open({ redisKey })
   }
   connUi.scrollKeyToTree = (redisKey: RedisKey_Deserialize) => {
-    keyTreeRef.value?.setCurrentKey(redisKey)
+    scrollKeyToTrees(redisKey)
   }
 })
 onUnmounted(() => {
-  stopScanFlush()
   bus.off(KEY_DELETE, deleteKey)
+  bus.off(KEY_RENAME, renameKey)
   bus.off(CONN_REFRESH, refresh)
   window.removeEventListener('keydown', onKeyListRefreshHotkey, true)
 })
@@ -580,12 +724,19 @@ function addKey(): void {
 }
 
 const keyTreeRef = useTemplateRef<InstanceType<typeof KeyTree>>('keyTreeRef')
+
+/** 收藏模式上区 + 下区两棵树都尝试定位（键可能只在其中一区） */
+function scrollKeyToTrees(redisKey: RedisKey_Deserialize): void {
+  if (favoriteMode.value) favFolderPanelRef.value?.setCurrentKey(redisKey)
+  keyTreeRef.value?.setCurrentKey(redisKey)
+}
+
 function addKeyOk(redisKey: RedisKey_Deserialize): void {
-  scanBuffer.unshift(redisKey)
-  keyList.value = scanBuffer.slice()
+  scanBuffer.push(redisKey)
+  flushScanToUi()
   chooseKey(redisKey)
   nextTick(() => {
-    keyTreeRef.value?.setCurrentKey(redisKey)
+    scrollKeyToTrees(redisKey)
   })
   bus.emit(INFO_REFRESH)
 }
@@ -602,6 +753,12 @@ function exportFolder(folder: string): void {
 
 function batchKeyOk(mode: string): void {
   if (mode === 'delete') {
+    // 收藏模式上区有独立 SCAN 缓存，需与 F5 一样重扫已展开目录
+    if (favoriteMode.value) {
+      void favFolderPanelRef.value?.reloadExpanded()
+      // 与批量取消收藏一致：删完退出多选，避免勾选残留已删键
+      exitCheckedMode()
+    }
     scanKey(false, false)
     bus.emit(INFO_REFRESH)
   } else {
@@ -707,9 +864,13 @@ async function handleCommand(command: string): Promise<void> {
 }
 
 function clearFavorites(): void {
-  if (!share.conn || currentFavorites.value.length === 0) return
+  if (!share.conn || !hasAnyFavorite.value) return
   meConfirm(t('keyMain.clearFavoritesConfirm'), () => {
-    favorites.value = clearFavoritesForDb(favorites.value, share.conn!.id, share.conn!.db)
+    const id = share.conn!.id
+    const db = share.conn!.db
+    favorites.value = clearFavoritesForDb(favorites.value, id, db)
+    favoriteFolders.value = clearFavoriteFoldersForDb(favoriteFolders.value, id, db)
+    favFolderPanelRef.value?.resetScans()
     meOk(t('keyMain.clearFavoritesOk'))
   })
 }
@@ -764,48 +925,216 @@ async function mockData(): Promise<void> {
   )
 }
 
-// 多选选择
+// 多选：正常模式用 showCheckbox；收藏模式用 favoriteCheckedZone（上下区互斥勾选，两侧列表始终展示）
 const showCheckbox = ref(false)
+/** 收藏模式：none | 仅上区目录勾选 | 仅下区键勾选 */
+const favoriteCheckedZone = ref<'none' | 'folders' | 'keys'>('none')
 const checkedKeyList = ref<RedisKey_Deserialize[]>([])
 
-function toggleChecked(): void {
-  showCheckbox.value = !showCheckbox.value
+const inCheckedMode = computed(() =>
+  favoriteMode.value ? favoriteCheckedZone.value !== 'none' : showCheckbox.value,
+)
+const folderPaneCheckbox = computed(
+  () => favoriteMode.value && favoriteCheckedZone.value === 'folders',
+)
+const keysPaneCheckbox = computed(() => favoriteMode.value && favoriteCheckedZone.value === 'keys')
+
+function syncFavoriteChecked(): void {
+  if (favoriteCheckedZone.value === 'folders') {
+    checkedKeyList.value = favFolderChecked.value
+    return
+  }
+  if (favoriteCheckedZone.value === 'keys') {
+    checkedKeyList.value = favKeysChecked.value
+    return
+  }
   checkedKeyList.value = []
 }
 
-function toggleFavoriteMode(): void {
-  favoriteMode.value = !favoriteMode.value
+/** 收藏多选计数：目录区含键+目录根；键区仅键 */
+const favoriteCheckedCount = computed(() => {
+  if (favoriteCheckedZone.value === 'folders') {
+    return checkedKeyList.value.length + favFolderPathsChecked.value.length
+  }
+  if (favoriteCheckedZone.value === 'keys') return checkedKeyList.value.length
+  return 0
+})
+
+function clearFavoriteChecked(): void {
+  checkedKeyList.value = []
+  favFolderChecked.value = []
+  favKeysChecked.value = []
+  favFolderPathsChecked.value = []
 }
 
-function enterCheckedMode(): void {
+function toggleChecked(): void {
+  if (favoriteMode.value) {
+    if (favoriteCheckedZone.value === 'none') return
+    exitCheckedMode()
+  } else {
+    showCheckbox.value = !showCheckbox.value
+    if (!showCheckbox.value) checkedKeyList.value = []
+  }
+}
+
+async function toggleFavoriteMode(): Promise<void> {
+  if (favoriteMode.value) {
+    favFolderPanelRef.value?.resetScans()
+    favoriteMode.value = false
+    showCheckbox.value = false
+    favoriteCheckedZone.value = 'none'
+    clearFavoriteChecked()
+  } else {
+    // 进入收藏前停掉主列表 SCAN，避免与目录 SCAN 抢连接锁
+    await stopScanIfRunning()
+    keyword.value = ''
+    exact.value = false
+    showCheckbox.value = false
+    favoriteCheckedZone.value = 'none'
+    clearFavoriteChecked()
+    favoriteMode.value = true
+  }
+}
+
+/** zone：收藏模式指定上/下区；正常模式忽略 */
+function enterCheckedMode(zone: 'folders' | 'keys' | 'main' = 'main'): void {
+  if (favoriteMode.value) {
+    if (zone === 'main') return
+    // 切到目标区勾选：另一区退出勾选模式，但分区内容仍展示
+    favoriteCheckedZone.value = zone
+    clearFavoriteChecked()
+    return
+  }
   if (showCheckbox.value) return
   showCheckbox.value = true
   checkedKeyList.value = []
 }
 
 function exitCheckedMode(): void {
+  if (favoriteMode.value) {
+    if (favoriteCheckedZone.value === 'none') return
+    favoriteCheckedZone.value = 'none'
+    clearFavoriteChecked()
+    return
+  }
   if (!showCheckbox.value) return
   showCheckbox.value = false
   checkedKeyList.value = []
 }
 
 function checkChange(redisKeys: RedisKey_Deserialize[]): void {
-  checkedKeyList.value = redisKeys
+  if (favoriteMode.value) {
+    if (favoriteCheckedZone.value !== 'keys') return
+    favKeysChecked.value = redisKeys
+    syncFavoriteChecked()
+  } else {
+    checkedKeyList.value = redisKeys
+  }
 }
 
-// 多选后的批量操作
-const checkedDisabled = computed(() => checkedKeyList.value.length === 0 || share.exportImporting)
+function onFolderCheckChange(redisKeys: RedisKey_Deserialize[]): void {
+  if (favoriteCheckedZone.value !== 'folders') return
+  favFolderChecked.value = redisKeys
+  syncFavoriteChecked()
+}
+
+function onFavoriteFolderPathCheckChange(paths: string[]): void {
+  if (favoriteCheckedZone.value !== 'folders') return
+  favFolderPathsChecked.value = paths
+}
+
+/** 上区右键：多选只进目录区 */
+function onFolderPanelContextKey(command: string, redisKey: RedisKey_Deserialize): void {
+  if (command === 'checkedMode') {
+    enterCheckedMode('folders')
+    return
+  }
+  if (command === 'exitCheckedMode') {
+    exitCheckedMode()
+    return
+  }
+  contextKey(command, redisKey)
+}
+
+function onFolderPanelContextFolder(command: string, folder: string): void {
+  if (command === 'checkedMode') {
+    enterCheckedMode('folders')
+    return
+  }
+  if (command === 'exitCheckedMode') {
+    exitCheckedMode()
+    return
+  }
+  contextFolder(command, folder)
+}
+
+/** 下区右键：多选只进键区 */
+function onKeysPanelContextKey(command: string, redisKey: RedisKey_Deserialize): void {
+  if (command === 'checkedMode') {
+    enterCheckedMode('keys')
+    return
+  }
+  if (command === 'exitCheckedMode') {
+    exitCheckedMode()
+    return
+  }
+  contextKey(command, redisKey)
+}
+
+function onKeysPanelContextFolder(command: string, folder: string): void {
+  if (command === 'checkedMode') {
+    enterCheckedMode('keys')
+    return
+  }
+  if (command === 'exitCheckedMode') {
+    exitCheckedMode()
+    return
+  }
+  contextFolder(command, folder)
+}
+
+/**
+ * 多选底栏批处理设计：
+ * - 普通模式：导出 | TTL | 删除 | 收藏；对象=勾选叶子键
+ * - 收藏上区（目录）：导出 | TTL | 删除 | 取消收藏
+ * - 收藏下区（键）：仅取消收藏
+ * - 导出/TTL/删除只处理「已 SCAN 上屏且已勾选」的叶子键（扫描多少处理多少），
+ *   不因勾选目录根再去 path:* 二次 SCAN；仅勾选空目录根时这三项禁用
+ * - 取消收藏：目录根 path + 勾选键都算（目录根不依赖是否已扫出子键）
+ */
+/** 取消收藏等：键或目录根任一即可 */
+const checkedDisabled = computed(() => {
+  if (share.exportImporting) return true
+  if (favoriteMode.value) return favoriteCheckedCount.value === 0
+  return checkedKeyList.value.length === 0
+})
+/** 导出/TTL/删除：必须有已上屏的勾选叶子键 */
+const checkedKeysDisabled = computed(() => {
+  if (share.exportImporting) return true
+  return checkedKeyList.value.length === 0
+})
 const checkedBtnClass = computed(() => (checkedDisabled.value ? ['icon-disabled'] : ['icon-btn']))
-function exportChecked() {
+const checkedKeysBtnClass = computed(() =>
+  checkedKeysDisabled.value ? ['icon-disabled'] : ['icon-btn'],
+)
+/** 收藏上区多选：展示导出/TTL/删除；下区走仅取消收藏的分支 */
+const favFolderBatchOps = computed(
+  () => favoriteMode.value && favoriteCheckedZone.value === 'folders',
+)
+
+function exportChecked(): void {
+  if (checkedKeyList.value.length === 0) return
   keyBatchRef.value?.open({ match: '', keyList: checkedKeyList.value }, 'export')
 }
 
 const ttlSetRef = useTemplateRef<InstanceType<typeof TTLSet>>('ttlSetRef')
 function ttlChecked(): void {
+  if (checkedKeyList.value.length === 0) return
   ttlSetRef.value?.open({ keyList: checkedKeyList.value })
 }
 
 function deleteChecked(): void {
+  if (checkedKeyList.value.length === 0) return
   keyBatchRef.value?.open({ match: '', keyList: checkedKeyList.value }, 'delete')
 }
 
@@ -814,7 +1143,7 @@ function favoriteChecked(): void {
   const connId = share.conn.id
   const db = share.conn.db
   const allAlready = checkedKeyList.value.every(redisKey =>
-    isFavorited(favorites.value, connId, db, redisKey.bytes),
+    isFavorited(favorites.value, connId, db, redisKey),
   )
   if (allAlready) {
     meWarn(t('keyMain.favoriteCheckedAllAlready'))
@@ -834,26 +1163,43 @@ function favoriteChecked(): void {
 }
 
 function unfavoriteChecked(): void {
-  if (!share.conn || checkedKeyList.value.length === 0) return
+  if (!share.conn) return
   const connId = share.conn.id
   const db = share.conn.db
-  const noneFavorited = checkedKeyList.value.every(
-    redisKey => !isFavorited(favorites.value, connId, db, redisKey.bytes),
-  )
-  if (noneFavorited) {
+  const keys = checkedKeyList.value
+  const folderPaths = favoriteMode.value ? favFolderPathsChecked.value : []
+  if (keys.length === 0 && folderPaths.length === 0) return
+
+  let newFavorites = favorites.value
+  const beforeKeyLen = newFavorites.length
+  for (const redisKey of keys) {
+    newFavorites = removeFavorite(newFavorites, connId, db, redisKey)
+  }
+  const keyCount = beforeKeyLen - newFavorites.length
+
+  let newFolders = favoriteFolders.value
+  const beforeFolderLen = newFolders.length
+  for (const path of folderPaths) {
+    newFolders = removeFavoriteFolder(newFolders, connId, db, path)
+  }
+  const folderCount = beforeFolderLen - newFolders.length
+
+  if (keyCount === 0 && folderCount === 0) {
     meWarn(t('keyMain.unfavoriteCheckedNoneAlready'))
     return
   }
-  let newFavorites = favorites.value
-  const beforeLen = newFavorites.length
-  checkedKeyList.value.forEach(redisKey => {
-    newFavorites = removeFavorite(newFavorites, connId, db, redisKey.bytes)
-  })
-  const count = beforeLen - newFavorites.length
-  if (count > 0) {
-    favorites.value = newFavorites
-    meOk(t('keyMain.unfavoriteCheckedOk', { count }))
+  if (keyCount > 0) favorites.value = newFavorites
+  if (folderCount > 0) favoriteFolders.value = newFolders
+
+  if (keyCount > 0 && folderCount > 0) {
+    meOk(t('keyMain.unfavoriteCheckedMixedOk', { keyCount, folderCount }))
+  } else if (folderCount > 0) {
+    meOk(t('keyMain.unfavoriteCheckedFoldersOk', { count: folderCount }))
+  } else {
+    meOk(t('keyMain.unfavoriteCheckedOk', { count: keyCount }))
   }
+  // 成功后退出多选，避免底栏计数残留 / 误点二次取消
+  exitCheckedMode()
 }
 
 function editDbName(db: number): void {
@@ -966,61 +1312,128 @@ function editDbName(db: number): void {
       </template>
     </div>
 
-    <div class="key-list">
-      <KeyTree
-        ref="keyTreeRef"
-        :show-checkbox="showCheckbox"
-        :filter-key-list="filterKeyList"
-        :redis-key="share.redisKey"
-        :key-show-tree="keyShowTree"
-        :sort-by-count="sortByCount"
-        :color="share.color"
-        :loading="loading"
-        :favorites="currentFavorites"
-        :favorite-mode="favoriteMode"
-        @chooseKey="chooseKey"
-        @contextKey="contextKey"
-        @chooseFolder="chooseFolder"
-        @contextFolder="contextFolder"
-        @checkChange="checkChange" />
+    <div class="key-list" :class="{ 'is-favorite-mode': favoriteMode }">
+      <template v-if="favoriteMode">
+        <div ref="favFlexRef" class="fav-flex">
+          <div class="fav-pane" :class="folderPaneClass" :style="folderPaneStyle">
+            <div class="fav-pane-title" @click="toggleFolderPane">
+              <me-icon icon="me-icon-folder-favorited" class="fav-pane-title-icon is-star" />
+              <span class="fav-pane-title-text">
+                {{ t('keyMain.favoriteFolders') }}
+                ({{ currentFavoriteFolderPaths.length }})
+              </span>
+              <me-icon
+                class="fav-pane-chevron"
+                :icon="favSplit.folderCollapsed ? 'el-icon-arrow-right' : 'el-icon-arrow-down'" />
+            </div>
+            <div v-show="!favSplit.folderCollapsed" class="fav-pane-body">
+              <FavoriteFolderPanel
+                ref="favFolderPanelRef"
+                :folders="currentFavoriteFolderPaths"
+                :filter-keyword="keyword"
+                :favorites="currentFavorites"
+                :key-show-tree="keyShowTree"
+                :sort-by-count="sortByCount"
+                :show-checkbox="folderPaneCheckbox"
+                :color="share.color"
+                @chooseKey="chooseKey"
+                @contextKey="onFolderPanelContextKey"
+                @contextFolder="onFolderPanelContextFolder"
+                @unfavoriteFolder="onUnfavoriteFolder"
+                @checkChange="onFolderCheckChange"
+                @favoriteFolderCheckChange="onFavoriteFolderPathCheckChange" />
+            </div>
+          </div>
 
-      <!-- 搜索历史记录下拉  -->
-      <div
-        class="search-history-dropdown"
-        v-if="showHistory && filteredSearchHistory.length > 0 && !favoriteMode"
-        @mousedown.prevent="handleHistoryMouseDown">
+          <div v-show="favBothExpanded" class="fav-resizer" @mousedown="onFavResizeStart" />
+
+          <div class="fav-pane" :class="keysPaneClass">
+            <div class="fav-pane-title" @click="toggleKeysPane">
+              <me-icon icon="el-icon-star-filled" class="fav-pane-title-icon is-star" />
+              <span class="fav-pane-title-text">
+                {{ t('keyMain.favoriteKeys') }} ({{ currentFavorites.length }})
+              </span>
+              <me-icon
+                class="fav-pane-chevron"
+                :icon="favSplit.keysCollapsed ? 'el-icon-arrow-right' : 'el-icon-arrow-down'" />
+            </div>
+            <div v-show="!favSplit.keysCollapsed" class="fav-pane-body">
+              <KeyTree
+                ref="keyTreeRef"
+                :show-checkbox="keysPaneCheckbox"
+                :filter-key-list="filterKeyList"
+                :redis-key="share.redisKey"
+                :key-show-tree="keyShowTree"
+                :sort-by-count="sortByCount"
+                :color="share.color"
+                :loading="false"
+                :favorites="currentFavorites"
+                :favorite-mode="true"
+                @chooseKey="chooseKey"
+                @contextKey="onKeysPanelContextKey"
+                @chooseFolder="chooseFolder"
+                @contextFolder="onKeysPanelContextFolder"
+                @checkChange="checkChange" />
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <template v-else>
+        <KeyTree
+          ref="keyTreeRef"
+          :show-checkbox="showCheckbox"
+          :filter-key-list="filterKeyList"
+          :redis-key="share.redisKey"
+          :key-show-tree="keyShowTree"
+          :sort-by-count="sortByCount"
+          :color="share.color"
+          :loading="loading"
+          :favorites="currentFavorites"
+          :favorite-folders="currentFavoriteFolderPaths"
+          :favorite-mode="false"
+          @chooseKey="chooseKey"
+          @contextKey="contextKey"
+          @chooseFolder="chooseFolder"
+          @contextFolder="contextFolder"
+          @checkChange="checkChange" />
+
+        <!-- 搜索历史记录下拉  -->
         <div
-          v-for="(item, index) in filteredSearchHistory"
-          :key="index"
-          class="history-item"
-          @click="selectHistory(item)">
-          <span class="history-text">{{ item }}</span>
-          <span class="history-delete" @click.stop="removeSearchHistory(item)">×</span>
+          class="search-history-dropdown"
+          v-if="showHistory && filteredSearchHistory.length > 0"
+          @mousedown.prevent="handleHistoryMouseDown">
+          <div
+            v-for="(item, index) in filteredSearchHistory"
+            :key="index"
+            class="history-item"
+            @click="selectHistory(item)">
+            <span class="history-text">{{ item }}</span>
+            <span class="history-delete" @click.stop="removeSearchHistory(item)">×</span>
+          </div>
+          <div class="history-clear" @click="clearSearchHistory">
+            {{ t('keyMain.clearHistory') }}
+          </div>
         </div>
-        <div class="history-clear" @click="clearSearchHistory">
-          {{ t('keyMain.clearHistory') }}
-        </div>
-      </div>
+      </template>
     </div>
 
     <div class="key-footer">
       <!-- 左侧: 数据库|游标 -->
-      <div class="me-flex" v-if="!showCheckbox && share.conn">
+      <div class="me-flex" v-if="!inCheckedMode && share.conn">
         <template v-if="favoriteMode">
           <div
             class="me-flex exit-favorite"
             style="cursor: pointer; margin-left: 5px"
-            @click="toggleFavoriteMode">
-            <me-icon icon="el-icon-back" style="color: var(--el-color-warning)" />
-            <el-text type="warning" style="font-weight: bold">
-              <div class="me-flex" style="gap: 10px; margin-left: 5px">
-                <div>{{ t('keyMain.exitFavoriteMode') }}</div>
-                <me-icon
-                  icon="me-icon-db"
-                  :name="'db' + share.conn.db"
-                  v-if="!share.conn.cluster || share.capabilities.clusterDbSupported" />
-              </div>
-            </el-text>
+            @click="void toggleFavoriteMode()">
+            <me-icon icon="el-icon-back" />
+            <div class="me-flex" style="gap: 10px; margin-left: 5px">
+              <div>{{ t('keyMain.exitFavoriteMode') }}</div>
+              <me-icon
+                icon="me-icon-db"
+                :name="'db' + share.conn.db"
+                v-if="!share.conn.cluster || share.capabilities.clusterDbSupported" />
+            </div>
           </div>
         </template>
         <template v-else>
@@ -1030,11 +1443,18 @@ function editDbName(db: number): void {
           <el-select
             v-model="share.conn.db"
             @change="selectDB"
-            class="db-select"
-            :style="{ width: dbSelectWidth }"
-            :suffix-icon="dbSelectSuffixIcon"
+            class="db-select me-select-plain"
+            :suffix-icon="MeSelectUpDownIcon"
             filterable
             v-else-if="!share.conn.cluster">
+            <!-- 隐藏 prefix 只定宽：filterable 输入时 EP 会卸掉 #label，避免宽度跟着输入字收缩 -->
+            <template #prefix>
+              <me-icon
+                class="db-select-sizer"
+                aria-hidden="true"
+                icon="me-icon-db"
+                :name="formatDbLabel(share.conn.db)" />
+            </template>
             <template #header>
               <div
                 style="
@@ -1094,38 +1514,47 @@ function editDbName(db: number): void {
         </template>
       </div>
 
-      <!-- 左侧: 导出|TTL|删除|收藏 （多选时显示） -->
+      <!-- 多选底栏：见 script 中「多选底栏批处理设计」；导出/TTL/删除仅针对已上屏勾选键 -->
       <div class="me-flex" v-else style="margin-left: 10px; gap: 5px">
-        <template v-if="!favoriteMode">
-          <el-link underline="never" :disabled="checkedDisabled" @click="exportChecked">
+        <template v-if="!favoriteMode || favFolderBatchOps">
+          <el-link underline="never" :disabled="checkedKeysDisabled" @click="exportChecked">
             <me-icon
               :name="t('keyMain.exportChecked')"
               icon="me-icon-export"
               hint
-              :class="checkedBtnClass"
-              placement="top" />
-          </el-link>
-          <el-link underline="never" :disabled="checkedDisabled" @click="ttlChecked" v-if="canEdit">
-            <me-icon
-              :name="t('keyMain.ttlChecked')"
-              icon="el-icon-timer"
-              hint
-              :class="checkedBtnClass"
+              :class="checkedKeysBtnClass"
               placement="top" />
           </el-link>
           <el-link
             underline="never"
-            :disabled="checkedDisabled"
+            :disabled="checkedKeysDisabled"
+            @click="ttlChecked"
+            v-if="canEdit">
+            <me-icon
+              :name="t('keyMain.ttlChecked')"
+              icon="el-icon-timer"
+              hint
+              :class="checkedKeysBtnClass"
+              placement="top" />
+          </el-link>
+          <el-link
+            underline="never"
+            :disabled="checkedKeysDisabled"
             @click="deleteChecked"
             v-if="canEdit">
             <me-icon
               :name="t('keyMain.deleteChecked')"
               icon="el-icon-delete"
               hint
-              :class="checkedBtnClass"
+              :class="checkedKeysBtnClass"
               placement="top" />
           </el-link>
-          <el-link underline="never" :disabled="checkedDisabled" @click="favoriteChecked">
+          <!-- 普通：批量收藏；收藏上区：批量取消收藏（含目录根） -->
+          <el-link
+            v-if="!favoriteMode"
+            underline="never"
+            :disabled="checkedDisabled"
+            @click="favoriteChecked">
             <me-icon
               :name="t('keyMain.favoriteChecked')"
               icon="el-icon-star-filled"
@@ -1133,7 +1562,16 @@ function editDbName(db: number): void {
               :class="checkedBtnClass"
               placement="top" />
           </el-link>
+          <el-link v-else underline="never" :disabled="checkedDisabled" @click="unfavoriteChecked">
+            <me-icon
+              :name="t('keyMain.unfavoriteChecked')"
+              icon="el-icon-star"
+              hint
+              :class="checkedBtnClass"
+              placement="top" />
+          </el-link>
         </template>
+        <!-- 收藏下区：仅取消收藏 -->
         <template v-else>
           <el-link underline="never" :disabled="checkedDisabled" @click="unfavoriteChecked">
             <me-icon
@@ -1146,24 +1584,25 @@ function editDbName(db: number): void {
         </template>
       </div>
 
-      <!-- 中间: 选中/过滤, 过滤/总数 -->
+      <!-- 中间: 选中/过滤；收藏模式计数已在分区标题，此处不展示 -->
       <div class="center">
         <el-text class="tip" size="large" :style="{ color: share.color }">
-          <span v-if="showCheckbox">{{ checkedKeyList.length }} / {{ filterKeyList.length }}</span>
-          <span v-else-if="favoriteMode"
-            >{{ filterKeyList.length }} / {{ currentFavorites.length }}</span
+          <!-- 收藏多选仅单区，只显示已选数量 -->
+          <span v-if="inCheckedMode && favoriteMode">{{ favoriteCheckedCount }}</span>
+          <span v-else-if="inCheckedMode"
+            >{{ checkedKeyList.length }} / {{ filterKeyList.length }}</span
           >
-          <span v-else>{{ filterKeyList.length }} / {{ keyList.length }}</span>
+          <span v-else-if="!favoriteMode">{{ filterKeyList.length }} / {{ keyList.length }}</span>
         </el-text>
       </div>
 
       <!-- 右侧: 收藏|扩展 -->
-      <div class="me-flex" v-if="!showCheckbox">
+      <div class="me-flex" v-if="!inCheckedMode">
         <me-icon
           v-if="!favoriteMode"
           icon="el-icon-star-filled"
           class="icon-btn"
-          @click="toggleFavoriteMode"
+          @click="void toggleFavoriteMode()"
           placement="top"
           :name="t('keyMain.myFavorites')"
           hint />
@@ -1201,12 +1640,13 @@ function editDbName(db: number): void {
                   icon="me-icon-alphabet"></me-icon>
               </el-dropdown-item>
               <el-dropdown-item
-                v-if="favoriteMode && currentFavorites.length > 0"
+                v-if="favoriteMode && hasAnyFavorite"
                 command="clearFavorites"
                 divided>
                 <me-icon :name="t('keyMain.clearFavorites')" icon="el-icon-delete" />
               </el-dropdown-item>
-              <el-dropdown-item command="checkedMode">
+              <!-- 收藏模式仅右键进多选（进一边会清另一边勾选） -->
+              <el-dropdown-item v-if="!favoriteMode" command="checkedMode">
                 <me-icon :name="t('keyMain.checkedMode')" icon="me-icon-checked" />
               </el-dropdown-item>
             </el-dropdown-menu>
@@ -1360,6 +1800,103 @@ function editDbName(db: number): void {
     padding: 5px;
     overflow: hidden; // 隐藏水平滚动条，仅显示竖直滚动条
 
+    &.is-favorite-mode {
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .fav-flex {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      min-height: 0;
+    }
+
+    .fav-pane {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      overflow: hidden;
+
+      &.is-collapsed {
+        flex: 0 0 32px;
+        height: 32px;
+      }
+
+      &.is-grow {
+        flex: 1 1 auto;
+      }
+
+      &.is-fixed {
+        flex-grow: 0;
+        flex-shrink: 0;
+        // flexBasis 由 folderPaneStyle 提供（如 40%）
+      }
+    }
+
+    .fav-resizer {
+      flex: 0 0 5px;
+      cursor: ns-resize;
+      background: transparent;
+
+      &:hover {
+        background: var(--el-border-color-lighter);
+      }
+    }
+
+    .fav-pane-title {
+      flex-shrink: 0;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 10px;
+      cursor: pointer;
+      user-select: none;
+      border-bottom: 1px solid var(--el-border-color-lighter);
+      background: var(--el-fill-color-blank);
+      color: var(--el-text-color-regular);
+
+      &:hover {
+        background: var(--el-fill-color-light);
+      }
+    }
+
+    .fav-pane-title-icon {
+      flex-shrink: 0;
+      font-size: 14px;
+      color: var(--el-text-color-secondary);
+
+      &.is-star {
+        color: #f7ba2a;
+      }
+    }
+
+    .fav-pane-title-text {
+      flex: 1;
+      min-width: 0;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .fav-pane-chevron {
+      flex-shrink: 0;
+      font-size: 12px;
+      color: var(--el-text-color-secondary);
+    }
+
+    .fav-pane-body {
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+      padding: 2px 4px 4px;
+    }
+
     :deep(.el-link) {
       font-size: 12px;
     }
@@ -1452,45 +1989,44 @@ function editDbName(db: number): void {
     :deep(.el-select__wrapper) {
       min-height: 0;
       height: 30px;
-      padding: 4px 4px 4px 10px;
+      padding: 4px;
     }
 
+    /* 隐藏 sizer(prefix) 定宽；可见 #label 叠层显示；输入过滤不改变宽度 */
     .db-select {
-      flex-shrink: 0;
-
-      :deep(.el-select__wrapper) {
-        box-shadow: none;
-        background: transparent;
-        padding-left: 4px;
-        padding-right: 4px;
-      }
-
-      :deep(.el-select__suffix) {
-        .el-icon {
-          font-size: 12px;
-          color: var(--el-text-color-placeholder);
-
-          // upDown 图标固定方向，不随展开旋转
-          &.is-reverse {
-            transform: none;
-          }
-        }
-
-        .db-select-arrow {
-          width: 1em;
-          height: 1em;
-        }
-      }
-
       :deep(.icon-main) {
-        min-width: 0;
-        overflow: hidden;
+        white-space: nowrap;
+      }
 
-        span {
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-        }
+      :deep(.el-select__prefix) {
+        flex-shrink: 0;
+        padding: 0 4px;
+        visibility: hidden;
+        pointer-events: none;
+      }
+
+      /* selection 不占宽；label/input 相对 wrapper 叠在 sizer 上 */
+      :deep(.el-select__selection) {
+        position: static;
+        flex: 0 0 0;
+        width: 0;
+        min-width: 0;
+        padding: 0;
+        overflow: visible;
+      }
+
+      :deep(.el-select__selected-item.el-select__placeholder) {
+        position: absolute;
+        inset: 0 18px 0 4px;
+        display: flex;
+        align-items: center;
+        width: auto;
+        transform: none;
+        z-index: 1; /* 覆盖 EP 默认 -1，避免透明背景下看不见 */
+      }
+
+      :deep(.el-select__input-wrapper) {
+        inset: 0 18px 0 4px;
       }
     }
 

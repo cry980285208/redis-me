@@ -97,9 +97,16 @@ const props = withDefaults(
     /** `json` / `json5` 均使用 JSON5 语法高亮（合法 JSON 也可）；`properties` 为 Redis INFO/CONFIG */
     mode?: string
     readOnly?: boolean
+    /** 解码失败：danger 描边 */
+    error?: boolean
   }>(),
-  { mode: 'json', readOnly: false },
+  { mode: 'json', readOnly: false, error: false },
 )
+
+const rootClass = computed(() => [
+  ...(props.readOnly ? ['codemirror-opacity', 'is-disabled'] : []),
+  ...(props.error ? ['is-decode-error'] : []),
+])
 
 const dark = useDark()
 const lang = computed(() => {
@@ -139,12 +146,18 @@ const extensions = computed(() => {
     :phrases
     :extensions
     :readonly="props.readOnly"
-    :class="props.readOnly ? ['codemirror-opacity', 'is-disabled'] : []" />
+    :class="rootClass" />
 </template>
 
 <style scoped lang="scss">
 .codemirror-opacity {
   opacity: 0.8;
+}
+
+.is-decode-error {
+  /* border 不被 gutter 挡住；勿用 inset shadow */
+  border: 2px solid var(--el-color-danger);
+  box-sizing: border-box;
 }
 
 .vue-codemirror {

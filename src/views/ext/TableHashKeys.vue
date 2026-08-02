@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 
 import { shareProvideKey } from '@/types/me-interface'
 import type { BytesFormat } from '@/types/tauri-specta'
+import { meFormatViewValue, type ViewBytesFormat } from '@/utils/format'
 import { meCommands } from '@/utils/util'
 
 type HashListMode = 'keys' | 'values'
@@ -41,7 +42,11 @@ const emptyText = computed(() =>
 
 const exportName = computed(() => (mode.value === 'keys' ? 'hash-keys' : 'hash-values'))
 
-async function open(valFmt: BytesFormat | null, listMode: HashListMode = 'keys') {
+async function open(
+  valFmt: BytesFormat | null,
+  listMode: HashListMode = 'keys',
+  viewFmt: ViewBytesFormat = 'utf8',
+) {
   const conn = share.conn
   const redisKey = share.redisKey
   if (!conn || !redisKey) return
@@ -52,10 +57,12 @@ async function open(valFmt: BytesFormat | null, listMode: HashListMode = 'keys')
   keyword.value = ''
   const param = { key: redisKey, valFmt }
   try {
-    itemList.value =
+    const raw =
       listMode === 'keys'
         ? await meCommands.hashKeys(conn.id, param)
         : await meCommands.hashValues(conn.id, param)
+    // IPC 为 base64 wire；按当前键级展示编码解码
+    itemList.value = raw.map(s => meFormatViewValue(s, viewFmt))
   } finally {
     loading.value = false
   }

@@ -1,3 +1,49 @@
+/* 无边框下拉：按选中文案收缩；后缀用 MeSelectUpDownIcon（db / 编解码等） */
+.me-select-plain {
+  flex: 0 0 auto;
+  --el-select-width: max-content;
+}
+
+.me-select-plain .el-select__wrapper {
+  width: max-content;
+  box-shadow: none !important;
+  background: transparent;
+  gap: 2px;
+}
+
+.me-select-plain .el-select__selection {
+  flex: 0 0 auto;
+  padding: 0 4px;
+}
+
+/* 默认 absolute+width:100%，文案不进 max-content，须改回文档流 */
+.me-select-plain .el-select__selected-item.el-select__placeholder {
+  position: static;
+  transform: none;
+  width: auto;
+}
+
+/* 展开时 input 叠层；filterable 输入会卸掉 placeholder，定宽场景（如 db-select）需另用 prefix 占位 */
+.me-select-plain .el-select__input-wrapper {
+  position: absolute;
+  inset: 0 18px 0 4px;
+}
+
+.me-select-plain .el-select__suffix .el-icon {
+  font-size: 12px;
+  color: var(--el-text-color-placeholder);
+}
+
+/* upDown 图标固定方向，不随展开旋转 */
+.me-select-plain .el-select__suffix .el-icon.is-reverse {
+  transform: none;
+}
+
+.me-select-plain .me-select-plain-arrow {
+  width: 1em;
+  height: 1em;
+}
+
 /* 文本选择: 整体禁用，个别地方放开 */
 html {
   user-select: none;
@@ -55,6 +101,8 @@ body {
   height: 100%; /*app的height单独加高度100%不生效*/
 
   font-family: var(--ui-font);
+  /* 未设置时浏览器默认 16px；与 Element Plus / 键树统一为 14px */
+  font-size: var(--el-font-size-base);
   overflow: hidden;
 }
 

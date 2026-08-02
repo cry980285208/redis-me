@@ -52,8 +52,8 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * 向 Redis 写入若干 JDK 序列化样例键，供 RedisME「JavaSerial」查看验证。
  *
- * <p>需 JDK 11+，无第三方依赖（纯 Socket + RESP）。默认连本仓库 docker-compose 单机：
- * {@code localhost:6379}，密码 {@code hepengju}。
+ * <p>需 JDK 11+，无第三方依赖（纯 Socket + RESP）。连接参数优先级：命令行 &gt; 环境变量 &gt;
+ * 默认本机。环境变量：{@code REDIS_SERVER} / {@code REDIS_PROT} / {@code REDIS_PASSWORD}。
  *
  * <pre>
  *   java JavaSerialSeed.java
@@ -61,16 +61,26 @@ import java.util.concurrent.ConcurrentHashMap;
  *   java JavaSerialSeed.java 127.0.0.1 6379 ""          # 无密码
  * </pre>
  *
- * <p>写入的键前缀均为 {@code encoding:javaserial:}，便于与其它编码测试键聚在一起；值页选 JavaSerial 查看。
+ * <p>写入的键前缀均为 {@code encoding:javaserial:}。STRING 整键选 JavaSerial；
+ * Hash/List/Set/ZSet 打开字段弹窗即可（可测字段级 Auto，并混有 UTF-8 字段）。
  */
 public class JavaSerialSeed {
 
   private static final String PREFIX = "encoding:javaserial:";
 
+  /** 命令行 > REDIS_SERVER / REDIS_PROT / REDIS_PASSWORD > 本机默认 */
+  static String envOr(String name, String def) {
+    String v = System.getenv(name);
+    return (v == null || v.isEmpty()) ? def : v;
+  }
+
   public static void main(String[] args) throws Exception {
-    String host = args.length > 0 ? args[0] : "127.0.0.1";
-    int port = args.length > 1 ? Integer.parseInt(args[1]) : 6379;
-    String password = args.length > 2 ? args[2] : "hepengju";
+    String host = args.length > 0 ? args[0] : envOr("REDIS_SERVER", "127.0.0.1");
+    int port =
+        args.length > 1
+            ? Integer.parseInt(args[1])
+            : Integer.parseInt(envOr("REDIS_PROT", "6379"));
+    String password = args.length > 2 ? args[2] : envOr("REDIS_PASSWORD", "hepengju");
 
     Map<String, Object> samples = buildSamples();
     try (RedisCli redis = new RedisCli(host, port)) {
@@ -82,8 +92,9 @@ public class JavaSerialSeed {
         redis.set(e.getKey(), payload);
         System.out.printf("SET %s (%d bytes)%n", e.getKey(), payload.length);
       }
+      seedCompoundTypes(redis);
     }
-    System.out.println("done. Switch codec to JavaSerial in RedisME to inspect.");
+    System.out.println("done. STRING → JavaSerial；Hash/List/Set/ZSet → 打开字段查看。");
   }
 
   /** 覆盖已增强类型：包装类型 / java.time / record / POJO / 集合 / BitSet 等 */
@@ -235,6 +246,57 @@ public class JavaSerialSeed {
     return m;
   }
 
+  /**
+   * Hash / List / Set / ZSet：字段值为 Java 序列化字节（混一条 UTF-8，测字段级 Auto）。
+   * 键：{@code encoding:javaserial:hash|list-key|set-key|zset}
+   */
+  static void seedCompoundTypes(RedisCli redis) throws IOException {
+    String hashKey = PREFIX + "hash";
+    redis.del(hashKey);
+    redis.hset(hashKey, "user", javaSerialize(userSample()));
+    List<Object> fieldList = new ArrayList<>();
+    fieldList.add("a");
+    fieldList.add("b");
+    fieldList.add("中文");
+    redis.hset(hashKey, "list", javaSerialize(fieldList));
+    redis.hset(hashKey, "localdate", javaSerialize(LocalDate.of(2024, 6, 1)));
+    redis.hset(hashKey, "plain-utf8", "新增字段".getBytes(StandardCharsets.UTF_8));
+    System.out.printf("HSET %s (user/list/localdate=JavaSerial, plain-utf8=UTF8)%n", hashKey);
+
+    String listKey = PREFIX + "list-key";
+    redis.del(listKey);
+    redis.rpush(listKey, javaSerialize("hello-list"));
+    redis.rpush(listKey, javaSerialize(Integer.valueOf(42)));
+    redis.rpush(listKey, javaSerialize(userSample()));
+    redis.rpush(listKey, "纯文本元素".getBytes(StandardCharsets.UTF_8));
+    System.out.printf("RPUSH %s (3×JavaSerial + 1×UTF8)%n", listKey);
+
+    String setKey = PREFIX + "set-key";
+    redis.del(setKey);
+    redis.sadd(setKey, javaSerialize("member-a"));
+    redis.sadd(setKey, javaSerialize(LocalDate.of(2024, 12, 25)));
+    redis.sadd(setKey, "utf8-member".getBytes(StandardCharsets.UTF_8));
+    System.out.printf("SADD %s (2×JavaSerial + 1×UTF8)%n", setKey);
+
+    String zsetKey = PREFIX + "zset";
+    redis.del(zsetKey);
+    redis.zadd(zsetKey, 1.0, javaSerialize("z-low"));
+    redis.zadd(zsetKey, 2.5, javaSerialize(userSample()));
+    redis.zadd(zsetKey, 9.0, "z-utf8".getBytes(StandardCharsets.UTF_8));
+    System.out.printf("ZADD %s (2×JavaSerial + 1×UTF8)%n", zsetKey);
+  }
+
+  static DemoUser userSample() {
+    DemoUser user = new DemoUser();
+    user.id = 1001;
+    user.name = "Alice";
+    user.active = true;
+    user.birthday = LocalDate.of(1990, 1, 15);
+    user.createdAt = LocalDateTime.of(2024, 6, 1, 10, 0, 0);
+    user.role = DemoRole.USER;
+    return user;
+  }
+
   static byte[] javaSerialize(Object obj) throws IOException {
     ByteArrayOutputStream bos = new ByteArrayOutputStream();
     try (ObjectOutputStream oos = new ObjectOutputStream(bos)) {
@@ -264,7 +326,7 @@ public class JavaSerialSeed {
     public DemoRole role;
   }
 
-  /** 最小 RESP 客户端：AUTH / SET 二进制值 */
+  /** 最小 RESP 客户端：AUTH / SET / DEL / HSET / RPUSH / SADD / ZADD 二进制值 */
   static final class RedisCli implements AutoCloseable {
     private final Socket socket;
     private final OutputStream out;
@@ -286,6 +348,39 @@ public class JavaSerialSeed {
       readOk();
     }
 
+    void del(String key) throws IOException {
+      writeCommand("DEL", key.getBytes(StandardCharsets.UTF_8));
+      readInteger();
+    }
+
+    void hset(String key, String field, byte[] value) throws IOException {
+      writeCommand(
+          "HSET",
+          key.getBytes(StandardCharsets.UTF_8),
+          field.getBytes(StandardCharsets.UTF_8),
+          value);
+      readInteger();
+    }
+
+    void rpush(String key, byte[] value) throws IOException {
+      writeCommand("RPUSH", key.getBytes(StandardCharsets.UTF_8), value);
+      readInteger();
+    }
+
+    void sadd(String key, byte[] member) throws IOException {
+      writeCommand("SADD", key.getBytes(StandardCharsets.UTF_8), member);
+      readInteger();
+    }
+
+    void zadd(String key, double score, byte[] member) throws IOException {
+      writeCommand(
+          "ZADD",
+          key.getBytes(StandardCharsets.UTF_8),
+          Double.toString(score).getBytes(StandardCharsets.US_ASCII),
+          member);
+      readInteger();
+    }
+
     private void writeCommand(String cmd, byte[]... args) throws IOException {
       out.write(('*' + Integer.toString(1 + args.length) + "\r\n").getBytes(StandardCharsets.US_ASCII));
       writeBulk(cmd.getBytes(StandardCharsets.US_ASCII));
@@ -304,6 +399,17 @@ public class JavaSerialSeed {
     private void readOk() throws IOException {
       String line = readLine();
       if (line.startsWith("+")) {
+        return;
+      }
+      if (line.startsWith("-")) {
+        throw new IOException("Redis error: " + line.substring(1));
+      }
+      throw new IOException("unexpected Redis reply: " + line);
+    }
+
+    private void readInteger() throws IOException {
+      String line = readLine();
+      if (line.startsWith(":")) {
         return;
       }
       if (line.startsWith("-")) {

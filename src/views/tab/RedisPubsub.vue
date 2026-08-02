@@ -5,8 +5,7 @@ import { useI18n } from 'vue-i18n'
 
 import MeWebsite from '@/components/MeWebsite.vue'
 import { shareProvideKey } from '@/types/me-interface'
-import type { BytesFormat } from '@/types/tauri-specta'
-import { BYTES_FORMAT, meViewToWire, toWireFormat, type ViewBytesFormat } from '@/utils/format'
+import { BYTES_FORMAT, IPC_WIRE_FORMAT, meViewToWire, type ViewBytesFormat } from '@/utils/format'
 import { meCopy, meCommands, meErr, meOk } from '@/utils/util'
 
 const { t } = useI18n()
@@ -65,17 +64,14 @@ async function publish() {
   sendLoading.value = true
   try {
     const viewFmt = sendMessageFmt.value
-    const msgFmt: BytesFormat = toWireFormat(viewFmt)
     let message = sendMessage.value
-    if (viewFmt !== 'utf8') {
-      try {
-        message = meViewToWire(message, viewFmt)
-      } catch (e) {
-        meErr(e instanceof Error ? e.message : String(e))
-        return
-      }
+    try {
+      message = meViewToWire(message, viewFmt)
+    } catch (e) {
+      meErr(e instanceof Error ? e.message : String(e))
+      return
     }
-    await meCommands.publish(share.conn!.id, sendChannel.value, message, msgFmt)
+    await meCommands.publish(share.conn!.id, sendChannel.value, message, IPC_WIRE_FORMAT)
     sendMessage.value = ''
     meOk(t('redisPubSub.publishOk'))
   } finally {

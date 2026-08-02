@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 
 import { shareProvideKey } from '@/types/me-interface'
 import type { BytesFormat, RedisZsetRangeItem } from '@/types/tauri-specta'
+import { meFormatViewValue, type ViewBytesFormat } from '@/utils/format'
 import { meCommands } from '@/utils/util'
 
 const { t } = useI18n()
@@ -29,13 +30,16 @@ const filteredList = computed(() => {
 })
 
 let currentValFmt: BytesFormat | null = null
+/** 打开弹框时的键级展示编码；query 复用 */
+let currentViewFmt: ViewBytesFormat = 'utf8'
 
-async function open(valFmt: BytesFormat | null) {
+async function open(valFmt: BytesFormat | null, viewFmt: ViewBytesFormat = 'utf8') {
   const conn = share.conn
   const redisKey = share.redisKey
   if (!conn || !redisKey) return
 
   currentValFmt = valFmt
+  currentViewFmt = viewFmt
   visible.value = true
   loading.value = false
   count.value = 10
@@ -54,12 +58,17 @@ async function query() {
 
   loading.value = true
   try {
-    itemList.value = await meCommands.zsetRange(conn.id, {
+    const raw = await meCommands.zsetRange(conn.id, {
       key: redisKey,
       reverse: reverse.value,
       count: count.value,
       valFmt: currentValFmt,
     })
+    // IPC 为 base64 wire；按当前键级展示编码解码
+    itemList.value = raw.map(item => ({
+      ...item,
+      value: meFormatViewValue(item.value, currentViewFmt),
+    }))
   } finally {
     loading.value = false
   }

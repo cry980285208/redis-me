@@ -35,6 +35,8 @@ import { invalidateKeyType } from '@/utils/key-type-cache'
 /** 全局 `bus` 事件载荷（与 `bus.emit` / `bus.on` 一致） */
 export type MeBusEvents = {
   KEY_DELETE: RedisKey_Deserialize
+  /** 重命名成功：oldKey 为改名前快照，newKey 为服务端返回；用于刷新键树 / 收藏 */
+  KEY_RENAME: { oldKey: RedisKey_Deserialize; newKey: RedisKey_Deserialize }
   /** 载荷未使用；监听器应 `() => refreshKey()` 包装，避免与多参函数签名冲突 */
   KEY_REFRESH: undefined
   INFO_REFRESH: boolean | undefined
@@ -63,6 +65,7 @@ export const bus = mitt<MeBusEvents>()
 
 // 常量
 export const KEY_DELETE = 'KEY_DELETE'
+export const KEY_RENAME = 'KEY_RENAME'
 export const KEY_REFRESH = 'KEY_REFRESH'
 export const INFO_REFRESH = 'INFO_REFRESH'
 export const CONN_REFRESH = 'CONN_REFRESH'

@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { shareProvideKey } from '@/types/me-interface'
 import type { RedisKey_Deserialize } from '@/types/tauri-specta'
 import { BYTES_FORMAT, meFormatBytes, meToBase64 } from '@/utils/format'
+import { redisKeyWireBase64 } from '@/utils/redis-key'
 import { meCommands, meErr, meOk } from '@/utils/util'
 
 const { t } = useI18n()
@@ -32,7 +33,7 @@ watch(codec, () => {
   if (codec.value === 'utf8') {
     inputValue.value = k.key + suffix
   } else {
-    inputValue.value = meFormatBytes(k.bytes, codec.value) + suffix
+    inputValue.value = meFormatBytes(redisKeyWireBase64(k), codec.value) + suffix
   }
 })
 

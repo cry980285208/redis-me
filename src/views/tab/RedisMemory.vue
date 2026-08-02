@@ -6,6 +6,7 @@ import { useI18n } from 'vue-i18n'
 import { shareProvideKey } from '@/types/me-interface'
 import type { RedisKey_Deserialize, RedisKeySize_Serialize } from '@/types/tauri-specta'
 import { clearKeyTypeCacheForConn } from '@/utils/key-type-cache'
+import { sameRedisKey } from '@/utils/redis-key'
 // 官网参考: https://redis.ac.cn/docs/latest/commands/slowlog-get/
 import {
   bus,
@@ -121,7 +122,7 @@ function chooseKey(redisKey: RedisKey_Deserialize) {
 // 删除键
 async function delKey(redisKey: RedisKey_Deserialize) {
   meDeleteKey(share.conn!.id, redisKey, () => {
-    dataList.value = dataList.value.filter(rk => rk.bytes !== redisKey.bytes)
+    dataList.value = dataList.value.filter(rk => !sameRedisKey(rk, redisKey))
   })
 }
 
@@ -143,8 +144,9 @@ function batchDelKey() {
       await meCommands.batchDel(share.conn!.id, param)
       clearKeyTypeCacheForConn(share.conn!.id)
       meOk(t('deleteOk'))
-      const keyBytesArr = param.keyList.map(rk => rk.bytes)
-      dataList.value = dataList.value.filter(rk => keyBytesArr.indexOf(rk.bytes) < 0)
+      dataList.value = dataList.value.filter(
+        rk => !param.keyList.some(del => sameRedisKey(rk, del)),
+      )
     },
   )
 }

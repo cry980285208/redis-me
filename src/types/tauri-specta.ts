@@ -6,7 +6,7 @@ import { invoke as __TAURI_INVOKE } from "@tauri-apps/api/core";
 export const commands = {
 	greet: (name: string) => __TAURI_INVOKE<string>("greet", { name }),
 	appDir: () => typedError<string, string>(__TAURI_INVOKE("app_dir")),
-	/**  是否通过应用商店类渠道安装（内置更新应关闭）。具体判断在 `utils/app_store.rs`。 */
+	/**  是否通过应用商店类渠道安装（内置更新应关闭）：Win MSIX / macOS MAS / Linux Flatpak·Snap。 */
 	isAppStore: () => __TAURI_INVOKE<boolean>("is_app_store"),
 	/**  更新安装完成后重启。macOS 上延迟 `open` 再退出，避免 single-instance 与 `relaunch()` 竞态。 */
 	restartAfterUpdate: () => typedError<null, string>(__TAURI_INVOKE("restart_after_update")),

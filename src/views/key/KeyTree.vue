@@ -7,23 +7,44 @@ import { useI18n } from 'vue-i18n'
 
 import { shareProvideKey } from '@/types/me-interface'
 import type { RedisKey_Deserialize } from '@/types/tauri-specta'
+import { redisKeyId, sameRedisKey } from '@/utils/redis-key'
 import { meDeleteKey, TREE_KEY_ID_PREFIX } from '@/utils/util'
 
 import KeyTypeTag from './KeyTypeTag.vue'
+
+/**
+ * 收藏单树节点 id 命名空间，避免同时收藏 A 与 A:B 时子树/根 id 冲突。
+ * 根：`\0fav\0{path}`；其子：`\0fav\0{path}\0{innerId}`
+ */
+const FAV_ID_MARK = '\0fav\0'
+
+function favRootTreeId(favPath: string): string {
+  return FAV_ID_MARK + favPath
+}
+
+function favIdPrefix(favPath: string): string {
+  return FAV_ID_MARK + favPath + '\0'
+}
 
 const { t } = useI18n()
 const share = inject(shareProvideKey)!
 const canEdit = computed(() => !share.readonly)
 
-defineExpose({ setCurrentKey })
+defineExpose({ setCurrentKey, clearChecksAndEmit })
 const emit = defineEmits([
   'chooseKey',
   'chooseFolder',
   'contextKey',
   'contextFolder',
   'checkChange',
+  /** 收藏单树：勾选的收藏目录根 path 列表（供批量取消收藏目录） */
+  'favoriteFolderCheckChange',
   'favoriteKey',
   'unfavoriteKey',
+  /** 收藏目录根被展开（触发 SCAN） */
+  'folderExpand',
+  /** 收藏目录根被折叠 */
+  'folderCollapse',
 ])
 const props = withDefaults(
   defineProps<{
@@ -35,7 +56,20 @@ const props = withDefaults(
     sortByCount?: boolean
     loading?: boolean
     favorites?: RedisKey_Deserialize[]
+    /** 当前库已收藏的目录 path 列表（正常模式星标 / 菜单） */
+    favoriteFolders?: string[]
     favoriteMode?: boolean
+    /** 收藏目录下挂键时去掉公共前缀，避免与外层目录行重复 */
+    trimRoot?: string
+    /**
+     * 收藏目录单树：顶层为各收藏 path，children 由其 SCAN 键构建。
+     * 有值时优先于 filterKeyList 建树。
+     */
+    folderKeyGroups?: { path: string; keys: RedisKey_Deserialize[]; loaded?: boolean }[]
+    /** 尚有 SCAN cursor 未扫完的收藏目录 path（右键显示加载更多） */
+    folderLoadMorePaths?: string[]
+    /** 为 false 时右键不提供「多选模式」（另一区已在多选时） */
+    allowEnterCheckedMode?: boolean
   }>(),
   {
     color: 'var(--el-color-primary)',
@@ -45,7 +79,12 @@ const props = withDefaults(
     keyShowTree: true,
     sortByCount: true,
     favorites: () => [],
+    favoriteFolders: () => [],
     favoriteMode: false,
+    trimRoot: '',
+    folderKeyGroups: () => [],
+    folderLoadMorePaths: () => [],
+    allowEnterCheckedMode: true,
   },
 )
 
@@ -57,14 +96,33 @@ interface KeyBuildNode {
   redisKey?: RedisKey_Deserialize
   keyCount?: number
   isRootNode?: boolean
+  /** 收藏目录面板顶层根 */
+  isFavoriteFolderRoot?: boolean
+  /** 收藏根对应的真实 path（id 已 namespaced） */
+  favFolderPath?: string
+  /** 未 SCAN 前占位，保证根节点可展开 */
+  isPending?: boolean
 }
 
-// 左键点击
+/** 从树节点取出逻辑文件夹 path（供 copy / SCAN / 右键），而非 namespaced id */
+function logicalFolderPath(node: TreeNode): string {
+  const data = node.data as KeyBuildNode | undefined
+  if (data?.favFolderPath) return data.favFolderPath
+  const key = String(node.key)
+  if (key.startsWith(FAV_ID_MARK)) {
+    const rest = key.slice(FAV_ID_MARK.length)
+    const i = rest.indexOf('\0')
+    return i < 0 ? rest : rest.slice(i + 1)
+  }
+  return key
+}
+
+// 左键点击（收藏根即使无子键也会被树标成 leaf，仍按文件夹处理）
 function nodeClick(_data: unknown, node: TreeNode) {
-  if (node.isLeaf) {
-    emit('chooseKey', node.data.redisKey)
+  if (node.data?.isFavoriteFolderRoot || !node.isLeaf) {
+    emit('chooseFolder', logicalFolderPath(node))
   } else {
-    emit('chooseFolder', node.key)
+    emit('chooseKey', node.data.redisKey)
   }
 }
 
@@ -73,8 +131,8 @@ const contextMenuNode = ref<TreeNode | null>(null)
 const meContextRef = useTemplateRef('meContextRef')
 
 function nodeContextMenu(e: MouseEvent, _data: unknown, node: TreeNode) {
-  // db0根节点不显示上下文
-  if (node.data.isRootNode) return
+  // db0根节点 / SCAN 占位不显示上下文
+  if (node.data.isRootNode || node.data.isPending) return
   contextMenuNode.value = node
   meContextRef.value?.showMenu(e)
 }
@@ -82,12 +140,11 @@ function nodeContextMenu(e: MouseEvent, _data: unknown, node: TreeNode) {
 function handleCommand(command: string) {
   const ctx = contextMenuNode.value
   if (!ctx) return
-  if (ctx.isLeaf) {
+  if (ctx.data?.isFavoriteFolderRoot || !ctx.isLeaf) {
+    emit('contextFolder', command, logicalFolderPath(ctx))
+  } else {
     const redisKey = ctx.data.redisKey as RedisKey_Deserialize
     emit('contextKey', command, redisKey)
-  } else {
-    const folder = ctx.key
-    emit('contextFolder', command, folder)
   }
 }
 
@@ -107,18 +164,31 @@ function getNodeClass(node: TreeNode) {
   return clazz
 }
 
+const useFolderGroups = computed(() => props.folderKeyGroups.length > 0)
+
 // 计算树的数据
-const emptyText = computed(() =>
-  props.filterKeyList.length === 0 && !props.loading ? t('keyTree.noData') : t('keyMain.scanning'),
-)
+const emptyText = computed(() => {
+  if (useFolderGroups.value) {
+    return props.loading ? t('keyMain.scanning') : t('keyTree.noData')
+  }
+  return props.filterKeyList.length === 0 && !props.loading
+    ? t('keyTree.noData')
+    : t('keyMain.scanning')
+})
+
 const treeData = computed(() => {
+  // 收藏目录单树：顶层为各收藏 path
+  if (useFolderGroups.value) {
+    return props.folderKeyGroups.map(g => buildFavoriteFolderRoot(g))
+  }
+
   // 列表展示
   if (!props.keyShowTree) {
     return buildList(props.filterKeyList)
   }
 
   // 树形展示
-  const root = buildTree(props.filterKeyList)
+  const root = buildTree(props.filterKeyList, props.trimRoot)
   root.forEach(node => countLeaves(node))
 
   // 根节点排序及其子节点排序
@@ -126,6 +196,40 @@ const treeData = computed(() => {
   root.forEach(node => sortNodeChildrenLoop(node))
   return root
 })
+
+/**
+ * 收藏目录根：未 SCAN 时挂占位以便展开触发扫描；
+ * 已加载无子键则 children 为空（可能被标成 leaf），靠 isFavoriteFolderRoot 走文件夹 UI/菜单。
+ */
+function buildFavoriteFolderRoot(g: {
+  path: string
+  keys: RedisKey_Deserialize[]
+  loaded?: boolean
+}): KeyBuildNode {
+  const idPrefix = favIdPrefix(g.path)
+  let children: KeyBuildNode[]
+  if (!g.loaded) {
+    children = [{ id: idPrefix + 'pending', label: '', children: [], isPending: true }]
+  } else if (g.keys.length === 0) {
+    children = []
+  } else if (!props.keyShowTree) {
+    children = buildList(g.keys, idPrefix)
+  } else {
+    children = buildTree(g.keys, g.path, idPrefix)
+    children.forEach(node => countLeaves(node))
+    children.sort((n1, n2) => nodesSort(n1, n2))
+    children.forEach(node => sortNodeChildrenLoop(node))
+  }
+  return {
+    id: favRootTreeId(g.path),
+    label: g.path,
+    children,
+    // 未 SCAN 完不显示 [0]，避免误导
+    keyCount: g.loaded ? g.keys.length : undefined,
+    isFavoriteFolderRoot: true,
+    favFolderPath: g.path,
+  }
+}
 
 // 循环方式排序节点的子节点（避免递归栈溢出）
 function sortNodeChildrenLoop(rootNode: KeyBuildNode) {
@@ -178,11 +282,20 @@ function onNodeExpand(_data: unknown, node: TreeNode) {
   if (!expandedKeys.value.includes(key)) {
     expandedKeys.value = [...expandedKeys.value, key]
   }
+  if (node.data?.isFavoriteFolderRoot) {
+    emit('folderExpand', node.data.favFolderPath ?? logicalFolderPath(node))
+  }
 }
 
-/** 判断 key 是否属于 folderKey 文件夹或其子树（含叶子键） */
+/**
+ * 判断 key 是否属于 folderKey 文件夹或其子树（含叶子键）。
+ * 收藏 namespaced id 只用 `\0` 分隔判断，避免折叠 `\0fav\0A` 误伤根 `\0fav\0A:B`。
+ */
 function isUnderFolder(key: string, folderKey: string): boolean {
   if (key === folderKey) return true
+  if (folderKey.startsWith(FAV_ID_MARK)) {
+    return key.startsWith(folderKey + '\0')
+  }
   if (key.startsWith(folderKey + ':')) return true
   if (key.startsWith(TREE_KEY_ID_PREFIX)) {
     const redisKey = key.slice(TREE_KEY_ID_PREFIX.length)
@@ -196,25 +309,46 @@ function onNodeCollapse(_data: unknown, node: TreeNode) {
   // 折叠父节点时子节点不会触发 collapse，需一并移除，否则刷新后会因 setExpandedKeys 沿父链展开而“弹回”
   if (key === rootId) {
     expandedKeys.value = []
-    return
+  } else {
+    expandedKeys.value = expandedKeys.value.filter(k => !isUnderFolder(k, key))
   }
-  expandedKeys.value = expandedKeys.value.filter(k => !isUnderFolder(k, key))
+  if (node.data?.isFavoriteFolderRoot) {
+    emit('folderCollapse', node.data.favFolderPath ?? logicalFolderPath(node))
+  }
 }
 
+/** 程序清空勾选并回写父级（setCheckedKeys 不会触发 check-change） */
+function clearChecksAndEmit(): void {
+  treeRef.value?.setCheckedKeys([])
+  emit('checkChange', [])
+  if (useFolderGroups.value) emit('favoriteFolderCheckChange', [])
+}
+
+// 多选清空：切换多选、换键列表、或收藏目录 path 集合变化（勿在 SCAN 追加键时清）
 watch(
-  () => [props.showCheckbox, props.filterKeyList],
+  () =>
+    [
+      props.showCheckbox,
+      useFolderGroups.value
+        ? props.folderKeyGroups.map(g => g.path).join('\0')
+        : props.filterKeyList,
+    ] as const,
   () => {
-    treeRef.value?.setCheckedKeys([])
+    clearChecksAndEmit()
   },
 )
+
 const rootTreeData = computed((): KeyBuildNode[] => {
   if (props.showCheckbox) {
+    const keyCount = useFolderGroups.value
+      ? props.folderKeyGroups.reduce((n, g) => n + g.keys.length, 0)
+      : props.filterKeyList.length || 0
     return [
       {
         id: rootId,
         label: 'db' + String(share.conn?.db ?? ''),
         children: treeData.value as KeyBuildNode[],
-        keyCount: props.filterKeyList.length || 0,
+        keyCount,
         isRootNode: true,
       },
     ]
@@ -222,8 +356,8 @@ const rootTreeData = computed((): KeyBuildNode[] => {
   return treeData.value as KeyBuildNode[]
 })
 
-// 构建树：同层文件夹用 Map 查找，避免 find 线性扫描
-function buildTree(keyList: RedisKey_Deserialize[]) {
+// 构建树：同层文件夹用 Map 查找，避免 find 线性扫描；idPrefix 用于收藏单树命名空间
+function buildTree(keyList: RedisKey_Deserialize[], trim = '', idPrefix = '') {
   const root: KeyBuildNode[] = []
   /** 每层 children 数组 → label → 文件夹节点（不含叶子） */
   const folderMaps = new WeakMap<KeyBuildNode[], Map<string, KeyBuildNode>>()
@@ -238,23 +372,30 @@ function buildTree(keyList: RedisKey_Deserialize[]) {
   }
 
   keyList.forEach(rk => {
-    const parts = rk.key.split(/:+/)
+    // trim 时只展示相对路径段，叶子仍挂完整 redisKey
+    let pathForParts = rk.key
+    if (trim && rk.key.startsWith(trim + ':')) {
+      pathForParts = rk.key.slice(trim.length + 1)
+    } else if (trim && rk.key === trim) {
+      pathForParts = ''
+    }
+    const parts = pathForParts === '' ? [''] : pathForParts.split(/:+/)
     let nowLevel = root
     parts.forEach((part, index) => {
       // 叶子节点：hepengju 这种无分隔符的键直接作为叶子
       if (index === parts.length - 1) {
         const label = part
-        let node = { id: TREE_KEY_ID_PREFIX + rk.key, label, children: [], redisKey: rk }
+        let node = { id: idPrefix + TREE_KEY_ID_PREFIX + rk.key, label, children: [], redisKey: rk }
         nowLevel.push(node)
         return
       }
 
-      // hepengju: / hepengju:string
+      // hepengju: / hepengju:string；文件夹 id 仍用完整路径，便于展开定位
       const folders = folderMapOf(nowLevel)
       let node = folders.get(part)
       if (!node) {
-        // 避免叶子节点的 id 与部分非叶子节点一致
-        node = { id: parts.slice(0, index + 1).join(':'), label: part, children: [] }
+        const fullParts = trim ? [trim, ...parts.slice(0, index + 1)] : parts.slice(0, index + 1)
+        node = { id: idPrefix + fullParts.join(':'), label: part, children: [] }
         nowLevel.push(node)
         folders.set(part, node)
       }
@@ -306,31 +447,79 @@ function countLeaves(node: KeyBuildNode) {
 }
 
 // 构建树: 仅仅叶子节点（即List显示）
-function buildList(keyList: RedisKey_Deserialize[]) {
+function buildList(keyList: RedisKey_Deserialize[], idPrefix = '') {
   return keyList.map(rk => ({
-    id: TREE_KEY_ID_PREFIX + rk.key,
+    id: idPrefix + TREE_KEY_ID_PREFIX + rk.key,
     label: rk.key,
     children: [],
     redisKey: rk,
   }))
 }
 
-// 获取选中的节点键
+// 获取选中的节点键；收藏单树额外上报勾选的收藏目录根
 function checkChange() {
   const nodes = (treeRef.value?.getCheckedNodes(true) ?? []) as KeyBuildNode[]
   const redisKeys = nodes.map(n => n.redisKey).filter((k): k is RedisKey_Deserialize => k != null)
+  if (useFolderGroups.value) {
+    const seen = new Set<string>()
+    const unique: RedisKey_Deserialize[] = []
+    for (const k of redisKeys) {
+      const id = redisKeyId(k)
+      if (seen.has(id)) continue
+      seen.add(id)
+      unique.push(k)
+    }
+    emit('checkChange', unique)
+    const all = (treeRef.value?.getCheckedNodes(false) ?? []) as KeyBuildNode[]
+    const paths = all
+      .filter(n => n.isFavoriteFolderRoot && n.favFolderPath)
+      .map(n => n.favFolderPath!)
+    emit('favoriteFolderCheckChange', paths)
+    return
+  }
   emit('checkChange', redisKeys)
+}
+
+/** 定位键时优先落在最长匹配的已加载收藏目录下 */
+function resolveFavPathForKey(key: string): string | null {
+  let best: string | null = null
+  for (const g of props.folderKeyGroups) {
+    if (!g.loaded) continue
+    if (key === g.path || key.startsWith(g.path + ':')) {
+      if (!best || g.path.length > best.length) best = g.path
+    }
+  }
+  return best
 }
 
 // 设置选中节点并滚动到视口中间（新建键 / 键值页定位复用）
 function setCurrentKey(redisKey: RedisKey_Deserialize) {
-  const nodeId = TREE_KEY_ID_PREFIX + redisKey.key
+  const favPath = useFolderGroups.value ? resolveFavPathForKey(redisKey.key) : null
+  const idPrefix = favPath ? favIdPrefix(favPath) : ''
+  const nodeId = idPrefix + TREE_KEY_ID_PREFIX + redisKey.key
 
   // 展开父节点并同步 expandedKeys，等 flatten 更新后再 scroll
-  const parts = redisKey.key.split(/:+/)
   const parentIds: string[] = []
-  for (let i = 0; i < parts.length - 1; i++) {
-    parentIds.push(parts.slice(0, i + 1).join(':'))
+  if (favPath) {
+    parentIds.push(favRootTreeId(favPath))
+    if (props.keyShowTree) {
+      const rel =
+        redisKey.key === favPath
+          ? ''
+          : redisKey.key.startsWith(favPath + ':')
+            ? redisKey.key.slice(favPath.length + 1)
+            : redisKey.key
+      const parts = rel === '' ? [] : rel.split(/:+/)
+      for (let i = 0; i < parts.length - 1; i++) {
+        const folderPath = favPath + ':' + parts.slice(0, i + 1).join(':')
+        parentIds.push(idPrefix + folderPath)
+      }
+    }
+  } else {
+    const parts = redisKey.key.split(/:+/)
+    for (let i = 0; i < parts.length - 1; i++) {
+      parentIds.push(parts.slice(0, i + 1).join(':'))
+    }
   }
   if (parentIds.length > 0) {
     const nextExpanded = [...expandedKeys.value]
@@ -358,18 +547,49 @@ function quickDeleteKey(redisKey: RedisKey_Deserialize): void {
   meDeleteKey(share.conn.id, redisKey)
 }
 
-const favoritedBytesSet = computed(() => new Set(props.favorites.map(f => f.bytes)))
-
-function isFavoritedLocal(bytes: string): boolean {
-  return favoritedBytesSet.value.has(bytes)
+function isFavoritedLocal(redisKey: RedisKey_Deserialize | undefined): boolean {
+  if (!redisKey) return false
+  return props.favorites.some(f => sameRedisKey(f, redisKey))
 }
 
 const isContextNodeFavorited = computed(() => {
   if (!contextMenuNode.value?.isLeaf) return false
-  const bytes = contextMenuNode.value.data.redisKey?.bytes
-  if (!bytes) return false
-  return isFavoritedLocal(bytes)
+  return isFavoritedLocal(contextMenuNode.value.data.redisKey)
 })
+
+function isFolderFavoritedLocal(folder: string | undefined): boolean {
+  if (!folder) return false
+  return props.favoriteFolders.includes(folder)
+}
+
+const isContextFolderFavorited = computed(() => {
+  if (!contextMenuNode.value || contextMenuNode.value.isLeaf) return false
+  return isFolderFavoritedLocal(String(contextMenuNode.value.key))
+})
+
+const isContextFavoriteFolderRoot = computed(() =>
+  Boolean(contextMenuNode.value?.data?.isFavoriteFolderRoot),
+)
+
+const contextFolderHasMore = computed(() => {
+  if (!isContextFavoriteFolderRoot.value || !contextMenuNode.value) return false
+  const path =
+    (contextMenuNode.value.data as KeyBuildNode).favFolderPath ??
+    logicalFolderPath(contextMenuNode.value)
+  return props.folderLoadMorePaths.includes(path)
+})
+
+/** 收藏目录用实心 me-icon；普通目录仍用 Element 线框图标 */
+function folderIconName(node: TreeNode): string {
+  if (node.data.isRootNode) return 'me-icon-db'
+  const favorited =
+    node.data.isFavoriteFolderRoot ||
+    (!props.favoriteMode && isFolderFavoritedLocal(String(node.key)))
+  if (favorited) {
+    return node.expanded ? 'me-icon-folder-opened-favorited' : 'me-icon-folder-favorited'
+  }
+  return node.expanded ? 'el-icon-folder-opened' : 'el-icon-folder'
+}
 </script>
 
 <template>
@@ -394,8 +614,13 @@ const isContextNodeFavorited = computed(() => {
         :item-size="keyHeight"
         :show-checkbox="showCheckbox">
         <template #default="{ node }">
-          <!-- 长名截断：左侧文字 ellipsis，右侧 [数量]/操作图标固定不挤出 -->
-          <div v-if="node.isLeaf" :class="getNodeClass(node)" class="me-flex key-leaf-row">
+          <!-- 未 SCAN 占位：不展示文案，仅撑开可展开根 -->
+          <div v-if="node.data.isPending" class="folder-pending" />
+          <!-- 收藏根无子键时树会标成 leaf，仍按文件夹行渲染 -->
+          <div
+            v-else-if="node.isLeaf && !node.data.isFavoriteFolderRoot"
+            :class="getNodeClass(node)"
+            class="me-flex key-leaf-row">
             <div
               class="me-flex key-leaf-main"
               :class="{ 'list-key': !keyShowTree && !showCheckbox }">
@@ -413,7 +638,7 @@ const isContextNodeFavorited = computed(() => {
                 class="key-delete-btn"
                 @click.stop="quickDeleteKey(node.data.redisKey)" />
               <me-icon
-                v-if="isFavoritedLocal(node.data.redisKey.bytes)"
+                v-if="isFavoritedLocal(node.data.redisKey)"
                 icon="el-icon-star-filled"
                 style="color: #f7ba2a"
                 class="key-favorite-btn"
@@ -421,115 +646,115 @@ const isContextNodeFavorited = computed(() => {
             </div>
           </div>
           <div v-else :class="getNodeClass(node)" class="me-flex folder-row">
+            <!-- 已收藏 / 收藏目录根：实心金色文件夹图标 -->
             <me-icon
               class="folder-icon"
-              :icon="
-                node.data.isRootNode
-                  ? 'me-icon-db'
-                  : node.expanded
-                    ? 'el-icon-folderOpened'
-                    : 'el-icon-folder'
-              " />
+              :class="{
+                'is-favorited':
+                  !node.data.isRootNode &&
+                  (node.data.isFavoriteFolderRoot ||
+                    (!favoriteMode && isFolderFavoritedLocal(String(node.key)))),
+              }"
+              :icon="folderIconName(node)" />
             <div class="folder-label">{{ node.label }}</div>
-            <div class="folder-count">[ {{ node.data.keyCount }} ]</div>
+            <div v-if="node.data.keyCount != null" class="folder-count">
+              [ {{ node.data.keyCount }} ]
+            </div>
           </div>
         </template>
       </el-tree-v2>
 
-      <!-- 右键菜单 -->
+      <!-- 右键按键/目录两大块；收藏与普通的小差异用 v-if -->
       <me-context ref="meContextRef" @handle-command="handleCommand" @handle-close="handleClose">
-        <template v-if="contextMenuNode?.isLeaf">
-          <!-- 收藏模式下的右键菜单 -->
-          <template v-if="favoriteMode">
-            <el-dropdown-item command="unfavoriteKey"
-              ><me-icon icon="el-icon-star-filled" :name="t('keyTree.unfavoriteKey')"
-            /></el-dropdown-item>
-            <el-dropdown-item command="copyKey"
-              ><me-icon icon="el-icon-document-copy" :name="t('keyTree.copyKey')"
-            /></el-dropdown-item>
-            <el-dropdown-item v-if="!showCheckbox" command="checkedMode"
-              ><me-icon icon="me-icon-checked" :name="t('keyMain.checkedMode')"
-            /></el-dropdown-item>
-            <el-dropdown-item v-if="showCheckbox" command="exitCheckedMode"
-              ><me-icon icon="el-icon-circle-close" :name="t('keyMain.exitCheckedMode')"
-            /></el-dropdown-item>
-          </template>
-          <!-- 正常模式下的右键菜单 -->
-          <template v-else>
-            <el-dropdown-item command="addKey" v-if="canEdit"
-              ><me-icon icon="el-icon-circle-plus" :name="t('keyTree.addKey')"
-            /></el-dropdown-item>
-            <el-dropdown-item command="copyKey"
-              ><me-icon icon="el-icon-document-copy" :name="t('keyTree.copyKey')"
-            /></el-dropdown-item>
-            <!-- 使用频率低，改在值区扩展菜单提供 -->
-            <!--
-            <el-dropdown-item v-if="canEdit" command="renameKey"
-              ><me-icon icon="el-icon-edit" :name="t('keyList.renameKey')"
-            /></el-dropdown-item>
-            <el-dropdown-item v-if="canEdit" command="duplicateKey"
-              ><me-icon icon="el-icon-copy-document" :name="t('redisValue.duplicateKey')"
-            /></el-dropdown-item>
-            -->
-            <el-dropdown-item v-if="!showCheckbox" command="checkedMode"
-              ><me-icon icon="me-icon-checked" :name="t('keyMain.checkedMode')"
-            /></el-dropdown-item>
-            <el-dropdown-item v-if="showCheckbox" command="exitCheckedMode"
-              ><me-icon icon="el-icon-circle-close" :name="t('keyMain.exitCheckedMode')"
-            /></el-dropdown-item>
-            <el-dropdown-item
-              :command="isContextNodeFavorited ? 'unfavoriteKey' : 'favoriteKey'"
-              divided>
-              <me-icon
-                icon="el-icon-star-filled"
-                :name="
-                  isContextNodeFavorited ? t('keyTree.unfavoriteKey') : t('keyTree.favoriteKey')
-                " />
-            </el-dropdown-item>
-          </template>
+        <!-- 键（收藏目录根无子键时也是 leaf，归目录菜单） -->
+        <template v-if="contextMenuNode?.isLeaf && !isContextFavoriteFolderRoot">
+          <!-- 仅普通模式提供从键新建 -->
+          <el-dropdown-item v-if="!favoriteMode && canEdit" command="addKey">
+            <me-icon icon="el-icon-circle-plus" :name="t('keyTree.addKey')" />
+          </el-dropdown-item>
+          <el-dropdown-item command="copyKey">
+            <me-icon icon="el-icon-document-copy" :name="t('keyTree.copyKey')" />
+          </el-dropdown-item>
+          <el-dropdown-item v-if="!showCheckbox && allowEnterCheckedMode" command="checkedMode">
+            <me-icon icon="me-icon-checked" :name="t('keyMain.checkedMode')" />
+          </el-dropdown-item>
+          <el-dropdown-item v-if="showCheckbox" command="exitCheckedMode">
+            <me-icon icon="el-icon-circle-close" :name="t('keyMain.exitCheckedMode')" />
+          </el-dropdown-item>
+          <el-dropdown-item :command="isContextNodeFavorited ? 'unfavoriteKey' : 'favoriteKey'">
+            <me-icon
+              icon="el-icon-star-filled"
+              :name="
+                isContextNodeFavorited ? t('keyTree.unfavoriteKey') : t('keyTree.favoriteKey')
+              " />
+          </el-dropdown-item>
         </template>
-        <template v-else>
-          <template v-if="favoriteMode">
-            <el-dropdown-item command="copyFolder"
-              ><me-icon icon="el-icon-document-copy" :name="t('keyTree.copyFolder')"
-            /></el-dropdown-item>
-            <el-dropdown-item v-if="!showCheckbox" command="checkedMode"
-              ><me-icon icon="me-icon-checked" :name="t('keyMain.checkedMode')"
-            /></el-dropdown-item>
-            <el-dropdown-item v-if="showCheckbox" command="exitCheckedMode"
-              ><me-icon icon="el-icon-circle-close" :name="t('keyMain.exitCheckedMode')"
-            /></el-dropdown-item>
-          </template>
-          <template v-else>
-            <el-dropdown-item command="addKey" v-if="canEdit"
-              ><me-icon icon="el-icon-circle-plus" :name="t('keyTree.addKey')"
-            /></el-dropdown-item>
-            <el-dropdown-item command="copyFolder"
-              ><me-icon icon="el-icon-document-copy" :name="t('keyTree.copyFolder')"
-            /></el-dropdown-item>
-            <el-dropdown-item v-if="!showCheckbox" command="checkedMode"
-              ><me-icon icon="me-icon-checked" :name="t('keyMain.checkedMode')"
-            /></el-dropdown-item>
-            <el-dropdown-item v-if="showCheckbox" command="exitCheckedMode"
-              ><me-icon icon="el-icon-circle-close" :name="t('keyMain.exitCheckedMode')"
-            /></el-dropdown-item>
-            <el-dropdown-item command="loadFolder" divided
-              ><me-icon icon="el-icon-search" :name="t('keyTree.loadFolder')"
-            /></el-dropdown-item>
-            <el-dropdown-item command="memoryUsage"
-              ><me-icon icon="me-icon-memory" :name="t('keyTree.memoryUsage')"
-            /></el-dropdown-item>
-            <el-dropdown-item command="exportFolder" divided :disabled="share.exportImporting"
-              ><me-icon icon="el-icon-upload" :name="t('keyTree.exportFolder')"
-            /></el-dropdown-item>
 
-            <el-dropdown-item
-              command="deleteFolder"
-              v-if="canEdit"
-              :disabled="share.exportImporting"
-              ><me-icon icon="el-icon-delete" :name="t('keyTree.deleteFolder')"
-            /></el-dropdown-item>
-          </template>
+        <!-- 目录（含收藏目录根） -->
+        <template v-else>
+          <!-- 仅收藏目录根：刷新/加载更多置顶 -->
+          <el-dropdown-item v-if="isContextFavoriteFolderRoot" command="reloadFolder">
+            <me-icon icon="el-icon-refresh" :name="t('keyTree.reloadFolder')" />
+          </el-dropdown-item>
+          <el-dropdown-item
+            v-if="isContextFavoriteFolderRoot && contextFolderHasMore"
+            command="loadMoreFolder">
+            <me-icon icon="me-icon-load-more" :name="t('keyMain.loadMore')" />
+          </el-dropdown-item>
+          <el-dropdown-item
+            v-if="isContextFavoriteFolderRoot && contextFolderHasMore"
+            command="loadAllFolder">
+            <me-icon icon="me-icon-load-all" :name="t('keyMain.loadAll')" />
+          </el-dropdown-item>
+
+          <el-dropdown-item v-if="canEdit" command="addKey">
+            <me-icon icon="el-icon-circle-plus" :name="t('keyTree.addKey')" />
+          </el-dropdown-item>
+          <el-dropdown-item command="copyFolder">
+            <me-icon icon="el-icon-document-copy" :name="t('keyTree.copyFolder')" />
+          </el-dropdown-item>
+          <el-dropdown-item v-if="!showCheckbox && allowEnterCheckedMode" command="checkedMode">
+            <me-icon icon="me-icon-checked" :name="t('keyMain.checkedMode')" />
+          </el-dropdown-item>
+          <el-dropdown-item v-if="showCheckbox" command="exitCheckedMode">
+            <me-icon icon="el-icon-circle-close" :name="t('keyMain.exitCheckedMode')" />
+          </el-dropdown-item>
+
+          <!-- 收藏目录根：取消收藏；普通模式目录：收藏/取消 -->
+          <el-dropdown-item v-if="isContextFavoriteFolderRoot" command="unfavoriteFolder">
+            <me-icon icon="el-icon-star-filled" :name="t('keyTree.unfavoriteFolder')" />
+          </el-dropdown-item>
+          <el-dropdown-item
+            v-else-if="!favoriteMode"
+            :command="isContextFolderFavorited ? 'unfavoriteFolder' : 'favoriteFolder'">
+            <me-icon
+              icon="el-icon-star-filled"
+              :name="
+                isContextFolderFavorited
+                  ? t('keyTree.unfavoriteFolder')
+                  : t('keyTree.favoriteFolder')
+              " />
+          </el-dropdown-item>
+
+          <!-- 仅普通模式：只加载该目录 -->
+          <el-dropdown-item
+            v-if="!favoriteMode && !isContextFavoriteFolderRoot"
+            command="loadFolder"
+            divided>
+            <me-icon icon="el-icon-search" :name="t('keyTree.loadFolder')" />
+          </el-dropdown-item>
+          <!-- 收藏模式（含根）在上方项后分隔；普通模式已有「只加载」分隔 -->
+          <el-dropdown-item
+            command="memoryUsage"
+            :divided="favoriteMode || isContextFavoriteFolderRoot">
+            <me-icon icon="me-icon-memory" :name="t('keyTree.memoryUsage')" />
+          </el-dropdown-item>
+          <el-dropdown-item command="exportFolder" :disabled="share.exportImporting" divided>
+            <me-icon icon="el-icon-upload" :name="t('keyTree.exportFolder')" />
+          </el-dropdown-item>
+          <el-dropdown-item v-if="canEdit" command="deleteFolder" :disabled="share.exportImporting">
+            <me-icon icon="el-icon-delete" :name="t('keyTree.deleteFolder')" />
+          </el-dropdown-item>
         </template>
       </me-context>
     </template>
@@ -594,6 +819,10 @@ const isContextNodeFavorited = computed(() => {
 
 .folder-icon {
   flex-shrink: 0;
+
+  &.is-favorited {
+    color: #f7ba2a;
+  }
 }
 
 .folder-label {
@@ -605,6 +834,12 @@ const isContextNodeFavorited = computed(() => {
   flex-shrink: 0;
   margin-right: 10px;
   color: var(--el-color-info);
+}
+
+.folder-pending {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
 }
 
 .key-leaf-actions {

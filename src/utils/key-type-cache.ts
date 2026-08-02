@@ -1,17 +1,18 @@
 import type { RedisKey_Deserialize } from '@/types/tauri-specta'
+import { redisKeyId } from '@/utils/redis-key'
 
-/** 连接 + db + 键 bytes(base64) → TYPE 结果；仅 SCAN 出的键有 bytes 才缓存 */
+/** 连接 + db + 键身份 → TYPE 结果；UTF-8 省略 bytes 时用 key 作缓存键 */
 const cache = new Map<string, string>()
 const pending = new Map<string, Promise<string | undefined>>()
 
-function cacheKey(connId: string, db: number, bytes: string): string {
-  return `${connId}\0${db}\0${bytes}`
+function cacheKey(connId: string, db: number, redisKey: RedisKey_Deserialize): string {
+  return `${connId}\0${db}\0${redisKeyId(redisKey)}`
 }
 
-/** 单键删除/重命名：按 bytes 精确失效；无 bytes 的键未入缓存，无需处理 */
+/** 单键删除/重命名：按身份精确失效 */
 export function invalidateKeyType(connId: string, redisKey: RedisKey_Deserialize): void {
-  if (!redisKey.bytes) return
-  const suffix = `\0${redisKey.bytes}`
+  const id = redisKeyId(redisKey)
+  const suffix = `\0${id}`
   for (const k of cache.keys()) {
     if (k.startsWith(`${connId}\0`) && k.endsWith(suffix)) {
       cache.delete(k)
@@ -48,11 +49,7 @@ export async function resolveKeyType(
   db: number,
   redisKey: RedisKey_Deserialize,
 ): Promise<string | undefined> {
-  if (!redisKey.bytes) {
-    return fetchKeyType(connId, redisKey)
-  }
-
-  const ck = cacheKey(connId, db, redisKey.bytes)
+  const ck = cacheKey(connId, db, redisKey)
   const hit = cache.get(ck)
   if (hit) return hit
 

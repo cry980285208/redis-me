@@ -6,10 +6,12 @@ import { useI18n } from 'vue-i18n'
 
 import { shareProvideKey } from '@/types/me-interface'
 import type { RedisFieldAdd_Deserialize, RedisKey_Deserialize } from '@/types/tauri-specta'
-import { BYTES_FORMAT, meViewToWire, toWireFormat, type ViewBytesFormat } from '@/utils/format'
+import { BYTES_FORMAT, IPC_WIRE_FORMAT, meViewToWire, type ViewBytesFormat } from '@/utils/format'
+import { redisKeyWireBase64 } from '@/utils/redis-key'
 import {
   KEY_TYPE_LIST,
   meCommands,
+  meErr,
   meOk,
   meJsonParse,
   meJsonNormal,
@@ -136,19 +138,20 @@ function submit() {
   formRef.value.validate(async (valid: boolean) => {
     if (!valid) return
 
-    isSaving.value = true
-    try {
-      const keyViewFmt = form.value.keyFmt as ViewBytesFormat
-      const valViewFmt = form.value.valFmt as ViewBytesFormat
-      const keyWireFmt = toWireFormat(keyViewFmt)
-      const valWireFmt = toWireFormat(valViewFmt)
+    const keyViewFmt = form.value.keyFmt as ViewBytesFormat
+    const valViewFmt = form.value.valFmt as ViewBytesFormat
+    const isJson = form.value.type === 'json'
 
-      let value = form.value.type === 'json' ? meJsonNormal(form.value.value) : form.value.value
-      if (form.value.type === 'string' && valViewFmt !== 'utf8') {
+    let value = isJson ? meJsonNormal(form.value.value) : form.value.value
+    let fieldValueList = form.value.fieldValueList
+    let key: RedisKey_Deserialize = form.value.key
+
+    // 与 KeyRename 一致：提交前先做编码转换检查，失败 meErr 并 return，不打后端
+    try {
+      if (form.value.type === 'string') {
         value = meViewToWire(value, valViewFmt)
       }
-
-      const fieldValueList = form.value.fieldValueList.map(item => ({
+      fieldValueList = form.value.fieldValueList.map(item => ({
         ...item,
         fieldKey: meViewToWire(item.fieldKey, valViewFmt),
         fieldValue: meViewToWire(item.fieldValue, valViewFmt),
@@ -156,20 +159,28 @@ function submit() {
       fieldValueList.forEach(item => {
         if (item.fieldTtl === null) item.fieldTtl = -1
       })
+      // 新建键按 keyFmt；加字段在 SCAN 省略 bytes 时用展示名转 wire
+      if (!form.value.key.bytes) {
+        key =
+          form.value.mode === 'key'
+            ? { key: meViewToWire(form.value.key.key, keyViewFmt), bytes: '' }
+            : { key: redisKeyWireBase64(form.value.key), bytes: '' }
+      }
+    } catch (e) {
+      meErr(e instanceof Error ? e.message : String(e))
+      return
+    }
 
-      const key: RedisKey_Deserialize =
-        form.value.mode === 'key' && keyViewFmt !== 'utf8' && !form.value.key.bytes
-          ? { key: meViewToWire(form.value.key.key, keyViewFmt), bytes: '' }
-          : form.value.key
-
+    isSaving.value = true
+    try {
       const redisKey = await meCommands.fieldAdd(share.conn!.id, {
         ...form.value,
         key,
         value,
         ttl: meTtlSeconds(form.value.ttl, ttlUnit.value),
         fieldValueList,
-        keyFmt: keyWireFmt,
-        valFmt: valWireFmt,
+        keyFmt: IPC_WIRE_FORMAT,
+        valFmt: isJson ? 'utf8' : IPC_WIRE_FORMAT,
       })
       visible.value = false
       emit('success', redisKey)
@@ -286,7 +297,7 @@ function handleKeyTypeChange() {
           v-for="(item, index) in form.fieldValueList"
           class="me-flex"
           style="margin-bottom: 10px; width: 100%"
-          key="id">
+          :key="index">
           <el-input
             type="text"
             v-model="item.fieldKey"
@@ -359,19 +370,6 @@ function handleKeyTypeChange() {
 </template>
 
 <style scoped lang="scss">
-.field-add-footer-codec {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.field-add-footer-codec-label {
-  flex-shrink: 0;
-  font-size: var(--el-font-size-extra-small);
-}
-
 :deep(.el-input-group__prepend) {
   padding: 0 16px;
 }
