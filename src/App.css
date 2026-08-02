@@ -86,6 +86,13 @@ html {
   --code-font: Menlo, Monaco, Consolas, 黑体, system-ui;
 }
 
+/* Linux WebKitGTK：减轻假粗/发糊（Yaak/JetPilot 同类补丁；勿用于 macOS） */
+html[data-platform='linux'] {
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
 /* 黑色主题 */
 html.dark {
   /* 自定义深色背景颜色 */
