@@ -491,7 +491,7 @@ async function refreshField() {
   }
 
   .field-set-auto-label {
-    margin-left: 8px;
+    margin-left: 2px;
     white-space: nowrap;
     color: var(--el-color-primary);
     font-weight: 600;

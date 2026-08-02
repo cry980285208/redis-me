@@ -2189,7 +2189,7 @@ onUnmounted(() => {
           <el-text
             v-if="detectedViewText"
             class="bytes-format-auto-label"
-            style="margin-left: 8px; white-space: nowrap"
+            style="margin-left: 2px; white-space: nowrap"
             :title="t('redisValue.autoDetected')">
             {{ detectedViewText }}
           </el-text>

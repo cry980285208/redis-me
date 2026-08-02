@@ -1998,9 +1998,9 @@ function editDbName(db: number): void {
         white-space: nowrap;
       }
 
+      /* 无额外 padding：避免 sizer 比可见文案更宽，箭头前留白过大 */
       :deep(.el-select__prefix) {
         flex-shrink: 0;
-        padding: 0 4px;
         visibility: hidden;
         pointer-events: none;
       }
@@ -2017,7 +2017,7 @@ function editDbName(db: number): void {
 
       :deep(.el-select__selected-item.el-select__placeholder) {
         position: absolute;
-        inset: 0 18px 0 4px;
+        inset: 0 14px 0 4px;
         display: flex;
         align-items: center;
         width: auto;
@@ -2026,7 +2026,7 @@ function editDbName(db: number): void {
       }
 
       :deep(.el-select__input-wrapper) {
-        inset: 0 18px 0 4px;
+        inset: 0 14px 0 4px;
       }
     }
 
