@@ -1,5 +1,24 @@
 # 4.x Changelog
 
+## [v4.6.0](https://mp.weixin.qq.com/s/SxpCUDobWtdUZMaJQo3uvw) (2026-08-02)
+
+### ✨ New Features
+
+- Favorites: **favorite folders** — expand to SCAN keys under the folder
+- Field codecs: Hash and other types also support **Auto** detection #144
+- SCAN improvements:
+  - Omit `bytes` for valid UTF-8 keys to cut full-scan memory #141
+  - Sort and paint after each SCAN round for an ordered live list
+- Other details:
+  - DB selector **width follows** the current label #145
+  - Field table: no hover tooltip; single-line ellipsis kept
+  - Unified decode-error copy; editor shows error state
+  - Field codec dropdown unified to Auto; style aligned with DB select
+
+### 🐞 Bug Fixes
+
+- Renaming a key now updates the left key-tree label promptly
+
 ## [v4.5.0](https://mp.weixin.qq.com/s/Dxg6XWnPT3jPmH2FS1VYrQ) (2026-07-25)
 
 ### ✨ New Features
