@@ -1978,6 +1978,16 @@ function editDbName(db: number): void {
     align-items: center;
     justify-content: space-between;
 
+    /* Linux system-ui 字面度量与 Win 不同，收紧行高并统一交叉轴居中 */
+    .me-flex {
+      align-items: center;
+    }
+
+    .center {
+      display: flex;
+      align-items: center;
+    }
+
     :deep(.icon-btn) {
       font-size: 18px;
     }
@@ -1990,12 +2000,14 @@ function editDbName(db: number): void {
       min-height: 0;
       height: 30px;
       padding: 4px;
+      line-height: 1;
     }
 
     /* 隐藏 sizer(prefix) 定宽；可见 #label 叠层显示；输入过滤不改变宽度 */
     .db-select {
       :deep(.icon-main) {
         white-space: nowrap;
+        line-height: 1;
       }
 
       /* 无额外 padding：避免 sizer 比可见文案更宽，箭头前留白过大 */
@@ -2034,6 +2046,7 @@ function editDbName(db: number): void {
       flex-shrink: 0;
       padding: 0 4px;
       font-size: 14px;
+      line-height: 1;
       color: var(--el-text-color-regular);
     }
 
@@ -2049,6 +2062,7 @@ function editDbName(db: number): void {
 
     .tip {
       white-space: nowrap;
+      line-height: 1;
     }
 
     :deep(.el-select-dropdown__item) {
