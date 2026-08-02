@@ -3,6 +3,7 @@ import { computed, inject, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import MeIcon from '@/components/MeIcon.vue'
+import { MeSelectUpDownIcon } from '@/components/MeSelectUpDownIcon'
 import MeShortcut from '@/components/MeShortcut.vue'
 import { commandHelp, isReadonlyCommand } from '@/locales/cmd'
 import { shareProvideKey } from '@/types/me-interface'
@@ -130,15 +131,16 @@ const keyShortcuts = computed(() => getTerminalShortcuts(t))
 
     <!-- 工具栏 -->
     <div class="tool me-flex">
-      <el-tooltip :content="t('redisTerminal.outputModeHint')" placement="top-end">
-        <el-select v-model="outputMode" size="small" style="width: 70px">
-          <el-option
-            v-for="item in outputModeOptions"
-            :key="item.value"
-            :label="t(item.labelKey)"
-            :value="item.value" />
-        </el-select>
-      </el-tooltip>
+      <el-select
+        v-model="outputMode"
+        class="output-mode-select me-select-plain"
+        :suffix-icon="MeSelectUpDownIcon">
+        <el-option
+          v-for="item in outputModeOptions"
+          :key="item.value"
+          :label="t(item.labelKey)"
+          :value="item.value" />
+      </el-select>
       <el-tooltip :content="t('redisTerminal.autoCopyHint')" placement="top-end">
         <el-checkbox v-model="autoCopy" style="margin-left: 10px" />
       </el-tooltip>
@@ -202,6 +204,14 @@ const keyShortcuts = computed(() => getTerminalShortcuts(t))
     bottom: 0;
     z-index: 10;
     align-items: center;
+  }
+
+  .output-mode-select {
+    :deep(.el-select__wrapper) {
+      min-height: 0;
+      height: 30px;
+      padding: 4px;
+    }
   }
 }
 
