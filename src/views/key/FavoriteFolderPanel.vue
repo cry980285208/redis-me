@@ -106,6 +106,11 @@ const folderLoadMorePaths = computed(() =>
   }),
 )
 
+/** SCAN 中的收藏目录 path（目录图标换成 loading） */
+const folderLoadingPaths = computed(() =>
+  visibleFolders.value.filter(path => scanMap.get(path)?.loading),
+)
+
 const anyScanning = computed(() => Array.from(scanMap.values()).some(s => s.loading && !s.loaded))
 
 /** 收藏列表移除某目录时清掉其扫描残留 */
@@ -153,9 +158,10 @@ async function scanFolder(path: string, useCursor: boolean, loadAll: boolean): P
     }
     const first = await scanOnce(path, s)
     if (s.cancelled) return
+    // 首批到位即可上屏；此前 loaded=false 只显示占位。后续批边扫边追加（对齐普通模式）
+    s.loaded = true
     if (!loadAll) await scanAuto(path, s, first)
     else await scanAll(path, s)
-    if (!s.cancelled) s.loaded = true
   } catch (e) {
     if (!s.cancelled) {
       meWarn(e instanceof Error ? e.message : String(e))
@@ -343,6 +349,7 @@ defineExpose({
       :allow-enter-checked-mode="allowEnterCheckedMode"
       :folder-key-groups="folderKeyGroups"
       :folder-load-more-paths="folderLoadMorePaths"
+      :folder-loading-paths="folderLoadingPaths"
       :redis-key="share.redisKey"
       :key-show-tree="keyShowTree"
       :sort-by-count="sortByCount"
