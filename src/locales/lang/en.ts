@@ -137,6 +137,7 @@ export default {
     clearConnectionsOk: 'All connections cleared',
     keyword: 'Filter (Name, Host)',
     color: 'Color',
+    other: 'Other',
     name: 'Name',
     hostPort: 'Host:Port',
     otherProp: 'Other Prop',

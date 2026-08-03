@@ -130,6 +130,7 @@ export default {
     clearConnectionsOk: '已清空全部连接',
     keyword: '模糊筛选（名称、主机）',
     color: '颜色',
+    other: '其他',
     name: '名称',
     hostPort: '主机端口',
     otherProp: '其他属性',
