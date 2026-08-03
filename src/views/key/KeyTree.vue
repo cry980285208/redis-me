@@ -7,6 +7,13 @@ import { useI18n } from 'vue-i18n'
 
 import { shareProvideKey } from '@/types/me-interface'
 import type { RedisKey_Deserialize } from '@/types/tauri-specta'
+import {
+  getConnKeySeparator,
+  joinKeyPath,
+  keyRelativePath,
+  keyUnderFolder,
+  splitKeyPath,
+} from '@/utils/conn'
 import { redisKeyId, sameRedisKey } from '@/utils/redis-key'
 import { meDeleteKey, TREE_KEY_ID_PREFIX } from '@/utils/util'
 
@@ -29,6 +36,8 @@ function favIdPrefix(favPath: string): string {
 const { t } = useI18n()
 const share = inject(shareProvideKey)!
 const canEdit = computed(() => !share.readonly)
+/** 当前连接的树形键分隔符（默认 `:`） */
+const keySep = computed(() => getConnKeySeparator(share.conn))
 
 defineExpose({ setCurrentKey, clearChecksAndEmit })
 const emit = defineEmits([
@@ -299,10 +308,11 @@ function isUnderFolder(key: string, folderKey: string): boolean {
   if (folderKey.startsWith(FAV_ID_MARK)) {
     return key.startsWith(folderKey + '\0')
   }
-  if (key.startsWith(folderKey + ':')) return true
+  const sep = keySep.value
+  if (keyUnderFolder(key, folderKey, sep)) return true
   if (key.startsWith(TREE_KEY_ID_PREFIX)) {
     const redisKey = key.slice(TREE_KEY_ID_PREFIX.length)
-    return redisKey === folderKey || redisKey.startsWith(folderKey + ':')
+    return keyUnderFolder(redisKey, folderKey, sep)
   }
   return false
 }
@@ -374,15 +384,15 @@ function buildTree(keyList: RedisKey_Deserialize[], trim = '', idPrefix = '') {
     return m
   }
 
+  const sep = keySep.value
   keyList.forEach(rk => {
     // trim 时只展示相对路径段，叶子仍挂完整 redisKey
     let pathForParts = rk.key
-    if (trim && rk.key.startsWith(trim + ':')) {
-      pathForParts = rk.key.slice(trim.length + 1)
-    } else if (trim && rk.key === trim) {
-      pathForParts = ''
+    if (trim) {
+      const rel = keyRelativePath(rk.key, trim, sep)
+      if (rel !== null) pathForParts = rel
     }
-    const parts = pathForParts === '' ? [''] : pathForParts.split(/:+/)
+    const parts = pathForParts === '' ? [''] : splitKeyPath(pathForParts, sep)
     let nowLevel = root
     parts.forEach((part, index) => {
       // 叶子节点：hepengju 这种无分隔符的键直接作为叶子
@@ -393,12 +403,12 @@ function buildTree(keyList: RedisKey_Deserialize[], trim = '', idPrefix = '') {
         return
       }
 
-      // hepengju: / hepengju:string；文件夹 id 仍用完整路径，便于展开定位
+      // 文件夹 id 仍用完整路径（单 sep 拼接），便于展开定位
       const folders = folderMapOf(nowLevel)
       let node = folders.get(part)
       if (!node) {
         const fullParts = trim ? [trim, ...parts.slice(0, index + 1)] : parts.slice(0, index + 1)
-        node = { id: idPrefix + fullParts.join(':'), label: part, children: [] }
+        node = { id: idPrefix + joinKeyPath(fullParts, sep), label: part, children: [] }
         nowLevel.push(node)
         folders.set(part, node)
       }
@@ -485,10 +495,11 @@ function checkChange() {
 
 /** 定位键时优先落在最长匹配的已加载收藏目录下 */
 function resolveFavPathForKey(key: string): string | null {
+  const sep = keySep.value
   let best: string | null = null
   for (const g of props.folderKeyGroups) {
     if (!g.loaded) continue
-    if (key === g.path || key.startsWith(g.path + ':')) {
+    if (keyUnderFolder(key, g.path, sep)) {
       if (!best || g.path.length > best.length) best = g.path
     }
   }
@@ -497,6 +508,7 @@ function resolveFavPathForKey(key: string): string | null {
 
 // 设置选中节点并滚动到视口中间（新建键 / 键值页定位复用）
 function setCurrentKey(redisKey: RedisKey_Deserialize) {
+  const sep = keySep.value
   const favPath = useFolderGroups.value ? resolveFavPathForKey(redisKey.key) : null
   const idPrefix = favPath ? favIdPrefix(favPath) : ''
   const nodeId = idPrefix + TREE_KEY_ID_PREFIX + redisKey.key
@@ -506,22 +518,17 @@ function setCurrentKey(redisKey: RedisKey_Deserialize) {
   if (favPath) {
     parentIds.push(favRootTreeId(favPath))
     if (props.keyShowTree) {
-      const rel =
-        redisKey.key === favPath
-          ? ''
-          : redisKey.key.startsWith(favPath + ':')
-            ? redisKey.key.slice(favPath.length + 1)
-            : redisKey.key
-      const parts = rel === '' ? [] : rel.split(/:+/)
+      const rel = keyRelativePath(redisKey.key, favPath, sep)
+      const parts = rel === null || rel === '' ? [] : splitKeyPath(rel, sep)
       for (let i = 0; i < parts.length - 1; i++) {
-        const folderPath = favPath + ':' + parts.slice(0, i + 1).join(':')
+        const folderPath = joinKeyPath([favPath, ...parts.slice(0, i + 1)], sep)
         parentIds.push(idPrefix + folderPath)
       }
     }
   } else {
-    const parts = redisKey.key.split(/:+/)
+    const parts = splitKeyPath(redisKey.key, sep)
     for (let i = 0; i < parts.length - 1; i++) {
-      parentIds.push(parts.slice(0, i + 1).join(':'))
+      parentIds.push(joinKeyPath(parts.slice(0, i + 1), sep))
     }
   }
   if (parentIds.length > 0) {

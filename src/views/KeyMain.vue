@@ -18,6 +18,7 @@ import { useI18n } from 'vue-i18n'
 import { MeSelectUpDownIcon } from '@/components/MeSelectUpDownIcon'
 import { shareProvideKey, connUiProvideKey } from '@/types/me-interface'
 import type { RedisDB, RedisKey_Deserialize, ScanCursor } from '@/types/tauri-specta'
+import { folderKeyPrefix, folderMatchExpr, getConnKeySeparator } from '@/utils/conn'
 import {
   useFavorites,
   useFavoriteFolders,
@@ -321,7 +322,10 @@ function onKeyListRefreshHotkey(e: KeyboardEvent) {
 }
 
 // 搜索模式：关闭完全匹配时 buildScanPattern 补 * 后 SCAN；开启时原样 EXISTS
-const match = computed(() => buildScanPattern(keyword.value, exact.value, loadFolder.value))
+const keySep = computed(() => getConnKeySeparator(share.conn))
+const match = computed(() =>
+  buildScanPattern(keyword.value, exact.value, loadFolder.value, keySep.value),
+)
 
 /** Redis SCAN COUNT / 自动续扫阈值 / 进度估算：均取 settings.keyScanCount */
 const SCAN_FETCH_COUNT = computed(() => meTauri.settings.keyScanCount as number)
@@ -600,7 +604,7 @@ function chooseKey(redisKey: RedisKey_Deserialize): void {
 }
 
 function chooseFolder(folder: string): void {
-  keyPrefix.value = folder + ':'
+  keyPrefix.value = folderKeyPrefix(folder, keySep.value)
 }
 
 function contextKey(command: string, redisKey: RedisKey_Deserialize): void {
@@ -640,7 +644,7 @@ function contextFolder(command: string, folder: string): void {
   if (command === 'refreshKey') {
     void scanKey(false, false)
   } else if (command === 'addKey') {
-    keyPrefix.value = folder + ':'
+    keyPrefix.value = folderKeyPrefix(folder, keySep.value)
     addKey()
   } else if (command === 'copyFolder') {
     meCopy(folder)
@@ -743,12 +747,10 @@ function addKeyOk(redisKey: RedisKey_Deserialize): void {
 
 const keyBatchRef = useTemplateRef<InstanceType<typeof KeyBatch>>('keyBatchRef')
 function deleteFolder(folder: string): void {
-  const matchExpr = folder === '*' ? '*' : folder + ':*'
-  keyBatchRef.value?.open({ match: matchExpr, keyList: [] }, 'delete')
+  keyBatchRef.value?.open({ match: folderMatchExpr(folder, keySep.value), keyList: [] }, 'delete')
 }
 function exportFolder(folder: string): void {
-  const matchExpr = folder === '*' ? '*' : folder + ':*'
-  keyBatchRef.value?.open({ match: matchExpr, keyList: [] }, 'export')
+  keyBatchRef.value?.open({ match: folderMatchExpr(folder, keySep.value), keyList: [] }, 'export')
 }
 
 function batchKeyOk(mode: string): void {
@@ -820,7 +822,7 @@ onUnmounted(() => tauriUnlisten())
 
 const keyMemoryRef = useTemplateRef<InstanceType<typeof KeyMemory>>('keyMemoryRef')
 function keyMemory(folder: string): void {
-  keyMemoryRef.value?.open({ match: folder + ':*' })
+  keyMemoryRef.value?.open({ match: folderMatchExpr(folder, keySep.value) })
 }
 
 // 键显示类型: tree/list; 树形列表排序方式: 字母排序/数量排序

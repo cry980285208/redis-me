@@ -1,4 +1,5 @@
 import type { ConnConfig } from '@/types/tauri-specta'
+import { DEFAULT_KEY_SEPARATOR } from '@/utils/conn'
 
 /** 本地 store / 旧版数据：字段可能缺失，或含已迁移的扁平哨兵字段 */
 export type ConnFromStore = { [K in keyof ConnConfig]?: ConnConfig[K] } & Record<string, unknown>
@@ -51,6 +52,18 @@ export function checkConnList(connList: ConnFromStore[]): void {
         }
         if (Object.keys(cleaned).length) meta['commandMap'] = cleaned
         else delete meta['commandMap']
+      }
+    }
+
+    // 树形键分隔符：非字符串删除；空 / 默认值不落库
+    const keySeparator = meta['keySeparator']
+    if (keySeparator !== undefined) {
+      if (typeof keySeparator !== 'string') {
+        delete meta['keySeparator']
+      } else {
+        const sep = keySeparator.trim()
+        if (!sep || sep === DEFAULT_KEY_SEPARATOR) delete meta['keySeparator']
+        else meta['keySeparator'] = sep
       }
     }
 

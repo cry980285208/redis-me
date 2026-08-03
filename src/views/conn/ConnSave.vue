@@ -9,10 +9,12 @@ import { shareProvideKey, type UiConn } from '@/types/me-interface'
 import {
   getConnCommandMap,
   getConnGroup,
+  getConnKeySeparator,
   getConnUiMode,
   normalizeGroupName,
   setConnCommandMap,
   setConnGroup,
+  setConnKeySeparator,
   setConnUiMode,
 } from '@/utils/conn'
 import { meCommands, PREDEFINE_COLORS, meRandomString, meOk, meErr, meWarn } from '@/utils/util'
@@ -327,16 +329,18 @@ const connMinimal = computed({
   set: (v: boolean) => setConnUiMode(form as UiConn, v ? 'minimal' : 'normal'),
 })
 
-// 高级选项：CONFIG 命令映射（存 meta.commandMap）
+// 高级选项：键分隔符（meta.keySeparator）+ CONFIG 命令映射（meta.commandMap）
 const advancedVisible = ref(false)
-const advancedForm = reactive({ configMapped: '' })
+const advancedForm = reactive({ keySeparator: ':', configMapped: '' })
 
 function openAdvanced() {
+  advancedForm.keySeparator = getConnKeySeparator(form as UiConn)
   advancedForm.configMapped = getConnCommandMap(form as UiConn).config ?? ''
   advancedVisible.value = true
 }
 
 function applyAdvanced() {
+  setConnKeySeparator(form as UiConn, advancedForm.keySeparator)
   const mapped = advancedForm.configMapped.trim()
   setConnCommandMap(form as UiConn, mapped ? { config: mapped } : {})
   advancedVisible.value = false
@@ -651,6 +655,13 @@ function applyAdvanced() {
       destroy-on-close
       align-center>
       <el-form label-position="right" :label-width="t('conn.advancedLabelWidth')">
+        <el-form-item :label="t('conn.keySeparator')">
+          <el-input
+            v-model="advancedForm.keySeparator"
+            :placeholder="t('conn.keySeparatorPlaceholder')"
+            style="width: 120px" />
+          <div class="conn-advanced-hint">{{ t('conn.keySeparatorTip') }}</div>
+        </el-form-item>
         <el-form-item :label="t('conn.commandMap')">
           <div class="conn-command-map-row">
             <span class="conn-command-map-cmd">CONFIG</span>

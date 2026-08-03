@@ -218,6 +218,10 @@ export default {
     nameHint: '[Optional] Automatically generated',
     advancedTitle: 'Advanced',
     advancedLabelWidth: '120px',
+    keySeparator: 'Key Separator',
+    keySeparatorPlaceholder: ':',
+    keySeparatorTip:
+      'Tree view splits namespaces by this separator; default : ; consecutive separators count as one (e.g. user::id)',
     commandMap: 'Command Map',
     commandMapCmdHint: 'Original command, e.g. config',
     commandMapMappedHint: 'Mapped command name',
