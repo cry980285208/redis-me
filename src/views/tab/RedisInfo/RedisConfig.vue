@@ -1,16 +1,6 @@
 <script setup lang="ts">
 import { sortBy } from 'lodash'
-import {
-  computed,
-  inject,
-  nextTick,
-  onMounted,
-  reactive,
-  ref,
-  useTemplateRef,
-  watch,
-  watchEffect,
-} from 'vue'
+import { computed, inject, nextTick, reactive, ref, useTemplateRef, watch, watchEffect } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import MeWebsite from '@/components/MeWebsite.vue'
@@ -44,16 +34,31 @@ interface ConfigTableRow {
 }
 const dataList = ref<ConfigTableRow[]>([])
 
-// 文件格式的配置文件（使用 Vite ?raw 导入，打包时会内联到 JS 中）
 const serverType = computed(() => (share.capabilities.isValkey ? 'Valkey' : 'Redis'))
 
-// 动态加载配置文件
+// 构建期枚举 assets/conf/*.conf：增删文件后下拉列表自动同步，无需再维护版本常量
+const confModules = import.meta.glob('../../../assets/conf/*.conf', {
+  query: '?raw',
+  import: 'default',
+}) as Record<string, () => Promise<string>>
+
+function confVersionFromPath(path: string) {
+  const file = path.slice(path.lastIndexOf('/') + 1)
+  return file.replace(/\.conf$/, '')
+}
+
+const confLoaderByVersion = Object.fromEntries(
+  Object.entries(confModules).map(([path, load]) => [confVersionFromPath(path), load]),
+) as Record<string, () => Promise<string>>
+
 const configCache: Record<string, string | null> = {}
 async function loadConfigFile(version: string) {
   if (configCache[version]) return configCache[version]
+  const load = confLoaderByVersion[version]
+  if (!load) return null
 
   try {
-    const { default: content } = await import(`../../assets/conf/${version}.conf?raw`)
+    const content = await load()
     configCache[version] = content
     return content
   } catch (e: unknown) {
@@ -62,33 +67,30 @@ async function loadConfigFile(version: string) {
   }
 }
 
-// 配置文件列表（手动维护，与 src/assets/conf/ 目录保持一致）
-const allConfigVersions = [
-  'Redis4.0',
-  'Redis5.0',
-  'Redis6.2',
-  'Redis7.0',
-  'Redis7.2',
-  'Redis7.4',
-  'Redis8.0',
-  'Redis8.2',
-  'Redis8.4',
-  'Redis8.6',
-  'Redis8.8',
-  'Valkey7.2',
-  'Valkey8.0',
-  'Valkey8.1',
-  'Valkey9.0',
-]
+/** 从 Redis8.10 / Valkey9.0.1 等标签取出数字段，按主.次.修订比较（避免 8.10 排在 8.2 后） */
+function parseConfigVersionNums(label: string): number[] {
+  const m = label.match(/(\d+(?:\.\d+)*)/)
+  return m ? m[1].split('.').map(n => Number(n) || 0) : [0]
+}
 
-const dirConfigList = ref<string[]>([])
-onMounted(() => {
-  dirConfigList.value = [...allConfigVersions].sort().reverse()
-})
+function compareConfigVersionLabel(a: string, b: string): number {
+  const pa = parseConfigVersionNums(a)
+  const pb = parseConfigVersionNums(b)
+  const len = Math.max(pa.length, pb.length)
+  for (let i = 0; i < len; i++) {
+    const da = pa[i] ?? 0
+    const db = pb[i] ?? 0
+    if (da !== db) return da - db
+  }
+  return a.localeCompare(b)
+}
 
-const configVersionList = computed(() =>
-  dirConfigList.value.filter(d => d.startsWith(serverType.value)),
-)
+function sortConfigVersionsDesc(versions: string[]): string[] {
+  return [...versions].sort((a, b) => compareConfigVersionLabel(b, a))
+}
+
+const dirConfigList = sortConfigVersionsDesc(Object.keys(confLoaderByVersion))
+const configVersionList = computed(() => dirConfigList.filter(d => d.startsWith(serverType.value)))
 const configVersion = ref('') // 版本
 const configRaw = ref('')
 
@@ -114,10 +116,12 @@ function handleCommand(command: string) {
 // Json格式的默认配置
 const confDict = computed(() => (share.capabilities.isValkey ? valkeyConfDict : redisConfDict))
 
-const dictVersionList = Object.keys(confDict.value).reverse()
+const dictVersionList = sortConfigVersionsDesc(Object.keys(confDict.value))
 function getDefaultVersion() {
+  // 选不超过当前服务版本的最新默认值字典（数值比较，避免 8.10 / 8.2 字典序误判）
+  const current = serverType.value + props.initVersion
   for (const version of dictVersionList) {
-    if (serverType.value + props.initVersion > version) {
+    if (compareConfigVersionLabel(current, version) >= 0) {
       return version
     }
   }
