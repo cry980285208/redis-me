@@ -727,7 +727,7 @@ function folderIconName(node: TreeNode): string {
             <me-icon icon="el-icon-refresh" :name="t('keyTree.reloadFolder')" />
           </el-dropdown-item>
           <el-dropdown-item v-if="isContextFavoriteFolderRoot" command="reloadAllFolder">
-            <me-icon icon="me-icon-load-all" :name="t('keyTree.reloadAllFolder')" />
+            <me-icon icon="me-icon-search-all" :name="t('keyTree.reloadAllFolder')" />
           </el-dropdown-item>
 
           <el-dropdown-item v-if="canEdit" command="addKey" :divided="isContextFavoriteFolderRoot">
@@ -759,12 +759,17 @@ function folderIconName(node: TreeNode): string {
               " />
           </el-dropdown-item>
 
-          <!-- 仅普通模式：只加载该目录 -->
+          <!-- 仅普通模式：只加载该目录 / 加载目录所有（后者扫完全部键） -->
           <el-dropdown-item
             v-if="!favoriteMode && !isContextFavoriteFolderRoot"
             command="loadFolder"
             divided>
             <me-icon icon="el-icon-search" :name="t('keyTree.loadFolder')" />
+          </el-dropdown-item>
+          <el-dropdown-item
+            v-if="!favoriteMode && !isContextFavoriteFolderRoot"
+            command="loadFolderAll">
+            <me-icon icon="me-icon-search-all" :name="t('keyTree.loadFolderAll')" />
           </el-dropdown-item>
           <!-- 收藏模式（含根）在上方项后分隔；普通模式已有「只加载」分隔 -->
           <el-dropdown-item

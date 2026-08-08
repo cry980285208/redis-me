@@ -531,6 +531,7 @@ export default {
     addKey: 'Add Key',
     copyFolder: 'Copy Folder',
     loadFolder: 'Load Folder',
+    loadFolderAll: 'Load All in Folder',
     memoryUsage: 'Memory Usage',
     deleteFolder: 'Delete Keys',
     exportFolder: 'Export Keys',

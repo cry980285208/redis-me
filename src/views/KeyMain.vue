@@ -647,15 +647,18 @@ function contextFolder(command: string, folder: string): void {
     addKey()
   } else if (command === 'copyFolder') {
     meCopy(folder)
-  } else if (command === 'loadFolder') {
-    loadFolder.value = true
-    try {
-      exact.value = false
-      keyword.value = folder
-      scanKey(false, false)
-    } finally {
-      loadFolder.value = false
-    }
+  } else if (command === 'loadFolder' || command === 'loadFolderAll') {
+    // 须 await：loadFolder 标志要覆盖整轮 SCAN，否则续扫会退回 *keyword* 模式
+    void (async () => {
+      loadFolder.value = true
+      try {
+        exact.value = false
+        keyword.value = folder
+        await scanKey(false, command === 'loadFolderAll')
+      } finally {
+        loadFolder.value = false
+      }
+    })()
   } else if (command === 'memoryUsage') {
     keyMemory(folder)
   } else if (command === 'deleteFolder') {

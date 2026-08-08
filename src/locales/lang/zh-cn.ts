@@ -520,6 +520,7 @@ export default {
     addKey: '添加新键',
     copyFolder: '复制路径',
     loadFolder: '只加载该目录',
+    loadFolderAll: '加载目录所有',
     memoryUsage: '目录内存分析',
     deleteFolder: '批量删除键',
     exportFolder: '批量导出键',
