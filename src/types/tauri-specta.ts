@@ -39,6 +39,7 @@ export const commands = {
 	fieldDel: (id: string, param: RedisFieldDel_Deserialize) => typedError<null, string>(__TAURI_INVOKE("field_del", { id, param })),
 	zsetRank: (id: string, param: RedisZsetRank_Deserialize) => typedError<RedisZsetRankResult, string>(__TAURI_INVOKE("zset_rank", { id, param })),
 	zsetRange: (id: string, param: RedisZsetRange_Deserialize) => typedError<RedisZsetRangeItem[], string>(__TAURI_INVOKE("zset_range", { id, param })),
+	arLastItems: (id: string, param: RedisArLastItems_Deserialize) => typedError<RedisArLastItemsItem[], string>(__TAURI_INVOKE("ar_last_items", { id, param })),
 	objectInfo: (id: string, key: RedisKey_Deserialize) => typedError<RedisObjectInfo, string>(__TAURI_INVOKE("object_info", { id, key })),
 	executeCommand: (id: string, param: RedisCommand) => typedError<string, string>(__TAURI_INVOKE("execute_command", { id, param })),
 	aclUsers: (id: string) => typedError<string[], string>(__TAURI_INVOKE("acl_users", { id })),
@@ -236,14 +237,41 @@ export type FiledScanMeta = {
 	valueByteLimit: number | null,
 	valuePreviewBytes: number | null,
 	forceFullValue: boolean | null,
-	/**  List LRANGE 下界；空则 0 */
+	/**  List LRANGE / Array ARSCAN 下界；空则 0 */
 	listMinIndex: number | null,
-	/**  List LRANGE 上界；空则 len-1 */
+	/**  List LRANGE 上界（空则 len-1）；Array ARSCAN 上界（空则索引最大值） */
 	listMaxIndex: number | null,
 	/**  List 扫描方向：true 从 max 向 min，false 从 min 向 max */
 	listDesc: boolean | null,
 	/**  Stream 扫描方向：true 从 max 向 min（XREVRANGE），false 从 min 向 max（XRANGE） */
 	streamDesc: boolean | null,
+};
+
+export type RedisArLastItems = RedisArLastItems_Serialize | RedisArLastItems_Deserialize;
+
+export type RedisArLastItemsItem = {
+	/**  结果序位（0 起，非 Redis 索引；ARLASTITEMS 不返回槽位） */
+	index: number,
+	/**  None = Redis null（空槽）；Some = 按 val_fmt 编码后的值 */
+	value: string | null,
+};
+
+export type RedisArLastItems_Deserialize = {
+	key: RedisKey_Deserialize,
+	/**  返回数量 */
+	count: number,
+	/**  true: REV（最近优先）；false: 默认插入顺序中最旧优先 */
+	reverse: boolean,
+	valFmt: BytesFormat | null,
+};
+
+export type RedisArLastItems_Serialize = {
+	key: RedisKey_Serialize,
+	/**  返回数量 */
+	count: number,
+	/**  true: REV（最近优先）；false: 默认插入顺序中最旧优先 */
+	reverse: boolean,
+	valFmt: BytesFormat | null,
 };
 
 export type RedisBatchKey = RedisBatchKey_Serialize | RedisBatchKey_Deserialize;
@@ -373,6 +401,8 @@ export type RedisFieldAdd_Deserialize = {
 	ttl: number,
 	value: string,
 	listPushMethod: string,
+	/**  Array 写入方式：arset（指定索引）/ arinsert（顺序追加） */
+	arrayWriteMethod: string,
 	fieldValueList: RedisFieldValue[],
 	streamId: string,
 	/**  仅 Redis 顶层键名（`key`）如何解码为字节；不含 Hash/Stream 的字段名 */
@@ -389,6 +419,8 @@ export type RedisFieldAdd_Serialize = {
 	ttl: number,
 	value: string,
 	listPushMethod: string,
+	/**  Array 写入方式：arset（指定索引）/ arinsert（顺序追加） */
+	arrayWriteMethod: string,
 	fieldValueList: RedisFieldValue[],
 	streamId: string,
 	/**  仅 Redis 顶层键名（`key`）如何解码为字节；不含 Hash/Stream 的字段名 */

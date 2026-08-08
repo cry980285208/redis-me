@@ -85,6 +85,8 @@ pub trait MeClient: Send + Sync {
 
     fn zset_range(&self, param: RedisZsetRange) -> AnyResult<Vec<RedisZsetRangeItem>>;
 
+    fn ar_last_items(&self, param: RedisArLastItems) -> AnyResult<Vec<RedisArLastItemsItem>>;
+
     fn object_info(&self, key: RedisKey) -> AnyResult<RedisObjectInfo>;
 
     fn execute_command(&self, param: RedisCommand) -> AnyResult<String>;
@@ -506,8 +508,26 @@ fn field_scan_list_page(
 /// Array 索引上界：Redis `arrayParseIndex` 拒绝 UINT64_MAX（仅 ARSEEK 例外），故用 MAX-1。
 const ARRAY_INDEX_MAX: u64 = u64::MAX - 1;
 
+/// Array 扫描区间：复用 FiledScanMeta.list_min/max_index（与 List 工具栏同一套输入）；负值按 0 / MAX 处理。
+fn resolve_array_scan_bounds(param: &FieldScanParam) -> Option<(u64, u64)> {
+    let meta = param.meta.as_ref();
+    let min = match meta.and_then(|m| m.list_min_index) {
+        Some(v) if v >= 0 => v as u64,
+        _ => 0,
+    };
+    let max = match meta.and_then(|m| m.list_max_index) {
+        Some(v) if v >= 0 => (v as u64).min(ARRAY_INDEX_MAX),
+        _ => ARRAY_INDEX_MAX,
+    };
+    if min > max {
+        None
+    } else {
+        Some((min, max))
+    }
+}
+
 /// Array ARSCAN 分页：只返回已填充槽；`now_cursor` 存下一页起始索引（非 HSCAN cursor）。
-/// 不调 ARLEN：`end` 用 ARRAY_INDEX_MAX；LIMIT 多扫 1 条作 peek（同 Stream COUNT+1），多出的不返回，用于判断是否还有下一页。
+/// 不调 ARLEN：`end` 用区间上界或 ARRAY_INDEX_MAX；LIMIT 多扫 1 条作 peek（同 Stream COUNT+1）。
 fn field_scan_array_page(
     conn: &mut MutexGuard<impl Commands>,
     key: &RedisKey,
@@ -516,12 +536,20 @@ fn field_scan_array_page(
     cc: &mut ScanCursor,
 ) -> AnyResult<Vec<RedisListItem>> {
     let count = field_scan_batch_count(param.count);
-    let start = cc.now_cursor;
+    let Some((range_min, range_max)) = resolve_array_scan_bounds(param) else {
+        cc.finished = true;
+        return Ok(Vec::new());
+    };
+    let start = cc.now_cursor.max(range_min);
+    if start > range_max {
+        cc.finished = true;
+        return Ok(Vec::new());
+    }
 
     let raw: Value = redis::cmd("ARSCAN")
         .arg(key)
         .arg(start)
-        .arg(ARRAY_INDEX_MAX)
+        .arg(range_max)
         .arg("LIMIT")
         .arg(count + 1)
         .query(conn)?;
@@ -993,16 +1021,27 @@ pub fn field_add0(
                 serde_json::from_str(&param.value).with_context(|| "json parse error")?;
             conn.json_set(&key, "$", &value)?
         }
-        // Array：ARSET index value（field_key=索引）；见 is_array_type 升级注释
+        // Array：arinsert→ARINSERT；否则 ARSET（field_key=索引）；见 is_array_type 升级注释
         _ if is_array_type(&key_type) => {
-            for f in &fv_list {
-                let idx = parse_array_index(&f.field_key)?;
-                let val = parse_bytes(&f.field_value, &val_fmt)?;
-                let _: i64 = redis::cmd("ARSET")
-                    .arg(&key)
-                    .arg(idx)
-                    .arg(&val)
-                    .query(&mut conn)?;
+            let arinsert = param.array_write_method.eq_ignore_ascii_case("arinsert");
+            if arinsert {
+                let mut cmd = redis::cmd("ARINSERT");
+                cmd.arg(&key);
+                for f in &fv_list {
+                    let val = parse_bytes(&f.field_value, &val_fmt)?;
+                    cmd.arg(&val);
+                }
+                let _: i64 = cmd.query(&mut conn)?;
+            } else {
+                for f in &fv_list {
+                    let idx = parse_array_index(&f.field_key)?;
+                    let val = parse_bytes(&f.field_value, &val_fmt)?;
+                    let _: i64 = redis::cmd("ARSET")
+                        .arg(&key)
+                        .arg(idx)
+                        .arg(&val)
+                        .query(&mut conn)?;
+                }
             }
         }
         _ => {
@@ -1363,6 +1402,51 @@ pub fn zset_range0(
             score: s,
         })
         .collect())
+}
+
+/// Array ARLASTITEMS：最近插入的元素（REV 时最近优先）。
+/// 官方 reply 允许 string | null；稀疏 ARMSET 键可能含空槽 null（与 ARINSERT/ARRING 场景不同）。
+pub fn ar_last_items0(
+    mut conn: MutexGuard<impl Commands>,
+    param: RedisArLastItems,
+) -> AnyResult<Vec<RedisArLastItemsItem>> {
+    let key: RedisKey = param.key;
+    let key_type: ValueType = conn.key_type(&key)?;
+    if !is_array_type(&key_type) {
+        handle_other_value_type(&key_type, &key)?;
+        unreachable!()
+    }
+    let val_fmt = param.val_fmt.as_ref().cloned().unwrap_or_default();
+    let count = if param.count == 0 { 10 } else { param.count };
+    let mut cmd = redis::cmd("ARLASTITEMS");
+    cmd.arg(&key).arg(count);
+    if param.reverse {
+        cmd.arg("REV");
+    }
+    let raw: Value = cmd.query(&mut conn)?;
+    let arr = match raw {
+        Value::Nil => Vec::new(),
+        Value::Array(a) => a,
+        other => bail!(AppError::Internal {
+            message: format!("unexpected ARLASTITEMS reply: {:?}", other)
+        }),
+    };
+    let mut items = Vec::with_capacity(arr.len());
+    for (i, entry) in arr.into_iter().enumerate() {
+        let value = match entry {
+            Value::Nil => None,
+            v => {
+                let bytes: Vec<u8> = FromRedisValue::from_redis_value(v)
+                    .map_err(|e| anyhow::anyhow!("ARLASTITEMS value parse: {}", e))?;
+                Some(format_bytes(&bytes, &val_fmt))
+            }
+        };
+        items.push(RedisArLastItemsItem {
+            index: i as i64,
+            value,
+        });
+    }
+    Ok(items)
 }
 
 pub fn publish0(

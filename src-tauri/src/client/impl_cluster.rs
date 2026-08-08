@@ -261,6 +261,10 @@ impl MeClient for MeCluster {
         zset_range0(self.get_conn()?, param)
     }
 
+    fn ar_last_items(&self, param: RedisArLastItems) -> AnyResult<Vec<RedisArLastItemsItem>> {
+        ar_last_items0(self.get_conn()?, param)
+    }
+
     fn object_info(&self, key: RedisKey) -> AnyResult<RedisObjectInfo> {
         object_info0(self.get_conn()?, key)
     }

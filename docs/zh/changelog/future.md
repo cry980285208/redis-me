@@ -2,7 +2,7 @@
 
 - Redis 8.8 新类型 Array 的支持（方案见 `plans/18_array-type-support.md`）
   - 18.1 基础读写（ARSCAN / ARGET / ARSET / ARDEL）✅️
-  - 18.2 索引范围 / ARLASTITEMS / ARINSERT
+  - 18.2 索引范围 / ARLASTITEMS / ARINSERT ✅️
   - 18.3 ARGREP / AROP / ARINFO / ARDELRANGE
 - 研究下怎么上线Linux的应用商店
 - Vector Set 类型的支持

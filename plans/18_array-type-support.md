@@ -1,6 +1,6 @@
 # 18. Redis 8.8 Array 类型支持
 
-> **实现状态**：18.1 已提交；18.2 / 18.3 待做
+> **实现状态**：18.1 / 18.2 已提交；18.3 待做
 
 > **关联 backlog**：`docs/zh/changelog/future.md`（Future 首条）  
 > **关键代码**：`src-tauri/src/client/client_trait.rs`、`src-tauri/src/utils/util.rs`、`src/utils/util.ts`、`src/views/tab/RedisValue.vue`、`src/views/ext/FieldAdd.vue`、`src/views/ext/FieldSet.vue`、`src/views/KeyMain.vue`

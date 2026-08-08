@@ -81,6 +81,7 @@ import {
   sleep,
 } from '@/utils/util'
 import ObjectInfo from '@/views/ext/ObjectInfo.vue'
+import TableArLastItems from '@/views/ext/TableArLastItems.vue'
 import TableGroup from '@/views/ext/TableGroup.vue'
 import TableHashKeys from '@/views/ext/TableHashKeys.vue'
 import TableZsetRange from '@/views/ext/TableZsetRange.vue'
@@ -1543,6 +1544,11 @@ const zsetRangeRef = useTemplateRef('zsetRangeRef')
 function showZsetRange() {
   zsetRangeRef.value?.open(IPC_WIRE_FORMAT, displayBytesFormat.value)
 }
+
+const arLastItemsRef = useTemplateRef('arLastItemsRef')
+function showArLastItems() {
+  arLastItemsRef.value?.open(IPC_WIRE_FORMAT, displayBytesFormat.value)
+}
 // #endregion
 
 // #region 底部信息栏（内存 / 条数 / 槽位）
@@ -1850,7 +1856,7 @@ onUnmounted(() => {
                 clearable />
             </div>
 
-            <div v-if="listType" class="list-range-inputs">
+            <div v-if="listType || arrayType" class="list-range-inputs">
               <el-input
                 @keyup.enter="restartFieldScan()"
                 v-model.trim="listIndexMin"
@@ -1915,6 +1921,13 @@ onUnmounted(() => {
                 @click="showZsetRange"
                 style="margin-left: 10px">
                 {{ t('redisValue.zsetRange') }}
+              </me-button>
+              <me-button
+                v-if="arrayType"
+                icon="me-icon-rank"
+                @click="showArLastItems"
+                style="margin-left: 10px">
+                {{ t('redisValue.arLastItems') }}
               </me-button>
               <el-dropdown
                 v-if="(listType || setType || zsetType) && canEdit"
@@ -2287,6 +2300,7 @@ onUnmounted(() => {
     <TableHashKeys ref="hashKeysRef" />
     <!-- ZSet TopN 范围查询 -->
     <TableZsetRange ref="zsetRangeRef" />
+    <TableArLastItems ref="arLastItemsRef" />
     <!-- 值编辑器快捷键说明 -->
     <ValueShortcut ref="valueShortcutRef" />
     <!-- 命令帮助 -->

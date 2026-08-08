@@ -53,6 +53,12 @@ const initForm = computed(() => ({
     { label: t('fieldAdd.append'), value: 'rpush' },
     { label: t('fieldAdd.prepend'), value: 'lpush' },
   ],
+  /** Array：arset 指定索引 / arinsert 顺序追加 */
+  arrayWriteMethod: 'arset',
+  arrayWriteOptions: [
+    { label: t('fieldAdd.arrayWriteArset'), value: 'arset' },
+    { label: t('fieldAdd.arrayWriteArinsert'), value: 'arinsert' },
+  ],
   fieldValueList: [{ fieldKey: '', fieldValue: '', fieldScore: 0, fieldTtl: -1 }],
   keyFmt: 'utf8' as ViewBytesFormat,
   valFmt: 'utf8' as ViewBytesFormat,
@@ -61,6 +67,9 @@ const form = ref(cloneDeep(toRaw(initForm.value)))
 
 const stringOrJsonType = computed(() => form.value.type === 'string' || form.value.type === 'json')
 const jsonType = computed(() => form.value.type === 'json')
+const arrayArsetMode = computed(
+  () => form.value.type === 'array' && form.value.arrayWriteMethod !== 'arinsert',
+)
 
 const rules = computed(() => ({
   'key.key': [{ required: true, message: t('fieldAdd.keyRequired') }],
@@ -146,8 +155,8 @@ function submit() {
     let fieldValueList = form.value.fieldValueList
     let key: RedisKey_Deserialize = form.value.key
 
-    // Array 索引须为十进制明文，不能走值编码 wire（否则后端 parse_array_index 失败）
-    if (form.value.type === 'array') {
+    // Array ARSET：索引须为十进制明文，不能走值编码 wire
+    if (form.value.type === 'array' && form.value.arrayWriteMethod !== 'arinsert') {
       for (const item of form.value.fieldValueList) {
         const idx = String(item.fieldKey ?? '').trim()
         if (!/^\d+$/.test(idx)) {
@@ -162,10 +171,12 @@ function submit() {
       if (form.value.type === 'string') {
         value = meViewToWire(value, valViewFmt)
       }
-      const isArray = form.value.type === 'array'
+      const isArrayArset = form.value.type === 'array' && form.value.arrayWriteMethod !== 'arinsert'
       fieldValueList = form.value.fieldValueList.map(item => ({
         ...item,
-        fieldKey: isArray ? String(item.fieldKey).trim() : meViewToWire(item.fieldKey, valViewFmt),
+        fieldKey: isArrayArset
+          ? String(item.fieldKey).trim()
+          : meViewToWire(item.fieldKey, valViewFmt),
         fieldValue: meViewToWire(item.fieldValue, valViewFmt),
       }))
       fieldValueList.forEach(item => {
@@ -208,7 +219,9 @@ const hint = computed(() => {
     return share.capabilities.httlSupported ? t('fieldAdd.hashHintTtl') : t('fieldAdd.hashHint')
   if (form.value.type === 'zset') return t('fieldAdd.zsetHint')
   if (form.value.type === 'stream') return t('fieldAdd.streamHint')
-  if (form.value.type === 'array') return t('fieldAdd.arrayHint')
+  if (form.value.type === 'array') {
+    return arrayArsetMode.value ? t('fieldAdd.arrayHint') : t('fieldAdd.arrayInsertHint')
+  }
   return ''
 })
 
@@ -299,6 +312,11 @@ function handleKeyTypeChange() {
         <el-segmented v-model="form.listPushMethod" :options="form.listPushOptions" />
       </el-form-item>
 
+      <!-- Array：ARSET 指定索引 / ARINSERT 顺序追加 -->
+      <el-form-item :label="t('fieldAdd.type')" v-if="form.type === 'array'">
+        <el-segmented v-model="form.arrayWriteMethod" :options="form.arrayWriteOptions" />
+      </el-form-item>
+
       <!-- streamId: 仅 stream 类型显示 -->
       <el-form-item :label="t('fieldAdd.streamId')" prop="streamId" v-if="form.type === 'stream'">
         <el-input v-model="form.streamId" clearable />
@@ -322,7 +340,11 @@ function handleKeyTypeChange() {
                   : t('fieldAdd.field')
             "
             style="margin-right: 10px"
-            v-if="form.type === 'hash' || form.type === 'stream' || form.type === 'array'"
+            v-if="
+              form.type === 'hash' ||
+              form.type === 'stream' ||
+              (form.type === 'array' && arrayArsetMode)
+            "
             :validate-event="false" />
           <el-input
             type="text"
