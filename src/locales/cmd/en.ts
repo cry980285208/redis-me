@@ -1,6 +1,24 @@
-import type { CommandHelpRow } from './types'
+export interface CommandHelpRow {
+  key: string
+  title: string
+  group: string
+  summary: string
+  since: string
+  usage: string
+  description?: string
+  /** 只读模式下是否允许执行（由 isReadonlyCommand 派生） */
+  readonly?: boolean
+}
 
 export const enCommands: CommandHelpRow[] = [
+  {
+    key: 'ACL',
+    title: 'ACL',
+    group: 'server',
+    summary: 'A container for Access List Control commands.',
+    since: '6.0.0',
+    usage: 'ACL',
+  },
   {
     key: 'ACL CAT',
     title: 'ACL CAT',
@@ -106,20 +124,158 @@ export const enCommands: CommandHelpRow[] = [
     usage: 'ACL WHOAMI',
   },
   {
-    key: 'ACL',
-    title: 'ACL',
-    group: 'server',
-    summary: 'A container for Access List Control commands.',
-    since: '6.0.0',
-    usage: 'ACL',
-  },
-  {
     key: 'APPEND',
     title: 'APPEND',
     group: 'string',
     summary: "Appends a string to the value of a key. Creates the key if it doesn't exist.",
     since: '2.0.0',
     usage: 'APPEND key value',
+  },
+  {
+    key: 'ARCOUNT',
+    title: 'ARCOUNT',
+    group: 'array',
+    summary: 'Returns the number of non-empty elements in an array.',
+    since: '8.8.0',
+    usage: 'ARCOUNT key',
+  },
+  {
+    key: 'ARDEL',
+    title: 'ARDEL',
+    group: 'array',
+    summary: 'Deletes elements at the specified indices in an array.',
+    since: '8.8.0',
+    usage: 'ARDEL key index [index ...]',
+  },
+  {
+    key: 'ARDELRANGE',
+    title: 'ARDELRANGE',
+    group: 'array',
+    summary: 'Deletes elements in one or more ranges.',
+    since: '8.8.0',
+    usage: 'ARDELRANGE key start end [start end ...]',
+  },
+  {
+    key: 'ARGET',
+    title: 'ARGET',
+    group: 'array',
+    summary: 'Gets the value at an index in an array.',
+    since: '8.8.0',
+    usage: 'ARGET key index',
+  },
+  {
+    key: 'ARGETRANGE',
+    title: 'ARGETRANGE',
+    group: 'array',
+    summary: 'Gets values in a range of indices.',
+    since: '8.8.0',
+    usage: 'ARGETRANGE key start end',
+  },
+  {
+    key: 'ARGREP',
+    title: 'ARGREP',
+    group: 'array',
+    summary: 'Searches array elements in a range using textual predicates.',
+    since: '8.8.0',
+    usage:
+      'ARGREP key start end\n    <EXACT string | MATCH string | GLOB pattern | RE pattern [...]>\n    [AND | OR | LIMIT limit | WITHVALUES | NOCASE [...]]',
+  },
+  {
+    key: 'ARINFO',
+    title: 'ARINFO',
+    group: 'array',
+    summary: 'Returns metadata about an array.',
+    since: '8.8.0',
+    usage: 'ARINFO key [FULL]',
+  },
+  {
+    key: 'ARINSERT',
+    title: 'ARINSERT',
+    group: 'array',
+    summary: 'Inserts one or more values at consecutive indices.',
+    since: '8.8.0',
+    usage: 'ARINSERT key value [value ...]',
+  },
+  {
+    key: 'ARLASTITEMS',
+    title: 'ARLASTITEMS',
+    group: 'array',
+    summary: 'Returns the most recently inserted elements.',
+    since: '8.8.0',
+    usage: 'ARLASTITEMS key count [REV]',
+  },
+  {
+    key: 'ARLEN',
+    title: 'ARLEN',
+    group: 'array',
+    summary: 'Returns the length of an array (max index + 1).',
+    since: '8.8.0',
+    usage: 'ARLEN key',
+  },
+  {
+    key: 'ARMGET',
+    title: 'ARMGET',
+    group: 'array',
+    summary: 'Gets values at multiple indices in an array.',
+    since: '8.8.0',
+    usage: 'ARMGET key index [index ...]',
+  },
+  {
+    key: 'ARMSET',
+    title: 'ARMSET',
+    group: 'array',
+    summary: 'Sets multiple index-value pairs in an array.',
+    since: '8.8.0',
+    usage: 'ARMSET key index value [index value ...]',
+  },
+  {
+    key: 'ARNEXT',
+    title: 'ARNEXT',
+    group: 'array',
+    summary: 'Returns the next index ARINSERT would use.',
+    since: '8.8.0',
+    usage: 'ARNEXT key',
+  },
+  {
+    key: 'AROP',
+    title: 'AROP',
+    group: 'array',
+    summary: 'Performs aggregate operations on array elements in a range.',
+    since: '8.8.0',
+    usage: 'AROP key start end <SUM | MIN | MAX | AND | OR | XOR | MATCH value |\n    USED>',
+  },
+  {
+    key: 'ARRING',
+    title: 'ARRING',
+    group: 'array',
+    summary:
+      'Inserts values into a ring buffer of specified size, wrapping and truncating as needed.',
+    since: '8.8.0',
+    usage: 'ARRING key size value [value ...]',
+  },
+  {
+    key: 'ARSCAN',
+    title: 'ARSCAN',
+    group: 'array',
+    summary: 'Iterates existing elements in a range, returning index-value pairs.',
+    since: '8.8.0',
+    usage: 'ARSCAN key start end [LIMIT limit]',
+  },
+  {
+    key: 'ARSEEK',
+    title: 'ARSEEK',
+    group: 'array',
+    summary: 'Sets the ARINSERT / ARRING cursor to a specific index.',
+    since: '8.8.0',
+    usage: 'ARSEEK key index',
+  },
+  {
+    key: 'ARSET',
+    title: 'ARSET',
+    group: 'array',
+    summary: 'Sets one or more contiguous values starting at an index in an array.',
+    since: '8.8.0',
+    usage: 'ARSET key index value [value ...]',
   },
   {
     key: 'ASKING',
@@ -136,6 +292,70 @@ export const enCommands: CommandHelpRow[] = [
     summary: 'Authenticates the connection.',
     since: '1.0.0',
     usage: 'AUTH [username] password',
+  },
+  {
+    key: 'BACKUP',
+    title: 'BACKUP',
+    group: 'server',
+    summary: 'A container for backup management commands.',
+    since: '8.10.0',
+    usage: 'BACKUP',
+  },
+  {
+    key: 'BACKUP ABORT',
+    title: 'BACKUP ABORT',
+    group: 'server',
+    summary: 'Cancel a backup that has not been sealed yet.',
+    since: '8.10.0',
+    usage: 'BACKUP ABORT',
+  },
+  {
+    key: 'BACKUP CLEANUP',
+    title: 'BACKUP CLEANUP',
+    group: 'server',
+    summary: 'Remove sealed backup files and return to idle.',
+    since: '8.10.0',
+    usage: 'BACKUP CLEANUP',
+  },
+  {
+    key: 'BACKUP HELP',
+    title: 'BACKUP HELP',
+    group: 'server',
+    summary: 'Return helpful text about BACKUP command parameters.',
+    since: '8.10.0',
+    usage: 'BACKUP HELP',
+  },
+  {
+    key: 'BACKUP LIST',
+    title: 'BACKUP LIST',
+    group: 'server',
+    summary: 'List the immutable backup file paths pinned so far.',
+    since: '8.10.0',
+    usage: 'BACKUP LIST',
+  },
+  {
+    key: 'BACKUP SEAL',
+    title: 'BACKUP SEAL',
+    group: 'server',
+    summary: 'Freeze the current backup (BASE + INCR + manifest).',
+    since: '8.10.0',
+    usage: 'BACKUP SEAL',
+  },
+  {
+    key: 'BACKUP START',
+    title: 'BACKUP START',
+    group: 'server',
+    summary: "Start a new backup into the configured 'backupdirname'.",
+    since: '8.10.0',
+    usage: 'BACKUP START',
+  },
+  {
+    key: 'BACKUP STATUS',
+    title: 'BACKUP STATUS',
+    group: 'server',
+    summary: 'Report the current backup state.',
+    since: '8.10.0',
+    usage: 'BACKUP STATUS',
   },
   {
     key: 'BF.ADD',
@@ -285,6 +505,16 @@ export const enCommands: CommandHelpRow[] = [
       'Pops an element from a list, pushes it to another list and returns it. Blocks until an element is available otherwise. Deletes the list if the last element was moved.',
     since: '6.2.0',
     usage: 'BLMOVE source destination <LEFT | RIGHT> <LEFT | RIGHT> timeout',
+  },
+  {
+    key: 'BLMOVEM',
+    title: 'BLMOVEM',
+    group: 'list',
+    summary:
+      'Moves up to (or exactly) a number of elements from one list to another and returns them. Blocks until the elements are available otherwise. Deletes the source list if it becomes empty.',
+    since: '8.10.0',
+    usage:
+      'BLMOVEM source destination <LEFT | RIGHT> <LEFT | RIGHT> timeout\n    [<COUNT count | EXACTLY exactly> <OBO | BULK>]',
   },
   {
     key: 'BLMPOP',
@@ -449,6 +679,14 @@ export const enCommands: CommandHelpRow[] = [
     usage: 'CF.SCANDUMP key iterator',
   },
   {
+    key: 'CLIENT',
+    title: 'CLIENT',
+    group: 'connection',
+    summary: 'A container for client connection commands.',
+    since: '2.4.0',
+    usage: 'CLIENT',
+  },
+  {
     key: 'CLIENT CACHING',
     title: 'CLIENT CACHING',
     group: 'connection',
@@ -597,12 +835,12 @@ export const enCommands: CommandHelpRow[] = [
     usage: 'CLIENT UNPAUSE',
   },
   {
-    key: 'CLIENT',
-    title: 'CLIENT',
-    group: 'connection',
-    summary: 'A container for client connection commands.',
-    since: '2.4.0',
-    usage: 'CLIENT',
+    key: 'CLUSTER',
+    title: 'CLUSTER',
+    group: 'cluster',
+    summary: 'A container for Redis Cluster commands.',
+    since: '3.0.0',
+    usage: 'CLUSTER',
   },
   {
     key: 'CLUSTER ADDSLOTS',
@@ -848,14 +1086,6 @@ export const enCommands: CommandHelpRow[] = [
     usage: 'CLUSTER SLOTS',
   },
   {
-    key: 'CLUSTER',
-    title: 'CLUSTER',
-    group: 'cluster',
-    summary: 'A container for Redis Cluster commands.',
-    since: '3.0.0',
-    usage: 'CLUSTER',
-  },
-  {
     key: 'CMS.INCRBY',
     title: 'CMS.INCRBY',
     group: 'cms',
@@ -902,6 +1132,14 @@ export const enCommands: CommandHelpRow[] = [
     summary: 'Returns the count for one or more items in a sketch',
     since: '2.0.0',
     usage: 'CMS.QUERY key item [item ...]',
+  },
+  {
+    key: 'COMMAND',
+    title: 'COMMAND',
+    group: 'server',
+    summary: 'Returns detailed information about all commands.',
+    since: '2.8.13',
+    usage: 'COMMAND',
   },
   {
     key: 'COMMAND COUNT',
@@ -960,12 +1198,12 @@ export const enCommands: CommandHelpRow[] = [
     usage: 'COMMAND LIST [FILTERBY <MODULE module-name | ACLCAT category |\n  PATTERN pattern>]',
   },
   {
-    key: 'COMMAND',
-    title: 'COMMAND',
+    key: 'CONFIG',
+    title: 'CONFIG',
     group: 'server',
-    summary: 'Returns detailed information about all commands.',
-    since: '2.8.13',
-    usage: 'COMMAND',
+    summary: 'A container for server configuration commands.',
+    since: '2.0.0',
+    usage: 'CONFIG',
   },
   {
     key: 'CONFIG GET',
@@ -1006,14 +1244,6 @@ export const enCommands: CommandHelpRow[] = [
     summary: 'Sets configuration parameters in-flight.',
     since: '2.0.0',
     usage: 'CONFIG SET parameter value [parameter value ...]',
-  },
-  {
-    key: 'CONFIG',
-    title: 'CONFIG',
-    group: 'server',
-    summary: 'A container for server configuration commands.',
-    since: '2.0.0',
-    usage: 'CONFIG',
   },
   {
     key: 'COPY',
@@ -1244,6 +1474,14 @@ export const enCommands: CommandHelpRow[] = [
     usage: 'FT.ALIASDEL alias',
   },
   {
+    key: 'FT.ALIASLIST',
+    title: 'FT.ALIASLIST',
+    group: 'search',
+    summary: 'Lists all aliases for the index',
+    since: '8.10.0',
+    usage: 'FT.ALIASLIST index',
+  },
+  {
     key: 'FT.ALIASUPDATE',
     title: 'FT.ALIASUPDATE',
     group: 'search',
@@ -1465,6 +1703,14 @@ export const enCommands: CommandHelpRow[] = [
     usage: 'FT._LIST',
   },
   {
+    key: 'FUNCTION',
+    title: 'FUNCTION',
+    group: 'scripting',
+    summary: 'A container for function commands.',
+    since: '7.0.0',
+    usage: 'FUNCTION',
+  },
+  {
     key: 'FUNCTION DELETE',
     title: 'FUNCTION DELETE',
     group: 'scripting',
@@ -1535,14 +1781,6 @@ export const enCommands: CommandHelpRow[] = [
     summary: 'Returns information about a function during execution.',
     since: '7.0.0',
     usage: 'FUNCTION STATS',
-  },
-  {
-    key: 'FUNCTION',
-    title: 'FUNCTION',
-    group: 'scripting',
-    summary: 'A container for function commands.',
-    since: '7.0.0',
-    usage: 'FUNCTION',
   },
   {
     key: 'GEOADD',
@@ -1769,6 +2007,47 @@ export const enCommands: CommandHelpRow[] = [
       'HGETEX key [EX seconds | PX milliseconds | EXAT unix-time-seconds |\n  PXAT unix-time-milliseconds | PERSIST] FIELDS numfields field\n  [field ...]',
   },
   {
+    key: 'HIMPORT',
+    title: 'HIMPORT',
+    group: 'hash',
+    summary: 'A container for session-based hash import commands using fieldsets.',
+    since: '8.10.0',
+    usage: 'HIMPORT',
+  },
+  {
+    key: 'HIMPORT DISCARD',
+    title: 'HIMPORT DISCARD',
+    group: 'hash',
+    summary: 'Removes a single session-local fieldset by name.',
+    since: '8.10.0',
+    usage: 'HIMPORT DISCARD fieldset-name',
+  },
+  {
+    key: 'HIMPORT DISCARDALL',
+    title: 'HIMPORT DISCARDALL',
+    group: 'hash',
+    summary: 'Removes all session-local fieldsets for the connection.',
+    since: '8.10.0',
+    usage: 'HIMPORT DISCARDALL',
+  },
+  {
+    key: 'HIMPORT PREPARE',
+    title: 'HIMPORT PREPARE',
+    group: 'hash',
+    summary: 'Defines a session-local fieldset that maps a name to a sorted set of field names.',
+    since: '8.10.0',
+    usage: 'HIMPORT PREPARE fieldset-name field [field ...]',
+  },
+  {
+    key: 'HIMPORT SET',
+    title: 'HIMPORT SET',
+    group: 'hash',
+    summary:
+      'Creates a fieldset-based hash from values supplied in the order matching a previously prepared fieldset.',
+    since: '8.10.0',
+    usage: 'HIMPORT SET key fieldset-name value [value ...]',
+  },
+  {
     key: 'HINCRBY',
     title: 'HINCRBY',
     group: 'hash',
@@ -1953,6 +2232,16 @@ export const enCommands: CommandHelpRow[] = [
     usage: 'INCRBYFLOAT key increment',
   },
   {
+    key: 'INCREX',
+    title: 'INCREX',
+    group: 'string',
+    summary:
+      "Increments the numeric value of a key by a number and sets its expiration time. Uses 0 as initial value if the key doesn't exist.",
+    since: '8.8.0',
+    usage:
+      'INCREX key [BYFLOAT increment | BYINT increment]\n   [LBOUND lowerbound] [UBOUND upperbound] [SATURATE]\n   [EX seconds | PX milliseconds | EXAT unix-time-seconds| PXAT unix-time-milliseconds | PERSIST] [ENX]',
+  },
+  {
     key: 'INFO',
     title: 'INFO',
     group: 'server',
@@ -2019,6 +2308,14 @@ export const enCommands: CommandHelpRow[] = [
     usage: 'JSON.CLEAR key [path]',
   },
   {
+    key: 'JSON.DEBUG',
+    title: 'JSON.DEBUG',
+    group: 'json',
+    summary: 'Debugging container command',
+    since: '1.0.0',
+    usage: 'JSON.DEBUG',
+  },
+  {
     key: 'JSON.DEBUG HELP',
     title: 'JSON.DEBUG HELP',
     group: 'json',
@@ -2033,14 +2330,6 @@ export const enCommands: CommandHelpRow[] = [
     summary: 'Reports the size in bytes of a key',
     since: '1.0.0',
     usage: 'JSON.DEBUG MEMORY key [path]',
-  },
-  {
-    key: 'JSON.DEBUG',
-    title: 'JSON.DEBUG',
-    group: 'json',
-    summary: 'Debugging container command',
-    since: '1.0.0',
-    usage: 'JSON.DEBUG',
   },
   {
     key: 'JSON.DEL',
@@ -2188,6 +2477,14 @@ export const enCommands: CommandHelpRow[] = [
     usage: 'LASTSAVE',
   },
   {
+    key: 'LATENCY',
+    title: 'LATENCY',
+    group: 'server',
+    summary: 'A container for latency diagnostics commands.',
+    since: '2.8.13',
+    usage: 'LATENCY',
+  },
+  {
     key: 'LATENCY DOCTOR',
     title: 'LATENCY DOCTOR',
     group: 'server',
@@ -2244,14 +2541,6 @@ export const enCommands: CommandHelpRow[] = [
     usage: 'LATENCY RESET [event [event ...]]',
   },
   {
-    key: 'LATENCY',
-    title: 'LATENCY',
-    group: 'server',
-    summary: 'A container for latency diagnostics commands.',
-    since: '2.8.13',
-    usage: 'LATENCY',
-  },
-  {
     key: 'LCS',
     title: 'LCS',
     group: 'string',
@@ -2291,6 +2580,16 @@ export const enCommands: CommandHelpRow[] = [
       'Returns an element after popping it from one list and pushing it to another. Deletes the list if the last element was moved.',
     since: '6.2.0',
     usage: 'LMOVE source destination <LEFT | RIGHT> <LEFT | RIGHT>',
+  },
+  {
+    key: 'LMOVEM',
+    title: 'LMOVEM',
+    group: 'list',
+    summary:
+      'Moves up to (or exactly) a number of elements from one list to another and returns them. Deletes the source list if it becomes empty.',
+    since: '8.10.0',
+    usage:
+      'LMOVEM source destination <LEFT | RIGHT> <LEFT | RIGHT>\n    [<COUNT count | EXACTLY exactly> <OBO | BULK>]',
   },
   {
     key: 'LMPOP',
@@ -2376,6 +2675,14 @@ export const enCommands: CommandHelpRow[] = [
     usage: 'LTRIM key start stop',
   },
   {
+    key: 'MEMORY',
+    title: 'MEMORY',
+    group: 'server',
+    summary: 'A container for memory diagnostics commands.',
+    since: '4.0.0',
+    usage: 'MEMORY',
+  },
+  {
     key: 'MEMORY DOCTOR',
     title: 'MEMORY DOCTOR',
     group: 'server',
@@ -2424,14 +2731,6 @@ export const enCommands: CommandHelpRow[] = [
     usage: 'MEMORY USAGE key [SAMPLES count]',
   },
   {
-    key: 'MEMORY',
-    title: 'MEMORY',
-    group: 'server',
-    summary: 'A container for memory diagnostics commands.',
-    since: '4.0.0',
-    usage: 'MEMORY',
-  },
-  {
     key: 'MGET',
     title: 'MGET',
     group: 'string',
@@ -2447,6 +2746,14 @@ export const enCommands: CommandHelpRow[] = [
     since: '2.6.0',
     usage:
       'MIGRATE host port <key | ""> destination-db timeout [COPY] [REPLACE]\n  [AUTH password | AUTH2 username password] [KEYS key [key ...]]',
+  },
+  {
+    key: 'MODULE',
+    title: 'MODULE',
+    group: 'server',
+    summary: 'A container for module commands.',
+    since: '4.0.0',
+    usage: 'MODULE',
   },
   {
     key: 'MODULE HELP',
@@ -2488,14 +2795,6 @@ export const enCommands: CommandHelpRow[] = [
     summary: 'Unloads a module.',
     since: '4.0.0',
     usage: 'MODULE UNLOAD name',
-  },
-  {
-    key: 'MODULE',
-    title: 'MODULE',
-    group: 'server',
-    summary: 'A container for module commands.',
-    since: '4.0.0',
-    usage: 'MODULE',
   },
   {
     key: 'MONITOR',
@@ -2548,6 +2847,14 @@ export const enCommands: CommandHelpRow[] = [
     usage: 'MULTI',
   },
   {
+    key: 'OBJECT',
+    title: 'OBJECT',
+    group: 'generic',
+    summary: 'A container for object introspection commands.',
+    since: '2.2.3',
+    usage: 'OBJECT',
+  },
+  {
     key: 'OBJECT ENCODING',
     title: 'OBJECT ENCODING',
     group: 'generic',
@@ -2586,14 +2893,6 @@ export const enCommands: CommandHelpRow[] = [
     summary: 'Returns the reference count of a value of a key.',
     since: '2.2.3',
     usage: 'OBJECT REFCOUNT key',
-  },
-  {
-    key: 'OBJECT',
-    title: 'OBJECT',
-    group: 'generic',
-    summary: 'A container for object introspection commands.',
-    since: '2.2.3',
-    usage: 'OBJECT',
   },
   {
     key: 'PERSIST',
@@ -2718,6 +3017,14 @@ export const enCommands: CommandHelpRow[] = [
     usage: 'PUBLISH channel message',
   },
   {
+    key: 'PUBSUB',
+    title: 'PUBSUB',
+    group: 'pubsub',
+    summary: 'A container for Pub/Sub commands.',
+    since: '2.8.0',
+    usage: 'PUBSUB',
+  },
+  {
     key: 'PUBSUB CHANNELS',
     title: 'PUBSUB CHANNELS',
     group: 'pubsub',
@@ -2764,14 +3071,6 @@ export const enCommands: CommandHelpRow[] = [
     summary: 'Returns the count of subscribers of shard channels.',
     since: '7.0.0',
     usage: 'PUBSUB SHARDNUMSUB [shardchannel [shardchannel ...]]',
-  },
-  {
-    key: 'PUBSUB',
-    title: 'PUBSUB',
-    group: 'pubsub',
-    summary: 'A container for Pub/Sub commands.',
-    since: '2.8.0',
-    usage: 'PUBSUB',
   },
   {
     key: 'PUNSUBSCRIBE',
@@ -2854,15 +3153,6 @@ export const enCommands: CommandHelpRow[] = [
     usage: 'RESET',
   },
   {
-    key: 'RESTORE-ASKING',
-    title: 'RESTORE-ASKING',
-    group: 'server',
-    summary: 'An internal command for migrating keys in a cluster.',
-    since: '3.0.0',
-    usage:
-      'RESTORE-ASKING key ttl serialized-value [REPLACE] [ABSTTL]\n  [IDLETIME seconds] [FREQ frequency]',
-  },
-  {
     key: 'RESTORE',
     title: 'RESTORE',
     group: 'generic',
@@ -2870,6 +3160,15 @@ export const enCommands: CommandHelpRow[] = [
     since: '2.6.0',
     usage:
       'RESTORE key ttl serialized-value [REPLACE] [ABSTTL]\n  [IDLETIME seconds] [FREQ frequency]',
+  },
+  {
+    key: 'RESTORE-ASKING',
+    title: 'RESTORE-ASKING',
+    group: 'server',
+    summary: 'An internal command for migrating keys in a cluster.',
+    since: '3.0.0',
+    usage:
+      'RESTORE-ASKING key ttl serialized-value [REPLACE] [ABSTTL]\n  [IDLETIME seconds] [FREQ frequency]',
   },
   {
     key: 'ROLE',
@@ -2946,6 +3245,14 @@ export const enCommands: CommandHelpRow[] = [
     usage: 'SCARD key',
   },
   {
+    key: 'SCRIPT',
+    title: 'SCRIPT',
+    group: 'scripting',
+    summary: 'A container for Lua scripts management commands.',
+    since: '2.6.0',
+    usage: 'SCRIPT',
+  },
+  {
     key: 'SCRIPT DEBUG',
     title: 'SCRIPT DEBUG',
     group: 'scripting',
@@ -2994,20 +3301,21 @@ export const enCommands: CommandHelpRow[] = [
     usage: 'SCRIPT LOAD script',
   },
   {
-    key: 'SCRIPT',
-    title: 'SCRIPT',
-    group: 'scripting',
-    summary: 'A container for Lua scripts management commands.',
-    since: '2.6.0',
-    usage: 'SCRIPT',
-  },
-  {
     key: 'SDIFF',
     title: 'SDIFF',
     group: 'set',
     summary: 'Returns the difference of multiple sets.',
     since: '1.0.0',
     usage: 'SDIFF key [key ...]',
+  },
+  {
+    key: 'SDIFFCARD',
+    title: 'SDIFFCARD',
+    group: 'set',
+    summary:
+      'Returns the number of members of the difference between the first set and all successive sets.',
+    since: '8.10.0',
+    usage: 'SDIFFCARD numkeys key [key ...] [LIMIT limit]',
   },
   {
     key: 'SDIFFSTORE',
@@ -3119,6 +3427,14 @@ export const enCommands: CommandHelpRow[] = [
     usage: 'SLAVEOF <host port | NO ONE>',
   },
   {
+    key: 'SLOWLOG',
+    title: 'SLOWLOG',
+    group: 'server',
+    summary: 'A container for slow log commands.',
+    since: '2.2.12',
+    usage: 'SLOWLOG',
+  },
+  {
     key: 'SLOWLOG GET',
     title: 'SLOWLOG GET',
     group: 'server',
@@ -3149,14 +3465,6 @@ export const enCommands: CommandHelpRow[] = [
     summary: 'Clears all entries from the slow log.',
     since: '2.2.12',
     usage: 'SLOWLOG RESET',
-  },
-  {
-    key: 'SLOWLOG',
-    title: 'SLOWLOG',
-    group: 'server',
-    summary: 'A container for slow log commands.',
-    since: '2.2.12',
-    usage: 'SLOWLOG',
   },
   {
     key: 'SMEMBERS',
@@ -3281,6 +3589,14 @@ export const enCommands: CommandHelpRow[] = [
     summary: 'Returns the union of multiple sets.',
     since: '1.0.0',
     usage: 'SUNION key [key ...]',
+  },
+  {
+    key: 'SUNIONCARD',
+    title: 'SUNIONCARD',
+    group: 'set',
+    summary: 'Returns the number of members of the union of multiple sets.',
+    since: '8.10.0',
+    usage: 'SUNIONCARD numkeys key [key ...] [APPROX] [LIMIT limit]',
   },
   {
     key: 'SUNIONSTORE',
@@ -3633,6 +3949,26 @@ export const enCommands: CommandHelpRow[] = [
       'TS.MREVRANGE fromTimestamp toTimestamp [LATEST]\n  [FILTER_BY_TS Timestamp [Timestamp ...]] [FILTER_BY_VALUE min max]\n  [WITHLABELS | SELECTED_LABELS label1 [label1 ...]] [COUNT count]\n  [[ALIGN value] AGGREGATION <AVG | FIRST | LAST | MIN | MAX | SUM |\n  RANGE | COUNT | STD.P | STD.S | VAR.P | VAR.S | TWA>\n  bucketDuration [BUCKETTIMESTAMP] [EMPTY]] FILTER <l=v | l!=v | l=\n  | l!= | l=(v1,v2,...) | l!=(v1,v2,...) [l=v | l!=v | l= | l!= |\n  l=(v1,v2,...) | l!=(v1,v2,...) ...]> [GROUPBY label REDUCE\n  reducer]',
   },
   {
+    key: 'TS.NRANGE',
+    title: 'TS.NRANGE',
+    group: 'timeseries',
+    summary:
+      'Query a range across multiple time series in forward direction, returning the results grouped by timestamp',
+    since: '8.10.0',
+    usage:
+      'TS.NRANGE numkeys key [key ...] fromTimestamp toTimestamp [LATEST]\n    [FILTER_BY_TS ts [ts ...]] [FILTER_BY_VALUE min max] [COUNT count]\n    [[ALIGN align] AGGREGATION aggregators [aggregators ...] bucketDuration\n    [BUCKETTIMESTAMP <start | - | end | + | mid | ~>] [EMPTY]]',
+  },
+  {
+    key: 'TS.NREVRANGE',
+    title: 'TS.NREVRANGE',
+    group: 'timeseries',
+    summary:
+      'Query a range across multiple time series in reverse direction, returning the results grouped by timestamp',
+    since: '8.10.0',
+    usage:
+      'TS.NREVRANGE numkeys key [key ...] fromTimestamp toTimestamp\n    [LATEST] [FILTER_BY_TS ts [ts ...]] [FILTER_BY_VALUE min max]\n    [COUNT count] [[ALIGN align] AGGREGATION aggregators [aggregators ...]\n    bucketDuration [BUCKETTIMESTAMP <start | - | end | + | mid | ~>]\n    [EMPTY]]',
+  },
+  {
     key: 'TS.QUERYINDEX',
     title: 'TS.QUERYINDEX',
     group: 'timeseries',
@@ -3642,6 +3978,15 @@ export const enCommands: CommandHelpRow[] = [
       'TS.QUERYINDEX <l=v | l!=v | l= | l!= | l=(v1,v2,...) |\n  l!=(v1,v2,...) [l=v | l!=v | l= | l!= | l=(v1,v2,...) |\n  l!=(v1,v2,...) ...]>',
   },
   {
+    key: 'TS.QUERYLABELS',
+    title: 'TS.QUERYLABELS',
+    group: 'timeseries',
+    summary:
+      'Get all label names, or all values of a given label, for time series matching a filter list, or all series',
+    since: '8.10.0',
+    usage: 'TS.QUERYLABELS <LABELS | VALUES label> [FILTER filterExpr\n    [filterExpr ...]]',
+  },
+  {
     key: 'TS.RANGE',
     title: 'TS.RANGE',
     group: 'timeseries',
@@ -3649,6 +3994,15 @@ export const enCommands: CommandHelpRow[] = [
     since: '1.0.0',
     usage:
       'TS.RANGE key fromTimestamp toTimestamp [LATEST]\n  [FILTER_BY_TS Timestamp [Timestamp ...]] [FILTER_BY_VALUE min max]\n  [COUNT count] [[ALIGN value] AGGREGATION <AVG | FIRST | LAST | MIN\n  | MAX | SUM | RANGE | COUNT | STD.P | STD.S | VAR.P | VAR.S | TWA>\n  bucketDuration [BUCKETTIMESTAMP] [EMPTY]]',
+  },
+  {
+    key: 'TS.READ',
+    title: 'TS.READ',
+    group: 'timeseries',
+    summary:
+      'Read: return up to max_count samples with timestamp >= timestamp. With BLOCK, waits up to milliseconds ms until at least min_count qualifying samples exist',
+    since: '8.10.0',
+    usage: 'TS.READ key timestamp [BLOCK milliseconds min_count]\n    [MAX_COUNT max_count]',
   },
   {
     key: 'TS.REVRANGE',
@@ -3894,6 +4248,14 @@ export const enCommands: CommandHelpRow[] = [
     usage: 'XDELEX key [KEEPREF | DELREF | ACKED] IDS numids id [id ...]',
   },
   {
+    key: 'XGROUP',
+    title: 'XGROUP',
+    group: 'stream',
+    summary: 'A container for consumer groups commands.',
+    since: '5.0.0',
+    usage: 'XGROUP',
+  },
+  {
     key: 'XGROUP CREATE',
     title: 'XGROUP CREATE',
     group: 'stream',
@@ -3942,12 +4304,20 @@ export const enCommands: CommandHelpRow[] = [
     usage: 'XGROUP SETID key group <id | $> [ENTRIESREAD entries-read]',
   },
   {
-    key: 'XGROUP',
-    title: 'XGROUP',
+    key: 'XIDMPRECORD',
+    title: 'XIDMPRECORD',
     group: 'stream',
-    summary: 'A container for consumer groups commands.',
+    summary: 'An internal command for setting IDMP metadata on an existing stream message.',
+    since: '8.8.0',
+    usage: 'XIDMPRECORD key pid iid stream-id',
+  },
+  {
+    key: 'XINFO',
+    title: 'XINFO',
+    group: 'stream',
+    summary: 'A container for stream introspection commands.',
     since: '5.0.0',
-    usage: 'XGROUP',
+    usage: 'XINFO',
   },
   {
     key: 'XINFO CONSUMERS',
@@ -3982,20 +4352,22 @@ export const enCommands: CommandHelpRow[] = [
     usage: 'XINFO STREAM key [FULL [COUNT count]]',
   },
   {
-    key: 'XINFO',
-    title: 'XINFO',
-    group: 'stream',
-    summary: 'A container for stream introspection commands.',
-    since: '5.0.0',
-    usage: 'XINFO',
-  },
-  {
     key: 'XLEN',
     title: 'XLEN',
     group: 'stream',
     summary: 'Return the number of messages in a stream.',
     since: '5.0.0',
     usage: 'XLEN key',
+  },
+  {
+    key: 'XNACK',
+    title: 'XNACK',
+    group: 'stream',
+    summary:
+      "Releases pending messages back to the group's PEL without acknowledging them, making them available for re-delivery.",
+    since: '8.8.0',
+    usage:
+      'XNACK key group <SILENT | FAIL | FATAL> IDS numids id [id ...]\n    [RETRYCOUNT count] [FORCE]',
   },
   {
     key: 'XPENDING',
@@ -4021,7 +4393,8 @@ export const enCommands: CommandHelpRow[] = [
     summary:
       'Returns messages from multiple streams with IDs greater than the ones requested. Blocks until a message is available otherwise.',
     since: '5.0.0',
-    usage: 'XREAD [COUNT count] [BLOCK milliseconds] STREAMS key [key ...] id\n  [id ...]',
+    usage:
+      'XREAD [COUNT count] [BLOCK milliseconds] [MAXCOUNT maxcount] [MAXSIZE maxsize] STREAMS key [key ...] id\n  [id ...]',
   },
   {
     key: 'XREADGROUP',
@@ -4031,7 +4404,7 @@ export const enCommands: CommandHelpRow[] = [
       'Returns new or historical messages from a stream for a consumer in a group. Blocks until a message is available otherwise.',
     since: '5.0.0',
     usage:
-      'XREADGROUP GROUP group consumer [COUNT count] [BLOCK milliseconds]\n  [CLAIM min-idle-time] [NOACK] STREAMS key [key ...] id [id ...]',
+      'XREADGROUP GROUP group consumer [COUNT count] [BLOCK milliseconds]\n  [CLAIM min-idle-time] [NOACK] [MAXCOUNT maxcount] [MAXSIZE maxsize] STREAMS key [key ...] id [id ...]',
   },
   {
     key: 'XREVRANGE',

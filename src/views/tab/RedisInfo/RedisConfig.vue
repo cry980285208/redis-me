@@ -4,9 +4,9 @@ import { computed, inject, nextTick, reactive, ref, useTemplateRef, watch, watch
 import { useI18n } from 'vue-i18n'
 
 import MeWebsite from '@/components/MeWebsite.vue'
-import { configTip as tips } from '@/locales/config'
-import { redisConfDict, valkeyConfDict } from '@/locales/config/defaults'
+import { configTip as tips, redisConfDict, valkeyConfDict } from '@/locales/config'
 import { shareProvideKey } from '@/types/me-interface'
+import { compareVersionLabel, sortVersionsDesc } from '@/utils/redis-version'
 import { meCopy, meCommands, meOk } from '@/utils/util'
 import NodeList from '@/views/ext/NodeList.vue'
 
@@ -67,29 +67,7 @@ async function loadConfigFile(version: string) {
   }
 }
 
-/** 从 Redis8.10 / Valkey9.0.1 等标签取出数字段，按主.次.修订比较（避免 8.10 排在 8.2 后） */
-function parseConfigVersionNums(label: string): number[] {
-  const m = label.match(/(\d+(?:\.\d+)*)/)
-  return m ? m[1].split('.').map(n => Number(n) || 0) : [0]
-}
-
-function compareConfigVersionLabel(a: string, b: string): number {
-  const pa = parseConfigVersionNums(a)
-  const pb = parseConfigVersionNums(b)
-  const len = Math.max(pa.length, pb.length)
-  for (let i = 0; i < len; i++) {
-    const da = pa[i] ?? 0
-    const db = pb[i] ?? 0
-    if (da !== db) return da - db
-  }
-  return a.localeCompare(b)
-}
-
-function sortConfigVersionsDesc(versions: string[]): string[] {
-  return [...versions].sort((a, b) => compareConfigVersionLabel(b, a))
-}
-
-const dirConfigList = sortConfigVersionsDesc(Object.keys(confLoaderByVersion))
+const dirConfigList = sortVersionsDesc(Object.keys(confLoaderByVersion))
 const configVersionList = computed(() => dirConfigList.filter(d => d.startsWith(serverType.value)))
 const configVersion = ref('') // 版本
 const configRaw = ref('')
@@ -116,12 +94,12 @@ function handleCommand(command: string) {
 // Json格式的默认配置
 const confDict = computed(() => (share.capabilities.isValkey ? valkeyConfDict : redisConfDict))
 
-const dictVersionList = sortConfigVersionsDesc(Object.keys(confDict.value))
+const dictVersionList = sortVersionsDesc(Object.keys(confDict.value))
 function getDefaultVersion() {
   // 选不超过当前服务版本的最新默认值字典（数值比较，避免 8.10 / 8.2 字典序误判）
   const current = serverType.value + props.initVersion
   for (const version of dictVersionList) {
-    if (compareConfigVersionLabel(current, version) >= 0) {
+    if (compareVersionLabel(current, version) >= 0) {
       return version
     }
   }
