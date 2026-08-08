@@ -10,7 +10,7 @@ import RedisMonitor from '@/views/tab/RedisMonitor.vue'
 import RedisPubsub from '@/views/tab/RedisPubsub.vue'
 import RedisSlow from '@/views/tab/RedisSlow.vue'
 import RedisTerminal from '@/views/tab/RedisTerminal.vue'
-import RedisValue from '@/views/tab/RedisValue.vue'
+import RedisValue from '@/views/tab/RedisValue/index.vue'
 
 const share = inject(shareProvideKey)!
 const minimalMode = computed(() => isConnMinimalMode(share.conn))

@@ -1,0 +1,129 @@
+// RedisValue 域内共享：类型、键类型能力、扫描/表格纯函数（有状态编排在 index.vue）
+import dayjs from 'dayjs'
+
+import type { FieldScanResult } from '@/types/tauri-specta'
+
+// 类型与行工具
+
+// newValue：null 未编辑，'' 表示用户主动保存空串
+export type FieldScanViewState = FieldScanResult & { newValue: string | null }
+
+// 值表格行（fieldScan 各类型字段混合）
+export type ValueTableRow = Record<string, unknown> & {
+  key?: string
+  value?: unknown
+  id?: string
+  score?: number
+  ttl?: number
+  index?: number // List 行真实 Redis 索引
+}
+
+// fieldScan 的 value 在 Specta 中为联合类型，表格/拼接按行数组处理
+export function fieldValueRows(v: unknown): unknown[] {
+  return v as unknown[]
+}
+
+export function toViewState(data: FieldScanResult): FieldScanViewState {
+  return { ...data, newValue: null }
+}
+
+export function listRowRedisIndex(row: ValueTableRow): number {
+  return typeof row.index === 'number' ? row.index : -1
+}
+
+export function parseListIndexInput(raw: string): number | null {
+  const s = raw.trim()
+  if (!s) return null
+  const n = Number.parseInt(s, 10)
+  return Number.isFinite(n) ? n : null
+}
+
+// Stream ID（毫秒时间戳-序号）→ 可读时间；非法则空串
+export function streamIdToDate(id: string): string {
+  try {
+    const timestamp = Number.parseInt(id.split('-')[0]!, 10)
+    if (!Number.isFinite(timestamp)) return ''
+    return dayjs(timestamp).format('YYYY-MM-DD HH:mm:ss.SSS')
+  } catch {
+    return ''
+  }
+}
+
+// 键类型能力
+
+// Hash/Set/ZSet/Array：支持服务端 pattern 扫描（Array 精确勾选走 ARGET）
+export function supportsFieldServerScan(type: string | undefined) {
+  return type === 'hash' || type === 'set' || type === 'zset' || type === 'array'
+}
+
+// 支持表格视图的类型（与底部 segmented 可见条件一致）
+export function supportsTableView(type: string | undefined) {
+  return (
+    type === 'hash' ||
+    type === 'list' ||
+    type === 'set' ||
+    type === 'zset' ||
+    type === 'stream' ||
+    type === 'array'
+  )
+}
+
+// field_get 可单行刷新的表格类型
+export function supportsFieldRowRefresh(type: string | undefined) {
+  return type === 'hash' || type === 'list' || type === 'zset' || type === 'array'
+}
+
+// string / json：仅 JSON 编辑器，无表格/字段扫描
+export function isStringLikeType(type: string | undefined) {
+  return type === 'string' || type === 'json'
+}
+
+// 非精确扫描时是否自动连续拉取（pattern 扫描或 List/Stream 前端分页）
+export function shouldFieldScanAuto(type: string | undefined, exact: boolean) {
+  if (exact || !type) return false
+  return supportsFieldServerScan(type) || type === 'list' || type === 'stream'
+}
+
+// 命令帮助分组：键类型 → Redis 命令文档 group
+export const KEY_TYPE_TO_GROUP: Record<string, string> = {
+  string: 'string',
+  hash: 'hash',
+  list: 'list',
+  set: 'set',
+  zset: 'sorted-set',
+  stream: 'stream',
+  json: 'json',
+  array: 'array',
+}
+
+// 扫描纯函数
+
+// 「加载更多」：新一页追加到已有 redisValue.value；true=已 merge，false=应整包替换
+export function mergeFieldScanPage(
+  prev: FieldScanViewState,
+  data: FieldScanResult,
+  includeMeta: boolean,
+): boolean {
+  if (!supportsTableView(data.type)) return false
+  const merged: unknown[] = [...fieldValueRows(prev.value), ...fieldValueRows(data.value)]
+  ;(prev as { value: unknown }).value = merged
+  if (includeMeta) {
+    prev.length = data.length
+    prev.ttl = data.ttl
+    prev.size = data.size
+    prev.logicalLength = data.logicalLength
+  }
+  return true
+}
+
+// Specta 应用错误 JSON（`{"code":"key_not_found",...}`）
+export function isAppErrorCode(e: unknown, code: string): boolean {
+  const raw = typeof e === 'string' ? e : e instanceof Error ? e.message : ''
+  if (!raw) return false
+  try {
+    const parsed = JSON.parse(raw) as { code?: unknown }
+    return parsed?.code === code
+  } catch {
+    return false
+  }
+}
