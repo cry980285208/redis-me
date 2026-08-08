@@ -1,6 +1,6 @@
 # 18. Redis 8.8 Array 类型支持
 
-> **实现状态**：18.1 / 18.2 已提交；18.3 待做
+> **实现状态**：18.1 / 18.2 / 18.3（ARINFO）已提交；ARGREP / AROP / ARDELRANGE / ARRING 延后
 
 > **关联 backlog**：`docs/zh/changelog/future.md`（Future 首条）  
 > **关键代码**：`src-tauri/src/client/client_trait.rs`、`src-tauri/src/utils/util.rs`、`src/utils/util.ts`、`src/views/tab/RedisValue.vue`、`src/views/ext/FieldAdd.vue`、`src/views/ext/FieldSet.vue`、`src/views/KeyMain.vue`
@@ -90,13 +90,14 @@ flowchart LR
 
 ### 4.3 特有操作
 
-| Array 能力                 | 对标                   | 形态                                                | 阶段      |
-| -------------------------- | ---------------------- | --------------------------------------------------- | --------- |
-| 索引范围 + ARSCAN 分页     | List 索引范围          | 工具栏区间；`LIMIT=batch`，下页 `start=lastIndex+1` | 18.2      |
-| ARLASTITEMS `[REV]`        | ZSet TopN              | 弹框（仿 `TableZsetRange.vue`）                     | 18.2      |
-| ARGREP                     | Hash 精确 + 更强过滤   | 弹框：谓词 + 范围                                   | 18.3      |
-| AROP / ARINFO / ARDELRANGE | 聚合 / 元信息 / 批量删 | 弹框或确认操作                                      | 18.3      |
-| ARRING                     | 环形缓冲               | 可选后置                                            | 18.3 可选 |
+| Array 能力             | 对标                 | 形态                                                | 阶段 |
+| ---------------------- | -------------------- | --------------------------------------------------- | ---- |
+| 索引范围 + ARSCAN 分页 | List 索引范围        | 工具栏区间；`LIMIT=batch`，下页 `start=lastIndex+1` | 18.2 |
+| ARLASTITEMS `[REV]`    | ZSet TopN            | 弹框（仿 `TableZsetRange.vue`）                     | 18.2 |
+| ARINFO                 | OBJECT 自省          | 值区工具栏「更多」（对标 List POP）                 | 18.3 |
+| ARGREP                 | Hash 精确 + 更强过滤 | 延后（无游标，易与 fieldScan 续页混淆）             | 延后 |
+| AROP / ARDELRANGE      | 聚合 / 批量删        | 延后                                                | 延后 |
+| ARRING                 | 环形缓冲             | 延后                                                | 延后 |
 
 ---
 
@@ -135,13 +136,15 @@ flowchart LR
 
 **做：**
 
-- ARGREP 服务端搜索
-- AROP / ARINFO / ARDELRANGE
-- ARRING（可选，可再拆 commit）
+- ARINFO：值区工具栏「更多」（对标 List LPOP/RPOP，不放键头统一菜单）
+
+**延后：**
+
+- ARGREP / AROP / ARDELRANGE / ARRING
 
 **验收：**
 
-- 各弹框/操作与官方命令语义一致；危险操作有确认
+- Array 键 → 值区「更多」→ Array 信息：展示 count / len 等元数据；键头统一菜单无此项
 
 ---
 

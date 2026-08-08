@@ -40,6 +40,7 @@ export const commands = {
 	zsetRank: (id: string, param: RedisZsetRank_Deserialize) => typedError<RedisZsetRankResult, string>(__TAURI_INVOKE("zset_rank", { id, param })),
 	zsetRange: (id: string, param: RedisZsetRange_Deserialize) => typedError<RedisZsetRangeItem[], string>(__TAURI_INVOKE("zset_range", { id, param })),
 	arLastItems: (id: string, param: RedisArLastItems_Deserialize) => typedError<RedisArLastItemsItem[], string>(__TAURI_INVOKE("ar_last_items", { id, param })),
+	arInfo: (id: string, key: RedisKey_Deserialize) => typedError<RedisArInfoItem[], string>(__TAURI_INVOKE("ar_info", { id, key })),
 	objectInfo: (id: string, key: RedisKey_Deserialize) => typedError<RedisObjectInfo, string>(__TAURI_INVOKE("object_info", { id, key })),
 	executeCommand: (id: string, param: RedisCommand) => typedError<string, string>(__TAURI_INVOKE("execute_command", { id, param })),
 	aclUsers: (id: string) => typedError<string[], string>(__TAURI_INVOKE("acl_users", { id })),
@@ -245,6 +246,11 @@ export type FiledScanMeta = {
 	listDesc: boolean | null,
 	/**  Stream 扫描方向：true 从 max 向 min（XREVRANGE），false 从 min 向 max（XRANGE） */
 	streamDesc: boolean | null,
+};
+
+export type RedisArInfoItem = {
+	field: string,
+	value: string,
 };
 
 export type RedisArLastItems = RedisArLastItems_Serialize | RedisArLastItems_Deserialize;

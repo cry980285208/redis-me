@@ -87,6 +87,8 @@ pub trait MeClient: Send + Sync {
 
     fn ar_last_items(&self, param: RedisArLastItems) -> AnyResult<Vec<RedisArLastItemsItem>>;
 
+    fn ar_info(&self, key: RedisKey) -> AnyResult<Vec<RedisArInfoItem>>;
+
     fn object_info(&self, key: RedisKey) -> AnyResult<RedisObjectInfo>;
 
     fn execute_command(&self, param: RedisCommand) -> AnyResult<String>;
@@ -1402,6 +1404,48 @@ pub fn zset_range0(
             score: s,
         })
         .collect())
+}
+
+/// Array ARINFO：元数据（默认不含 FULL）；RESP2 扁平键值对 / RESP3 Map。
+pub fn ar_info0(
+    mut conn: MutexGuard<impl Commands>,
+    key: RedisKey,
+) -> AnyResult<Vec<RedisArInfoItem>> {
+    let key_type: ValueType = conn.key_type(&key)?;
+    if !is_array_type(&key_type) {
+        handle_other_value_type(&key_type, &key)?;
+        unreachable!()
+    }
+    let raw: Value = redis::cmd("ARINFO").arg(&key).query(&mut conn)?;
+    parse_arinfo_items(raw)
+}
+
+fn parse_arinfo_items(raw: Value) -> AnyResult<Vec<RedisArInfoItem>> {
+    match raw {
+        Value::Nil => Ok(Vec::new()),
+        Value::Map(map) => Ok(map
+            .into_iter()
+            .map(|(k, v)| RedisArInfoItem {
+                field: redis_value_to_string(k, ""),
+                value: redis_value_to_string(v, ""),
+            })
+            .collect()),
+        Value::Array(arr) => {
+            let mut items = Vec::with_capacity(arr.len() / 2);
+            let mut i = 0;
+            while i + 1 < arr.len() {
+                items.push(RedisArInfoItem {
+                    field: redis_value_to_string(arr[i].clone(), ""),
+                    value: redis_value_to_string(arr[i + 1].clone(), ""),
+                });
+                i += 2;
+            }
+            Ok(items)
+        }
+        other => bail!(AppError::Internal {
+            message: format!("unexpected ARINFO reply: {:?}", other)
+        }),
+    }
 }
 
 /// Array ARLASTITEMS：最近插入的元素（REV 时最近优先）。

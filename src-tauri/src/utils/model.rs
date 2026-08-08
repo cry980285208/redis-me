@@ -607,6 +607,12 @@ api_model!(RedisArLastItemsItem {
     value: Option<String>,
 });
 
+// Array ARINFO 元数据一行（保序；字段名与 Redis 回复一致）
+api_model!(RedisArInfoItem {
+    field: String,
+    value: String,
+});
+
 // 字段修改
 api_model!(RedisFieldSet {
     key: RedisKey,

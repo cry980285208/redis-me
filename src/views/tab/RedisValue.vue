@@ -80,6 +80,7 @@ import {
   meWarn,
   sleep,
 } from '@/utils/util'
+import ArInfo from '@/views/ext/ArInfo.vue'
 import ObjectInfo from '@/views/ext/ObjectInfo.vue'
 import TableArLastItems from '@/views/ext/TableArLastItems.vue'
 import TableGroup from '@/views/ext/TableGroup.vue'
@@ -237,6 +238,11 @@ async function runFieldPop(mode: string) {
 }
 
 function onPopCommand(command: string) {
+  // Array 类型扩展（只读）走工具栏「更多」，不放键头统一菜单
+  if (command === 'arInfo') {
+    arInfoRef.value?.open()
+    return
+  }
   const confirmMap: Record<string, string> = {
     LPOP: 'redisValue.listLpopConfirm',
     RPOP: 'redisValue.listRpopConfirm',
@@ -1068,6 +1074,7 @@ function renameKey() {
 }
 
 const objectInfoRef = useTemplateRef<InstanceType<typeof ObjectInfo>>('objectInfoRef')
+const arInfoRef = useTemplateRef<InstanceType<typeof ArInfo>>('arInfoRef')
 
 function duplicateKey() {
   if (!share.redisKey) return
@@ -1930,7 +1937,7 @@ onUnmounted(() => {
                 {{ t('redisValue.arLastItems') }}
               </me-button>
               <el-dropdown
-                v-if="(listType || setType || zsetType) && canEdit"
+                v-if="((listType || setType || zsetType) && canEdit) || arrayType"
                 placement="bottom-end"
                 @command="onPopCommand"
                 style="margin-left: 10px">
@@ -1944,6 +1951,9 @@ onUnmounted(() => {
                     <el-dropdown-item v-if="setType" command="SPOP">SPOP</el-dropdown-item>
                     <el-dropdown-item v-if="zsetType" command="ZPOPMIN">ZPOPMIN</el-dropdown-item>
                     <el-dropdown-item v-if="zsetType" command="ZPOPMAX">ZPOPMAX</el-dropdown-item>
+                    <el-dropdown-item v-if="arrayType" command="arInfo">{{
+                      t('redisValue.arInfo')
+                    }}</el-dropdown-item>
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
@@ -2292,6 +2302,7 @@ onUnmounted(() => {
     <FieldAdd ref="fieldAddRef" @success="refreshKey" />
     <KeyRename ref="keyRenameRef" />
     <ObjectInfo ref="objectInfoRef" />
+    <ArInfo ref="arInfoRef" />
     <CustomCodec v-model="customCodecVisible" />
 
     <!-- Stream 消费者组 -->
