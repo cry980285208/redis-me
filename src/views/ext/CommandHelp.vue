@@ -129,7 +129,6 @@ defineExpose({ open, close })
             :label="t('redisTerminal.command')"
             prop="key"
             width="150"
-            show-overflow-tooltip
             sortable>
             <template #default="{ row }">
               <!-- 悬停选站点，打开对应命令文档（路径统一为小写+空格转连字符） -->
@@ -145,7 +144,7 @@ defineExpose({ open, close })
             :label="t('redisTerminal.since')"
             prop="since"
             column-key="since"
-            width="108"
+            width="100"
             show-overflow-tooltip
             :filters="sinceFilters"
             :filter-method="() => true" />
@@ -183,10 +182,11 @@ defineExpose({ open, close })
     flex-shrink: 0;
   }
 
-  /* me-website（el-dropdown）在单元格内易顶对齐，强制垂直居中 */
+  /* me-website（el-dropdown）在单元格内易顶对齐；命令名禁止换行 */
   :deep(td.col-cmd .cell) {
     display: flex;
     align-items: center;
+    white-space: nowrap;
   }
 }
 </style>
