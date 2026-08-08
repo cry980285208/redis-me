@@ -1,35 +1,17 @@
-import { getAllWebviewWindows, WebviewWindow } from '@tauri-apps/api/webviewWindow'
 // 应用级通用工具；以下 `// #region` / `// #endregion` 可在 VS Code / Cursor 中折叠浏览。
-import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window'
-import { openUrl } from '@tauri-apps/plugin-opener'
-import { type } from '@tauri-apps/plugin-os'
-import { relaunch } from '@tauri-apps/plugin-process'
-import {
-  check,
-  type CheckOptions,
-  type DownloadEvent,
-  type Update,
-} from '@tauri-apps/plugin-updater'
-import { saveWindowState, StateFlags } from '@tauri-apps/plugin-window-state'
 import { useClipboard, useDark } from '@vueuse/core'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { ElMessageBoxOptions } from 'element-plus'
 import JSON5 from 'json5'
 import { applyEdits, format } from 'jsonc-parser'
-import { sampleSize, sortBy } from 'lodash'
+import { sampleSize } from 'lodash'
 import mitt from 'mitt'
-import { nanoid } from 'nanoid'
-import { computed, h } from 'vue'
+import { computed } from 'vue'
 
 import i18n from '@/locales'
-import type {
-  MeAppUpdateState,
-  MeCommands,
-  EnrichedRedisNode,
-  KeyTypeListItem,
-} from '@/types/me-interface'
+import type { MeCommands } from '@/types/me-interface'
 import { commands as spectaCommands } from '@/types/tauri-specta'
-import type { RedisKey_Deserialize, RedisNode } from '@/types/tauri-specta'
+import type { RedisKey_Deserialize } from '@/types/tauri-specta'
 import { invalidateKeyType } from '@/utils/key-type-cache'
 
 /** 全局 `bus` 事件载荷（与 `bus.emit` / `bus.on` 一致） */
@@ -43,13 +25,6 @@ export type MeBusEvents = {
   CONN_REFRESH: void
 }
 
-export type {
-  EnrichedRedisNode,
-  KeyTypeListItem,
-  MeAppUpdateState,
-  MeCommands,
-} from '@/types/me-interface'
-
 // #region 本文件内部类型（Specta / 应用错误载荷）
 type SpectaResult<T> = { status: 'ok'; data: T } | { status: 'error'; error: unknown }
 
@@ -59,7 +34,7 @@ interface AppErrorPayload {
 }
 // #endregion
 
-// #region 全局总线、常量、Redis 键类型与节点列表 enrich
+// #region 全局总线与常量
 // 全局事件总线：setup 直接导入，app 全局属性也添加
 export const bus = mitt<MeBusEvents>()
 
@@ -80,90 +55,6 @@ export const PREDEFINE_COLORS = [
   '#f56c6c', // danger
   '#909399', // info
 ] as const
-
-// 键类型
-export const KEY_TYPE_LIST: KeyTypeListItem[] = [
-  { short: 'S', value: 'STRING', type: 'primary' },
-  { short: 'H', value: 'HASH', type: 'primary' },
-  { short: 'L', value: 'LIST', type: 'danger' },
-  { short: 'E', value: 'SET', type: 'danger' },
-  { short: 'Z', value: 'ZSET', type: 'danger' },
-  { short: 'X', value: 'STREAM', type: 'warning' },
-  { short: 'J', value: 'JSON', type: 'warning' },
-  { short: 'A', value: 'ARRAY', type: 'warning' }, // Redis 8.8 Array；色同 JSON/Stream
-]
-
-const keyTypeMap = new Map(KEY_TYPE_LIST.map(item => [item.value, item.type]))
-const keyShortMap = new Map(KEY_TYPE_LIST.map(item => [item.value, item.short]))
-
-/**
- * 键类型：el-text, el-tag 的 type
- */
-export function meType(keyType: string | undefined | null): string {
-  if (!keyType) return 'info'
-  return keyTypeMap.get(keyType?.toUpperCase() ?? '') || 'info'
-}
-
-/**
- * 键类型短：避免 String、Set 的简称都是 S
- */
-export function meKeyShort(keyType: string | undefined | null, defaultValue = '?'): string {
-  if (!keyType) return defaultValue
-  return keyShortMap.get(keyType?.toUpperCase() ?? '') || defaultValue
-}
-
-/**
- * 将 node_list 接口数据排序并补充与 UI 一致的字段。
- * 展示顺序：M1/M2/… 在上，同编号的 S1/S2/… 在下。
- */
-export function enrichNodeList(rawList: RedisNode[] | null | undefined): EnrichedRedisNode[] {
-  if (!rawList?.length) return []
-  const sorted = sortBy(rawList, 'node') as EnrichedRedisNode[]
-
-  let masterIndex = 0
-  const masterMap = new Map<string, { idx: number; slots: string | null }>()
-  sorted.forEach(item => {
-    item.isMaster = item.flags?.includes('master') ?? false
-    item.isSlave = item.flags?.includes('slave') ?? false
-    if (item.isMaster) {
-      masterIndex++
-      item.shortLabel = 'M' + masterIndex
-      masterMap.set(item.node, { idx: masterIndex, slots: item.slots })
-    }
-  })
-  sorted.forEach(item => {
-    if (item.isSlave && item.slaveOfNode) {
-      const master = masterMap.get(item.slaveOfNode)
-      if (master) {
-        item.shortLabel = 'S' + master.idx
-        item.masterSlots = master.slots
-      }
-    }
-
-    if (item.isMaster && item.slots) {
-      item.slotsTooltip = t('nodeList.slotsTooltip', { slots: item.slots })
-    } else if (item.isSlave && item.masterSlots) {
-      item.slotsTooltip = t('nodeList.slotsReplicaTooltip', { slots: item.masterSlots })
-    } else {
-      item.slotsTooltip = ''
-    }
-
-    if (!item.shortLabel) {
-      item.shortLabel = item.flags?.slice(0, 1).toUpperCase() || 'F'
-    }
-  })
-
-  return sorted.sort((a, b) => {
-    const rank = (item: EnrichedRedisNode) => (item.isMaster ? 0 : item.isSlave ? 1 : 2)
-    const num = (label: string) => {
-      const m = /^[MS](\d+)$/.exec(label)
-      return m ? Number(m[1]) : 999
-    }
-    return (
-      rank(a) - rank(b) || num(a.shortLabel) - num(b.shortLabel) || a.node.localeCompare(b.node)
-    )
-  })
-}
 // #endregion
 
 // #region 开发日志、界面语言、暗色主题
@@ -450,7 +341,7 @@ export function meFilterHandler<T extends Record<string, unknown>>(
 }
 // #endregion
 
-// #region Redis 键：删除 / 重命名（组合确认框与 meCommands）
+// #region Redis 键：删除（组合确认框与 meCommands）
 
 export function meDeleteKey(id: string, redisKey: RedisKey_Deserialize, thenFn?: () => void): void {
   meConfirm(t('util.deleteKey', { key: redisKey.key }), async () => {
@@ -462,176 +353,6 @@ export function meDeleteKey(id: string, redisKey: RedisKey_Deserialize, thenFn?:
   })
 }
 
-// #endregion
-
-// #region 应用内自动更新（Tauri updater）
-export async function meCheckUpdate(
-  quiet = true,
-  checkOptions: CheckOptions = {},
-  app: MeAppUpdateState,
-): Promise<void> {
-  if (window?.meTauri?.isAppStore) {
-    meLog('应用商店内部的应用更新，忽略检查接口')
-    return
-  }
-
-  if (!quiet) {
-    ElMessage.primary(t('util.checking'))
-  }
-
-  const update = await check(checkOptions).catch(DoNothing)
-  if (update) {
-    await meDownloadUpdate(quiet, update, app)
-  } else if (update === null) {
-    if (!quiet) {
-      ElMessage.success(t('util.latestVersion'))
-    }
-  } else {
-    if (!quiet) {
-      ElMessage.error(t('util.checkUpdateErr'))
-    }
-  }
-}
-
-const manualCloseOptions: ElMessageBoxOptions = {
-  closeOnClickModal: false,
-  closeOnPressEscape: false,
-  type: 'info',
-}
-
-export async function meDownloadUpdate(
-  quiet = true,
-  update: Update,
-  app: MeAppUpdateState,
-): Promise<void> {
-  meLog('检查结果:', update)
-  const hint = t('util.updateHint', { version: update.version })
-  const changelog = t('util.changelog')
-  const changelogUrl = t('util.changelogUrl')
-  const message = () =>
-    h('p', null, [
-      h('span', hint),
-      h(
-        'a',
-        {
-          style:
-            'color: var(--el-color-primary); text-decoration: none; margin-left: 5px; cursor: pointer; ',
-          onClick: () => {
-            void openUrl(changelogUrl)
-          },
-        },
-        changelog,
-      ),
-    ])
-
-  meConfirm(
-    'MessageInvalid',
-    async () => {
-      try {
-        app.downloading = true
-        app.downloadPercentage = 0
-
-        let downloaded = 0
-        let contentLength = 0
-        const downloadingHandle = (event: DownloadEvent) => {
-          switch (event.event) {
-            case 'Started':
-              contentLength = event.data.contentLength ?? 0
-              break
-            case 'Progress':
-              downloaded += event.data.chunkLength
-              app.downloadPercentage = contentLength
-                ? Math.round((downloaded / contentLength) * 100)
-                : 0
-              break
-            case 'Finished':
-              app.downloadPercentage = 100
-              break
-          }
-        }
-
-        const isWindows = type() === 'windows'
-        const isMacOS = type() === 'macos'
-        if (isWindows) {
-          await update.download(downloadingHandle)
-          meConfirm(t('util.downloadDown'), async () => await update.install(), manualCloseOptions)
-        } else {
-          await update.downloadAndInstall(downloadingHandle)
-          // macOS：relaunch 会与 single-instance 竞态，改走 Rust 延迟 open 重启
-          meConfirm(
-            t('util.updateDone'),
-            async () => {
-              if (isMacOS) {
-                await meCommands.restartAfterUpdate()
-              } else {
-                await relaunch()
-              }
-            },
-            manualCloseOptions,
-          )
-        }
-      } catch (e) {
-        meErr(t('util.updateErr', { message: errString(e) }))
-      } finally {
-        app.downloading = false
-      }
-    },
-    { ...manualCloseOptions, message },
-  )
-}
-// #endregion
-
-// #region 新窗口
-/** 与 tauri.conf.json 默认窗口尺寸一致 */
-export const DEFAULT_WINDOW_SIZE = { width: 1200, height: 800 } as const
-
-/** 当前窗口恢复默认大小并居中，同时写入 window-state 持久化 */
-export async function resetWindowToDefault(): Promise<void> {
-  const win = getCurrentWindow()
-  if (await win.isFullscreen()) {
-    await win.setFullscreen(false)
-    await sleep(100)
-  }
-  if (await win.isMaximized()) {
-    await win.unmaximize()
-    // Windows 取消最大化后需等布局稳定，否则 setSize 可能被忽略
-    await sleep(100)
-  }
-  await win.setSize(new LogicalSize(DEFAULT_WINDOW_SIZE.width, DEFAULT_WINDOW_SIZE.height))
-  await win.center()
-  await sleep(50)
-  await saveWindowState(StateFlags.ALL)
-}
-
-/** F11 切换当前 Tauri 窗口全屏；与全局快捷键「全屏应用」一致 */
-export async function toggleAppFullscreen(): Promise<void> {
-  const win = getCurrentWindow()
-  await win.setFullscreen(!(await win.isFullscreen()))
-}
-
-/** 新建 Tauri 窗口（与 KeyHeader 菜单「新窗口」一致） */
-export async function openNewWindow(): Promise<void> {
-  const isMacOS = type() === 'macos'
-  const windows = await getAllWebviewWindows()
-  const hasMainWindow = !!windows.find(item => item.label === 'main')
-  const label = hasMainWindow ? 'Window' + nanoid() : 'main'
-
-  const appWindow = new WebviewWindow(label, {
-    url: 'index.html',
-    title: 'RedisME',
-    hiddenTitle: true,
-    width: 1200,
-    height: 800 + 25,
-    dragDropEnabled: false,
-    titleBarStyle: 'overlay',
-    decorations: isMacOS,
-  })
-
-  appWindow.once('tauri://created', () => {})
-  appWindow.once('tauri://error', () => {
-    meErr(i18n.global.t('keyHeader.newWindowError'))
-  })
-}
 // #endregion
 
 // #region sleep、JSON 格式化与解析

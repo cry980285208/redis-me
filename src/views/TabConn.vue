@@ -21,6 +21,7 @@ import {
   type ConnShortcutAction,
   type UiConn,
 } from '@/types/me-interface'
+import { meDownloadUpdate } from '@/utils/app-update'
 import {
   buildConnGroupSections,
   normalizeGroupName,
@@ -29,7 +30,7 @@ import {
 } from '@/utils/conn'
 import { buildExportFileName, saveTextExport } from '@/utils/export'
 import { encodeRedisMeConnectionsToMec } from '@/utils/rdm'
-import { meConfirm, meDownloadUpdate, meErr, meOk, mePrompt, meWarn } from '@/utils/util'
+import { meConfirm, meErr, meOk, mePrompt, meWarn } from '@/utils/util'
 import ConnEmpty from '@/views/conn/ConnEmpty.vue'
 import ConnGroup from '@/views/conn/ConnGroup.vue'
 import ConnTable from '@/views/conn/ConnTable.vue'

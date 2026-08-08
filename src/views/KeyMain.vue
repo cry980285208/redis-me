@@ -15,7 +15,7 @@ import {
 } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import { MeSelectUpDownIcon } from '@/components/MeSelectUpDownIcon'
+import MeSelectUpDownIcon from '@/components/MeSelectUpDownIcon.vue'
 import { shareProvideKey, connUiProvideKey } from '@/types/me-interface'
 import type { RedisDB, RedisKey_Deserialize, ScanCursor } from '@/types/tauri-specta'
 import { folderKeyPrefix, folderMatchExpr, getConnKeySeparator } from '@/utils/conn'
@@ -32,6 +32,7 @@ import {
   clearFavoriteFoldersForDb,
 } from '@/utils/favorite'
 import { clearKeyTypeCacheForConn } from '@/utils/key-type-cache'
+import { KEY_TYPE_LIST, meKeyShort } from '@/utils/redis-display'
 import {
   buildScanPattern,
   buildLocalFilterPattern,
@@ -46,12 +47,10 @@ import {
   KEY_DELETE,
   KEY_RENAME,
   KEY_REFRESH,
-  KEY_TYPE_LIST,
   meConfirm,
   meCommands,
   meCopy,
   meDeleteKey,
-  meKeyShort,
   meOk,
   mePrompt,
   meWarn,

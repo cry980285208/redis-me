@@ -7,15 +7,10 @@ import { computed, inject, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { appProvideKey, connUiProvideKey } from '@/types/me-interface'
+import { meCheckUpdate } from '@/utils/app-update'
+import { resetWindowToDefault } from '@/utils/app-window'
 import { defaultSettings } from '@/utils/settings-defaults'
-import {
-  meCheckUpdate,
-  meConfirm,
-  meCommands,
-  meErr,
-  meOk,
-  resetWindowToDefault,
-} from '@/utils/util'
+import { meConfirm, meCommands, meErr, meOk } from '@/utils/util'
 
 const { t } = useI18n()
 const settings = window.meTauri.settings

@@ -3,7 +3,7 @@ import { cloneDeep } from 'lodash'
 import { computed, inject, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import { MeSelectUpDownIcon } from '@/components/MeSelectUpDownIcon'
+import MeSelectUpDownIcon from '@/components/MeSelectUpDownIcon.vue'
 import { shareProvideKey } from '@/types/me-interface'
 import type {
   BytesFormat,

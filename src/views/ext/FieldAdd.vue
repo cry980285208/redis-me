@@ -7,17 +7,9 @@ import { useI18n } from 'vue-i18n'
 import { shareProvideKey } from '@/types/me-interface'
 import type { RedisFieldAdd_Deserialize, RedisKey_Deserialize } from '@/types/tauri-specta'
 import { BYTES_FORMAT, IPC_WIRE_FORMAT, meViewToWire, type ViewBytesFormat } from '@/utils/format'
+import { KEY_TYPE_LIST, meType } from '@/utils/redis-display'
 import { redisKeyWireBase64 } from '@/utils/redis-key'
-import {
-  KEY_TYPE_LIST,
-  meCommands,
-  meErr,
-  meOk,
-  meJsonParse,
-  meJsonNormal,
-  meTtlSeconds,
-  meType,
-} from '@/utils/util'
+import { meCommands, meErr, meOk, meJsonParse, meJsonNormal, meTtlSeconds } from '@/utils/util'
 
 const { t } = useI18n()
 const emit = defineEmits(['success', 'closed'])

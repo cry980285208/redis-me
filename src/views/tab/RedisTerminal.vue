@@ -3,7 +3,7 @@ import { computed, inject, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import MeIcon from '@/components/MeIcon.vue'
-import { MeSelectUpDownIcon } from '@/components/MeSelectUpDownIcon'
+import MeSelectUpDownIcon from '@/components/MeSelectUpDownIcon.vue'
 import MeShortcut from '@/components/MeShortcut.vue'
 import { commandHelp, isReadonlyCommand } from '@/locales/cmd'
 import { shareProvideKey } from '@/types/me-interface'

@@ -14,7 +14,7 @@ import {
 } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import { MeSelectUpDownIcon } from '@/components/MeSelectUpDownIcon'
+import MeSelectUpDownIcon from '@/components/MeSelectUpDownIcon.vue'
 import { shareProvideKey, connUiProvideKey } from '@/types/me-interface'
 import type {
   FieldScanResult,

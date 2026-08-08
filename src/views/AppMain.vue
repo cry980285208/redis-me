@@ -26,6 +26,7 @@ import {
   type UiConn,
 } from '@/types/me-interface'
 import type { ConnConfig, RedisKey_Deserialize } from '@/types/tauri-specta'
+import { openNewWindow, toggleAppFullscreen } from '@/utils/app-window'
 import {
   collapseImportedConnGroups,
   collectKnownConnGroupNames,
@@ -46,8 +47,6 @@ import {
   meCommands,
   meJsonParse,
   meOk,
-  openNewWindow,
-  toggleAppFullscreen,
 } from '@/utils/util'
 import ConnImport from '@/views/conn/ConnImport.vue'
 import ConnSave from '@/views/conn/ConnSave.vue'
