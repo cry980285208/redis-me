@@ -75,20 +75,14 @@ import {
   meWarn,
   sleep,
 } from '@/utils/util'
-import ArInfo from '@/views/ext/ArInfo.vue'
 import CommandHelp from '@/views/ext/CommandHelp.vue'
-import CustomCodec from '@/views/ext/CustomCodec.vue'
 import FieldAdd from '@/views/ext/FieldAdd.vue'
-import FieldSet from '@/views/ext/FieldSet.vue'
-import ObjectInfo from '@/views/ext/ObjectInfo.vue'
-import TableArLastItems from '@/views/ext/TableArLastItems.vue'
-import TableGroup from '@/views/ext/TableGroup.vue'
-import TableHashKeys from '@/views/ext/TableHashKeys.vue'
-import TableZsetRange from '@/views/ext/TableZsetRange.vue'
 import TTLSet from '@/views/ext/TTLSet.vue'
-import ValueShortcut from '@/views/ext/ValueShortcut.vue'
 import KeyRename from '@/views/key/KeyRename.vue'
 
+import ArInfo from './ArInfo.vue'
+import CustomCodec from './CustomCodec.vue'
+import FieldSet from './FieldSet.vue'
 import {
   KEY_TYPE_TO_GROUP,
   fieldValueRows,
@@ -106,6 +100,12 @@ import {
   type FieldScanViewState,
   type ValueTableRow,
 } from './helpers'
+import ObjectInfo from './ObjectInfo.vue'
+import TableArLastItems from './TableArLastItems.vue'
+import TableGroup from './TableGroup.vue'
+import TableHashKeys from './TableHashKeys.vue'
+import TableZsetRange from './TableZsetRange.vue'
+import ValueShortcut from './ValueShortcut.vue'
 // #endregion
 
 // 键值详情页：fieldScan 拉取（IPC 恒 base64）→ 前端按数据编码展示 → set / field* 写回。
@@ -2099,23 +2099,25 @@ onUnmounted(() => {
       v-else
       :description="share.redisKey ? t('redisValue.keyGone') : t('redisValue.noKeySelected')" />
 
-    <!-- 键操作：TTL / 字段新增 / 重命名 / 对象信息 / Array 信息 / 自定义编解码 -->
+    <!-- 共享弹窗（KeyMain / Terminal 也用）：TTL / 字段新增 / 重命名 / 命令帮助 -->
     <TTLSet ref="ttlSetRef" @success="setTimer" />
     <FieldAdd ref="fieldAddRef" @success="refreshKey" />
     <KeyRename ref="keyRenameRef" />
+    <CommandHelp ref="commandHelpRef" />
+
+    <!-- 本域弹窗：对象信息 / Array 信息 / 自定义编解码 -->
     <ObjectInfo ref="objectInfoRef" />
     <ArInfo ref="arInfoRef" />
     <CustomCodec v-model="customCodecVisible" />
 
-    <!-- 类型扩展：Stream 组 / Hash 全量 / ZSet TopN / Array 尾部 -->
+    <!-- 本域类型扩展：Stream 组 / Hash 全量 / ZSet TopN / Array 尾部 -->
     <TableGroup ref="tableGroupRef" />
     <TableHashKeys ref="hashKeysRef" />
     <TableZsetRange ref="zsetRangeRef" />
     <TableArLastItems ref="arLastItemsRef" />
 
-    <!-- 帮助：快捷键 / 命令文档 -->
+    <!-- 本域帮助：值编辑器快捷键 -->
     <ValueShortcut ref="valueShortcutRef" />
-    <CommandHelp ref="commandHelpRef" />
   </div>
 </template>
 
