@@ -408,6 +408,9 @@ export default {
     hashHintTtl: '(哈希键：值：过期秒)',
     zsetHint: '(值：分数)',
     streamHint: '(字段：值)',
+    arrayHint: '(索引：值)',
+    arrayIndex: '索引',
+    arrayIndexInvalid: '请输入非负整数索引',
     newKey: '新增键',
     newField: '新增字段',
     key: '键',
@@ -885,6 +888,7 @@ export default {
     textLength: '字节长度：',
     textEntries: '已扫描：',
     totalCount: '总数：',
+    arLen: '长度：',
     valueTruncatedTitle: '值过大，已切换为预览模式',
     valueTruncatedDesc:
       '该键约 {size}，超过 {limit} 安全阈值。为避免卡顿，当前仅展示前 {preview} 字节。',

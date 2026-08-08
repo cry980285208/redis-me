@@ -146,14 +146,26 @@ function submit() {
     let fieldValueList = form.value.fieldValueList
     let key: RedisKey_Deserialize = form.value.key
 
+    // Array 索引须为十进制明文，不能走值编码 wire（否则后端 parse_array_index 失败）
+    if (form.value.type === 'array') {
+      for (const item of form.value.fieldValueList) {
+        const idx = String(item.fieldKey ?? '').trim()
+        if (!/^\d+$/.test(idx)) {
+          meErr(t('fieldAdd.arrayIndexInvalid'))
+          return
+        }
+      }
+    }
+
     // 与 KeyRename 一致：提交前先做编码转换检查，失败 meErr 并 return，不打后端
     try {
       if (form.value.type === 'string') {
         value = meViewToWire(value, valViewFmt)
       }
+      const isArray = form.value.type === 'array'
       fieldValueList = form.value.fieldValueList.map(item => ({
         ...item,
-        fieldKey: meViewToWire(item.fieldKey, valViewFmt),
+        fieldKey: isArray ? String(item.fieldKey).trim() : meViewToWire(item.fieldKey, valViewFmt),
         fieldValue: meViewToWire(item.fieldValue, valViewFmt),
       }))
       fieldValueList.forEach(item => {
@@ -196,6 +208,7 @@ const hint = computed(() => {
     return share.capabilities.httlSupported ? t('fieldAdd.hashHintTtl') : t('fieldAdd.hashHint')
   if (form.value.type === 'zset') return t('fieldAdd.zsetHint')
   if (form.value.type === 'stream') return t('fieldAdd.streamHint')
+  if (form.value.type === 'array') return t('fieldAdd.arrayHint')
   return ''
 })
 
@@ -301,9 +314,15 @@ function handleKeyTypeChange() {
           <el-input
             type="text"
             v-model="item.fieldKey"
-            :placeholder="form.type === 'hash' ? t('fieldAdd.hashKey') : t('fieldAdd.field')"
+            :placeholder="
+              form.type === 'array'
+                ? t('fieldAdd.arrayIndex')
+                : form.type === 'hash'
+                  ? t('fieldAdd.hashKey')
+                  : t('fieldAdd.field')
+            "
             style="margin-right: 10px"
-            v-if="form.type === 'hash' || form.type === 'stream'"
+            v-if="form.type === 'hash' || form.type === 'stream' || form.type === 'array'"
             :validate-event="false" />
           <el-input
             type="text"

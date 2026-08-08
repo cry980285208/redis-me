@@ -93,8 +93,33 @@ pub fn ui_key_type_str(key_type: &str) -> String {
 pub fn to_key_type(key_type: &str) -> ValueType {
     match key_type {
         ME_JSON_TYPE_NAME => ValueType::JSON,
+        // 规范化为小写 "array"，与 TYPE 回复一致，便于 is_array_type 识别
+        s if s.eq_ignore_ascii_case("array") => ValueType::Unknown("array".into()),
         _ => key_type.into(),
     }
+}
+
+/// Redis 8.8 Array 类型判断。
+///
+/// redis-rs 当前尚无正式 `ValueType::Array`，`TYPE` / `into()` 会落到
+/// `ValueType::Unknown("array")`。所有 Array 读写分支必须经此函数，勿散落匹配字符串。
+///
+/// **升级注意**：若日后 redis-rs 增加 `ValueType::Array`（或 Unknown 字符串变化），
+/// 必须同步扩展本函数，否则会落入 `KeyTypeUnknown` / 静默走错分支。
+pub fn is_array_type(t: &ValueType) -> bool {
+    matches!(t, ValueType::Unknown(s) if s.eq_ignore_ascii_case("array"))
+}
+
+/// 解析 Array 索引（十进制非负）；供 ARSET/ARGET/ARDEL 等使用
+pub fn parse_array_index(s: &str) -> AnyResult<i64> {
+    let idx = s
+        .trim()
+        .parse::<i64>()
+        .map_err(|_| anyhow::anyhow!("invalid array index: {}", s))?;
+    if idx < 0 {
+        bail!("invalid array index: {}", s);
+    }
+    Ok(idx)
 }
 
 pub fn ui_xinfo_group(group: StreamInfoGroup) -> XInfoGroup {
@@ -169,6 +194,68 @@ pub fn ui_list_items(
             value: format_bytes(v, format),
         })
         .collect()
+}
+
+/// 解析 ARSCAN 一对索引+原始 bytes。
+/// Redis 8.8 实际为嵌套 `[[idx, val], ...]`（见命令示例）；亦兼容扁平 `[idx, val, ...]`。
+pub fn parse_arscan_pairs(raw: Value) -> AnyResult<Vec<(i64, Vec<u8>)>> {
+    let arr = match raw {
+        Value::Nil => return Ok(Vec::new()),
+        Value::Array(a) => a,
+        other => bail!(AppError::Internal {
+            message: format!("unexpected ARSCAN reply: {:?}", other)
+        }),
+    };
+    if arr.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let parse_one = |idx_v: &Value, val_v: &Value| -> AnyResult<(i64, Vec<u8>)> {
+        let idx: i64 = FromRedisValue::from_redis_value_ref(idx_v)
+            .map_err(|e| anyhow::anyhow!("ARSCAN index parse: {}", e))?;
+        let val_bytes: Vec<u8> = FromRedisValue::from_redis_value_ref(val_v)
+            .map_err(|e| anyhow::anyhow!("ARSCAN value parse: {}", e))?;
+        Ok((idx, val_bytes))
+    };
+
+    // 嵌套：每个元素是 [idx, val]
+    if matches!(arr.first(), Some(Value::Array(_))) {
+        let mut pairs = Vec::with_capacity(arr.len());
+        for entry in &arr {
+            match entry {
+                Value::Array(pair) if pair.len() >= 2 => {
+                    pairs.push(parse_one(&pair[0], &pair[1])?);
+                }
+                other => bail!(AppError::Internal {
+                    message: format!("unexpected ARSCAN pair: {:?}", other)
+                }),
+            }
+        }
+        return Ok(pairs);
+    }
+
+    // 扁平：idx1, val1, idx2, val2, ...
+    let mut pairs = Vec::with_capacity(arr.len() / 2);
+    let mut i = 0;
+    while i + 1 < arr.len() {
+        pairs.push(parse_one(&arr[i], &arr[i + 1])?);
+        i += 2;
+    }
+    Ok(pairs)
+}
+
+/// ARSCAN → List 同行形状 `{index, value}`（IPC 展示用）
+pub fn ui_array_items_from_arscan(
+    raw: Value,
+    format: &BytesFormat,
+) -> AnyResult<Vec<crate::utils::model::RedisListItem>> {
+    Ok(parse_arscan_pairs(raw)?
+        .into_iter()
+        .map(|(index, bytes)| crate::utils::model::RedisListItem {
+            index,
+            value: format_bytes(&bytes, format),
+        })
+        .collect())
 }
 
 pub fn ui_hash_value(value: &[(Vec<u8>, Vec<u8>)], format: &BytesFormat) -> Vec<RedisHashItem> {

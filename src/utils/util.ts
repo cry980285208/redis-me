@@ -90,6 +90,7 @@ export const KEY_TYPE_LIST: KeyTypeListItem[] = [
   { short: 'Z', value: 'ZSET', type: 'danger' },
   { short: 'X', value: 'STREAM', type: 'warning' },
   { short: 'J', value: 'JSON', type: 'warning' },
+  { short: 'A', value: 'ARRAY', type: 'warning' }, // Redis 8.8 Array；色同 JSON/Stream
 ]
 
 const keyTypeMap = new Map(KEY_TYPE_LIST.map(item => [item.value, item.type]))

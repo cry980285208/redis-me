@@ -24,7 +24,7 @@ export const commands = {
 	chartList: (id: string) => typedError<RedisChart[], string>(__TAURI_INVOKE("chart_list", { id })),
 	nodeList: (id: string) => typedError<RedisNode[], string>(__TAURI_INVOKE("node_list", { id })),
 	scan: (id: string, param: ScanParam) => typedError<ScanResult_Serialize, string>(__TAURI_INVOKE("scan", { id, param })),
-	fieldScan: (id: string, param: FieldScanParam_Deserialize) => typedError<FieldScanResult, string>(__TAURI_INVOKE("field_scan", { id, param })),
+	fieldScan: (id: string, param: FieldScanParam_Deserialize) => typedError<FieldScanResult_Serialize, string>(__TAURI_INVOKE("field_scan", { id, param })),
 	ttl: (id: string, key: RedisKey_Deserialize, ttl: number) => typedError<null, string>(__TAURI_INVOKE("ttl", { id, key, ttl })),
 	set: (id: string, param: RedisSetParam_Deserialize) => typedError<null, string>(__TAURI_INVOKE("set", { id, param })),
 	del: (id: string, key: RedisKey_Deserialize) => typedError<null, string>(__TAURI_INVOKE("del", { id, key })),
@@ -200,7 +200,9 @@ export type FieldScanParam_Serialize = {
 	includeFieldTtl: boolean | null,
 };
 
-export type FieldScanResult = {
+export type FieldScanResult = FieldScanResult_Serialize | FieldScanResult_Deserialize;
+
+export type FieldScanResult_Deserialize = {
 	type: string,
 	ttl: number,
 	size: number,
@@ -209,6 +211,21 @@ export type FieldScanResult = {
 	length: number,
 	/**  STRING 因超过 value_byte_limit 仅返回预览片段时为 true */
 	valueTruncated: boolean,
+	/**  Array：ARLEN（逻辑长度 maxIndex+1）；其它类型为 None */
+	logicalLength?: number | null,
+};
+
+export type FieldScanResult_Serialize = {
+	type: string,
+	ttl: number,
+	size: number,
+	value: any,
+	cursor: ScanCursor,
+	length: number,
+	/**  STRING 因超过 value_byte_limit 仅返回预览片段时为 true */
+	valueTruncated: boolean,
+	/**  Array：ARLEN（逻辑长度 maxIndex+1）；其它类型为 None */
+	logicalLength?: number | null,
 };
 
 export type FiledScanMeta = {

@@ -418,6 +418,9 @@ export default {
     hashHintTtl: '(HashKey: HashValue: TTL Seconds)',
     zsetHint: '(Value: Score)',
     streamHint: '(Field: Value)',
+    arrayHint: '(Index: Value)',
+    arrayIndex: 'Index',
+    arrayIndexInvalid: 'Index must be a non-negative integer',
     newKey: 'New Key',
     newField: 'New Field',
     key: 'Key',
@@ -899,6 +902,7 @@ export default {
     textLength: 'Bytes Length: ',
     textEntries: 'Scanned: ',
     totalCount: 'Total: ',
+    arLen: 'Length: ',
     valueTruncatedTitle: 'Value too large — showing preview',
     valueTruncatedDesc:
       'This key is about {size}, exceeding the {limit} limit. Only the first {preview} bytes are shown to keep the UI responsive.',

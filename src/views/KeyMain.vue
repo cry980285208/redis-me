@@ -1238,7 +1238,7 @@ function editDbName(db: number): void {
           <template #prepend>
             <el-dropdown placement="bottom-start" @command="chooseKeyType">
               <el-tag :type="keyTypeTag.type" effect="plain" class="key-type-tag">
-                {{ meKeyShort(keyType, 'A') }}
+                {{ meKeyShort(keyType, '-') }}
               </el-tag>
               <template #dropdown>
                 <el-dropdown-menu>
@@ -1248,7 +1248,7 @@ function editDbName(db: number): void {
                       :effect="'ALL' === keyType ? 'plain' : 'dark'"
                       style="width: 26px"
                       hit>
-                      A
+                      -
                     </el-tag>
                     <el-text style="margin-left: 6px" type="info">ALL</el-text>
                   </el-dropdown-item>

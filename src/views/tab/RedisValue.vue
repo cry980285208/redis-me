@@ -253,6 +253,7 @@ const jsonType = computed(() => 'json' === redisValue.value?.type)
 const streamType = computed(() => 'stream' === redisValue.value?.type)
 const hashType = computed(() => 'hash' === redisValue.value?.type)
 const listType = computed(() => 'list' === redisValue.value?.type)
+const arrayType = computed(() => 'array' === redisValue.value?.type)
 const setType = computed(() => 'set' === redisValue.value?.type)
 const zsetType = computed(() => 'zset' === redisValue.value?.type)
 /** 服务端支持 HTTL 时，可选是否在 fieldScan 中拉取 Hash 字段 TTL */
@@ -266,7 +267,8 @@ const viewTypeList: FieldViewType[] = ['json', 'table']
 const viewType = ref<FieldViewType>('json')
 
 function supportsFieldServerScan(type: string | undefined) {
-  return type === 'hash' || type === 'set' || type === 'zset'
+  // Array：精确勾选走 ARGET；非精确仍 ARSCAN，关键词本地过滤
+  return type === 'hash' || type === 'set' || type === 'zset' || type === 'array'
 }
 
 function pauseFieldScan() {
@@ -300,13 +302,18 @@ function manualRefreshKey() {
 /** 支持表格视图的类型（与底部 segmented 可见条件一致） */
 function supportsTableView(type: string | undefined) {
   return (
-    type === 'hash' || type === 'list' || type === 'set' || type === 'zset' || type === 'stream'
+    type === 'hash' ||
+    type === 'list' ||
+    type === 'set' ||
+    type === 'zset' ||
+    type === 'stream' ||
+    type === 'array'
   )
 }
 
 /** field_get 可单行刷新的表格类型 */
 function supportsFieldRowRefresh(type: string | undefined) {
-  return type === 'hash' || type === 'list' || type === 'zset'
+  return type === 'hash' || type === 'list' || type === 'zset' || type === 'array'
 }
 
 /** 切换键或 reset 时，按 settings.fieldShow 决定默认视图（可传入刚拿到的 type，避免等 finally） */
@@ -587,6 +594,7 @@ function fieldScanValueForJsonView(type: string, value: unknown): unknown {
         return out
       })
     case 'list':
+    case 'array':
       return (value as ValueTableRow[]).map(row => ({
         index: row.index,
         value: wireToUtf8JsonText(row.value),
@@ -615,8 +623,14 @@ const showValue = computed(() => {
     return isPretty.value ? meFormatDisplayValue(str, true) : str
   }
 
-  // Hash/List/Set/ZSet：JSON 视图展示 UTF-8，不直接 dump base64 wire
-  if (rv.type === 'hash' || rv.type === 'list' || rv.type === 'set' || rv.type === 'zset') {
+  // Hash/List/Set/ZSet/Array：JSON 视图展示 UTF-8，不直接 dump base64 wire
+  if (
+    rv.type === 'hash' ||
+    rv.type === 'list' ||
+    rv.type === 'set' ||
+    rv.type === 'zset' ||
+    rv.type === 'array'
+  ) {
     const display = fieldScanValueForJsonView(rv.type, obj)
     return JSON.stringify(display, null, isPretty.value ? 2 : undefined)
   }
@@ -801,6 +815,7 @@ function mergeFieldScanPage(
     prev.length = data.length
     prev.ttl = data.ttl
     prev.size = data.size
+    prev.logicalLength = data.logicalLength
   }
   return true
 }
@@ -874,7 +889,7 @@ async function fieldScanAll(): Promise<void> {
 
 function shouldFieldScanAuto(type: string | undefined, exact: boolean) {
   if (exact || !type) return false
-  // Hash/Set/ZSet pattern 扫描、List/Stream 前端分页循环
+  // Hash/Set/ZSet/Array(精确除外) pattern 扫描、List/Stream/Array 前端分页循环
   return supportsFieldServerScan(type) || type === 'list' || type === 'stream'
 }
 
@@ -1094,7 +1109,7 @@ function buildFieldAsCommandParam(row: ValueTableRow): RedisFieldAsCommand_Deser
     fieldIndex: -1,
     valFmt: IPC_WIRE_FORMAT,
   }
-  if (rv.type === 'list') {
+  if (rv.type === 'list' || rv.type === 'array') {
     param.fieldIndex = listRowRedisIndex(row)
   }
   if (rv.type === 'stream') {
@@ -1258,7 +1273,7 @@ function prepareFieldRowContext(row: ValueTableRow) {
   const rv = redisValue.value
   fieldEditKey.value = row.key || ''
   fieldEditIndex.value = -1
-  if (rv?.type === 'list') {
+  if (rv?.type === 'list' || rv?.type === 'array') {
     fieldEditIndex.value = listRowRedisIndex(row)
   }
 }
@@ -1317,7 +1332,7 @@ function openFieldPanel(row: ValueTableRow, index: number, readonly: boolean) {
     streamId: row.id || '',
     readonly,
   }
-  if (rv.type === 'list') {
+  if (rv.type === 'list' || rv.type === 'array') {
     params.fieldIndex = fieldEditIndex.value
   }
   fieldSetRef.value?.open(params)
@@ -1365,7 +1380,7 @@ function applyFieldGetResult(rv: FieldScanViewState, data: RedisFieldValue, row:
         ttl: scanHashFieldTtl.value ? data.fieldTtl : (rows[idx].ttl ?? row.ttl),
       }
     }
-  } else if (rv.type === 'list') {
+  } else if (rv.type === 'list' || rv.type === 'array') {
     const rows = fieldValueRows(rv.value) as ValueTableRow[]
     const redisIndex = fieldEditIndex.value >= 0 ? fieldEditIndex.value : listRowRedisIndex(row)
     const idx = rows.findIndex(r => r.index === redisIndex)
@@ -1388,7 +1403,7 @@ async function refreshFieldRow(row: ValueTableRow) {
   if (!rv || !conn || !share.redisKey) return
   prepareFieldRowContext(row)
 
-  if (rv.type === 'hash' || rv.type === 'list' || rv.type === 'zset') {
+  if (rv.type === 'hash' || rv.type === 'list' || rv.type === 'zset' || rv.type === 'array') {
     const param = buildFieldGetParam(row)
     if (!param) return
     try {
@@ -1487,7 +1502,7 @@ async function fieldDel(row: ValueTableRow) {
     fieldIndex: -1,
     valFmt: IPC_WIRE_FORMAT,
   }
-  if (rv.type === 'list') {
+  if (rv.type === 'list' || rv.type === 'array') {
     param.fieldIndex = listRowRedisIndex(row)
   }
   if (rv.type === 'stream') {
@@ -1547,12 +1562,18 @@ const textMemory = computed(() => {
   return label + meHumanSize(sz)
 })
 
-/** 与 textLength 同一位置：String/单字段为字节长度，集合类型为总数 */
+/** 与 textLength 同一位置：String/单字段为字节长度，集合类型为总数；Array 附带 ARLEN */
 const textLength = computed(() => {
   const rv = redisValue.value
   if (!rv || jsonType.value) return ''
   if (stringType.value) {
     return t('redisValue.textLength') + rv.length
+  }
+  if (rv.length <= 0 && rv.logicalLength == null) return ''
+  if (arrayType.value) {
+    const countPart = rv.length > 0 ? t('redisValue.totalCount') + rv.length : ''
+    const lenPart = rv.logicalLength != null ? t('redisValue.arLen') + rv.logicalLength : ''
+    return [countPart, lenPart].filter(Boolean).join(' · ')
   }
   if (rv.length <= 0) return ''
   return t('redisValue.totalCount') + rv.length
@@ -1609,6 +1630,7 @@ const KEY_TYPE_TO_GROUP: Record<string, string> = {
   zset: 'sorted-set',
   stream: 'stream',
   json: 'json',
+  array: 'array',
 }
 
 function openCommandHelp() {
@@ -1974,13 +1996,13 @@ onUnmounted(() => {
                 </template>
               </el-table-column>
 
-              <!-- List 索引 -->
+              <!-- List / Array 索引 -->
               <el-table-column
                 :label="t('redisValue.index')"
                 prop="index"
                 width="100"
                 sortable
-                v-if="redisValue.type === 'list'" />
+                v-if="redisValue.type === 'list' || redisValue.type === 'array'" />
 
               <!-- 字段值 -->
               <el-table-column
@@ -2055,7 +2077,7 @@ onUnmounted(() => {
                           <el-dropdown-item v-if="hashType" command="copyKey">
                             <me-icon icon="el-icon-document-copy" :name="t('redisValue.copyKey')" />
                           </el-dropdown-item>
-                          <el-dropdown-item v-if="listType" command="copyIndex">
+                          <el-dropdown-item v-if="listType || arrayType" command="copyIndex">
                             <me-icon
                               icon="el-icon-document-copy"
                               :name="t('redisValue.copyIndex')" />

@@ -1,6 +1,12 @@
 ## Future
 
+- Redis 8.8 新类型 Array 的支持（方案见 `plans/18_array-type-support.md`）
+  - 18.1 基础读写（ARSCAN / ARGET / ARSET / ARDEL）✅️
+  - 18.2 索引范围 / ARLASTITEMS / ARINSERT
+  - 18.3 ARGREP / AROP / ARINFO / ARDELRANGE
 - 研究下怎么上线Linux的应用商店
+- Vector Set 类型的支持
+- Time Series 的支持
 
 ### 可逐步完善（小点）
 
@@ -22,8 +28,6 @@
 
 ### 中长期
 
-- Redis 8.8 新类型 Array 的支持
-- 键类型: Vector Set，Time Series 的支持
 - RedisSearch 的支持
 - redis 的扩展模块命令支持
 - Redis8.8 已发布，更新命令列表（等 9 发布再更新吧）、配置文件等

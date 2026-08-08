@@ -391,9 +391,12 @@ api_model!(FieldScanResult {
     #[specta(type = specta_typescript::Any)]
     value: serde_json::Value,
     cursor: ScanCursor,
-    length: usize, // String/Hash字段：原始 bytes 长度；集合类型：元素总数(HLEN/LLEN/SCARD/ZCARD/XLEN)
+    length: usize, // String/Hash字段：原始 bytes 长度；集合类型：元素总数(HLEN/LLEN/SCARD/ZCARD/XLEN/ARCOUNT)
     /// STRING 因超过 value_byte_limit 仅返回预览片段时为 true
     value_truncated: bool,
+    /// Array：ARLEN（逻辑长度 maxIndex+1）；其它类型为 None
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    logical_length: Option<u64>,
 });
 
 // Redis键: 由于键是字节存储的，考虑转换为utf-8字符串显示后可能会丢失信息，因此封装为对象
