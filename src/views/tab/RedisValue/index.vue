@@ -158,10 +158,14 @@ const showScanControl = computed(() => {
   return scanPaused.value || (loading.value && scanBatchCount.value >= SCAN_CONTROL_MIN_BATCHES)
 })
 const showFieldExactCheckbox = computed(() => supportsFieldServerScan(redisValue.value?.type))
+// Array 的 ARSCAN 无服务端 MATCH：输入框仅本地过滤；精确勾选走 ARGET
 const fieldScanInputPlaceholder = computed(() =>
-  listType.value || streamType.value
+  listType.value || streamType.value || arrayType.value
     ? t('redisValue.listStreamFilterPlaceholder')
     : t('redisValue.fieldScanPlaceholder'),
+)
+const fieldExactSearchTip = computed(() =>
+  arrayType.value ? t('redisValue.fieldExactSearchArray') : t('redisValue.fieldExactSearch'),
 )
 const scanToggleTip = computed(() =>
   loading.value ? t('keyMain.pauseScan') : t('keyMain.resumeScan'),
@@ -896,7 +900,7 @@ const fieldSetRow = ref<ValueTableRow | null>(null) // 分页下不能用 index 
 
 function fieldAdd() {
   const rv = redisValue.value
-  if (!rv) return
+  if (!rv || !canEdit.value) return
   fieldAddRef.value?.open({
     mode: 'field',
     type: rv.type,
@@ -1437,20 +1441,20 @@ const textMemory = computed(() => {
   return label + meHumanSize(sz)
 })
 const textLength = computed(() => {
-  // String=字节长度；集合=总数；Array 附带 ARLEN
+  // String=字节长度；集合/Array=总数（Array 的 ARLEN 单独一项，用竖线分隔）
   const rv = redisValue.value
   if (!rv || jsonType.value) return ''
   if (stringType.value) {
     return t('redisValue.textLength') + rv.length
   }
-  if (rv.length <= 0 && rv.logicalLength == null) return ''
-  if (arrayType.value) {
-    const countPart = rv.length > 0 ? t('redisValue.totalCount') + rv.length : ''
-    const lenPart = rv.logicalLength != null ? t('redisValue.arLen') + rv.logicalLength : ''
-    return [countPart, lenPart].filter(Boolean).join(' · ')
-  }
   if (rv.length <= 0) return ''
   return t('redisValue.totalCount') + rv.length
+})
+/** Array：ARLEN，与「总数」分开展示，中间用 el-divider */
+const textArLen = computed(() => {
+  const rv = redisValue.value
+  if (!rv || !arrayType.value || rv.logicalLength == null) return ''
+  return t('redisValue.arLen') + rv.logicalLength
 })
 const textEntries = computed(() => {
   const rv = redisValue.value
@@ -1645,7 +1649,7 @@ onUnmounted(() => {
                   </el-tooltip>
                   <el-tooltip
                     v-if="showFieldExactCheckbox"
-                    :content="t('redisValue.fieldExactSearch')"
+                    :content="fieldExactSearchTip"
                     placement="bottom"
                     raw-content
                     :show-after="1000">
@@ -1763,9 +1767,13 @@ onUnmounted(() => {
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
-              <el-button icon="el-icon-plus" @click="fieldAdd" style="margin-left: 10px">{{
-                t('redisValue.insertRow')
-              }}</el-button>
+              <el-button
+                v-if="canEdit"
+                icon="el-icon-plus"
+                style="margin-left: 10px"
+                @click="fieldAdd">
+                {{ t('redisValue.insertRow') }}
+              </el-button>
             </div>
           </div>
           <div class="table-view">
@@ -1991,8 +1999,12 @@ onUnmounted(() => {
 
           <el-divider direction="vertical" v-if="textEntries" />
 
-          <!-- 已扫描：筛选 / 已加载 -->
+          <!-- 已扫描：筛选 / 已加载（与总数关联，紧挨展示） -->
           <el-text> {{ textEntries }} </el-text>
+
+          <!-- Array ARLEN 放最后，避免插在总数与已扫描之间 -->
+          <el-divider direction="vertical" v-if="textArLen" />
+          <el-text v-if="textArLen"> {{ textArLen }} </el-text>
         </div>
 
         <div class="me-flex" style="position: relative">

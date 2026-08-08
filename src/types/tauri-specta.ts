@@ -407,7 +407,7 @@ export type RedisFieldAdd_Deserialize = {
 	ttl: number,
 	value: string,
 	listPushMethod: string,
-	/**  Array 写入方式：arset（指定索引）/ arinsert（顺序追加） */
+	/**  Array 写入方式：arset（指定索引）/ arinsert（游标插入） */
 	arrayWriteMethod: string,
 	fieldValueList: RedisFieldValue[],
 	streamId: string,
@@ -425,7 +425,7 @@ export type RedisFieldAdd_Serialize = {
 	ttl: number,
 	value: string,
 	listPushMethod: string,
-	/**  Array 写入方式：arset（指定索引）/ arinsert（顺序追加） */
+	/**  Array 写入方式：arset（指定索引）/ arinsert（游标插入） */
 	arrayWriteMethod: string,
 	fieldValueList: RedisFieldValue[],
 	streamId: string,

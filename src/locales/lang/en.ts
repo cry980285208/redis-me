@@ -423,7 +423,10 @@ export default {
     arrayIndex: 'Index',
     arrayIndexInvalid: 'Index must be a non-negative integer',
     arrayWriteArset: 'By index',
-    arrayWriteArinsert: 'Append',
+    /** ARINSERT: consecutive writes at insert cursor, not end-append */
+    arrayWriteArinsert: 'At cursor',
+    arrayWriteArinsertTip:
+      'Writes at the insert cursor (advances per value); use ARNEXT / ARSEEK to inspect or reposition',
     newKey: 'New Key',
     newField: 'New Field',
     key: 'Key',
@@ -854,6 +857,8 @@ export default {
     fieldCommands: 'More',
     fieldExactSearch:
       '<b>Scan</b> (unchecked)<br/>app: contains app<br/>app*: starts with app<br/>*app: ends with app<br/>Use * ? [ as glob when present<br/><br/><b>Exact</b> (checked)<br/>Whether a field/member exactly matches input (Hash matches field name only)',
+    fieldExactSearchArray:
+      '<b>Scan</b> (unchecked)<br/>Local filter only (ARSCAN has no server-side MATCH)<br/><br/><b>Exact</b> (checked)<br/>ARGET by index: enter a non-negative integer index',
     insertRow: 'Insert',
     allHashKeys: 'All Keys',
     allHashValues: 'All Values',

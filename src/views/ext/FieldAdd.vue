@@ -45,7 +45,7 @@ const initForm = computed(() => ({
     { label: t('fieldAdd.append'), value: 'rpush' },
     { label: t('fieldAdd.prepend'), value: 'lpush' },
   ],
-  /** Array：arset 指定索引 / arinsert 顺序追加 */
+  /** Array：arset 指定索引 / arinsert 游标插入（非末尾追加） */
   arrayWriteMethod: 'arset',
   arrayWriteOptions: [
     { label: t('fieldAdd.arrayWriteArset'), value: 'arset' },
@@ -304,9 +304,14 @@ function handleKeyTypeChange() {
         <el-segmented v-model="form.listPushMethod" :options="form.listPushOptions" />
       </el-form-item>
 
-      <!-- Array：ARSET 指定索引 / ARINSERT 顺序追加 -->
+      <!-- Array：ARSET 指定索引 / ARINSERT 游标插入 -->
       <el-form-item :label="t('fieldAdd.type')" v-if="form.type === 'array'">
-        <el-segmented v-model="form.arrayWriteMethod" :options="form.arrayWriteOptions" />
+        <div>
+          <el-segmented v-model="form.arrayWriteMethod" :options="form.arrayWriteOptions" />
+          <div v-if="!arrayArsetMode" class="array-write-hint">
+            {{ t('fieldAdd.arrayWriteArinsertTip') }}
+          </div>
+        </div>
       </el-form-item>
 
       <!-- streamId: 仅 stream 类型显示 -->
@@ -405,5 +410,11 @@ function handleKeyTypeChange() {
 <style scoped lang="scss">
 :deep(.el-input-group__prepend) {
   padding: 0 16px;
+}
+.array-write-hint {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  line-height: 1.4;
 }
 </style>

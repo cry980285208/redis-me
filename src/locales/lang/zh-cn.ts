@@ -413,7 +413,9 @@ export default {
     arrayIndex: '索引',
     arrayIndexInvalid: '请输入非负整数索引',
     arrayWriteArset: '指定索引',
-    arrayWriteArinsert: '顺序追加',
+    /** ARINSERT：从插入光标起连续写入，非末尾追加 */
+    arrayWriteArinsert: '游标插入',
+    arrayWriteArinsertTip: '从当前插入光标起连续写入；可用 ARNEXT 查看、ARSEEK 重定位光标',
     newKey: '新增键',
     newField: '新增字段',
     key: '键',
@@ -840,6 +842,8 @@ export default {
     fieldCommands: '更多',
     fieldExactSearch:
       '<b>扫描</b>（未勾选）<br/>app: 包含 app<br/>app*: 以 app 开头<br/>*app: 以 app 结尾<br/>含 * ? [ 时原样作为模式<br/><br/><b>精确</b>（勾选）<br/>判断 field/member 与输入完全一致是否存在（Hash 仅匹配 field 名）',
+    fieldExactSearchArray:
+      '<b>扫描</b>（未勾选）<br/>输入仅做本地过滤（ARSCAN 无服务端 MATCH）<br/><br/><b>精确</b>（勾选）<br/>按索引 ARGET：输入非负整数索引查询单个槽',
     insertRow: '插入',
     allHashKeys: '所有键',
     allHashValues: '所有值',
