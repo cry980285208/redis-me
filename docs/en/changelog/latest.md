@@ -1,5 +1,22 @@
 # 4.x Changelog
 
+## [v4.7.0](https://mp.weixin.qq.com/s/OfWq32Ibn7FOz2vYPqxdQQ) (2026-08-08)
+
+### ✨ New Features
+
+- Support Redis 8.8 **Array** type
+  - Basic CRUD: browse / insert / edit / delete rows / copy as commands
+  - Browse extras: index-range scan, LastN, cursor insert, Array info
+- Key area: new **Load All in Folder** shortcut
+- Connection: dialog layout polish; advanced option for custom tree key separator
+- Config: Redis 8.8 / 8.10 default-value references and notes
+- Commands: Redis 8.8 / 8.10 new commands and help text
+- Other details
+  - CodeMirror / terminal toggle-wrap shortcut unified to Ctrl+B
+  - Connection empty state also shows top-bar **Add Conn**
+  - Command Help: drop redundant tooltip on the command column; no wrap
+  - Upgraded frontend/backend dependencies and refactor polish
+
 ## v4.6.1 (2026-08-02)
 
 ### ✨ New Features
