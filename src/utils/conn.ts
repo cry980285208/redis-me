@@ -4,6 +4,7 @@
  * 数据约定：
  * - 每条连接的分组名存在 `conn.meta.group`（空字符串 = 默认分组，UI 显示「默认分组」）
  * - 命令映射存在 `conn.meta.commandMap`（原命令小写 → 重命名后的命令，随 meta 同步后端）
+ * - 树形键分隔符存在 `conn.meta.keySeparator`（默认 `:`，等于默认时不写入；连续分隔符视为一次）
  * - `settings.connGroups` 为分组名的有序列表（可含空分组占位，用于控制展示顺序）
  * - `settings.connShow`：`'flat'` 平铺表格 | `'group'` 分组树形列表
  * - `connList` 在分组模式下按「分组顺序 + 组内顺序」扁平存储，拖拽后需写回此顺序
@@ -18,6 +19,12 @@ export const CONN_META_UI_MODE = 'uiMode'
 
 /** 连接 meta 中命令映射：原命令名（小写）→ 服务端重命名后的命令 */
 export const CONN_META_COMMAND_MAP = 'commandMap'
+
+/** 连接 meta 中树形浏览键分隔符 */
+export const CONN_META_KEY_SEPARATOR = 'keySeparator'
+
+/** 树形浏览默认分隔符（与历史硬编码一致） */
+export const DEFAULT_KEY_SEPARATOR = ':'
 
 export type ConnCommandMap = Record<string, string>
 export type ConnUiMode = 'normal' | 'minimal'
@@ -76,6 +83,67 @@ export function setConnCommandMap(conn: UiConn, map: ConnCommandMap): void {
   const cleaned = getConnCommandMap({ ...conn, meta: { [CONN_META_COMMAND_MAP]: map } })
   if (Object.keys(cleaned).length) conn.meta[CONN_META_COMMAND_MAP] = cleaned
   else delete conn.meta[CONN_META_COMMAND_MAP]
+}
+
+/** 读取连接的树形键分隔符；空 / 未设 → 默认 `:` */
+export function getConnKeySeparator(conn: UiConn | null | undefined): string {
+  const raw = conn?.meta?.[CONN_META_KEY_SEPARATOR]
+  if (typeof raw !== 'string') return DEFAULT_KEY_SEPARATOR
+  const sep = raw.trim()
+  return sep || DEFAULT_KEY_SEPARATOR
+}
+
+/** 写入键分隔符；默认 `:` 或空串时删除 meta 字段 */
+export function setConnKeySeparator(conn: UiConn, value: string): void {
+  conn.meta ??= {}
+  const sep = typeof value === 'string' ? value.trim() : ''
+  if (!sep || sep === DEFAULT_KEY_SEPARATOR) delete conn.meta[CONN_META_KEY_SEPARATOR]
+  else conn.meta[CONN_META_KEY_SEPARATOR] = sep
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/** 按分隔符拆键路径；连续相同分隔符折叠为一次（`:` 时等价原 `/:+/`） */
+export function splitKeyPath(key: string, sep: string): string[] {
+  if (key === '') return ['']
+  const s = sep || DEFAULT_KEY_SEPARATOR
+  return key.split(new RegExp(`(?:${escapeRegExp(s)})+`))
+}
+
+export function joinKeyPath(parts: string[], sep: string): string {
+  return parts.join(sep || DEFAULT_KEY_SEPARATOR)
+}
+
+/** 键是否属于 folder 或其子树（folder 后紧跟至少一个分隔符） */
+export function keyUnderFolder(key: string, folder: string, sep: string): boolean {
+  if (key === folder) return true
+  const s = sep || DEFAULT_KEY_SEPARATOR
+  return key.startsWith(folder + s)
+}
+
+/**
+ * 相对 folder 的子路径；不相属返回 null。
+ * 会吞掉 folder 后连续分隔符，避免 `user::a` 相对 `user` 时残留前导空段。
+ */
+export function keyRelativePath(key: string, folder: string, sep: string): string | null {
+  if (key === folder) return ''
+  const s = sep || DEFAULT_KEY_SEPARATOR
+  const re = new RegExp(`^${escapeRegExp(folder)}(?:${escapeRegExp(s)})+`)
+  if (!re.test(key)) return null
+  return key.replace(re, '')
+}
+
+/** 目录 SCAN / 批量 MATCH：`folder` + sep + `*`；`*` 目录仍为 `*` */
+export function folderMatchExpr(folder: string, sep: string): string {
+  if (folder === '*') return '*'
+  return folder + (sep || DEFAULT_KEY_SEPARATOR) + '*'
+}
+
+/** 在目录下新建键时的名称前缀 */
+export function folderKeyPrefix(folder: string, sep: string): string {
+  return folder + (sep || DEFAULT_KEY_SEPARATOR)
 }
 
 export function connMatchesKeyword(conn: UiConn, keyword: string): boolean {

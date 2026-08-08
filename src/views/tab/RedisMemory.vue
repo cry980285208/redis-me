@@ -6,8 +6,9 @@ import { useI18n } from 'vue-i18n'
 import { shareProvideKey } from '@/types/me-interface'
 import type { RedisKey_Deserialize, RedisKeySize_Serialize } from '@/types/tauri-specta'
 import { clearKeyTypeCacheForConn } from '@/utils/key-type-cache'
-import { sameRedisKey } from '@/utils/redis-key'
 // 官网参考: https://redis.ac.cn/docs/latest/commands/slowlog-get/
+import { meType } from '@/utils/redis-display'
+import { sameRedisKey } from '@/utils/redis-key'
 import {
   bus,
   KEY_REFRESH,
@@ -18,7 +19,6 @@ import {
   meHumanSize,
   meCommands,
   meOk,
-  meType,
 } from '@/utils/util'
 
 const { t } = useI18n()

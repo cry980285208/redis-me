@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, useTemplateRef } from 'vue'
+import { computed, onMounted, ref, useTemplateRef } from 'vue'
 import type { FailedFunc, Message, SuccessFunc } from 'vue-web-terminal'
 
 import { handleInputTipsSearch } from '@/plugins/ternimal'
@@ -31,6 +31,8 @@ type TerminalExpose = {
 }
 
 const terminalRef = useTemplateRef<TerminalExpose | null>('terminal')
+/** 自动换行默认开启，Mod+B 切换（与 CodeMirror 一致） */
+const lineWrap = ref(true)
 
 onMounted(() => {
   terminalRef.value?.pushMessage(props.welcome)
@@ -65,6 +67,9 @@ function onKeydown(e: KeyboardEvent): void {
   if (!(e.ctrlKey || e.metaKey)) return
 
   switch (key) {
+    case 'B':
+      lineWrap.value = !lineWrap.value
+      break
     case 'L':
       term.clearLog()
       term.pushMessage(props.welcome)
@@ -78,20 +83,22 @@ function onKeydown(e: KeyboardEvent): void {
 </script>
 
 <template>
-  <terminal
-    name="terminal"
-    ref="terminal"
-    @exec-cmd="execCmd"
-    @on-keydown="onKeydown"
-    :theme
-    :show-header="false"
-    :line-space="2"
-    cursor-style="bar"
-    context=""
-    :command-store="commandHelp"
-    :input-tips-search-handler="handleInputTipsSearch"
-    :context-suffix="prefix">
-  </terminal>
+  <div class="me-xterm" :class="{ 'is-wrap': lineWrap }">
+    <terminal
+      name="terminal"
+      ref="terminal"
+      @exec-cmd="execCmd"
+      @on-keydown="onKeydown"
+      :theme
+      :show-header="false"
+      :line-space="2"
+      cursor-style="bar"
+      context=""
+      :command-store="commandHelp"
+      :input-tips-search-handler="handleInputTipsSearch"
+      :context-suffix="prefix">
+    </terminal>
+  </div>
 </template>
 
 <style lang="scss">
@@ -138,12 +145,33 @@ code,
   font-family: var(--code-font) !important;
 }
 
-/* 保留空白并强制长串换行，避免横向滚动条 */
-.t-window p,
-.t-window div,
-.t-log-box {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  word-break: break-all;
+.me-xterm {
+  height: 100%;
+}
+
+/* 自动换行开启：保留空白并强制长串换行，避免横向滚动条 */
+.me-xterm.is-wrap {
+  .t-window p,
+  .t-window div,
+  .t-log-box {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-all;
+  }
+}
+
+/* 自动换行关闭：单行展示，横向滚动 */
+.me-xterm:not(.is-wrap) {
+  .t-window {
+    overflow-x: auto;
+  }
+
+  .t-window p,
+  .t-window div,
+  .t-log-box {
+    white-space: pre;
+    overflow-wrap: normal;
+    word-break: normal;
+  }
 }
 </style>

@@ -4,7 +4,7 @@ import { inject, ref, watch } from 'vue'
 import { shareProvideKey } from '@/types/me-interface'
 import type { RedisKey_Deserialize } from '@/types/tauri-specta'
 import { resolveKeyType } from '@/utils/key-type-cache'
-import { meKeyShort, meType } from '@/utils/util'
+import { meKeyShort, meType } from '@/utils/redis-display'
 
 const share = inject(shareProvideKey)!
 const props = defineProps<{

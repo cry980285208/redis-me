@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { FormItemRule } from 'element-plus'
+import { ElLoading, type FormItemRule } from 'element-plus'
 import { cloneDeep } from 'lodash'
 import { nanoid } from 'nanoid'
 import { computed, inject, reactive, ref, useTemplateRef, watch } from 'vue'
@@ -9,14 +9,19 @@ import { shareProvideKey, type UiConn } from '@/types/me-interface'
 import {
   getConnCommandMap,
   getConnGroup,
+  getConnKeySeparator,
   getConnUiMode,
   normalizeGroupName,
   setConnCommandMap,
   setConnGroup,
+  setConnKeySeparator,
   setConnUiMode,
 } from '@/utils/conn'
 import { meCommands, PREDEFINE_COLORS, meRandomString, meOk, meErr, meWarn } from '@/utils/util'
 const { t } = useI18n()
+
+/** 与 me-icon 默认 showAfter 一致 */
+const tipShowAfter = 1000
 
 const emit = defineEmits(['success', 'closed'])
 
@@ -62,6 +67,7 @@ const form = reactive({
     // 数据库别名
     // db0: '会话登录'
     // 未来的其他扩展
+
   },
 })
 
@@ -214,17 +220,17 @@ function autoGenName() {
   }
 }
 
-// 测试连接
-const loading = ref(false)
+// 测试连接：整弹窗 loading，避免按钮变宽挤动底栏
 function testConn() {
   formRef.value.validate(async (valid: boolean) => {
     if (!valid) return
-    loading.value = true
+    const target = document.querySelector('.el-dialog.conn-save-dialog') as HTMLElement | null
+    const loadingInstance = ElLoading.service({ target: target || undefined, lock: true })
     try {
       await meCommands.testConn(form)
       meOk(t('conn.testOk'))
     } finally {
-      loading.value = false
+      loadingInstance.close()
     }
   })
 }
@@ -324,16 +330,18 @@ const connMinimal = computed({
   set: (v: boolean) => setConnUiMode(form as UiConn, v ? 'minimal' : 'normal'),
 })
 
-// 高级选项：CONFIG 命令映射（存 meta.commandMap）
+// 高级选项：键分隔符（meta.keySeparator）+ CONFIG 命令映射（meta.commandMap）
 const advancedVisible = ref(false)
-const advancedForm = reactive({ configMapped: '' })
+const advancedForm = reactive({ keySeparator: ':', configMapped: '' })
 
 function openAdvanced() {
+  advancedForm.keySeparator = getConnKeySeparator(form as UiConn)
   advancedForm.configMapped = getConnCommandMap(form as UiConn).config ?? ''
   advancedVisible.value = true
 }
 
 function applyAdvanced() {
+  setConnKeySeparator(form as UiConn, advancedForm.keySeparator)
   const mapped = advancedForm.configMapped.trim()
   setConnCommandMap(form as UiConn, mapped ? { config: mapped } : {})
   advancedVisible.value = false
@@ -342,11 +350,12 @@ function applyAdvanced() {
 
 <template>
   <el-dialog
+    class="conn-save-dialog"
     :title="mode === 'add' ? t('conn.addConn') : t('conn.editConn')"
     @closed="emit('closed')"
     draggable
     v-model="visible"
-    width="660"
+    width="600"
     :close-on-click-modal="false"
     :close-on-press-escape="false"
     append-to-body
@@ -422,16 +431,11 @@ function applyAdvanced() {
         </el-col>
       </el-row>
 
-      <!-- 颜色、复选框：左右 space-between，不再按 el-col 比例分配 -->
-      <div class="conn-color-mode-row">
-        <el-form-item :label="t('conn.color')" class="conn-color-form-item">
-          <div class="conn-color-row">
+      <!-- 其他：颜色 + db + 模式复选框；右：高级更多 -->
+      <div class="conn-other-row">
+        <el-form-item :label="t('conn.other')" class="conn-other-form-item">
+          <div class="conn-other-content">
             <el-color-picker v-model="form.color" :predefine="PREDEFINE_COLORS" />
-            <el-button
-              class="conn-advanced-btn"
-              icon="el-icon-grid"
-              :title="t('conn.advancedTitle')"
-              @click="openAdvanced" />
             <div class="conn-db-input-group">
               <div class="conn-db-input-group__prepend">
                 <me-icon
@@ -449,54 +453,52 @@ function applyAdvanced() {
                 class="conn-db-input"
                 placeholder="0" />
             </div>
+            <div class="conn-mode-checkboxes">
+              <el-checkbox v-model="form.cluster">
+                <el-tooltip
+                  placement="top"
+                  raw-content
+                  :show-after="tipShowAfter"
+                  :content="t('conn.clusterTip')">
+                  <span>{{ t('conn.cluster') }}</span>
+                </el-tooltip>
+              </el-checkbox>
+              <el-checkbox v-model="form.sentinel">
+                <el-tooltip
+                  placement="top"
+                  raw-content
+                  :show-after="tipShowAfter"
+                  :content="t('conn.sentinelTip')">
+                  <span>{{ t('conn.sentinel') }}</span>
+                </el-tooltip>
+              </el-checkbox>
+              <el-checkbox v-model="form.ssl">
+                <el-tooltip
+                  placement="top"
+                  raw-content
+                  :show-after="tipShowAfter"
+                  :content="t('conn.sslTip')">
+                  <span>SSL</span>
+                </el-tooltip>
+              </el-checkbox>
+              <el-checkbox v-model="form.ssh">
+                <el-tooltip
+                  placement="top"
+                  raw-content
+                  :show-after="tipShowAfter"
+                  :content="t('conn.sshTip')">
+                  <span>SSH</span>
+                </el-tooltip>
+              </el-checkbox>
+            </div>
           </div>
         </el-form-item>
 
-        <div class="conn-mode-checkboxes">
-          <!-- 集群模式 -->
-          <el-checkbox v-model="form.cluster">
-            <me-icon
-              :name="t('conn.cluster')"
-              icon="el-icon-question-filled"
-              placement="top"
-              :info="t('conn.clusterTip')"
-              :icon-left="false"
-              raw-content />
-          </el-checkbox>
-
-          <!-- 哨兵模式 -->
-          <el-checkbox v-model="form.sentinel">
-            <me-icon
-              :name="t('conn.sentinel')"
-              icon="el-icon-question-filled"
-              placement="top"
-              :info="t('conn.sentinelTip')"
-              :icon-left="false"
-              raw-content />
-          </el-checkbox>
-
-          <!-- SSL加密 -->
-          <el-checkbox v-model="form.ssl">
-            <me-icon
-              name="SSL"
-              icon="el-icon-question-filled"
-              placement="top"
-              :info="t('conn.sslTip')"
-              :icon-left="false"
-              raw-content />
-          </el-checkbox>
-
-          <!-- SSH隧道 -->
-          <el-checkbox v-model="form.ssh">
-            <me-icon
-              name="SSH"
-              icon="el-icon-question-filled"
-              placement="top"
-              :info="t('conn.sshTip')"
-              :icon-left="false"
-              raw-content />
-          </el-checkbox>
-        </div>
+        <el-button
+          class="conn-advanced-btn"
+          icon="el-icon-more-filled"
+          :title="t('conn.advancedTitle')"
+          @click="openAdvanced" />
       </div>
 
       <!-- 哨兵模式 -->
@@ -654,6 +656,13 @@ function applyAdvanced() {
       destroy-on-close
       align-center>
       <el-form label-position="right" :label-width="t('conn.advancedLabelWidth')">
+        <el-form-item :label="t('conn.keySeparator')">
+          <el-input
+            v-model="advancedForm.keySeparator"
+            :placeholder="t('conn.keySeparatorPlaceholder')"
+            style="width: 120px" />
+          <div class="conn-advanced-hint">{{ t('conn.keySeparatorTip') }}</div>
+        </el-form-item>
         <el-form-item :label="t('conn.commandMap')">
           <div class="conn-command-map-row">
             <span class="conn-command-map-cmd">CONFIG</span>
@@ -674,30 +683,26 @@ function applyAdvanced() {
     <template #footer>
       <div class="conn-footer">
         <div class="conn-footer-left">
-          <el-button
-            type="primary"
-            :loading="loading"
-            :disabled="!(form.host && form.port)"
-            @click="testConn"
-            >{{ t('conn.testConn') }}</el-button
-          >
-          <el-checkbox v-model="form.readonly" style="margin-left: 20px" border>
-            <me-icon
-              :name="t('conn.readonly')"
-              icon="el-icon-question-filled"
+          <el-button type="success" :disabled="!(form.host && form.port)" @click="testConn">{{
+            t('conn.testConn')
+          }}</el-button>
+          <el-checkbox v-model="form.readonly" border>
+            <el-tooltip
               placement="top"
-              :info="t('conn.readonlyTip')"
-              :icon-left="false"
-              raw-content />
+              raw-content
+              :show-after="tipShowAfter"
+              :content="t('conn.readonlyTip')">
+              <span>{{ t('conn.readonly') }}</span>
+            </el-tooltip>
           </el-checkbox>
           <el-checkbox v-model="connMinimal" border>
-            <me-icon
-              :name="t('conn.uiModeMinimal')"
-              icon="el-icon-question-filled"
+            <el-tooltip
               placement="top"
-              :info="t('conn.uiModeTip')"
-              :icon-left="false"
-              raw-content />
+              raw-content
+              :show-after="tipShowAfter"
+              :content="t('conn.uiModeTip')">
+              <span>{{ t('conn.uiModeMinimal') }}</span>
+            </el-tooltip>
           </el-checkbox>
         </div>
         <div>
@@ -710,29 +715,30 @@ function applyAdvanced() {
 </template>
 
 <style scoped lang="scss">
-.conn-color-mode-row {
+.conn-other-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   width: 100%;
   gap: 12px;
 }
 
-.conn-color-form-item {
+.conn-other-form-item {
   margin-bottom: 0;
-  flex-shrink: 0;
+  flex: 1;
+  min-width: 0;
 }
 
-.conn-color-row {
+.conn-other-content {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .conn-db-input-group {
   display: inline-flex;
   width: 88px;
-  vertical-align: middle;
+  flex-shrink: 0;
 
   &__prepend {
     display: flex;
@@ -781,6 +787,7 @@ function applyAdvanced() {
 .conn-advanced-btn {
   min-width: 32px;
   padding: 8px 10px;
+  flex-shrink: 0;
 }
 
 .conn-command-map-row {
@@ -814,36 +821,26 @@ function applyAdvanced() {
 
 .conn-mode-checkboxes {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  flex-shrink: 0;
-
-  // 与英文标签等宽占位，避免中文过短导致整组贴右
-  :deep(.el-checkbox) {
-    min-width: 5rem;
-    margin-right: 12px;
-
-    &:last-child {
-      margin-right: 0;
-    }
-  }
+  flex-wrap: wrap;
+  gap: 0 10px;
 }
 
 .conn-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 16px;
 }
 
 .conn-footer-left {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 4px 0;
+  gap: 12px;
   margin-left: 20px;
 }
 
 :deep(.el-checkbox) {
-  margin-right: 12px;
+  margin-right: 0;
 }
 </style>

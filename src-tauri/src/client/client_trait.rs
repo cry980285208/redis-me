@@ -85,6 +85,10 @@ pub trait MeClient: Send + Sync {
 
     fn zset_range(&self, param: RedisZsetRange) -> AnyResult<Vec<RedisZsetRangeItem>>;
 
+    fn ar_last_items(&self, param: RedisArLastItems) -> AnyResult<Vec<RedisArLastItemsItem>>;
+
+    fn ar_info(&self, key: RedisKey) -> AnyResult<Vec<RedisArInfoItem>>;
+
     fn object_info(&self, key: RedisKey) -> AnyResult<RedisObjectInfo>;
 
     fn execute_command(&self, param: RedisCommand) -> AnyResult<String>;
@@ -316,6 +320,19 @@ pub fn field_scan_0_exact(
                 .unwrap_or_default();
             serde_json::to_value(zset)?
         }
+        // Array：ARGET 精确取索引（见 is_array_type 升级注释）
+        _ if is_array_type(key_type) => {
+            let idx = parse_array_index(member)?;
+            let value: Option<Vec<u8>> = redis::cmd("ARGET").arg(key).arg(idx).query(conn)?;
+            let items = match value {
+                Some(bytes) => vec![RedisListItem {
+                    index: idx,
+                    value: format_bytes(&bytes, bytes_format),
+                }],
+                None => Vec::new(),
+            };
+            serde_json::to_value(items)?
+        }
         _ => return Ok(None),
     };
     Ok(Some((json, cc)))
@@ -490,6 +507,68 @@ fn field_scan_list_page(
     Ok(items)
 }
 
+/// Array 索引上界：Redis `arrayParseIndex` 拒绝 UINT64_MAX（仅 ARSEEK 例外），故用 MAX-1。
+const ARRAY_INDEX_MAX: u64 = u64::MAX - 1;
+
+/// Array 扫描区间：复用 FiledScanMeta.list_min/max_index（与 List 工具栏同一套输入）；负值按 0 / MAX 处理。
+fn resolve_array_scan_bounds(param: &FieldScanParam) -> Option<(u64, u64)> {
+    let meta = param.meta.as_ref();
+    let min = match meta.and_then(|m| m.list_min_index) {
+        Some(v) if v >= 0 => v as u64,
+        _ => 0,
+    };
+    let max = match meta.and_then(|m| m.list_max_index) {
+        Some(v) if v >= 0 => (v as u64).min(ARRAY_INDEX_MAX),
+        _ => ARRAY_INDEX_MAX,
+    };
+    if min > max {
+        None
+    } else {
+        Some((min, max))
+    }
+}
+
+/// Array ARSCAN 分页：只返回已填充槽；`now_cursor` 存下一页起始索引（非 HSCAN cursor）。
+/// 不调 ARLEN：`end` 用区间上界或 ARRAY_INDEX_MAX；LIMIT 多扫 1 条作 peek（同 Stream COUNT+1）。
+fn field_scan_array_page(
+    conn: &mut MutexGuard<impl Commands>,
+    key: &RedisKey,
+    param: &FieldScanParam,
+    bytes_format: &BytesFormat,
+    cc: &mut ScanCursor,
+) -> AnyResult<Vec<RedisListItem>> {
+    let count = field_scan_batch_count(param.count);
+    let Some((range_min, range_max)) = resolve_array_scan_bounds(param) else {
+        cc.finished = true;
+        return Ok(Vec::new());
+    };
+    let start = cc.now_cursor.max(range_min);
+    if start > range_max {
+        cc.finished = true;
+        return Ok(Vec::new());
+    }
+
+    let raw: Value = redis::cmd("ARSCAN")
+        .arg(key)
+        .arg(start)
+        .arg(range_max)
+        .arg("LIMIT")
+        .arg(count + 1)
+        .query(conn)?;
+    let mut items = ui_array_items_from_arscan(raw, bytes_format)?;
+
+    if (items.len() as u64) > count {
+        items.pop(); // peek：多扫的一条不返回
+        if let Some(last) = items.last() {
+            cc.now_cursor = (last.index as u64).saturating_add(1);
+        }
+        cc.finished = false;
+    } else {
+        cc.finished = true;
+    }
+    Ok(items)
+}
+
 pub fn field_scan_0_get(
     mut conn: &mut MutexGuard<impl Commands>,
     param: &FieldScanParam,
@@ -527,6 +606,16 @@ pub fn field_scan_0_get(
         ValueType::List => {
             let items = field_scan_list_page(&mut conn, key, param, bytes_format, &mut cc)?;
             Some(serde_json::to_value(items)?)
+        }
+        // Array：非精确走 ARSCAN 分页；精确时返回 None，由 field_scan_0_exact→ARGET 处理
+        // （见 is_array_type；勿默认 ARGETRANGE）
+        _ if is_array_type(&key_type) => {
+            if param.exact {
+                None
+            } else {
+                let items = field_scan_array_page(&mut conn, key, param, bytes_format, &mut cc)?;
+                Some(serde_json::to_value(items)?)
+            }
         }
         ValueType::Stream => {
             let count = field_scan_batch_count(param.count);
@@ -697,14 +786,19 @@ fn resolve_field_scan_length(
     key_type: &ValueType,
     field_byte_len: usize,
 ) -> AnyResult<usize> {
-    let len = match key_type {
-        ValueType::String => field_byte_len,
-        ValueType::Hash => conn.hlen(key)?,
-        ValueType::List => conn.llen(key)?,
-        ValueType::Set => conn.scard(key)?,
-        ValueType::ZSet => conn.zcard(key)?,
-        ValueType::Stream => redis::cmd("XLEN").arg(key).query(conn)?,
-        _ => field_byte_len,
+    let len = if is_array_type(key_type) {
+        // Array 元素数用 ARCOUNT（非 ARLEN）
+        redis::cmd("ARCOUNT").arg(key).query(conn)?
+    } else {
+        match key_type {
+            ValueType::String => field_byte_len,
+            ValueType::Hash => conn.hlen(key)?,
+            ValueType::List => conn.llen(key)?,
+            ValueType::Set => conn.scard(key)?,
+            ValueType::ZSet => conn.zcard(key)?,
+            ValueType::Stream => redis::cmd("XLEN").arg(key).query(conn)?,
+            _ => field_byte_len,
+        }
     };
     Ok(len)
 }
@@ -719,7 +813,7 @@ pub fn field_scan_4_return(
     value_truncated: bool,
     include_meta: bool,
 ) -> AnyResult<FieldScanResult> {
-    let (ttl, size, length) = if include_meta {
+    let (ttl, size, length, logical_length) = if include_meta {
         let ttl: i64 = conn.ttl(&key)?;
         let size: u64 = redis::cmd("memory")
             .arg("usage")
@@ -727,9 +821,16 @@ pub fn field_scan_4_return(
             .query(&mut conn)
             .unwrap_or(0);
         let length = resolve_field_scan_length(&mut conn, &key, &key_type, length)?;
-        (ttl, size, length)
+        // Array 额外返回 ARLEN（逻辑长度）；升级 redis-rs 时同步检查 is_array_type
+        let logical_length = if is_array_type(&key_type) {
+            let arlen: u64 = redis::cmd("ARLEN").arg(&key).query(&mut conn)?;
+            Some(arlen)
+        } else {
+            None
+        };
+        (ttl, size, length, logical_length)
     } else {
-        (0, 0, length)
+        (0, 0, length, None)
     };
 
     Ok(FieldScanResult {
@@ -740,6 +841,7 @@ pub fn field_scan_4_return(
         cursor,
         length,
         value_truncated,
+        logical_length,
     })
 }
 
@@ -921,6 +1023,29 @@ pub fn field_add0(
                 serde_json::from_str(&param.value).with_context(|| "json parse error")?;
             conn.json_set(&key, "$", &value)?
         }
+        // Array：arinsert→ARINSERT；否则 ARSET（field_key=索引）；见 is_array_type 升级注释
+        _ if is_array_type(&key_type) => {
+            let arinsert = param.array_write_method.eq_ignore_ascii_case("arinsert");
+            if arinsert {
+                let mut cmd = redis::cmd("ARINSERT");
+                cmd.arg(&key);
+                for f in &fv_list {
+                    let val = parse_bytes(&f.field_value, &val_fmt)?;
+                    cmd.arg(&val);
+                }
+                let _: i64 = cmd.query(&mut conn)?;
+            } else {
+                for f in &fv_list {
+                    let idx = parse_array_index(&f.field_key)?;
+                    let val = parse_bytes(&f.field_value, &val_fmt)?;
+                    let _: i64 = redis::cmd("ARSET")
+                        .arg(&key)
+                        .arg(idx)
+                        .arg(&val)
+                        .query(&mut conn)?;
+                }
+            }
+        }
         _ => {
             handle_other_value_type(&key_type, &key)?;
         }
@@ -977,6 +1102,24 @@ pub fn field_set0(
             let bytes = parse_bytes(&param.field_value, &val_fmt)?;
             let _: () = conn.zrem(&key, &src_bytes)?;
             let _: () = conn.zadd(&key, &bytes, param.field_score)?;
+        }
+        // Array：按索引 ARSET；见 is_array_type 升级注释
+        _ if is_array_type(&key_type) => {
+            let bytes = parse_bytes(&param.field_value, &val_fmt)?;
+            let idx = if !param.field_key.is_empty() {
+                parse_array_index(&param.field_key)?
+            } else {
+                let i = param.field_index as i64;
+                if i < 0 {
+                    bail!("invalid array index: {}", i);
+                }
+                i
+            };
+            let _: i64 = redis::cmd("ARSET")
+                .arg(&key)
+                .arg(idx)
+                .arg(&bytes)
+                .query(&mut conn)?;
         }
         _ => {
             handle_other_value_type(&key_type, &key)?;
@@ -1045,6 +1188,23 @@ pub fn field_get0(
                 field_key: String::new(),
                 field_value: format_bytes(&member_bytes, &val_fmt),
                 field_score: score,
+                field_ttl: -1,
+            })
+        }
+        // Array：ARGET；见 is_array_type 升级注释
+        _ if is_array_type(&key_type) => {
+            let idx = param.field_index as i64;
+            if idx < 0 {
+                bail!("invalid array index: {}", idx);
+            }
+            let value: Option<Vec<u8>> = redis::cmd("ARGET").arg(&key).arg(idx).query(&mut conn)?;
+            let value_bytes = value.ok_or_else(|| AppError::FieldNotFound {
+                hash_key: idx.to_string(),
+            })?;
+            Ok(RedisFieldValue {
+                field_key: String::new(),
+                field_value: format_bytes(&value_bytes, &val_fmt),
+                field_score: 0.0,
                 field_ttl: -1,
             })
         }
@@ -1160,6 +1320,14 @@ pub fn field_del0(mut conn: MutexGuard<impl Commands>, param: RedisFieldDel) -> 
         ValueType::Stream => {
             let _: () = conn.xdel(&key, &[param.stream_id])?;
         }
+        // Array：ARDEL 删槽（留空洞）；见 is_array_type 升级注释
+        _ if is_array_type(&key_type) => {
+            let idx = param.field_index as i64;
+            if idx < 0 {
+                bail!("invalid array index: {}", idx);
+            }
+            let _: i64 = redis::cmd("ARDEL").arg(&key).arg(idx).query(&mut conn)?;
+        }
         _ => {
             handle_other_value_type(&key_type, &key)?;
         }
@@ -1236,6 +1404,93 @@ pub fn zset_range0(
             score: s,
         })
         .collect())
+}
+
+/// Array ARINFO：元数据（默认不含 FULL）；RESP2 扁平键值对 / RESP3 Map。
+pub fn ar_info0(
+    mut conn: MutexGuard<impl Commands>,
+    key: RedisKey,
+) -> AnyResult<Vec<RedisArInfoItem>> {
+    let key_type: ValueType = conn.key_type(&key)?;
+    if !is_array_type(&key_type) {
+        handle_other_value_type(&key_type, &key)?;
+        unreachable!()
+    }
+    let raw: Value = redis::cmd("ARINFO").arg(&key).query(&mut conn)?;
+    parse_arinfo_items(raw)
+}
+
+fn parse_arinfo_items(raw: Value) -> AnyResult<Vec<RedisArInfoItem>> {
+    match raw {
+        Value::Nil => Ok(Vec::new()),
+        Value::Map(map) => Ok(map
+            .into_iter()
+            .map(|(k, v)| RedisArInfoItem {
+                field: redis_value_to_string(k, ""),
+                value: redis_value_to_string(v, ""),
+            })
+            .collect()),
+        Value::Array(arr) => {
+            let mut items = Vec::with_capacity(arr.len() / 2);
+            let mut i = 0;
+            while i + 1 < arr.len() {
+                items.push(RedisArInfoItem {
+                    field: redis_value_to_string(arr[i].clone(), ""),
+                    value: redis_value_to_string(arr[i + 1].clone(), ""),
+                });
+                i += 2;
+            }
+            Ok(items)
+        }
+        other => bail!(AppError::Internal {
+            message: format!("unexpected ARINFO reply: {:?}", other)
+        }),
+    }
+}
+
+/// Array ARLASTITEMS：最近插入的元素（REV 时最近优先）。
+/// 官方 reply 允许 string | null；稀疏 ARMSET 键可能含空槽 null（与 ARINSERT/ARRING 场景不同）。
+pub fn ar_last_items0(
+    mut conn: MutexGuard<impl Commands>,
+    param: RedisArLastItems,
+) -> AnyResult<Vec<RedisArLastItemsItem>> {
+    let key: RedisKey = param.key;
+    let key_type: ValueType = conn.key_type(&key)?;
+    if !is_array_type(&key_type) {
+        handle_other_value_type(&key_type, &key)?;
+        unreachable!()
+    }
+    let val_fmt = param.val_fmt.as_ref().cloned().unwrap_or_default();
+    let count = if param.count == 0 { 10 } else { param.count };
+    let mut cmd = redis::cmd("ARLASTITEMS");
+    cmd.arg(&key).arg(count);
+    if param.reverse {
+        cmd.arg("REV");
+    }
+    let raw: Value = cmd.query(&mut conn)?;
+    let arr = match raw {
+        Value::Nil => Vec::new(),
+        Value::Array(a) => a,
+        other => bail!(AppError::Internal {
+            message: format!("unexpected ARLASTITEMS reply: {:?}", other)
+        }),
+    };
+    let mut items = Vec::with_capacity(arr.len());
+    for (i, entry) in arr.into_iter().enumerate() {
+        let value = match entry {
+            Value::Nil => None,
+            v => {
+                let bytes: Vec<u8> = FromRedisValue::from_redis_value(v)
+                    .map_err(|e| anyhow::anyhow!("ARLASTITEMS value parse: {}", e))?;
+                Some(format_bytes(&bytes, &val_fmt))
+            }
+        };
+        items.push(RedisArLastItemsItem {
+            index: i as i64,
+            value,
+        });
+    }
+    Ok(items)
 }
 
 pub fn publish0(
@@ -1900,6 +2155,18 @@ fn key_as_command_lines(conn: &mut impl Commands, key: &RedisKey) -> AnyResult<V
                 }
             }
         }
+        // Array：ARSCAN 全量 → ARMSET；见 is_array_type 升级注释
+        _ if is_array_type(&key_type) => {
+            let raw: Value = redis::cmd("ARSCAN")
+                .arg(&key)
+                .arg(0u64)
+                .arg(ARRAY_INDEX_MAX)
+                .query(conn)?;
+            let pairs = parse_arscan_pairs(raw)?;
+            format_armset_command(key_bytes, &pairs)
+                .map(|s| vec![s])
+                .unwrap_or_default()
+        }
         other => bail!(AppError::KeyTypeUnsupported {
             value_type: ui_key_type(other)
         }),
@@ -1987,6 +2254,18 @@ pub fn get_field_as_command0(
                 stream_id: param.stream_id.clone(),
             })?;
             format_xadd_command(key_bytes, id, fields)
+        }
+        // Array：单槽 ARSET；见 is_array_type 升级注释
+        _ if is_array_type(&key_type) => {
+            let idx = param.field_index as i64;
+            if idx < 0 {
+                bail!("invalid array index: {}", idx);
+            }
+            let value: Option<Vec<u8>> = redis::cmd("ARGET").arg(&key).arg(idx).query(&mut conn)?;
+            let value_bytes = value.ok_or_else(|| AppError::FieldNotFound {
+                hash_key: idx.to_string(),
+            })?;
+            format_arset_command(key_bytes, idx, &value_bytes)
         }
         other => bail!(AppError::KeyTypeUnsupported {
             value_type: ui_key_type(other)

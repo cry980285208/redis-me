@@ -8,6 +8,7 @@ import { useI18n } from 'vue-i18n'
 
 import { shareProvideKey } from '@/types/me-interface'
 import type { RedisKey_Deserialize, ScanCursor } from '@/types/tauri-specta'
+import { folderMatchExpr, getConnKeySeparator, keyUnderFolder } from '@/utils/conn'
 import { redisKeyId, sameRedisKey } from '@/utils/redis-key'
 import { meCommands, meCopy, meWarn, sleep } from '@/utils/util'
 
@@ -15,6 +16,7 @@ import KeyTree from './KeyTree.vue'
 
 const { t } = useI18n()
 const share = inject(shareProvideKey)!
+const keySep = computed(() => getConnKeySeparator(share.conn))
 
 const props = withDefaults(
   defineProps<{
@@ -190,12 +192,12 @@ function mergeScanKeys(
 }
 
 function isKeyUnderFolder(key: string, folder: string): boolean {
-  return key === folder || key.startsWith(folder + ':')
+  return keyUnderFolder(key, folder, keySep.value)
 }
 
 async function scanOnce(path: string, s: FolderScanState): Promise<number> {
   const data = await meCommands.scan(share.conn!.id, {
-    match: `${path}:*`,
+    match: folderMatchExpr(path, keySep.value),
     type: '',
     cursor: s.cursor,
     exact: false,

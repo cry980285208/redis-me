@@ -4,13 +4,13 @@ import { computed, inject } from 'vue'
 import { shareProvideKey } from '@/types/me-interface'
 import { isConnMinimalMode } from '@/utils/conn'
 import RedisChart from '@/views/tab/RedisChart.vue'
-import RedisInfo from '@/views/tab/RedisInfo.vue'
+import RedisInfo from '@/views/tab/RedisInfo/index.vue'
 import RedisMemory from '@/views/tab/RedisMemory.vue'
 import RedisMonitor from '@/views/tab/RedisMonitor.vue'
 import RedisPubsub from '@/views/tab/RedisPubsub.vue'
 import RedisSlow from '@/views/tab/RedisSlow.vue'
 import RedisTerminal from '@/views/tab/RedisTerminal.vue'
-import RedisValue from '@/views/tab/RedisValue.vue'
+import RedisValue from '@/views/tab/RedisValue/index.vue'
 
 const share = inject(shareProvideKey)!
 const minimalMode = computed(() => isConnMinimalMode(share.conn))

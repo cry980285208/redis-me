@@ -15,9 +15,10 @@ import {
 } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import { MeSelectUpDownIcon } from '@/components/MeSelectUpDownIcon'
+import MeSelectUpDownIcon from '@/components/MeSelectUpDownIcon.vue'
 import { shareProvideKey, connUiProvideKey } from '@/types/me-interface'
 import type { RedisDB, RedisKey_Deserialize, ScanCursor } from '@/types/tauri-specta'
+import { folderKeyPrefix, folderMatchExpr, getConnKeySeparator } from '@/utils/conn'
 import {
   useFavorites,
   useFavoriteFolders,
@@ -31,6 +32,7 @@ import {
   clearFavoriteFoldersForDb,
 } from '@/utils/favorite'
 import { clearKeyTypeCacheForConn } from '@/utils/key-type-cache'
+import { KEY_TYPE_LIST, meKeyShort } from '@/utils/redis-display'
 import {
   buildScanPattern,
   buildLocalFilterPattern,
@@ -45,12 +47,10 @@ import {
   KEY_DELETE,
   KEY_RENAME,
   KEY_REFRESH,
-  KEY_TYPE_LIST,
   meConfirm,
   meCommands,
   meCopy,
   meDeleteKey,
-  meKeyShort,
   meOk,
   mePrompt,
   meWarn,
@@ -321,7 +321,10 @@ function onKeyListRefreshHotkey(e: KeyboardEvent) {
 }
 
 // 搜索模式：关闭完全匹配时 buildScanPattern 补 * 后 SCAN；开启时原样 EXISTS
-const match = computed(() => buildScanPattern(keyword.value, exact.value, loadFolder.value))
+const keySep = computed(() => getConnKeySeparator(share.conn))
+const match = computed(() =>
+  buildScanPattern(keyword.value, exact.value, loadFolder.value, keySep.value),
+)
 
 /** Redis SCAN COUNT / 自动续扫阈值 / 进度估算：均取 settings.keyScanCount */
 const SCAN_FETCH_COUNT = computed(() => meTauri.settings.keyScanCount as number)
@@ -600,7 +603,7 @@ function chooseKey(redisKey: RedisKey_Deserialize): void {
 }
 
 function chooseFolder(folder: string): void {
-  keyPrefix.value = folder + ':'
+  keyPrefix.value = folderKeyPrefix(folder, keySep.value)
 }
 
 function contextKey(command: string, redisKey: RedisKey_Deserialize): void {
@@ -640,19 +643,22 @@ function contextFolder(command: string, folder: string): void {
   if (command === 'refreshKey') {
     void scanKey(false, false)
   } else if (command === 'addKey') {
-    keyPrefix.value = folder + ':'
+    keyPrefix.value = folderKeyPrefix(folder, keySep.value)
     addKey()
   } else if (command === 'copyFolder') {
     meCopy(folder)
-  } else if (command === 'loadFolder') {
-    loadFolder.value = true
-    try {
-      exact.value = false
-      keyword.value = folder
-      scanKey(false, false)
-    } finally {
-      loadFolder.value = false
-    }
+  } else if (command === 'loadFolder' || command === 'loadFolderAll') {
+    // 须 await：loadFolder 标志要覆盖整轮 SCAN，否则续扫会退回 *keyword* 模式
+    void (async () => {
+      loadFolder.value = true
+      try {
+        exact.value = false
+        keyword.value = folder
+        await scanKey(false, command === 'loadFolderAll')
+      } finally {
+        loadFolder.value = false
+      }
+    })()
   } else if (command === 'memoryUsage') {
     keyMemory(folder)
   } else if (command === 'deleteFolder') {
@@ -743,12 +749,10 @@ function addKeyOk(redisKey: RedisKey_Deserialize): void {
 
 const keyBatchRef = useTemplateRef<InstanceType<typeof KeyBatch>>('keyBatchRef')
 function deleteFolder(folder: string): void {
-  const matchExpr = folder === '*' ? '*' : folder + ':*'
-  keyBatchRef.value?.open({ match: matchExpr, keyList: [] }, 'delete')
+  keyBatchRef.value?.open({ match: folderMatchExpr(folder, keySep.value), keyList: [] }, 'delete')
 }
 function exportFolder(folder: string): void {
-  const matchExpr = folder === '*' ? '*' : folder + ':*'
-  keyBatchRef.value?.open({ match: matchExpr, keyList: [] }, 'export')
+  keyBatchRef.value?.open({ match: folderMatchExpr(folder, keySep.value), keyList: [] }, 'export')
 }
 
 function batchKeyOk(mode: string): void {
@@ -820,7 +824,7 @@ onUnmounted(() => tauriUnlisten())
 
 const keyMemoryRef = useTemplateRef<InstanceType<typeof KeyMemory>>('keyMemoryRef')
 function keyMemory(folder: string): void {
-  keyMemoryRef.value?.open({ match: folder + ':*' })
+  keyMemoryRef.value?.open({ match: folderMatchExpr(folder, keySep.value) })
 }
 
 // 键显示类型: tree/list; 树形列表排序方式: 字母排序/数量排序
@@ -1236,7 +1240,7 @@ function editDbName(db: number): void {
           <template #prepend>
             <el-dropdown placement="bottom-start" @command="chooseKeyType">
               <el-tag :type="keyTypeTag.type" effect="plain" class="key-type-tag">
-                {{ meKeyShort(keyType, 'A') }}
+                {{ meKeyShort(keyType, '-') }}
               </el-tag>
               <template #dropdown>
                 <el-dropdown-menu>
@@ -1246,7 +1250,7 @@ function editDbName(db: number): void {
                       :effect="'ALL' === keyType ? 'plain' : 'dark'"
                       style="width: 26px"
                       hit>
-                      A
+                      -
                     </el-tag>
                     <el-text style="margin-left: 6px" type="info">ALL</el-text>
                   </el-dropdown-item>

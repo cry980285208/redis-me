@@ -1,4 +1,4 @@
-/** 设置项默认值（唯一数据源，修改时请同步检查 Setting.vue 和 tauri.ts） */
+/** 设置项默认值（唯一数据源，修改时请同步检查 AppSetting.vue 和 tauri.ts） */
 export const defaultSettings = {
   language: 'system',
   theme: 'system',

@@ -474,4 +474,55 @@ export const enConfigTip = {
   'search-_simulate-in-flex': 'Simulate flexible query path (internal/debug)',
   'search-_free-resource-on-thread': 'Free some resources on the thread (internal)',
   'search-_print-profile-clock': 'Print profiling clock (internal/debug)',
+  // Redis 8.8+ Array / Slowlog / Search / TimeSeries
+  'array-slice-size':
+    'Capacity of each Array slice, default 4096; CONFIG SET only affects new arrays, existing ones keep their slice size',
+  'array-sparse-kmax':
+    'Promote a sparse slice to dense when entry count exceeds this; 0 disables sparse encoding, default 10',
+  'array-sparse-kmin':
+    'Demote a dense slice back to sparse below this count when it saves memory; 0 disables demotion, default 5',
+  'slowlog-entry-max-argc':
+    'Max argv kept in a slowlog entry; excess args are trimmed with a note; minimum 2 (command name), default 32',
+  'slowlog-entry-max-string-len':
+    'Max bytes of each argument string in the slowlog before truncation, default 128',
+  'ts-libmr-protocol':
+    'RedisTimeSeries cluster messaging protocol mode (e.g. INTERNAL); usually leave default',
+  'ts-topology-events':
+    'Whether to react to cluster topology events to sync time-series module state, default yes',
+  'search-bg-index-sleep-duration-us':
+    'Background indexer sleep duration in microseconds for throttling, default 1',
+  'search-disk-buffer-percentage':
+    'Disk-index buffer as a percentage of available resources, default 20',
+  'search-monitor-expiration':
+    'Whether to monitor index/document expiration and trigger cleanup, default yes',
+  'search-_fallback-to-main-thread-when-block-client-unavailable':
+    'Fall back to the main thread when a blocking client is unavailable (internal), default yes',
+  'search-_info-on-zero-indexes':
+    'Emit search INFO fields even with zero indexes (internal), default no',
+  'search-_max-foreground-timeout-limit':
+    'Upper bound for foreground search timeout in ms (internal), default 60000',
+  'search-disk-drop-read-cache':
+    'Drop page cache on disk-index reads to reduce cache pollution, default no',
+  'search-disk-max-open-files': 'Max open files for disk indexes, default 1024',
+  'search-disk-use-direct-reads': 'Use direct I/O for disk-index reads, default no',
+  'search-max-aggregate-groups': 'Max GROUPBY groups allowed in aggregation, default 1000000',
+  // Redis 8.10
+  backupdirname:
+    'BACKUP output directory name relative to dir (not an absolute/nested path); startup-only, not CONFIG SET-able, default backupdir',
+  'backup-sealed-ttl':
+    'Seconds to keep a sealed BACKUP before auto cleanup; 0 keeps it until BACKUP CLEANUP, default 0',
+  'preload-file':
+    'Load only this file at startup as rdb:path or aof:path/manifest; skips normal RDB/AOF dir loading and aborts if load fails',
+  'tls-expected-peer-name':
+    'Require peer cert SAN/CN to match this name for server-to-server TLS (space-separated list allowed); empty disables peer-name check; does not affect normal client TLS',
+  'hash-min-template-entries':
+    'Auto-convert hashes to template encoding on write at this field count to share field names; 0 disables; hashes with field expiry are never converted, default 0',
+  'hash-max-template-entries':
+    'Upper bound on field count for automatic template conversion; 0 means no upper bound, default 0',
+  'hash-rdb-load-min-template-entries':
+    'When loading an RDB without templates, convert hashes at this field count; 0 disables, default 0',
+  'hash-rdb-load-max-template-entries':
+    'Max field count for RDB-load template conversion; 0 means no max (and with min 0 disables), default 0',
+  'hash-rdb-load-template-disassembly-threshold':
+    'After RDB load, break templates used by fewer keys than this back into plain hashes; 0 disables, default 0',
 } as const

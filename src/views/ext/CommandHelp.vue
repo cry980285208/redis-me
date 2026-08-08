@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 
 import MeWebsite from '@/components/MeWebsite.vue'
 import { commandHelp } from '@/locales/cmd'
+import { sortVersionsDesc } from '@/utils/redis-version'
 import { isZh } from '@/utils/util'
 
 const { t } = useI18n()
@@ -27,10 +28,12 @@ const tableKey = ref(0)
 const activeFilters = ref<Record<string, unknown[]>>({})
 
 const groupList = computed(() => new Set(commandHelp.value.map(row => row.group)))
+// 版本筛选项按语义版本降序（与运行配置参考列表共用 redis-version）
 const sinceFilters = computed(() =>
-  [...new Set(commandHelp.value.map(row => row.since))]
-    .sort()
-    .map(value => ({ text: value, value })),
+  sortVersionsDesc([...new Set(commandHelp.value.map(row => row.since))]).map(value => ({
+    text: value,
+    value,
+  })),
 )
 const readonlyFilters = computed(() => [
   { text: t('redisTerminal.readonlyYes'), value: true },
@@ -122,10 +125,10 @@ defineExpose({ open, close })
             show-overflow-tooltip
             sortable />
           <el-table-column
+            class-name="col-cmd"
             :label="t('redisTerminal.command')"
             prop="key"
             width="150"
-            show-overflow-tooltip
             sortable>
             <template #default="{ row }">
               <!-- 悬停选站点，打开对应命令文档（路径统一为小写+空格转连字符） -->
@@ -141,7 +144,7 @@ defineExpose({ open, close })
             :label="t('redisTerminal.since')"
             prop="since"
             column-key="since"
-            width="108"
+            width="100"
             show-overflow-tooltip
             :filters="sinceFilters"
             :filter-method="() => true" />
@@ -177,6 +180,13 @@ defineExpose({ open, close })
 
   :deep(.el-table__column-filter-trigger) {
     flex-shrink: 0;
+  }
+
+  /* me-website（el-dropdown）在单元格内易顶对齐；命令名禁止换行 */
+  :deep(td.col-cmd .cell) {
+    display: flex;
+    align-items: center;
+    white-space: nowrap;
   }
 }
 </style>

@@ -15,10 +15,11 @@ import {
   type AclEditModel,
 } from '@/utils/acl'
 import { meCommands, meConfirm, meOk, meWarn } from '@/utils/util'
-import AclDryrun from '@/views/ext/AclDryrun.vue'
-import AclLog from '@/views/ext/AclLog.vue'
-import AclResetPassword from '@/views/ext/AclResetPassword.vue'
-import UserAdd from '@/views/ext/UserAdd.vue'
+
+import AclDryrun from './AclDryrun.vue'
+import AclLog from './AclLog.vue'
+import AclResetPassword from './AclResetPassword.vue'
+import UserAdd from './UserAdd.vue'
 
 const { t } = useI18n()
 const share = inject(shareProvideKey)!

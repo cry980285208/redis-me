@@ -3,7 +3,7 @@ import { cloneDeep } from 'lodash'
 import { computed, inject, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import { MeSelectUpDownIcon } from '@/components/MeSelectUpDownIcon'
+import MeSelectUpDownIcon from '@/components/MeSelectUpDownIcon.vue'
 import { shareProvideKey } from '@/types/me-interface'
 import type {
   BytesFormat,
@@ -124,10 +124,10 @@ const saveFieldTip = computed(() => {
 })
 /** 显示保存钮：连接只读 / 查看模式 → 隐藏 */
 const showSaveField = computed(() => !readonly.value && !share.readonly)
-/** hash/list/zset 支持 field_get 单行刷新 */
+/** hash/list/zset/array 支持 field_get 单行刷新 */
 const supportsFieldRefresh = computed(() => {
   const type = form.value.type
-  return type === 'hash' || type === 'list' || type === 'zset'
+  return type === 'hash' || type === 'list' || type === 'zset' || type === 'array'
 })
 
 /** wire + 生效 view → 编辑区文本 */
@@ -285,7 +285,7 @@ function submit() {
 function buildFieldGetParam(): RedisFieldGet_Deserialize | null {
   if (!form.value.key?.key) return null
   const type = form.value.type
-  if (type !== 'hash' && type !== 'list' && type !== 'zset') return null
+  if (type !== 'hash' && type !== 'list' && type !== 'zset' && type !== 'array') return null
   return {
     key: form.value.key,
     fieldIndex: form.value.fieldIndex,
@@ -351,7 +351,9 @@ async function refreshField() {
           style="width: 100%"
           align="left" />
       </el-form-item>
-      <el-form-item :label="t('fieldSet.index')" v-if="form.type === 'list'">
+      <el-form-item
+        :label="t('fieldSet.index')"
+        v-if="form.type === 'list' || form.type === 'array'">
         <el-input v-model="form.fieldIndex" disabled />
       </el-form-item>
       <el-form-item :label="t('fieldSet.score')" prop="fieldScore" v-if="form.type === 'zset'">

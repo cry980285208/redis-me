@@ -42,13 +42,21 @@ export function computeScanProgress(
 }
 
 /**
- * 构建 SCAN 模式（目录扫描 loadFolder 时固定为 keyword:*）
+ * 构建 SCAN 模式（目录扫描 loadFolder 时为 keyword + sep + *）
  *
  * 关闭完全匹配：含 glob（* ? [）则原样，否则前后补 *
  * 开启完全匹配：原样传给后端 EXISTS 判断（含 * 也按字面键名）
  */
-export function buildScanPattern(keyword: string, exact: boolean, loadFolder = false): string {
-  if (loadFolder) return `${keyword}:*`
+export function buildScanPattern(
+  keyword: string,
+  exact: boolean,
+  loadFolder = false,
+  keySeparator = ':',
+): string {
+  if (loadFolder) {
+    const sep = keySeparator || ':'
+    return `${keyword}${sep}*`
+  }
   if (exact) return keyword
   if (!keyword) return '*'
   if (isRedisGlob(keyword)) return keyword

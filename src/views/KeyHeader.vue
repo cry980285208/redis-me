@@ -3,23 +3,24 @@ import { inject, nextTick, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { shareProvideKey, connUiProvideKey } from '@/types/me-interface'
+import { openNewWindow } from '@/utils/app-window'
 import { getConnIcon } from '@/utils/conn'
-import { bus, CONN_REFRESH, meCommands, meOk, openNewWindow } from '@/utils/util'
-import About from '@/views/ext/About.vue'
+import { bus, CONN_REFRESH, meCommands, meOk } from '@/utils/util'
+import AppAbout from '@/views/ext/AppAbout.vue'
+// import AppOfficial from '@/views/ext/AppOfficial.vue'
+import AppSetting from '@/views/ext/AppSetting.vue'
 import AppShortcut from '@/views/ext/AppShortcut.vue'
 import CommandLog from '@/views/ext/CommandLog.vue'
-// import Official from '@/views/ext/Official.vue'
-import Setting from '@/views/ext/Setting.vue'
 
 const share = inject(shareProvideKey)!
 const connUi = inject(connUiProvideKey)!
 const { t } = useI18n()
 
 const dialog = reactive({ commandLog: false })
-const settingRef = ref<InstanceType<typeof Setting>>()
+const settingRef = ref<InstanceType<typeof AppSetting>>()
 const shortcutRef = ref<InstanceType<typeof AppShortcut>>()
-const aboutRef = ref<InstanceType<typeof About>>()
-// const officialRef = ref<InstanceType<typeof Official>>()
+const aboutRef = ref<InstanceType<typeof AppAbout>>()
+// const officialRef = ref<InstanceType<typeof AppOfficial>>()
 
 function openSetting(): void {
   settingRef.value?.open()
@@ -110,7 +111,7 @@ async function handleCommand(command: string): Promise<void> {
           <el-dropdown-item command="setting" divided>
             <me-icon :name="t('keyHeader.setting')" icon="el-icon-setting" />
           </el-dropdown-item>
-          <!-- 社交入口暂隐藏；恢复时同步解开 Official 的 import / ref / 组件挂载 -->
+          <!-- 社交入口暂隐藏；恢复时同步解开 AppOfficial 的 import / ref / 组件挂载 -->
           <!-- <el-dropdown-item command="social">
             <me-icon :name="t('keyHeader.social')" icon="me-icon-social" />
           </el-dropdown-item> -->
@@ -121,10 +122,10 @@ async function handleCommand(command: string): Promise<void> {
       </template>
     </el-dropdown>
 
-    <Setting ref="settingRef" />
+    <AppSetting ref="settingRef" />
     <AppShortcut ref="shortcutRef" />
-    <About ref="aboutRef" />
-    <!-- <Official ref="officialRef" /> -->
+    <AppAbout ref="aboutRef" />
+    <!-- <AppOfficial ref="officialRef" /> -->
     <CommandLog v-model="dialog.commandLog" />
   </div>
 </template>

@@ -147,6 +147,8 @@ api_commands!(
     field_del(param: RedisFieldDel) -> ();                        // 删除字段
     zset_rank(param: RedisZsetRank) -> RedisZsetRankResult;       // ZSet 排名查询（ZRANK/ZREVRANK）
     zset_range(param: RedisZsetRange) -> Vec<RedisZsetRangeItem>;  // ZSet Top/Bottom 范围查询（ZRANGE/ZREVRANGE）
+    ar_last_items(param: RedisArLastItems) -> Vec<RedisArLastItemsItem>; // Array ARLASTITEMS
+    ar_info(key: RedisKey) -> Vec<RedisArInfoItem>;               // Array ARINFO 元数据
     object_info(key: RedisKey) -> RedisObjectInfo;                // OBJECT 自省（ENCODING/IDLETIME/REFCOUNT/FREQ）
     execute_command(param: RedisCommand) -> String;               // 执行命令
     config_get(pattern: &str, node: Option<String>) -> HashMap<String, String>; // 获取配置

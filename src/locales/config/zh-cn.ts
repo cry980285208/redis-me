@@ -377,4 +377,43 @@ export const zhConfigTip = {
   'search-_simulate-in-flex': '灵活查询路径模拟（内部/调试）',
   'search-_free-resource-on-thread': '是否在线程上释放部分资源（内部）',
   'search-_print-profile-clock': '是否打印查询剖析时钟（内部/调试）',
+  // Redis 8.8+ Array / Slowlog / Search / TimeSeries 补充
+  'array-slice-size':
+    'Array 每个切片（slice）的容量，默认 4096；CONFIG SET 后仅影响新建 Array，已有数据保留原切片大小',
+  'array-sparse-kmax': '稀疏切片条目数超过该值时提升为稠密切片；设为 0 禁用稀疏编码，默认 10',
+  'array-sparse-kmin': '稠密切片元素数低于该值且可省内存时降回稀疏；设为 0 禁止降级，默认 5',
+  'slowlog-entry-max-argc':
+    '写入慢日志时保留的最大参数个数，超出则截断并附带提示；最小为 2（保留命令名），默认 32',
+  'slowlog-entry-max-string-len': '慢日志中单个参数字符串的最大长度（字节），超出截断，默认 128',
+  'ts-libmr-protocol': 'RedisTimeSeries 集群通信协议模式（如 INTERNAL），一般保持默认',
+  'ts-topology-events': '是否响应集群拓扑变更事件以同步时间序列模块状态，默认 yes',
+  'search-bg-index-sleep-duration-us': '后台索引每次休眠时长（微秒），用于节流，默认 1',
+  'search-disk-buffer-percentage': '磁盘索引相关缓冲占可用资源的百分比阈值，默认 20',
+  'search-monitor-expiration': '是否监控索引/文档过期并触发清理，默认 yes',
+  'search-_fallback-to-main-thread-when-block-client-unavailable':
+    '阻塞客户端不可用时是否回退到主线程执行（内部），默认 yes',
+  'search-_info-on-zero-indexes': '无索引时是否仍输出搜索相关 INFO（内部），默认 no',
+  'search-_max-foreground-timeout-limit': '前台搜索超时上限（毫秒，内部），默认 60000',
+  'search-disk-drop-read-cache': '磁盘索引读路径是否丢弃页缓存以降低缓存污染，默认 no',
+  'search-disk-max-open-files': '磁盘索引允许同时打开的最大文件数，默认 1024',
+  'search-disk-use-direct-reads': '磁盘索引是否使用直接 I/O 读取，默认 no',
+  'search-max-aggregate-groups': '聚合 GROUPBY 允许的最大分组数，默认 1000000',
+  // Redis 8.10 新增
+  backupdirname:
+    'BACKUP 输出目录名（相对 dir，不可为绝对/嵌套路径），启动时生效且不可 CONFIG SET，默认 backupdir',
+  'backup-sealed-ttl':
+    'BACKUP SEAL 后自动清理密封备份的秒数，0 表示不自动清理直至 BACKUP CLEANUP，默认 0',
+  'preload-file':
+    '启动时仅加载指定文件：rdb:路径 或 aof:路径/manifest；设置后跳过常规 RDB/AOF 目录加载，失败则中止启动',
+  'tls-expected-peer-name':
+    '服务端到服务端 TLS 要求对端证书 SAN/CN 匹配的名称（可空格分隔多个）；空表示不校验对端名，不影响普通客户端 TLS',
+  'hash-min-template-entries':
+    '哈希字段数达到该值时在写路径自动转为模板编码以共享字段名；0 禁用，含字段过期的哈希不转换，默认 0',
+  'hash-max-template-entries': '自动模板转换的字段数上限，超过则不转换；0 表示无上限，默认 0',
+  'hash-rdb-load-min-template-entries':
+    '加载不含模板的旧 RDB 时，字段数达到该值则转为模板；0 禁用，默认 0',
+  'hash-rdb-load-max-template-entries':
+    'RDB 加载时模板转换的字段数上限；0 表示无上限（且与最小值同为 0 时禁用），默认 0',
+  'hash-rdb-load-template-disassembly-threshold':
+    'RDB 加载后若某模板被引用的键数少于此值则拆回普通哈希；0 禁用拆解，默认 0',
 } as const

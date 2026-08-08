@@ -117,6 +117,29 @@ pub fn format_hset_command(key: &[u8], field: &[u8], value: &[u8]) -> String {
     )
 }
 
+/// Array 单槽：`ARSET key index value`
+pub fn format_arset_command(key: &[u8], index: i64, value: &[u8]) -> String {
+    format!(
+        "ARSET {} {} {}",
+        format_quoted(key),
+        index,
+        format_quoted(value)
+    )
+}
+
+/// Array 多槽：`ARMSET key index value [index value ...]`
+pub fn format_armset_command(key: &[u8], pairs: &[(i64, Vec<u8>)]) -> Option<String> {
+    if pairs.is_empty() {
+        return None;
+    }
+    let mut parts = vec!["ARMSET".to_string(), format_quoted(key)];
+    for (idx, v) in pairs {
+        parts.push(idx.to_string());
+        parts.push(format_quoted(v));
+    }
+    Some(parts.join(" "))
+}
+
 pub fn format_rpush_command(key: &[u8], items: &[Vec<u8>]) -> Option<String> {
     if items.is_empty() {
         return None;
@@ -214,6 +237,23 @@ mod tests {
         assert_eq!(args[1], b"user:1");
         assert_eq!(args[2], b"name");
         assert_eq!(args[3], b"\xe5\xbc\xa0\xe4\xb8\x89");
+    }
+
+    #[test]
+    fn test_format_arset_command() {
+        let cmd = format_arset_command(b"arr:1", 3, b"hello");
+        assert_eq!(cmd, r#"ARSET "arr:1" 3 "hello""#);
+        let args = split_redis_args(&cmd).unwrap();
+        assert_eq!(args[1], b"arr:1");
+        assert_eq!(args[2], b"3");
+        assert_eq!(args[3], b"hello");
+    }
+
+    #[test]
+    fn test_format_armset_command() {
+        let pairs = vec![(0i64, b"a".to_vec()), (2, b"b\nc".to_vec())];
+        let cmd = format_armset_command(b"arr:1", &pairs).unwrap();
+        assert_eq!(cmd, r#"ARMSET "arr:1" 0 "a" 2 "b\nc""#);
     }
 
     #[test]

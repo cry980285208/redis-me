@@ -314,9 +314,9 @@ api_model!(FiledScanMeta {
     value_byte_limit: Option<u64>,
     value_preview_bytes: Option<u64>,
     force_full_value: Option<bool>,
-    /// List LRANGE 下界；空则 0
+    /// List LRANGE / Array ARSCAN 下界；空则 0
     list_min_index: Option<i64>,
-    /// List LRANGE 上界；空则 len-1
+    /// List LRANGE 上界（空则 len-1）；Array ARSCAN 上界（空则索引最大值）
     list_max_index: Option<i64>,
     /// List 扫描方向：true 从 max 向 min，false 从 min 向 max
     list_desc: Option<bool>,
@@ -391,9 +391,12 @@ api_model!(FieldScanResult {
     #[specta(type = specta_typescript::Any)]
     value: serde_json::Value,
     cursor: ScanCursor,
-    length: usize, // String/Hash字段：原始 bytes 长度；集合类型：元素总数(HLEN/LLEN/SCARD/ZCARD/XLEN)
+    length: usize, // String/Hash字段：原始 bytes 长度；集合类型：元素总数(HLEN/LLEN/SCARD/ZCARD/XLEN/ARCOUNT)
     /// STRING 因超过 value_byte_limit 仅返回预览片段时为 true
     value_truncated: bool,
+    /// Array：ARLEN（逻辑长度 maxIndex+1）；其它类型为 None
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    logical_length: Option<u64>,
 });
 
 // Redis键: 由于键是字节存储的，考虑转换为utf-8字符串显示后可能会丢失信息，因此封装为对象
@@ -575,6 +578,8 @@ api_model!(RedisFieldAdd {
     value: String, // 字段类型为String时的值
 
     list_push_method: String, // lpush, rpush
+    /// Array 写入方式：arset（指定索引）/ arinsert（顺序追加）
+    array_write_method: String,
     field_value_list: Vec<RedisFieldValue>,
     stream_id: String, // stream
 
@@ -583,6 +588,29 @@ api_model!(RedisFieldAdd {
     /// 除 Redis 键名外的输入：String 值、Hash 字段名与值、List/Set/ZSet 成员、Stream 字段名与值等
     val_fmt: Option<BytesFormat>,
 
+});
+
+// Array ARLASTITEMS（对标 ZSet TopN）
+api_model!(RedisArLastItems {
+    key: RedisKey,
+    /// 返回数量
+    count: u64,
+    /// true: REV（最近优先）；false: 默认插入顺序中最旧优先
+    reverse: bool,
+    val_fmt: Option<BytesFormat>,
+});
+
+api_model!(RedisArLastItemsItem {
+    /// 结果序位（0 起，非 Redis 索引；ARLASTITEMS 不返回槽位）
+    index: i64,
+    /// None = Redis null（空槽）；Some = 按 val_fmt 编码后的值
+    value: Option<String>,
+});
+
+// Array ARINFO 元数据一行（保序；字段名与 Redis 回复一致）
+api_model!(RedisArInfoItem {
+    field: String,
+    value: String,
 });
 
 // 字段修改

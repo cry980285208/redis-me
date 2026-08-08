@@ -253,6 +253,7 @@ mod tests {
                 ttl: -1,
                 value: "字符串值".into(),
                 list_push_method: "".into(),
+                array_write_method: "".into(),
                 field_value_list: vec![],
                 stream_id: "".to_string(),
                 key_fmt: None,
@@ -268,6 +269,7 @@ mod tests {
                 ttl: -1,
                 value: "".into(),
                 list_push_method: "".into(),
+                array_write_method: "".into(),
                 field_value_list: vec![
                     RedisFieldValue {
                         field_key: "hash_key1".into(),

@@ -123,7 +123,7 @@ export function getConnGlobalShortcuts(t: ComposerTranslation): ShortcutItem[] {
 export function getValueShortcuts(t: ComposerTranslation): ShortcutItem[] {
   return [
     { label: t('redisValue.keyShort.fullscreen'), keys: ['F11'] },
-    { label: t('redisValue.keyShort.toggleWrap'), keys: ['mod', 'L'] },
+    { label: t('redisValue.keyShort.toggleWrap'), keys: ['mod', 'B'] },
     { label: t('redisValue.keyShort.toggleLineNumbers'), keys: ['mod', 'N'] },
     { label: t('redisValue.keyShort.fontIncrease'), keys: ['mod', '='], gapBefore: true },
     { label: t('redisValue.keyShort.fontDecrease'), keys: ['mod', '-'] },
@@ -146,6 +146,7 @@ export function getTerminalShortcuts(t: ComposerTranslation): ShortcutItem[] {
     { label: t('redisTerminal.keyShort.clearInput'), keys: ['mod', 'C'] },
     { label: t('redisTerminal.keyShort.cursorStart'), keys: ['mod', 'A'] },
     { label: t('redisTerminal.keyShort.cursorEnd'), keys: ['mod', 'E'] },
+    { label: t('redisTerminal.keyShort.toggleWrap'), keys: ['mod', 'B'] },
     { label: t('redisTerminal.keyShort.cmdClear'), keys: ['clear'], gapBefore: true },
     { label: t('redisTerminal.keyShort.cmdHelp'), keys: ['help'] },
     { label: t('redisTerminal.keyShort.cmdOpen'), keys: ['open'] },
