@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// #region 导入
 import {
   computed,
   inject,
@@ -15,27 +16,36 @@ import MeWebsite from '@/components/MeWebsite.vue'
 import { infoTip as tips } from '@/locales/info'
 import { shareProvideKey } from '@/types/me-interface'
 import { bus, enrichNodeList, INFO_REFRESH, meCommands } from '@/utils/util'
-import RedisACL from '@/views/tab/RedisACL.vue'
-import RedisClient from '@/views/tab/RedisClient.vue'
-import RedisConfig from '@/views/tab/RedisConfig.vue'
+import NodeList from '@/views/ext/NodeList.vue'
 
-import NodeList from '../ext/NodeList.vue'
+import RedisACL from './RedisACL.vue'
+import RedisClient from './RedisClient.vue'
+import RedisConfig from './RedisConfig.vue'
+// #endregion
 
+// Info 页：INFO 原文 → 字典/标签表；弹窗挂 Client / ACL / Config（本域组件）。
+
+// #region 共享上下文
 const { t } = useI18n()
 const tipMap = computed(() => tips.value as Record<string, string | undefined>)
-// 共享数据
 const share = inject(shareProvideKey)!
+// #endregion
 
-// 数据
+// #region 核心状态
+// INFO 原文与解析结果
 const node = ref('') // 指定节点
 const raw = ref('') // 原始信息
 const dic = ref<Record<string, string>>({}) // 字典形式
 const tagList = ref<string[]>([]) // 标签名列表
-/** 标签形式：tag 分类名、键名、值 */
-const tagTable = ref<{ key: string; value: string; tag: string }[]>([])
+const tagTable = ref<{ key: string; value: string; tag: string }[]>([]) // tag 分类名、键名、值
 const keyCount = ref(0) // 键数量
-const keyword = ref('') // 关键字过滤
-const tagSelected = ref('') // 选中的标签
+const infoNode = ref('')
+
+// 详情表筛选
+const keyword = ref('')
+const tagSelected = ref('')
+
+// 弹窗开关
 const dialog = reactive({
   raw: false,
   client: false,
@@ -45,16 +55,21 @@ const dialog = reactive({
   topology: false,
 })
 const loading = ref(false)
+
+// config get save（RDB 勾选状态）
 const config = ref<Record<string, string>>({})
-const configError = ref('') // config get save 的错误信息
+const configError = ref('')
+// #endregion
+
+// #region 概览派生（描述列表）
 const rdbChecked = computed(() => {
   if (configError.value) return false // indeterminate 需要配合单独的属性
   return !!config.value['save']
 })
-const rdbIndeterminate = computed(() => !!configError.value) // 中间状态
+const rdbIndeterminate = computed(() => !!configError.value)
 const aofChecked = computed(() => dic.value['aof_enabled'] === '1')
 const rdbTooltip = computed(() => {
-  if (configError.value) return configError.value // 失败时显示错误信息
+  if (configError.value) return configError.value
   return config.value['save'] || t('redisInfo.rdbDisabled')
 })
 const cacheRatio = computed(() => {
@@ -68,24 +83,21 @@ const cacheRatio = computed(() => {
   }
 })
 
-/** 连接配置中的 ACL 用户名，空串显示 default */
+// 连接配置中的 ACL 用户名，空串显示 default
 const displayUsername = computed(() => {
   const name = share.conn?.username?.trim()
   return name || 'default'
 })
-
-/** ACL 6.0+ 才在 Info 展示可点击入口 */
+// ACL 6.0+ 才在 Info 展示可点击入口
 const aclSupported = computed(() => share.capabilities.aclSupported)
 
-/** INFO instantaneous_ops_per_sec */
 const opsPerSec = computed(() => {
+  // INFO instantaneous_ops_per_sec
   const v = dic.value['instantaneous_ops_per_sec']
   if (v == null || v === '') return '--'
   const n = parseFloat(v)
   return Number.isNaN(n) ? '--' : `${n}/s`
 })
-
-/** INFO instantaneous_*_kbps */
 const networkInKbps = computed(() => {
   const v = dic.value['instantaneous_input_kbps']
   if (v == null || v === '') return '--'
@@ -102,7 +114,7 @@ const networkUnavailable = computed(
   () => networkInKbps.value === '--' || networkOutKbps.value === '--',
 )
 
-/** maxmemory 为 0 时显示未限制，否则 human · policy */
+// maxmemory 为 0 时显示未限制，否则 human · policy
 const maxmemorySummary = computed(() => {
   const bytes = parseInt(dic.value['maxmemory'] ?? '0', 10)
   if (!bytes) return t('redisInfo.maxmemoryUnlimited')
@@ -110,18 +122,10 @@ const maxmemorySummary = computed(() => {
   const policy = dic.value['maxmemory_policy'] || '--'
   return `${human} · ${policy}`
 })
+// #endregion
 
-const infoNode = ref('')
-
-/** 已用内存占系统总内存比例（展示用，非 Redis maxmemory） */
-// const memoryUsagePercent = computed(() => {
-//   const used = parseInt(dic.value['used_memory'] ?? '', 10)
-//   const total = parseInt(dic.value['total_system_memory'] ?? '', 10)
-//   if (!total || Number.isNaN(used) || Number.isNaN(total)) return '--'
-//   return ((used / total) * 100).toFixed(2)
-// })
-
-// raw原始值发生变化后，其他的值重新计算
+// #region INFO 解析与表格筛选
+// raw 变化后重算 dic / tagTable / dbSizeMap
 watchEffect(() => {
   dic.value = {}
   tagList.value = []
@@ -147,7 +151,6 @@ watchEffect(() => {
       }
 
       // db0:keys=14410,expires=3997,avg_ttl=736124073
-      // db1:keys=50,expires=0,avg_ttl=0,subexpiry=0
       if (/^db\d{1,2}$/.test(key)) {
         try {
           const size = parseInt(value.split(',')[0].split('=')[1])
@@ -159,7 +162,6 @@ watchEffect(() => {
   })
 })
 
-// 表格数据
 const dataList = computed(() => {
   return tagTable.value.filter(d => !tagSelected.value || d.tag === tagSelected.value)
 })
@@ -174,18 +176,15 @@ const filterDataList = computed(() => {
   )
 })
 
-// 合计列
-// function getSummaries() {
-//   return [t('redisInfo.total'), '', filterDataList.value.length + ' / ' + dataList.value.length, '']
-// }
-
 const tableRef = useTemplateRef('table')
 function tagChange() {
-  tableRef.value?.scrollTo(0, 0) // 滚动条归零
+  tableRef.value?.scrollTo(0, 0)
 }
+// #endregion
 
-// 新增键/删除键等操作可以调用进行自动刷新，以便保证db下拉框中的数量显示正确
+// #region 刷新与初始化
 function onInfoRefreshBus(payload?: boolean | undefined) {
+  // 增删键等可 bus 触发，保证 DB 下拉数量正确
   void refresh(payload === true)
 }
 onMounted(() => bus.on(INFO_REFRESH, onInfoRefreshBus))
@@ -201,11 +200,10 @@ async function refresh(withConfigGet: boolean = false) {
 
     if (withConfigGet) {
       try {
-        configError.value = '' // 清除之前的错误
+        configError.value = ''
         const data2 = await meCommands.configGet(share.conn!.id, 'save', node.value, false)
         config.value = data2 ?? {}
       } catch (e: unknown) {
-        // config get save 失败时，记录错误信息
         configError.value = String(e)
         config.value = {}
       }
@@ -215,7 +213,7 @@ async function refresh(withConfigGet: boolean = false) {
   }
 }
 
-/** 集群先拉 nodeList 并选定 master，再首次 INFO，避免随机节点 */
+// 集群先拉 nodeList 并选定 master，再首次 INFO
 async function initPage() {
   const nodeList = await meCommands.nodeList(share.conn!.id)
   share.nodeList = enrichNodeList(nodeList || [])
@@ -227,8 +225,9 @@ async function initPage() {
 }
 
 void initPage()
+// #endregion
 
-// 客户端、配置、内存
+// #region 弹窗入口与集群拓扑
 function goClient() {
   dialog.client = true
 }
@@ -239,11 +238,9 @@ function goAcl() {
   dialog.acl = true
 }
 function goMemory() {
-  // dialog.memory = true
   share.tabName = 'memory'
 }
 
-// 新增功能：Redis 集群拓扑弹框
 const nodeGroups = computed(() => {
   const masters = share.nodeList.filter(n => n.isMaster)
   return masters.map(m => ({
@@ -251,10 +248,12 @@ const nodeGroups = computed(() => {
     slaves: share.nodeList.filter(n => n.isSlave && n.slaveOfNode === m.node),
   }))
 })
+// #endregion
 </script>
 
 <template>
   <div class="redis-info" v-loading="loading">
+    <!-- 概览：节点 / 版本 / 描述项 -->
     <el-descriptions border>
       <template #title>
         <div class="me-flex" style="align-items: center">
@@ -354,7 +353,7 @@ const nodeGroups = computed(() => {
         <template #label
           ><me-icon :name="t('redisInfo.persistence')" icon="me-icon-save"
         /></template>
-        <!-- rdb需要通过config get save命令去确认 -->
+        <!-- rdb 需 config get save 确认 -->
         <el-checkbox v-model="rdbChecked" :indeterminate="rdbIndeterminate" disabled>
           <el-tooltip :content="rdbTooltip" placement="top-start">RDB</el-tooltip>
         </el-checkbox>
@@ -415,6 +414,7 @@ const nodeGroups = computed(() => {
       </el-descriptions-item>
     </el-descriptions>
 
+    <!-- 详情：标签筛选 / 关键字 / INFO 表 -->
     <el-card class="detail-card">
       <template #header>
         <div class="me-flex detail-header">
@@ -460,6 +460,7 @@ const nodeGroups = computed(() => {
     </el-card>
   </div>
 
+  <!-- 本域弹窗：原文 / Client / ACL / Config -->
   <me-dialog v-model="dialog.raw" icon="el-icon-notebook" title="Info" width="60vw">
     <me-code :modelValue="raw" mode="properties" read-only />
   </me-dialog>
@@ -473,12 +474,6 @@ const nodeGroups = computed(() => {
     :close-on-click-modal="false">
     <RedisClient :init-node="node || infoNode" />
   </me-dialog>
-
-  <!--
-  <me-dialog v-model="dialog.memory" icon="me-icon-memory" :title="t('redisInfo.memory')" width="80vw" >
-    <RedisMemory/>
-  </me-dialog>
-  -->
 
   <me-dialog
     v-model="dialog.acl"
@@ -500,6 +495,7 @@ const nodeGroups = computed(() => {
     <RedisConfig :init-node="node || infoNode" :init-version="share.capabilities.version" />
   </me-dialog>
 
+  <!-- 集群拓扑 -->
   <el-dialog
     v-model="dialog.topology"
     :title="t('redisInfo.clusterTopology')"
@@ -563,29 +559,28 @@ const nodeGroups = computed(() => {
 
 <style scoped lang="scss">
 .redis-info {
+  // 根布局：概览 + 详情表
   height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
-
   display: flex;
   flex-direction: column;
   justify-content: space-between;
 
-  // 描述标题的宽度
+  // 描述标题
   :deep(.el-descriptions__title) {
     width: 100%;
   }
 
-  // 参数详情的高度小一些
+  // 详情卡片头/体
   :deep(.el-card__header) {
     padding: 10px;
   }
-
-  // 参数详情的Body去掉Padding
   :deep(.el-card__body) {
     padding: 0;
   }
 
+  // 工具：刷新 / 网络吞吐
   .refresh-btn {
     font-size: 20px;
     color: var(--el-color-success);
@@ -612,7 +607,7 @@ const nodeGroups = computed(() => {
     color: var(--el-text-color-secondary);
   }
 
-  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  // 详情表卡片
   .detail-card {
     margin-top: 10px;
     flex: 1;
@@ -632,6 +627,7 @@ const nodeGroups = computed(() => {
   }
 }
 
+// 集群拓扑弹窗内容
 .cluster-topology-wrap {
   height: 100%;
   overflow: auto;

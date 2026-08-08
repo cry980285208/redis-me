@@ -18,8 +18,7 @@ import { configTip as tips } from '@/locales/config'
 import { redisConfDict, valkeyConfDict } from '@/locales/config/defaults'
 import { shareProvideKey } from '@/types/me-interface'
 import { meCopy, meCommands, meOk } from '@/utils/util'
-
-import NodeList from '../ext/NodeList.vue'
+import NodeList from '@/views/ext/NodeList.vue'
 
 const { t } = useI18n()
 // 共享数据
