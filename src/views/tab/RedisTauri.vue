@@ -286,6 +286,22 @@ function defaultPayload(cmd: CommandKey): Record<string, unknown> {
         id: connIdForDefaults(),
         param: { key: { ...dummyKey }, fieldKey: '', attrs: '', valFmt: null },
       }
+    case 'vSim':
+      return {
+        id: connIdForDefaults(),
+        param: {
+          key: { ...dummyKey },
+          mode: 'ele',
+          fieldKey: '',
+          vector: [],
+          count: 10,
+          withAttribs: true,
+          filter: '',
+          epsilon: null,
+          ef: null,
+          valFmt: null,
+        },
+      }
     case 'xinfoConsumers':
       return { id: connIdForDefaults(), key: { ...dummyKey }, group: 'g' }
     case 'slowLog':

@@ -640,6 +640,41 @@ api_model!(RedisVAttr {
     val_fmt: Option<BytesFormat>,
 });
 
+// Vector Set VSIM：相似度查询（WITHSCORES 固定开启）
+api_model!(RedisVSim {
+    key: RedisKey,
+    /// ele | values
+    mode: String,
+    /// ELE：查询元素名（按 val_fmt 解码）
+    #[serde(default)]
+    field_key: String,
+    /// VALUES：查询向量
+    #[serde(default)]
+    vector: Vec<f64>,
+    /// COUNT；默认由调用方填
+    count: u64,
+    /// 是否 WITHATTRIBS
+    with_attribs: bool,
+    /// FILTER 表达式；空=不加
+    #[serde(default)]
+    filter: String,
+    /// EPSILON；None=不加
+    epsilon: Option<f64>,
+    /// EF；None=不加
+    ef: Option<u64>,
+    val_fmt: Option<BytesFormat>,
+});
+
+api_model!(RedisVSimItem {
+    /// 元素名（val_fmt 编码）
+    key: String,
+    /// 相似度 1=同向，0=反向
+    score: f64,
+    /// WITHATTRIBS 时返回；无属性为空串
+    #[serde(default)]
+    attrs: String,
+});
+
 // 字段修改
 api_model!(RedisFieldSet {
     key: RedisKey,

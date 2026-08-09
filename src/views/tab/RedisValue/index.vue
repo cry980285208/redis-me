@@ -104,6 +104,7 @@ import TableArLastItems from './TableArLastItems.vue'
 import TableGroup from './TableGroup.vue'
 import TableHashKeys from './TableHashKeys.vue'
 import TableInfo from './TableInfo.vue'
+import TableVSim from './TableVSim.vue'
 import TableZsetRange from './TableZsetRange.vue'
 import ValueShortcut from './ValueShortcut.vue'
 // #endregion
@@ -1469,6 +1470,10 @@ const arLastItemsRef = useTemplateRef('arLastItemsRef')
 function showArLastItems() {
   arLastItemsRef.value?.open(IPC_WIRE_FORMAT, displayBytesFormat.value)
 }
+const vSimRef = useTemplateRef<InstanceType<typeof TableVSim>>('vSimRef')
+function showVSim() {
+  vSimRef.value?.open(displayBytesFormat.value)
+}
 // #endregion
 
 // #region 底栏信息文案
@@ -1799,6 +1804,13 @@ onUnmounted(() => {
                 @click="showArLastItems"
                 style="margin-left: 10px">
                 {{ t('redisValue.arLastItems') }}
+              </me-button>
+              <me-button
+                v-if="vectorsetType"
+                icon="me-icon-rank"
+                @click="showVSim"
+                style="margin-left: 10px">
+                {{ t('redisValue.vSim') }}
               </me-button>
               <el-dropdown
                 v-if="((listType || setType || zsetType) && canEdit) || arrayType || vectorsetType"
@@ -2195,6 +2207,7 @@ onUnmounted(() => {
     <TableHashKeys ref="hashKeysRef" />
     <TableZsetRange ref="zsetRangeRef" />
     <TableArLastItems ref="arLastItemsRef" />
+    <TableVSim ref="vSimRef" />
 
     <!-- 本域帮助：值编辑器快捷键 -->
     <ValueShortcut ref="valueShortcutRef" />

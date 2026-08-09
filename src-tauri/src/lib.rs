@@ -53,6 +53,7 @@ fn tauri_specta_commands() -> Commands<tauri::Wry> {
         v_info,
         v_getattr,
         v_setattr,
+        v_sim,
         object_info,
         execute_command,
         acl_users,

@@ -96,6 +96,8 @@ pub trait MeClient: Send + Sync {
 
     fn v_setattr(&self, param: RedisVAttr) -> AnyResult<()>;
 
+    fn v_sim(&self, param: RedisVSim) -> AnyResult<Vec<RedisVSimItem>>;
+
     fn object_info(&self, key: RedisKey) -> AnyResult<RedisObjectInfo>;
 
     fn execute_command(&self, param: RedisCommand) -> AnyResult<String>;
@@ -1636,6 +1638,128 @@ pub fn v_setattr0(mut conn: MutexGuard<impl Commands>, param: RedisVAttr) -> Any
     let val_fmt = param.val_fmt.as_ref().cloned().unwrap_or_default();
     let elem = parse_bytes(&param.field_key, &val_fmt)?;
     vsetattr_json_or_clear(&mut conn, &key, &elem, &param.attrs)
+}
+
+/// Vector Set VSIM：相似度查询。固定 WITHSCORES；可选 WITHATTRIBS / EPSILON / EF / FILTER。
+/// 用原始 cmd（redis-rs VSimOptions 缺 WITHATTRIBS / EPSILON）。
+pub fn v_sim0(
+    mut conn: MutexGuard<impl Commands>,
+    param: RedisVSim,
+) -> AnyResult<Vec<RedisVSimItem>> {
+    let key: RedisKey = param.key;
+    let key_type: ValueType = conn.key_type(&key)?;
+    if key_type != ValueType::VectorSet {
+        handle_other_value_type(&key_type, &key)?;
+        unreachable!()
+    }
+    let val_fmt = param.val_fmt.as_ref().cloned().unwrap_or_default();
+    let count = if param.count == 0 { 10 } else { param.count };
+    let mode = param.mode.trim().to_ascii_lowercase();
+
+    let mut cmd = redis::cmd("VSIM");
+    cmd.arg(&key);
+    match mode.as_str() {
+        "ele" => {
+            let elem = parse_bytes(&param.field_key, &val_fmt)?;
+            if elem.is_empty() {
+                bail!("VSIM ELE requires element name");
+            }
+            cmd.arg("ELE").arg(&elem);
+        }
+        "values" => {
+            if param.vector.is_empty() {
+                bail!("VSIM VALUES requires vector");
+            }
+            cmd.arg("VALUES").arg(param.vector.len());
+            for f in &param.vector {
+                cmd.arg(*f);
+            }
+        }
+        other => bail!("unsupported VSIM mode: {other}"),
+    }
+    // 固定开分；双 WITH* 时 RESP2 序为 ele, score, attribs
+    cmd.arg("WITHSCORES");
+    if param.with_attribs {
+        cmd.arg("WITHATTRIBS");
+    }
+    cmd.arg("COUNT").arg(count);
+    if let Some(eps) = param.epsilon {
+        cmd.arg("EPSILON").arg(eps);
+    }
+    if let Some(ef) = param.ef {
+        cmd.arg("EF").arg(ef);
+    }
+    let filter = param.filter.trim();
+    if !filter.is_empty() {
+        cmd.arg("FILTER").arg(filter);
+    }
+
+    let raw: Value = cmd.query(&mut conn)?;
+    parse_vsim_items(raw, param.with_attribs, &val_fmt)
+}
+
+/// RESP2：仅 WITHSCORES → ele,score；双 WITH* → ele,score,attribs
+fn parse_vsim_items(
+    raw: Value,
+    with_attribs: bool,
+    val_fmt: &BytesFormat,
+) -> AnyResult<Vec<RedisVSimItem>> {
+    let arr = match raw {
+        Value::Nil => return Ok(Vec::new()),
+        Value::Array(a) => a,
+        other => bail!(AppError::Internal {
+            message: format!("unexpected VSIM reply: {:?}", other)
+        }),
+    };
+    let stride = if with_attribs { 3 } else { 2 };
+    if arr.len() % stride != 0 {
+        bail!(AppError::Internal {
+            message: format!(
+                "unexpected VSIM reply length {} (stride {})",
+                arr.len(),
+                stride
+            )
+        });
+    }
+    let mut items = Vec::with_capacity(arr.len() / stride);
+    let mut i = 0;
+    while i < arr.len() {
+        let key_bytes = redis_value_to_bulk_bytes(arr[i].clone());
+        let score = redis_value_as_f64(arr[i + 1].clone())?;
+        let attrs = if with_attribs {
+            match &arr[i + 2] {
+                Value::Nil => String::new(),
+                v => redis_value_to_string(v.clone(), ""),
+            }
+        } else {
+            String::new()
+        };
+        items.push(RedisVSimItem {
+            key: format_bytes(&key_bytes, val_fmt),
+            score,
+            attrs,
+        });
+        i += stride;
+    }
+    Ok(items)
+}
+
+fn redis_value_as_f64(value: Value) -> AnyResult<f64> {
+    match value {
+        Value::Double(d) => Ok(d),
+        Value::Int(i) => Ok(i as f64),
+        Value::BulkString(b) => {
+            let s = String::from_utf8_lossy(&b);
+            s.parse::<f64>()
+                .with_context(|| format!("invalid VSIM score: {s}"))
+        }
+        Value::SimpleString(s) => s
+            .parse::<f64>()
+            .with_context(|| format!("invalid VSIM score: {s}")),
+        other => bail!(AppError::Internal {
+            message: format!("unexpected VSIM score: {:?}", other)
+        }),
+    }
 }
 
 /// ARINFO / VINFO 等扁平键值回复 → 保序 field/value 行

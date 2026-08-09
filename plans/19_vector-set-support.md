@@ -1,6 +1,6 @@
 # 19. Redis Vector Set 类型支持
 
-> **实现状态**：19.1 ✅；19.2 attrs + VINFO ✅；19.3 待开工（复核见 §九）  
+> **实现状态**：19.1 ✅；19.2 attrs + VINFO ✅；19.3 VSIM ✅（复核见 §九）  
 > **关联 backlog**：`docs/zh/changelog/future.md`  
 > **对标实现**：`plans/18_array-type-support.md`；前端管线对齐 Hash/Set（`key`/`value` 行）  
 > **竞品信号**：Redis Insight 3.6；见 `plans/20260809_rdm-tools-recent-changelogs.md`  
@@ -169,7 +169,7 @@ RESP2 双 WITH*：**ele, score, attribs**。分数 1=同向，0=反向。
 
 ### 19.3 VSIM
 
-`points` ELE；`movies` FILTER `.year >= 2000`；「以此再搜」。
+`points` ELE；`movies` FILTER `.year >= 2000`。
 
 ---
 

@@ -44,6 +44,7 @@ export const commands = {
 	vInfo: (id: string, key: RedisKey_Deserialize) => typedError<RedisArInfoItem[], string>(__TAURI_INVOKE("v_info", { id, key })),
 	vGetattr: (id: string, param: RedisVAttr_Deserialize) => typedError<string, string>(__TAURI_INVOKE("v_getattr", { id, param })),
 	vSetattr: (id: string, param: RedisVAttr_Deserialize) => typedError<null, string>(__TAURI_INVOKE("v_setattr", { id, param })),
+	vSim: (id: string, param: RedisVSim_Deserialize) => typedError<RedisVSimItem[], string>(__TAURI_INVOKE("v_sim", { id, param })),
 	objectInfo: (id: string, key: RedisKey_Deserialize) => typedError<RedisObjectInfo, string>(__TAURI_INVOKE("object_info", { id, key })),
 	executeCommand: (id: string, param: RedisCommand) => typedError<string, string>(__TAURI_INVOKE("execute_command", { id, param })),
 	aclUsers: (id: string) => typedError<string[], string>(__TAURI_INVOKE("acl_users", { id })),
@@ -701,6 +702,59 @@ export type RedisVAttr_Serialize = {
 	fieldKey: string,
 	/**  仅 VSETATTR：JSON 文本；空串删除属性 */
 	attrs: string,
+	valFmt: BytesFormat | null,
+};
+
+export type RedisVSim = RedisVSim_Serialize | RedisVSim_Deserialize;
+
+export type RedisVSimItem = {
+	/**  元素名（val_fmt 编码） */
+	key: string,
+	/**  相似度 1=同向，0=反向 */
+	score: number | null,
+	/**  WITHATTRIBS 时返回；无属性为空串 */
+	attrs?: string,
+};
+
+export type RedisVSim_Deserialize = {
+	key: RedisKey_Deserialize,
+	/**  ele | values */
+	mode: string,
+	/**  ELE：查询元素名（按 val_fmt 解码） */
+	fieldKey?: string,
+	/**  VALUES：查询向量 */
+	vector?: (number | null)[],
+	/**  COUNT；默认由调用方填 */
+	count: number,
+	/**  是否 WITHATTRIBS */
+	withAttribs: boolean,
+	/**  FILTER 表达式；空=不加 */
+	filter?: string,
+	/**  EPSILON；None=不加 */
+	epsilon: number | null,
+	/**  EF；None=不加 */
+	ef: number | null,
+	valFmt: BytesFormat | null,
+};
+
+export type RedisVSim_Serialize = {
+	key: RedisKey_Serialize,
+	/**  ele | values */
+	mode: string,
+	/**  ELE：查询元素名（按 val_fmt 解码） */
+	fieldKey: string,
+	/**  VALUES：查询向量 */
+	vector: (number | null)[],
+	/**  COUNT；默认由调用方填 */
+	count: number,
+	/**  是否 WITHATTRIBS */
+	withAttribs: boolean,
+	/**  FILTER 表达式；空=不加 */
+	filter: string,
+	/**  EPSILON；None=不加 */
+	epsilon: number | null,
+	/**  EF；None=不加 */
+	ef: number | null,
 	valFmt: BytesFormat | null,
 };
 

@@ -221,6 +221,10 @@ impl MeClient for MeSingle {
         v_setattr0(self.get_conn()?, param)
     }
 
+    fn v_sim(&self, param: RedisVSim) -> AnyResult<Vec<RedisVSimItem>> {
+        v_sim0(self.get_conn()?, param)
+    }
+
     fn object_info(&self, key: RedisKey) -> AnyResult<RedisObjectInfo> {
         object_info0(self.get_conn()?, key)
     }
