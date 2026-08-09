@@ -90,6 +90,12 @@ pub trait MeClient: Send + Sync {
 
     fn ar_info(&self, key: RedisKey) -> AnyResult<Vec<RedisArInfoItem>>;
 
+    fn v_info(&self, key: RedisKey) -> AnyResult<Vec<RedisArInfoItem>>;
+
+    fn v_getattr(&self, param: RedisVAttr) -> AnyResult<String>;
+
+    fn v_setattr(&self, param: RedisVAttr) -> AnyResult<()>;
+
     fn object_info(&self, key: RedisKey) -> AnyResult<RedisObjectInfo>;
 
     fn execute_command(&self, param: RedisCommand) -> AnyResult<String>;
@@ -349,11 +355,7 @@ pub fn field_scan_0_exact(
                 .arg(&elem)
                 .query(conn)?;
             let items = if exists {
-                vec![RedisVectorItem {
-                    key: format_bytes(&elem, bytes_format),
-                    value: vemb_json_or_dash(conn, key, &elem),
-                    attrs: None,
-                }]
+                vec![redis_vector_item(conn, key, &elem, bytes_format)]
             } else {
                 Vec::new()
             };
@@ -618,6 +620,43 @@ fn vemb_json_or_dash(conn: &mut impl Commands, key: &RedisKey, element: &[u8]) -
         .unwrap_or_else(|| "-".into())
 }
 
+/// Vector Set：VGETATTR；无属性 / 失败 → None（不拖死整页）
+fn vgetattr_opt(conn: &mut impl Commands, key: &RedisKey, element: &[u8]) -> Option<String> {
+    conn.vgetattr::<_, _, Option<String>>(key, element)
+        .ok()
+        .flatten()
+        .filter(|s: &String| !s.is_empty())
+}
+
+/// Vector Set：VSETATTR；空串删除属性（官方约定）
+fn vsetattr_json_or_clear(
+    conn: &mut impl Commands,
+    key: &RedisKey,
+    element: &[u8],
+    attrs: &str,
+) -> AnyResult<()> {
+    let payload = attrs.trim();
+    let _: bool = redis::cmd("VSETATTR")
+        .arg(key)
+        .arg(element)
+        .arg(payload)
+        .query(conn)?;
+    Ok(())
+}
+
+fn redis_vector_item(
+    conn: &mut impl Commands,
+    key: &RedisKey,
+    name: &[u8],
+    bytes_format: &BytesFormat,
+) -> RedisVectorItem {
+    // 浏览只拉 VEMB；attrs 在 FieldSet 打开时 VGETATTR
+    RedisVectorItem {
+        key: format_bytes(name, bytes_format),
+        value: vemb_json_or_dash(conn, key, name),
+    }
+}
+
 /// VRANGE 元素名列表（库无命令封装；回复用 `Vec<Vec<u8>>` 反序列化）
 fn vrange_elements(
     conn: &mut impl Commands,
@@ -651,14 +690,10 @@ fn field_scan_vectorset_page(
     };
 
     let names = vrange_elements(conn, key, &start, count)?;
-    let items: Vec<RedisVectorItem> = names
-        .iter()
-        .map(|name| RedisVectorItem {
-            key: format_bytes(name, bytes_format),
-            value: vemb_json_or_dash(conn, key, name),
-            attrs: None,
-        })
-        .collect();
+    let mut items = Vec::with_capacity(names.len());
+    for name in &names {
+        items.push(redis_vector_item(conn, key, name, bytes_format));
+    }
 
     if (items.len() as u64) < count {
         cc.finished = true;
@@ -1167,7 +1202,7 @@ pub fn field_add0(
                 }
             }
         }
-        // Vector Set：VADD VALUES（redis-rs）；空/零向量交给 Redis 原错
+        // Vector Set：VADD VALUES（redis-rs）；空/零向量交给 Redis 原错；可选 VSETATTR
         ValueType::VectorSet => {
             let elem = if let Some(f) = fv_list.first() {
                 parse_bytes(&f.field_key, &val_fmt)?
@@ -1175,6 +1210,9 @@ pub fn field_add0(
                 bail!("vectorset element name is required");
             };
             vadd_values(&mut conn, &key, &param.vector, &elem)?;
+            if !param.attrs.trim().is_empty() {
+                vsetattr_json_or_clear(&mut conn, &key, &elem, &param.attrs)?;
+            }
         }
         _ => {
             handle_other_value_type(&key_type, &key)?;
@@ -1251,7 +1289,7 @@ pub fn field_set0(
                 .arg(&bytes)
                 .query(&mut conn)?;
         }
-        // Vector Set：VADD upsert（redis-rs）；空/零向量交给 Redis 原错
+        // Vector Set：VADD upsert；attrs 改走独立 v_setattr（不随字段保存）
         ValueType::VectorSet => {
             let elem = parse_bytes(&param.field_key, &val_fmt)?;
             vadd_values(&mut conn, &key, &param.vector, &elem)?;
@@ -1557,10 +1595,51 @@ pub fn ar_info0(
         unreachable!()
     }
     let raw: Value = redis::cmd("ARINFO").arg(&key).query(&mut conn)?;
-    parse_arinfo_items(raw)
+    parse_info_kv_items(raw, "ARINFO")
 }
 
-fn parse_arinfo_items(raw: Value) -> AnyResult<Vec<RedisArInfoItem>> {
+/// Vector Set VINFO：元数据；行结构与 ARINFO 相同（field/value）。
+pub fn v_info0(
+    mut conn: MutexGuard<impl Commands>,
+    key: RedisKey,
+) -> AnyResult<Vec<RedisArInfoItem>> {
+    let key_type: ValueType = conn.key_type(&key)?;
+    if key_type != ValueType::VectorSet {
+        handle_other_value_type(&key_type, &key)?;
+        unreachable!()
+    }
+    let raw: Value = redis::cmd("VINFO").arg(&key).query(&mut conn)?;
+    parse_info_kv_items(raw, "VINFO")
+}
+
+/// Vector Set VGETATTR：按需读取元素 attrs（不随 VRANGE）
+pub fn v_getattr0(mut conn: MutexGuard<impl Commands>, param: RedisVAttr) -> AnyResult<String> {
+    let key: RedisKey = param.key;
+    let key_type: ValueType = conn.key_type(&key)?;
+    if key_type != ValueType::VectorSet {
+        handle_other_value_type(&key_type, &key)?;
+        unreachable!()
+    }
+    let val_fmt = param.val_fmt.as_ref().cloned().unwrap_or_default();
+    let elem = parse_bytes(&param.field_key, &val_fmt)?;
+    Ok(vgetattr_opt(&mut conn, &key, &elem).unwrap_or_default())
+}
+
+/// Vector Set VSETATTR：空串删除属性
+pub fn v_setattr0(mut conn: MutexGuard<impl Commands>, param: RedisVAttr) -> AnyResult<()> {
+    let key: RedisKey = param.key;
+    let key_type: ValueType = conn.key_type(&key)?;
+    if key_type != ValueType::VectorSet {
+        handle_other_value_type(&key_type, &key)?;
+        unreachable!()
+    }
+    let val_fmt = param.val_fmt.as_ref().cloned().unwrap_or_default();
+    let elem = parse_bytes(&param.field_key, &val_fmt)?;
+    vsetattr_json_or_clear(&mut conn, &key, &elem, &param.attrs)
+}
+
+/// ARINFO / VINFO 等扁平键值回复 → 保序 field/value 行
+fn parse_info_kv_items(raw: Value, cmd: &str) -> AnyResult<Vec<RedisArInfoItem>> {
     match raw {
         Value::Nil => Ok(Vec::new()),
         Value::Map(map) => Ok(map
@@ -1583,7 +1662,7 @@ fn parse_arinfo_items(raw: Value) -> AnyResult<Vec<RedisArInfoItem>> {
             Ok(items)
         }
         other => bail!(AppError::Internal {
-            message: format!("unexpected ARINFO reply: {:?}", other)
+            message: format!("unexpected {} reply: {:?}", cmd, other)
         }),
     }
 }
@@ -2327,7 +2406,13 @@ fn key_as_command_lines(conn: &mut impl Commands, key: &RedisKey) -> AnyResult<V
                     if nums.is_empty() {
                         continue;
                     }
-                    lines.push(format_vadd_command(key_bytes, &nums, name));
+                    let attrs = vgetattr_opt(conn, key, name);
+                    lines.push(format_vadd_command(
+                        key_bytes,
+                        &nums,
+                        name,
+                        attrs.as_deref(),
+                    ));
                 }
                 if lines.len() as u64 >= VSET_EXPORT_LIMIT || names.len() < 100 {
                     break;
@@ -2438,7 +2523,7 @@ pub fn get_field_as_command0(
             })?;
             format_arset_command(key_bytes, idx, &value_bytes)
         }
-        // Vector Set：VEMB（redis-rs）→ 复制为 VADD 文本（向量可能为近似值）
+        // Vector Set：VEMB + 可选 VGETATTR → VADD … [SETATTR]（向量可能为近似值）
         ValueType::VectorSet => {
             let elem = parse_bytes(&param.field_key, &val_fmt)?;
             let nums: Vec<f64> = conn.vemb(&key, &elem).map_err(|_| AppError::FieldNotFound {
@@ -2449,7 +2534,8 @@ pub fn get_field_as_command0(
                     hash_key: param.field_key.clone(),
                 });
             }
-            format_vadd_command(key_bytes, &nums, &elem)
+            let attrs = vgetattr_opt(&mut conn, &key, &elem);
+            format_vadd_command(key_bytes, &nums, &elem, attrs.as_deref())
         }
         other => bail!(AppError::KeyTypeUnsupported {
             value_type: ui_key_type(other)

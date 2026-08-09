@@ -10,7 +10,7 @@ import { BYTES_FORMAT, IPC_WIRE_FORMAT, meViewToWire, type ViewBytesFormat } fro
 import { KEY_TYPE_LIST, meType, toKeyTypeLabel, toRedisTypeName } from '@/utils/redis-display'
 import { redisKeyWireBase64 } from '@/utils/redis-key'
 import { meCommands, meErr, meOk, meJsonParse, meJsonNormal, meTtlSeconds } from '@/utils/util'
-import { parseVectorInput } from '@/utils/vector'
+import { parseAttrsInput, parseVectorInput } from '@/utils/vector'
 
 const { t } = useI18n()
 const emit = defineEmits(['success', 'closed'])
@@ -55,6 +55,8 @@ const initForm = computed(() => ({
   fieldValueList: [{ fieldKey: '', fieldValue: '', fieldScore: 0, fieldTtl: -1 }],
   /** Vector Set：编辑区文本；提交前 parseVectorInput → IPC vector:number[] */
   vectorText: '',
+  /** Vector Set：attrs JSON 文本；空=不带 SETATTR */
+  attrsText: '',
   keyFmt: 'utf8' as ViewBytesFormat,
   valFmt: 'utf8' as ViewBytesFormat,
 }))
@@ -162,8 +164,9 @@ function submit() {
       }
     }
 
-    // Vector Set：前端解析向量文本 → IPC number[]（后端不再解析多格式字符串）
+    // Vector Set：前端解析向量 / attrs → IPC（后端不再解析多格式字符串）
     let vector: number[] = []
+    let attrs = ''
     if (vectorsetType.value) {
       const elem = String(form.value.fieldValueList[0]?.fieldKey ?? '').trim()
       if (!elem) {
@@ -176,6 +179,12 @@ function submit() {
         return
       }
       vector = parsed.nums
+      const attrsParsed = parseAttrsInput(form.value.attrsText)
+      if (!attrsParsed.ok) {
+        meErr(t('fieldAdd.attrsInvalid'))
+        return
+      }
+      attrs = attrsParsed.json
     }
 
     // 与 KeyRename 一致：提交前先做编码转换检查，失败 meErr 并 return，不打后端
@@ -209,12 +218,13 @@ function submit() {
 
     isSaving.value = true
     try {
-      const { vectorText: _vectorText, ...fieldAddRest } = form.value
+      const { vectorText: _vectorText, attrsText: _attrsText, ...fieldAddRest } = form.value
       const redisKey = await meCommands.fieldAdd(share.conn!.id, {
         ...fieldAddRest,
         key,
         value,
         vector,
+        attrs,
         ttl: meTtlSeconds(form.value.ttl, ttlUnit.value),
         fieldValueList,
         keyFmt: IPC_WIRE_FORMAT,
@@ -359,6 +369,14 @@ function handleKeyTypeChange() {
             :placeholder="'[0.1, 0.2, 0.3]'"
             :validate-event="false" />
           <div class="array-write-hint">{{ t('fieldAdd.vectorValueHint') }}</div>
+        </el-form-item>
+        <el-form-item :label="t('fieldAdd.attrs')">
+          <el-input
+            type="textarea"
+            v-model="form.attrsText"
+            :rows="3"
+            placeholder='{"year":2021}'
+            :validate-event="false" />
         </el-form-item>
       </template>
 

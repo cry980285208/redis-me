@@ -209,6 +209,18 @@ impl MeClient for MeSingle {
         ar_info0(self.get_conn()?, key)
     }
 
+    fn v_info(&self, key: RedisKey) -> AnyResult<Vec<RedisArInfoItem>> {
+        v_info0(self.get_conn()?, key)
+    }
+
+    fn v_getattr(&self, param: RedisVAttr) -> AnyResult<String> {
+        v_getattr0(self.get_conn()?, param)
+    }
+
+    fn v_setattr(&self, param: RedisVAttr) -> AnyResult<()> {
+        v_setattr0(self.get_conn()?, param)
+    }
+
     fn object_info(&self, key: RedisKey) -> AnyResult<RedisObjectInfo> {
         object_info0(self.get_conn()?, key)
     }

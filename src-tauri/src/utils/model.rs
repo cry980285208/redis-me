@@ -402,12 +402,11 @@ api_model!(FieldScanResult {
     vector_dim: Option<u64>,
 });
 
-// Vector Set 表格行：key=元素名（wire），value=向量 JSON 展示串，attrs=可选 JSON
+// Vector Set 表格行：key=元素名（wire），value=向量 JSON 展示串
+// attrs 不随 VRANGE 拉取（按需 VGETATTR，见 RedisVAttr）
 api_model!(RedisVectorItem {
     key: String,
     value: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    attrs: Option<String>,
 });
 
 // Redis键: 由于键是字节存储的，考虑转换为utf-8字符串显示后可能会丢失信息，因此封装为对象
@@ -594,6 +593,9 @@ api_model!(RedisFieldAdd {
     /// Vector Set：前端已解析的浮点分量（勿传多格式文本；空=非 vectorset）
     #[serde(default)]
     vector: Vec<f64>,
+    /// Vector Set：attrs JSON 文本；空=不设 SETATTR（新建不带属性）
+    #[serde(default)]
+    attrs: String,
     field_value_list: Vec<RedisFieldValue>,
     stream_id: String, // stream
 
@@ -625,6 +627,17 @@ api_model!(RedisArLastItemsItem {
 api_model!(RedisArInfoItem {
     field: String,
     value: String,
+});
+
+// Vector Set：按元素读写 attrs（VGETATTR / VSETATTR；不随 VRANGE）
+api_model!(RedisVAttr {
+    key: RedisKey,
+    /// 元素名 wire（与 fieldScan 行 key 一致）
+    field_key: String,
+    /// 仅 VSETATTR：JSON 文本；空串删除属性
+    #[serde(default)]
+    attrs: String,
+    val_fmt: Option<BytesFormat>,
 });
 
 // 字段修改

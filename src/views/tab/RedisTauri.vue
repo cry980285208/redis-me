@@ -121,6 +121,7 @@ const minimalFieldAdd: RedisFieldAdd_Deserialize = {
   listPushMethod: 'lpush',
   arrayWriteMethod: 'arset',
   vector: [],
+  attrs: '',
   fieldValueList: [],
   streamId: '',
 }
@@ -274,8 +275,17 @@ function defaultPayload(cmd: CommandKey): Record<string, unknown> {
     case 'keyType':
     case 'keySlot':
     case 'keyNode':
+    case 'arInfo':
+    case 'vInfo':
+    case 'objectInfo':
     case 'xinfoGroups':
       return { id: connIdForDefaults(), key: { ...dummyKey } }
+    case 'vGetattr':
+    case 'vSetattr':
+      return {
+        id: connIdForDefaults(),
+        param: { key: { ...dummyKey }, fieldKey: '', attrs: '', valFmt: null },
+      }
     case 'xinfoConsumers':
       return { id: connIdForDefaults(), key: { ...dummyKey }, group: 'g' }
     case 'slowLog':

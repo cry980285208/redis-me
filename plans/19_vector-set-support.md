@@ -1,6 +1,6 @@
 # 19. Redis Vector Set 类型支持
 
-> **实现状态**：19.1 代码在工作区待验收（尚未提交）；19.2 / 19.3 待开工（复核见 §九）  
+> **实现状态**：19.1 ✅；19.2 attrs + VINFO ✅；19.3 待开工（复核见 §九）  
 > **关联 backlog**：`docs/zh/changelog/future.md`  
 > **对标实现**：`plans/18_array-type-support.md`；前端管线对齐 Hash/Set（`key`/`value` 行）  
 > **竞品信号**：Redis Insight 3.6；见 `plans/20260809_rdm-tools-recent-changelogs.md`  
@@ -53,7 +53,7 @@ flowchart LR
   RedisValue -->|"fieldScan VRANGE + pipeline VEMB"| Backend
   RedisValue -->|VADD / VREM| Backend
   RedisValue --> TableVSim
-  RedisValue --> VInfo
+  RedisValue --> TableInfo
 ```
 
 ### 2.1 阶段归属
@@ -75,7 +75,7 @@ VRANGE key start end [count]     # count 为裸整数
 
 1. 首页：`start=-`，`end=+`，`count=batch`；`stream_cursor=""`
 2. 续页：解码 `stream_cursor` → 元素原始字节；`start = b"(" + bytes`（**一个** RESP bulk）；`end=+`
-3. 页内 pipeline：`VEMB`（必选）→ 填 `value`；19.2 再 `VGETATTR` → `attrs`
+3. 页内 pipeline：`VEMB`（必选）→ 填 `value`；**attrs 不随 VRANGE**（打开 FieldSet 时 `VGETATTR`）
 4. 精确：`field_scan_0_get` 在 exact 时返回 `None`，`field_scan_0_exact`：`VISMEMBER`→`VEMB`
 5. 非精确 pattern：**仅前端本地过滤元素名**（`key`）；不按向量浮点过滤；attrs 若需过滤放 19.2 再定
 6. `finished = (page.len() < count)`；若有数据则 `stream_cursor = 最后一行.key`（wire）
@@ -188,7 +188,7 @@ RESP2 双 WITH*：**ele, score, attribs**。分数 1=同向，0=反向。
 1. `redis-display.ts`
 2. `helpers.ts`（§4.3 全表）
 3. `RedisValue/index.vue` + `FieldSet` + `FieldAdd`
-4. `TableVSim.vue` / `VInfo.vue`（分阶段）
+4. `TableVSim.vue` / `TableInfo.vue`（VINFO 与 ARINFO/OBJECT 共用）（分阶段）
 5. i18n；`locales/cmd/index.ts` **commandFlags**
 
 ### 测试

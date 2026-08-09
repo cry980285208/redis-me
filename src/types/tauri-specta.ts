@@ -41,6 +41,9 @@ export const commands = {
 	zsetRange: (id: string, param: RedisZsetRange_Deserialize) => typedError<RedisZsetRangeItem[], string>(__TAURI_INVOKE("zset_range", { id, param })),
 	arLastItems: (id: string, param: RedisArLastItems_Deserialize) => typedError<RedisArLastItemsItem[], string>(__TAURI_INVOKE("ar_last_items", { id, param })),
 	arInfo: (id: string, key: RedisKey_Deserialize) => typedError<RedisArInfoItem[], string>(__TAURI_INVOKE("ar_info", { id, key })),
+	vInfo: (id: string, key: RedisKey_Deserialize) => typedError<RedisArInfoItem[], string>(__TAURI_INVOKE("v_info", { id, key })),
+	vGetattr: (id: string, param: RedisVAttr_Deserialize) => typedError<string, string>(__TAURI_INVOKE("v_getattr", { id, param })),
+	vSetattr: (id: string, param: RedisVAttr_Deserialize) => typedError<null, string>(__TAURI_INVOKE("v_setattr", { id, param })),
 	objectInfo: (id: string, key: RedisKey_Deserialize) => typedError<RedisObjectInfo, string>(__TAURI_INVOKE("object_info", { id, key })),
 	executeCommand: (id: string, param: RedisCommand) => typedError<string, string>(__TAURI_INVOKE("execute_command", { id, param })),
 	aclUsers: (id: string) => typedError<string[], string>(__TAURI_INVOKE("acl_users", { id })),
@@ -415,6 +418,8 @@ export type RedisFieldAdd_Deserialize = {
 	arrayWriteMethod: string,
 	/**  Vector Set：前端已解析的浮点分量（勿传多格式文本；空=非 vectorset） */
 	vector?: (number | null)[],
+	/**  Vector Set：attrs JSON 文本；空=不设 SETATTR（新建不带属性） */
+	attrs?: string,
 	fieldValueList: RedisFieldValue[],
 	streamId: string,
 	/**  仅 Redis 顶层键名（`key`）如何解码为字节；不含 Hash/Stream 的字段名 */
@@ -435,6 +440,8 @@ export type RedisFieldAdd_Serialize = {
 	arrayWriteMethod: string,
 	/**  Vector Set：前端已解析的浮点分量（勿传多格式文本；空=非 vectorset） */
 	vector: (number | null)[],
+	/**  Vector Set：attrs JSON 文本；空=不设 SETATTR（新建不带属性） */
+	attrs: string,
 	fieldValueList: RedisFieldValue[],
 	streamId: string,
 	/**  仅 Redis 顶层键名（`key`）如何解码为字节；不含 Hash/Stream 的字段名 */
@@ -675,6 +682,26 @@ export type RedisSlowLog = {
 	command: string,
 	cost: number | null,
 	clientName: string,
+};
+
+export type RedisVAttr = RedisVAttr_Serialize | RedisVAttr_Deserialize;
+
+export type RedisVAttr_Deserialize = {
+	key: RedisKey_Deserialize,
+	/**  元素名 wire（与 fieldScan 行 key 一致） */
+	fieldKey: string,
+	/**  仅 VSETATTR：JSON 文本；空串删除属性 */
+	attrs?: string,
+	valFmt: BytesFormat | null,
+};
+
+export type RedisVAttr_Serialize = {
+	key: RedisKey_Serialize,
+	/**  元素名 wire（与 fieldScan 行 key 一致） */
+	fieldKey: string,
+	/**  仅 VSETATTR：JSON 文本；空串删除属性 */
+	attrs: string,
+	valFmt: BytesFormat | null,
 };
 
 export type RedisZsetRange = RedisZsetRange_Serialize | RedisZsetRange_Deserialize;

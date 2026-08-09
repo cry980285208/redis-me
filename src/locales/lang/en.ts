@@ -430,6 +430,8 @@ export default {
     /** Vector input format tip (label is "Vector") */
     vectorValueHint: 'JSON array or space/comma-separated floats',
     vectorInvalid: 'Invalid vector format',
+    attrs: 'Attributes',
+    attrsInvalid: 'Attributes must be a JSON object',
     elementRequired: 'Element is required',
     newKey: 'New Key',
     newField: 'New Field',
@@ -457,12 +459,17 @@ export default {
     hashKey: 'HashKey',
     element: 'Element',
     vector: 'Vector',
+    attrs: 'Attributes',
     fieldTtl: 'Field TTL (Second)',
     index: 'Index',
     score: 'Score',
     value: 'Value',
     prettyHint:
       'Defaults to the key view pretty setting; toggle temporarily to view the raw field value',
+    /** Vector Set: label save by dirty parts so scope is clear */
+    saveVector: 'Save Vector',
+    saveAttrs: 'Save Attributes',
+    saveVectorAndAttrs: 'Save Vector & Attributes',
   },
 
   nodeList: {
@@ -920,9 +927,6 @@ export default {
     arLastItemsFilter: 'Filter value',
     arLastItemsEmpty: 'No data',
     arLastItemsNil: '(nil)',
-    arInfo: 'Array Info',
-    arInfoField: 'Field',
-    arInfoValue: 'Value',
     copyAsCommand: 'Copy Command',
     refreshFieldRow: 'Refresh Row',
     refreshFieldRowOk: 'Row refreshed',
@@ -939,6 +943,8 @@ export default {
     totalCount: 'Total: ',
     arLen: 'Length: ',
     vectorDim: 'Dim: ',
+    infoField: 'Field',
+    infoValue: 'Value',
     valueTruncatedTitle: 'Value too large — showing preview',
     valueTruncatedDesc:
       'This key is about {size}, exceeding the {limit} limit. Only the first {preview} bytes are shown to keep the UI responsive.',

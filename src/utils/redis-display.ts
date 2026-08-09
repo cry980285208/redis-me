@@ -12,12 +12,12 @@ export const KEY_TYPE_LIST: KeyTypeListItem[] = [
   { short: 'S', value: 'String', type: 'primary' },
   { short: 'H', value: 'Hash', type: 'success' },
   { short: 'L', value: 'List', type: 'warning' },
-  { short: 'E', value: 'Set', type: 'danger' },
-  { short: 'Z', value: 'SortedSet', type: 'danger' },
-  { short: 'V', value: 'VectorSet', type: 'danger' }, // Redis 8.4+；与 *Set 同色，紧挨 SortedSet
-  { short: 'X', value: 'Stream', type: 'warning' },
-  { short: 'J', value: 'Json', type: 'warning' },
-  { short: 'A', value: 'Array', type: 'warning' }, // Redis 8.8
+  { short: 'E', value: 'Set', type: 'warning' },
+  { short: 'Z', value: 'SortedSet', type: 'warning' },
+  { short: 'V', value: 'VectorSet', type: 'success' }, // Redis 8.4+；计划钉死 success，紧挨 SortedSet
+  { short: 'X', value: 'Stream', type: 'danger' },
+  { short: 'J', value: 'Json', type: 'danger' },
+  { short: 'A', value: 'Array', type: 'danger' }, // Redis 8.8
 ]
 
 const keyTypeMap = new Map(KEY_TYPE_LIST.map(item => [item.value, item.type]))

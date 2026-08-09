@@ -255,6 +255,7 @@ mod tests {
                 list_push_method: "".into(),
                 array_write_method: "".into(),
                 vector: vec![],
+                attrs: "".into(),
                 field_value_list: vec![],
                 stream_id: "".to_string(),
                 key_fmt: None,
@@ -272,6 +273,7 @@ mod tests {
                 list_push_method: "".into(),
                 array_write_method: "".into(),
                 vector: vec![],
+                attrs: "".into(),
                 field_value_list: vec![
                     RedisFieldValue {
                         field_key: "hash_key1".into(),

@@ -1,18 +1,17 @@
 <script setup lang="ts">
-/** 键 OBJECT 自省弹框：ENCODING / IDLETIME / REFCOUNT / FREQ，表格展示并附编码与不可用原因提示 */
+/**
+ * 键元信息弹框：ARINFO / VINFO / OBJECT 共用。
+ * - arinfo|vinfo：标题用原命令名，两列 field/value
+ * - object：OBJECT 自省，三列 + tip / 不可用提示
+ */
 import { computed, inject, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { shareProvideKey } from '@/types/me-interface'
-import type { RedisObjectInfo } from '@/types/tauri-specta'
+import type { RedisArInfoItem, RedisObjectInfo } from '@/types/tauri-specta'
 import { meCommands, meHumanSeconds } from '@/utils/util'
 
-const { t } = useI18n()
-const share = inject(shareProvideKey)!
-
-const visible = ref(false)
-const loading = ref(false)
-const info = ref<RedisObjectInfo | null>(null)
+export type TableInfoKind = 'arinfo' | 'vinfo' | 'object'
 
 type ObjectRow = {
   command: string
@@ -22,8 +21,25 @@ type ObjectRow = {
   unavailable?: boolean
 }
 
-const rows = computed<ObjectRow[]>(() => {
-  const data = info.value
+const { t } = useI18n()
+const share = inject(shareProvideKey)!
+
+const visible = ref(false)
+const loading = ref(false)
+const kind = ref<TableInfoKind>('object')
+const kvRows = ref<RedisArInfoItem[]>([])
+const objectInfo = ref<RedisObjectInfo | null>(null)
+
+const isKv = computed(() => kind.value === 'arinfo' || kind.value === 'vinfo')
+
+const title = computed(() => {
+  if (kind.value === 'arinfo') return 'ARINFO'
+  if (kind.value === 'vinfo') return 'VINFO'
+  return t('redisValue.objectInfo')
+})
+
+const objectRows = computed<ObjectRow[]>(() => {
+  const data = objectInfo.value
   if (!data) return []
   const na = t('redisValue.objectInfoNA')
 
@@ -71,15 +87,23 @@ const rows = computed<ObjectRow[]>(() => {
   ]
 })
 
-async function open() {
+async function open(next: TableInfoKind) {
   const conn = share.conn
   const rk = share.redisKey
   if (!conn || !rk) return
+  kind.value = next
   visible.value = true
   loading.value = true
-  info.value = null
+  kvRows.value = []
+  objectInfo.value = null
   try {
-    info.value = await meCommands.objectInfo(conn.id, rk)
+    if (next === 'arinfo') {
+      kvRows.value = await meCommands.arInfo(conn.id, rk)
+    } else if (next === 'vinfo') {
+      kvRows.value = await meCommands.vInfo(conn.id, rk)
+    } else {
+      objectInfo.value = await meCommands.objectInfo(conn.id, rk)
+    }
   } finally {
     loading.value = false
   }
@@ -91,10 +115,17 @@ defineExpose({ open })
 <template>
   <el-dialog v-model="visible" width="560px" destroy-on-close align-center draggable>
     <template #header>
-      <me-icon icon="el-icon-info-filled" :name="t('redisValue.objectInfo')" />
+      <me-icon icon="el-icon-info-filled" :name="title" />
     </template>
 
-    <el-table v-loading="loading" :data="rows" border stripe>
+    <!-- ARINFO / VINFO：扁平键值 -->
+    <el-table v-if="isKv" v-loading="loading" :data="kvRows" border stripe>
+      <el-table-column :label="t('redisValue.infoField')" prop="field" width="200" />
+      <el-table-column :label="t('redisValue.infoValue')" prop="value" min-width="200" />
+    </el-table>
+
+    <!-- OBJECT：命令 / 项目 / 值（含 tip） -->
+    <el-table v-else v-loading="loading" :data="objectRows" border stripe>
       <el-table-column :label="t('redisValue.objectInfoCommand')" prop="command" width="110" />
       <el-table-column :label="t('redisValue.objectInfoItem')" prop="item" width="200">
         <template #default="{ row }">

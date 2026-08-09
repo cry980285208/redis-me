@@ -419,6 +419,8 @@ export default {
     /** 向量输入格式说明（标签用「向量」） */
     vectorValueHint: 'JSON 数组或空格/逗号分隔浮点',
     vectorInvalid: '向量格式无效',
+    attrs: '属性',
+    attrsInvalid: '属性须为 JSON 对象',
     elementRequired: '请输入元素',
     newKey: '新增键',
     newField: '新增字段',
@@ -446,11 +448,16 @@ export default {
     hashKey: '哈希键',
     element: '元素',
     vector: '向量',
+    attrs: '属性',
     fieldTtl: '字段过期 (秒)',
     index: '索引',
     score: '分数',
     value: '值',
     prettyHint: '默认与键值区美化设置同步；可临时切换以查看原始字段值',
+    /** Vector Set：按脏字段区分保存范围，避免「保存」语义不清 */
+    saveVector: '保存向量',
+    saveAttrs: '保存属性',
+    saveVectorAndAttrs: '保存向量与属性',
   },
 
   nodeList: {
@@ -899,9 +906,6 @@ export default {
     arLastItemsFilter: '过滤值',
     arLastItemsEmpty: '暂无数据',
     arLastItemsNil: '(nil)',
-    arInfo: 'Array 信息',
-    arInfoField: '字段',
-    arInfoValue: '值',
     zsetRangeCount: '数量',
     zsetRangeAsc: '正序',
     zsetRangeDesc: '倒序',
@@ -924,6 +928,8 @@ export default {
     totalCount: '总数：',
     arLen: '长度：',
     vectorDim: '维度：',
+    infoField: '字段',
+    infoValue: '值',
     valueTruncatedTitle: '值过大，已切换为预览模式',
     valueTruncatedDesc:
       '该键约 {size}，超过 {limit} 安全阈值。为避免卡顿，当前仅展示前 {preview} 字节。',

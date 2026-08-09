@@ -81,7 +81,6 @@ import FieldAdd from '@/views/ext/FieldAdd.vue'
 import TTLSet from '@/views/ext/TTLSet.vue'
 import KeyRename from '@/views/key/KeyRename.vue'
 
-import ArInfo from './ArInfo.vue'
 import CustomCodec from './CustomCodec.vue'
 import FieldSet from './FieldSet.vue'
 import {
@@ -101,10 +100,10 @@ import {
   type FieldScanViewState,
   type ValueTableRow,
 } from './helpers'
-import ObjectInfo from './ObjectInfo.vue'
 import TableArLastItems from './TableArLastItems.vue'
 import TableGroup from './TableGroup.vue'
 import TableHashKeys from './TableHashKeys.vue'
+import TableInfo from './TableInfo.vue'
 import TableZsetRange from './TableZsetRange.vue'
 import ValueShortcut from './ValueShortcut.vue'
 // #endregion
@@ -489,7 +488,7 @@ function fieldScanValueForJsonView(type: string, value: unknown): unknown {
         score: row.score,
       }))
     case 'vectorset':
-      // key=元素名（wire）；value=向量 JSON 展示串（非 wire）
+      // key=元素名（wire）；value=向量 JSON（attrs 按需 VGETATTR，不进扫描）
       return (value as ValueTableRow[]).map(row => ({
         key: wireToUtf8JsonText(row.key),
         value: row.value,
@@ -1330,7 +1329,7 @@ function toggleFavorite() {
 }
 
 // 更多菜单 / 快捷键 / 命令帮助
-const objectInfoRef = useTemplateRef<InstanceType<typeof ObjectInfo>>('objectInfoRef')
+const tableInfoRef = useTemplateRef<InstanceType<typeof TableInfo>>('tableInfoRef')
 const valueShortcutRef = useTemplateRef('valueShortcutRef')
 const commandHelpRef = useTemplateRef<InstanceType<typeof CommandHelp>>('commandHelpRef')
 function openKeyShortDialog() {
@@ -1355,7 +1354,7 @@ async function onKeyMoreCommand(command: string) {
   } else if (command === 'duplicateKey') {
     duplicateKey()
   } else if (command === 'objectInfo') {
-    objectInfoRef.value?.open()
+    tableInfoRef.value?.open('object')
   } else if (command === 'showSlot') {
     void showSlot()
   } else if (command === 'showLocation') {
@@ -1415,8 +1414,7 @@ async function setValue() {
 // #endregion
 
 // #region 类型扩展弹窗入口
-// POP / Array 信息
-const arInfoRef = useTemplateRef<InstanceType<typeof ArInfo>>('arInfoRef')
+// POP / 类型专属 INFO（下拉直接显示原命令名）
 async function runFieldPop(mode: string) {
   const conn = share.conn
   const key = share.redisKey
@@ -1432,9 +1430,13 @@ async function runFieldPop(mode: string) {
   await restartFieldScan()
 }
 function onPopCommand(command: string) {
-  // Array 只读扩展走工具栏「更多」，不放键头统一菜单
-  if (command === 'arInfo') {
-    arInfoRef.value?.open()
+  // Array / VectorSet 只读扩展走工具栏「更多」，下拉项用原命令名
+  if (command === 'ARINFO') {
+    tableInfoRef.value?.open('arinfo')
+    return
+  }
+  if (command === 'VINFO') {
+    tableInfoRef.value?.open('vinfo')
     return
   }
   const confirmMap: Record<string, string> = {
@@ -1799,7 +1801,7 @@ onUnmounted(() => {
                 {{ t('redisValue.arLastItems') }}
               </me-button>
               <el-dropdown
-                v-if="((listType || setType || zsetType) && canEdit) || arrayType"
+                v-if="((listType || setType || zsetType) && canEdit) || arrayType || vectorsetType"
                 placement="bottom-end"
                 @command="onPopCommand"
                 style="margin-left: 10px">
@@ -1813,9 +1815,8 @@ onUnmounted(() => {
                     <el-dropdown-item v-if="setType" command="SPOP">SPOP</el-dropdown-item>
                     <el-dropdown-item v-if="zsetType" command="ZPOPMIN">ZPOPMIN</el-dropdown-item>
                     <el-dropdown-item v-if="zsetType" command="ZPOPMAX">ZPOPMAX</el-dropdown-item>
-                    <el-dropdown-item v-if="arrayType" command="arInfo">{{
-                      t('redisValue.arInfo')
-                    }}</el-dropdown-item>
+                    <el-dropdown-item v-if="arrayType" command="ARINFO">ARINFO</el-dropdown-item>
+                    <el-dropdown-item v-if="vectorsetType" command="VINFO">VINFO</el-dropdown-item>
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
@@ -2185,9 +2186,8 @@ onUnmounted(() => {
     <KeyRename ref="keyRenameRef" />
     <CommandHelp ref="commandHelpRef" />
 
-    <!-- 本域弹窗：对象信息 / Array 信息 / 自定义编解码 -->
-    <ObjectInfo ref="objectInfoRef" />
-    <ArInfo ref="arInfoRef" />
+    <!-- 本域弹窗：OBJECT / ARINFO / VINFO / 自定义编解码 -->
+    <TableInfo ref="tableInfoRef" />
     <CustomCodec v-model="customCodecVisible" />
 
     <!-- 本域类型扩展：Stream 组 / Hash 全量 / ZSet TopN / Array 尾部 -->
