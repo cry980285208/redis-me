@@ -7,9 +7,10 @@ import { useI18n } from 'vue-i18n'
 import { shareProvideKey } from '@/types/me-interface'
 import type { RedisFieldAdd_Deserialize, RedisKey_Deserialize } from '@/types/tauri-specta'
 import { BYTES_FORMAT, IPC_WIRE_FORMAT, meViewToWire, type ViewBytesFormat } from '@/utils/format'
-import { KEY_TYPE_LIST, meType } from '@/utils/redis-display'
+import { KEY_TYPE_LIST, meType, toKeyTypeLabel, toRedisTypeName } from '@/utils/redis-display'
 import { redisKeyWireBase64 } from '@/utils/redis-key'
 import { meCommands, meErr, meOk, meJsonParse, meJsonNormal, meTtlSeconds } from '@/utils/util'
+import { parseVectorInput } from '@/utils/vector'
 
 const { t } = useI18n()
 const emit = defineEmits(['success', 'closed'])
@@ -52,6 +53,8 @@ const initForm = computed(() => ({
     { label: t('fieldAdd.arrayWriteArinsert'), value: 'arinsert' },
   ],
   fieldValueList: [{ fieldKey: '', fieldValue: '', fieldScore: 0, fieldTtl: -1 }],
+  /** Vector Set：编辑区文本；提交前 parseVectorInput → IPC vector:number[] */
+  vectorText: '',
   keyFmt: 'utf8' as ViewBytesFormat,
   valFmt: 'utf8' as ViewBytesFormat,
 }))
@@ -59,6 +62,7 @@ const form = ref(cloneDeep(toRaw(initForm.value)))
 
 const stringOrJsonType = computed(() => form.value.type === 'string' || form.value.type === 'json')
 const jsonType = computed(() => form.value.type === 'json')
+const vectorsetType = computed(() => form.value.type === 'vectorset')
 const arrayArsetMode = computed(
   () => form.value.type === 'array' && form.value.arrayWriteMethod !== 'arinsert',
 )
@@ -158,6 +162,22 @@ function submit() {
       }
     }
 
+    // Vector Set：前端解析向量文本 → IPC number[]（后端不再解析多格式字符串）
+    let vector: number[] = []
+    if (vectorsetType.value) {
+      const elem = String(form.value.fieldValueList[0]?.fieldKey ?? '').trim()
+      if (!elem) {
+        meErr(t('fieldAdd.elementRequired'))
+        return
+      }
+      const parsed = parseVectorInput(form.value.vectorText)
+      if (!parsed.ok) {
+        meErr(t('fieldAdd.vectorInvalid'))
+        return
+      }
+      vector = parsed.nums
+    }
+
     // 与 KeyRename 一致：提交前先做编码转换检查，失败 meErr 并 return，不打后端
     try {
       if (form.value.type === 'string') {
@@ -169,7 +189,8 @@ function submit() {
         fieldKey: isArrayArset
           ? String(item.fieldKey).trim()
           : meViewToWire(item.fieldKey, valViewFmt),
-        fieldValue: meViewToWire(item.fieldValue, valViewFmt),
+        // Vector Set 向量走 vector[]，fieldValue 置空避免误 wire
+        fieldValue: vectorsetType.value ? '' : meViewToWire(item.fieldValue, valViewFmt),
       }))
       fieldValueList.forEach(item => {
         if (item.fieldTtl === null) item.fieldTtl = -1
@@ -188,10 +209,12 @@ function submit() {
 
     isSaving.value = true
     try {
+      const { vectorText: _vectorText, ...fieldAddRest } = form.value
       const redisKey = await meCommands.fieldAdd(share.conn!.id, {
-        ...form.value,
+        ...fieldAddRest,
         key,
         value,
+        vector,
         ttl: meTtlSeconds(form.value.ttl, ttlUnit.value),
         fieldValueList,
         keyFmt: IPC_WIRE_FORMAT,
@@ -253,12 +276,12 @@ function handleKeyTypeChange() {
               <el-option
                 v-for="item in KEY_TYPE_LIST"
                 :label="item.value"
-                :value="item.value.toLowerCase()">
+                :value="toRedisTypeName(item.value)">
                 <el-text :type="item.type">{{ item.value }}</el-text>
               </el-option>
 
-              <template #label="{ label, value }">
-                <el-text :type="meType(label)">{{ label }}</el-text>
+              <template #label="{ value }">
+                <el-text :type="meType(value)">{{ toKeyTypeLabel(value) }}</el-text>
               </template>
             </el-select>
           </el-form-item>
@@ -284,7 +307,7 @@ function handleKeyTypeChange() {
       <el-form-item :label="t('fieldAdd.key')" prop="key.key">
         <el-input type="text" v-model="form.key.key" :disabled="form.mode === 'field'">
           <template #prepend v-if="form.mode === 'field'">
-            <el-text :type="meType(form.type)">{{ form.type.toUpperCase() }}</el-text>
+            <el-text :type="meType(form.type)">{{ toKeyTypeLabel(form.type) }}</el-text>
           </template>
         </el-input>
       </el-form-item>
@@ -319,8 +342,30 @@ function handleKeyTypeChange() {
         <el-input v-model="form.streamId" clearable />
       </el-form-item>
 
-      <!-- key, value, score: 非 string 和 json 类型 -->
-      <el-form-item :label="t('fieldAdd.element') + ' ' + hint" v-if="!stringOrJsonType">
+      <!-- Vector Set：元素 + 向量文本（提交前归一为 number[]） -->
+      <template v-if="vectorsetType">
+        <el-form-item :label="t('fieldAdd.element')">
+          <el-input
+            type="text"
+            v-model="form.fieldValueList[0].fieldKey"
+            :placeholder="t('fieldAdd.element')"
+            :validate-event="false" />
+        </el-form-item>
+        <el-form-item :label="t('fieldAdd.vector')">
+          <el-input
+            type="textarea"
+            v-model="form.vectorText"
+            :rows="4"
+            :placeholder="'[0.1, 0.2, 0.3]'"
+            :validate-event="false" />
+          <div class="array-write-hint">{{ t('fieldAdd.vectorValueHint') }}</div>
+        </el-form-item>
+      </template>
+
+      <!-- key, value, score: 非 string / json / vectorset -->
+      <el-form-item
+        :label="t('fieldAdd.element') + ' ' + hint"
+        v-if="!stringOrJsonType && !vectorsetType">
         <div
           v-for="(item, index) in form.fieldValueList"
           class="me-flex"
@@ -385,8 +430,10 @@ function handleKeyTypeChange() {
             <el-option v-for="item in BYTES_FORMAT" :label="item" :value="item.toLowerCase()" />
           </el-select>
 
-          <!-- 值编码：新建键和新增字段时显示 -->
-          <el-text type="info">{{ t('fieldAdd.valueCodec') }}</el-text>
+          <!-- 值编码；Vector Set 仅元素名走 wire，文案改为元素编码 -->
+          <el-text type="info">{{
+            vectorsetType ? t('fieldAdd.elementCodec') : t('fieldAdd.valueCodec')
+          }}</el-text>
           <el-select
             v-model="form.valFmt"
             style="width: 100px; margin: 0 20px 0 10px"

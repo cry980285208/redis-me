@@ -32,7 +32,7 @@ import {
   clearFavoriteFoldersForDb,
 } from '@/utils/favorite'
 import { clearKeyTypeCacheForConn } from '@/utils/key-type-cache'
-import { KEY_TYPE_LIST, meKeyShort } from '@/utils/redis-display'
+import { KEY_TYPE_LIST, meKeyShort, toRedisTypeName } from '@/utils/redis-display'
 import {
   buildScanPattern,
   buildLocalFilterPattern,
@@ -437,7 +437,7 @@ async function scanKey(useCursor = false, loadAll = false, restart = false): Pro
 async function scanKeyCore(): Promise<number> {
   const params = {
     match: match.value,
-    type: keyType.value === 'ALL' ? '' : keyType.value.toLowerCase(),
+    type: keyType.value === 'ALL' ? '' : toRedisTypeName(keyType.value),
     cursor: cursor.value,
     exact: exact.value && !loadFolder.value,
     count: SCAN_FETCH_COUNT.value,

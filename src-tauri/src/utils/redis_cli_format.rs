@@ -127,6 +127,22 @@ pub fn format_arset_command(key: &[u8], index: i64, value: &[u8]) -> String {
     )
 }
 
+/// Vector Set：`VADD key VALUES dim f1..fn element`
+pub fn format_vadd_command(key: &[u8], vector: &[f64], element: &[u8]) -> String {
+    let floats = vector
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(" ");
+    format!(
+        "VADD {} VALUES {} {} {}",
+        format_quoted(key),
+        vector.len(),
+        floats,
+        format_quoted(element)
+    )
+}
+
 /// Array 多槽：`ARMSET key index value [index value ...]`
 pub fn format_armset_command(key: &[u8], pairs: &[(i64, Vec<u8>)]) -> Option<String> {
     if pairs.is_empty() {

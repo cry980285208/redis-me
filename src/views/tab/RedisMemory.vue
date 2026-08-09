@@ -7,7 +7,7 @@ import { shareProvideKey } from '@/types/me-interface'
 import type { RedisKey_Deserialize, RedisKeySize_Serialize } from '@/types/tauri-specta'
 import { clearKeyTypeCacheForConn } from '@/utils/key-type-cache'
 // 官网参考: https://redis.ac.cn/docs/latest/commands/slowlog-get/
-import { meType } from '@/utils/redis-display'
+import { meType, toKeyTypeLabel } from '@/utils/redis-display'
 import { sameRedisKey } from '@/utils/redis-key'
 import {
   bus,
@@ -67,7 +67,7 @@ const filterDataList = computed(() => {
 })
 const filterTypes = computed(() => {
   return [...new Set(dataList.value.map(d => d.type))].map(d => ({
-    text: d?.toUpperCase(),
+    text: toKeyTypeLabel(d),
     value: d,
   }))
 })
@@ -261,7 +261,7 @@ function batchDelKey() {
           :filters="filterTypes"
           :filter-method="meFilterHandler">
           <template #default="scope">
-            <el-text :type="meType(scope.row.type)"> {{ scope.row.type?.toUpperCase() }}</el-text>
+            <el-text :type="meType(scope.row.type)">{{ toKeyTypeLabel(scope.row.type) }}</el-text>
           </template>
         </el-table-column>
         <el-table-column :label="t('redisMemory.key')" prop="key" show-overflow-tooltip>

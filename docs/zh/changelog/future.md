@@ -1,11 +1,10 @@
 ## Future
 
-- Redis 8.8 新类型 Array 的支持（方案见 `plans/18_array-type-support.md`）
-  - 18.1 基础读写（ARSCAN / ARGET / ARSET / ARDEL）✅️
-  - 18.2 索引范围 / ARLASTITEMS / ARINSERT ✅️
-  - 18.3 ARINFO ✅️；ARGREP / AROP / ARDELRANGE / ARRING 延后
 - 研究下怎么上线Linux的应用商店
-- Vector Set 类型的支持
+- Redis Vector Set 类型的支持（方案见 `plans/19_vector-set-support.md`；按 Redis ≥ 8.4，不做无 VRANGE 降级；造数 `test/serialization/VectorSetSeed.py`）
+  - 19.1 基础读写 + VRANGE 浏览（VADD / VREM / VEMB / 精确查询）✅️
+  - 19.2 attrs + VINFO
+  - 19.3 VSIM 相似度搜索弹窗；VLINKS / FP32 / 量化细调延后
 - Time Series 的支持
 
 ### 可逐步完善（小点）

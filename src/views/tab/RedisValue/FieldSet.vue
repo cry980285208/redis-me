@@ -28,6 +28,7 @@ import {
   type ViewBytesFormat,
 } from '@/utils/format'
 import { meCommands, meCopy, meErr, meFormatDisplayValue, meJsonNormal, meOk } from '@/utils/util'
+import { parseVectorInput } from '@/utils/vector'
 
 /** 含 UI 用 type / wireFieldKey，提交时剔除 */
 type FieldSetForm = RedisFieldSet_Deserialize & { type: string; wireFieldKey?: string }
@@ -71,6 +72,7 @@ const initForm: FieldSetForm = {
   fieldTtl: -1,
   includeFieldTtl: false,
   valFmt: IPC_WIRE_FORMAT,
+  vector: [],
 }
 const form = ref<FieldSetForm>(cloneDeep(initForm))
 
@@ -97,8 +99,13 @@ const effectiveFieldViewFmt = computed<ViewBytesFormat>(() =>
 const detectedViewText = computed(() =>
   fieldViewFmt.value === 'auto' ? detectedViewLabel(detectedView.value) : '',
 )
+const vectorsetType = computed(() => form.value.type === 'vectorset')
+/** Vector Set 向量为 JSON 数组明文，始终可美化；其它类型随 utf8/strjson */
 const prettyEnabled = computed(
-  () => effectiveFieldViewFmt.value === 'utf8' || effectiveFieldViewFmt.value === 'strjson',
+  () =>
+    vectorsetType.value ||
+    effectiveFieldViewFmt.value === 'utf8' ||
+    effectiveFieldViewFmt.value === 'strjson',
 )
 /** JavaSerial / Pickle：不支持写回 → 按钮禁用 + tooltip（连接只读则整钮隐藏，见模板） */
 const isViewReadonlyFmt = computed(() => isReadonlyView(effectiveFieldViewFmt.value))
@@ -107,24 +114,23 @@ const canSaveField = computed(
   () =>
     !readonly.value &&
     !share.readonly &&
-    !isViewReadonlyFmt.value &&
-    !decodeFailed.value &&
+    (vectorsetType.value || (!isViewReadonlyFmt.value && !decodeFailed.value)) &&
     fieldDirty.value,
 )
 /** 禁用原因提示；可保存时为普通「保存」 */
 const saveFieldTip = computed(() => {
-  if (isViewReadonlyFmt.value) {
+  if (!vectorsetType.value && isViewReadonlyFmt.value) {
     return effectiveFieldViewFmt.value === 'pickle'
       ? t('util.pickleReadonly')
       : t('util.javaSerialReadonly')
   }
-  if (decodeFailed.value) return t('util.saveDecodeFailed')
+  if (!vectorsetType.value && decodeFailed.value) return t('util.saveDecodeFailed')
   if (!fieldDirty.value) return t('util.saveNoChange')
   return t('save')
 })
 /** 显示保存钮：连接只读 / 查看模式 → 隐藏 */
 const showSaveField = computed(() => !readonly.value && !share.readonly)
-/** hash/list/zset/array 支持 field_get 单行刷新 */
+/** hash/list/zset/array 支持 field_get 单行刷新（vectorset 19.1 不做） */
 const supportsFieldRefresh = computed(() => {
   const type = form.value.type
   return type === 'hash' || type === 'list' || type === 'zset' || type === 'array'
@@ -132,6 +138,13 @@ const supportsFieldRefresh = computed(() => {
 
 /** wire + 生效 view → 编辑区文本 */
 async function syncFieldEditor() {
+  // Vector Set：value 为 JSON 数组明文（非 wire），按 pretty 美化展示
+  if (vectorsetType.value) {
+    form.value.fieldValue = meFormatDisplayValue(srcFieldWire.value, fieldPretty.value)
+    initialFieldDisplay.value = form.value.fieldValue
+    decodeFailed.value = false
+    return
+  }
   const wire = srcFieldWire.value
   const fmt = effectiveFieldViewFmt.value
   if (!wire) {
@@ -175,9 +188,9 @@ function open(data: FieldSetOpen) {
   Object.assign(form.value, cloneDeep(initForm))
   Object.assign(form.value, data)
   srcFieldWire.value = String(data.srcFieldValue ?? '')
-  // Hash 字段名：wireFieldKey 为 base64；fieldKey 仅展示
+  // Hash / VectorSet 元素名：wireFieldKey 为 base64；fieldKey 仅展示
   const wireKey = String(data.wireFieldKey || data.fieldKey || '')
-  if (form.value.type === 'hash' && wireKey) {
+  if ((form.value.type === 'hash' || form.value.type === 'vectorset') && wireKey) {
     form.value.wireFieldKey = wireKey
     form.value.fieldKey = meFormatViewValue(wireKey, 'utf8')
   }
@@ -242,19 +255,31 @@ function submit() {
     const { type: _type, wireFieldKey, ...rest } = form.value
     const fmt = effectiveFieldViewFmt.value
     let fieldValue = form.value.fieldValue
-    // 与 KeyRename / FieldAdd 一致：提交前先编码检查，失败 meErr 并 return
-    try {
-      if (needsJsonNormalize(fmt)) {
-        fieldValue = fieldValue === '' ? '' : meJsonNormal(fieldValue)
+    let vector: number[] = []
+    // Vector Set：前端解析 → IPC vector；其它类型走 wire
+    if (vectorsetType.value) {
+      const parsed = parseVectorInput(form.value.fieldValue)
+      if (!parsed.ok) {
+        meErr(t('fieldAdd.vectorInvalid'))
+        return
       }
-      if (isCustomView(fmt)) {
-        fieldValue = await meViewToWireAsync(fieldValue, fmt)
-      } else {
-        fieldValue = meViewToWire(fieldValue, fmt)
+      vector = parsed.nums
+      fieldValue = ''
+    } else {
+      // 与 KeyRename / FieldAdd 一致：提交前先编码检查，失败 meErr 并 return
+      try {
+        if (needsJsonNormalize(fmt)) {
+          fieldValue = fieldValue === '' ? '' : meJsonNormal(fieldValue)
+        }
+        if (isCustomView(fmt)) {
+          fieldValue = await meViewToWireAsync(fieldValue, fmt)
+        } else {
+          fieldValue = meViewToWire(fieldValue, fmt)
+        }
+      } catch (e) {
+        meErr(e instanceof Error ? e.message : String(e))
+        return
       }
-    } catch (e) {
-      meErr(e instanceof Error ? e.message : String(e))
-      return
     }
 
     // srcFieldValue：Set/ZSet 替换成员时定位用，须与 valFmt 同为 base64
@@ -263,13 +288,18 @@ function submit() {
         ? srcFieldWire.value
         : form.value.srcFieldValue
 
+    const useWireKey =
+      (form.value.type === 'hash' || form.value.type === 'vectorset') && !!wireFieldKey
+
     isSaving.value = true
     try {
       await meCommands.fieldSet(share.conn!.id, {
         ...rest,
         srcFieldValue,
-        fieldKey: form.value.type === 'hash' && wireFieldKey ? wireFieldKey : form.value.fieldKey,
+        fieldKey: useWireKey ? wireFieldKey! : form.value.fieldKey,
         fieldValue,
+        vector,
+        // Vector Set 元素名仍走 wire；向量走 vector[]
         valFmt: IPC_WIRE_FORMAT,
         includeFieldTtl: form.value.type === 'hash' ? props.hashFieldTtlEnabled : null,
       })
@@ -340,6 +370,9 @@ async function refreshField() {
       <el-form-item :label="t('fieldSet.hashKey')" v-if="form.type === 'hash'">
         <el-input v-model="form.fieldKey" disabled />
       </el-form-item>
+      <el-form-item :label="t('fieldSet.element')" v-if="vectorsetType">
+        <el-input v-model="form.fieldKey" disabled />
+      </el-form-item>
       <el-form-item
         :label="t('fieldSet.fieldTtl')"
         v-if="form.type === 'hash' && share.capabilities.httlSupported && hashFieldTtlEnabled">
@@ -364,12 +397,17 @@ async function refreshField() {
           align="left"
           style="width: 100%" />
       </el-form-item>
-      <el-form-item :label="t('fieldSet.value')" class="field-value-item">
+      <el-form-item
+        :label="vectorsetType ? t('fieldSet.vector') : t('fieldSet.value')"
+        class="field-value-item">
         <me-code
           :key="codeRemountKey"
           v-model="form.fieldValue"
           :read-only="
-            editorLoading || readonly || isReadonlyView(effectiveFieldViewFmt) || decodeFailed
+            editorLoading ||
+            readonly ||
+            (!vectorsetType && isReadonlyView(effectiveFieldViewFmt)) ||
+            decodeFailed
           "
           :error="decodeFailed"
           class="field-code-editor" />
@@ -390,7 +428,7 @@ async function refreshField() {
             @click="togglePretty" />
           <me-icon
             placement="top-start"
-            :info="t('redisValue.copyValue')"
+            :info="vectorsetType ? t('redisValue.copyVector') : t('redisValue.copyValue')"
             class="icon-btn"
             style="font-size: 18px; margin-left: 5px"
             icon="el-icon-document-copy"
@@ -404,8 +442,8 @@ async function refreshField() {
             icon="el-icon-refresh-right"
             :style="{ opacity: isRefreshing ? 0.5 : 1, cursor: isRefreshing ? 'wait' : 'pointer' }"
             @click="refreshField" />
-          <!-- Auto 识别结果：下拉右侧；下拉本身保持 Auto -->
-          <div class="field-set-enc me-flex">
+          <!-- Auto 识别结果：下拉右侧；下拉本身保持 Auto；Vector Set 向量非 wire 不展示编码 -->
+          <div v-if="!vectorsetType" class="field-set-enc me-flex">
             <el-select
               v-model="fieldViewFmt"
               class="field-set-enc-select me-select-plain"
@@ -434,7 +472,7 @@ async function refreshField() {
               <el-button
                 type="primary"
                 :loading="isSaving"
-                :disabled="isViewReadonlyFmt || decodeFailed || !fieldDirty"
+                :disabled="(!vectorsetType && (isViewReadonlyFmt || decodeFailed)) || !fieldDirty"
                 @click="submit"
                 >{{ t('save') }}</el-button
               >

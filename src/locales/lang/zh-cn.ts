@@ -416,6 +416,10 @@ export default {
     /** ARINSERT：从插入光标起连续写入，非末尾追加 */
     arrayWriteArinsert: '游标插入',
     arrayWriteArinsertTip: '从当前插入光标起连续写入；可用 ARNEXT 查看、ARSEEK 重定位光标',
+    /** 向量输入格式说明（标签用「向量」） */
+    vectorValueHint: 'JSON 数组或空格/逗号分隔浮点',
+    vectorInvalid: '向量格式无效',
+    elementRequired: '请输入元素',
     newKey: '新增键',
     newField: '新增字段',
     key: '键',
@@ -423,9 +427,12 @@ export default {
     type: '类型',
     keyCodec: '键编码',
     valueCodec: '值编码',
+    /** Vector Set：仅元素名走 wire */
+    elementCodec: '元素编码',
     ttl: 'TTL超时时长 (-1代表永久)',
     value: '值',
     element: '元素',
+    vector: '向量',
     hashKey: '哈希键',
     streamId: 'ID (*表示服务器自动生成)',
     streamIdRequired: '请输入ID',
@@ -437,6 +444,8 @@ export default {
     editField: '编辑字段',
     viewField: '查看字段',
     hashKey: '哈希键',
+    element: '元素',
+    vector: '向量',
     fieldTtl: '字段过期 (秒)',
     index: '索引',
     score: '分数',
@@ -844,6 +853,8 @@ export default {
       '<b>扫描</b>（未勾选）<br/>app: 包含 app<br/>app*: 以 app 开头<br/>*app: 以 app 结尾<br/>含 * ? [ 时原样作为模式<br/><br/><b>精确</b>（勾选）<br/>判断 field/member 与输入完全一致是否存在（Hash 仅匹配 field 名）',
     fieldExactSearchArray:
       '<b>扫描</b>（未勾选）<br/>输入仅做本地过滤（ARSCAN 无服务端 MATCH）<br/><br/><b>精确</b>（勾选）<br/>按索引 ARGET：输入非负整数索引查询单个槽',
+    fieldExactSearchVectorSet:
+      '<b>扫描</b>（未勾选）<br/>输入仅做本地过滤（按元素，VRANGE 无服务端 MATCH）<br/><br/><b>精确</b>（勾选）<br/>按元素 VISMEMBER + VEMB：输入与元素完全一致时查询',
     insertRow: '插入',
     allHashKeys: '所有键',
     allHashValues: '所有值',
@@ -851,6 +862,9 @@ export default {
     hashValuesEmpty: '暂无值',
     id: 'ID',
     key: '键',
+    element: '元素',
+    /** Vector Set 行内向量列（对应 Redis element↔vector） */
+    vector: '向量',
     index: '索引',
     ttl: '过期',
     value: '值',
@@ -865,7 +879,9 @@ export default {
     renameKey: '重命名键',
     duplicateKey: '创建副本',
     copyValue: '复制值',
+    copyVector: '复制向量',
     copyKey: '复制键',
+    copyElement: '复制元素',
     copyIndex: '复制索引',
     copyStreamId: '复制ID',
     copyScore: '复制分数',
@@ -907,6 +923,7 @@ export default {
     textEntries: '已扫描：',
     totalCount: '总数：',
     arLen: '长度：',
+    vectorDim: '维度：',
     valueTruncatedTitle: '值过大，已切换为预览模式',
     valueTruncatedDesc:
       '该键约 {size}，超过 {limit} 安全阈值。为避免卡顿，当前仅展示前 {preview} 字节。',

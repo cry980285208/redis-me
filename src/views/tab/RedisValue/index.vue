@@ -51,6 +51,7 @@ import {
   type ViewBytesFormat,
 } from '@/utils/format'
 import { resolveKeyType } from '@/utils/key-type-cache'
+import { toKeyTypeLabel } from '@/utils/redis-display'
 import {
   buildScanPattern,
   buildLocalFilterPattern,
@@ -132,6 +133,7 @@ const streamType = computed(() => 'stream' === redisValue.value?.type)
 const hashType = computed(() => 'hash' === redisValue.value?.type)
 const listType = computed(() => 'list' === redisValue.value?.type)
 const arrayType = computed(() => 'array' === redisValue.value?.type)
+const vectorsetType = computed(() => 'vectorset' === redisValue.value?.type)
 const setType = computed(() => 'set' === redisValue.value?.type)
 const zsetType = computed(() => 'zset' === redisValue.value?.type)
 
@@ -158,15 +160,17 @@ const showScanControl = computed(() => {
   return scanPaused.value || (loading.value && scanBatchCount.value >= SCAN_CONTROL_MIN_BATCHES)
 })
 const showFieldExactCheckbox = computed(() => supportsFieldServerScan(redisValue.value?.type))
-// Array 的 ARSCAN 无服务端 MATCH：输入框仅本地过滤；精确勾选走 ARGET
+// Array / VectorSet 无服务端 MATCH：输入框仅本地过滤；精确勾选走 ARGET / VISMEMBER
 const fieldScanInputPlaceholder = computed(() =>
-  listType.value || streamType.value || arrayType.value
+  listType.value || streamType.value || arrayType.value || vectorsetType.value
     ? t('redisValue.listStreamFilterPlaceholder')
     : t('redisValue.fieldScanPlaceholder'),
 )
-const fieldExactSearchTip = computed(() =>
-  arrayType.value ? t('redisValue.fieldExactSearchArray') : t('redisValue.fieldExactSearch'),
-)
+const fieldExactSearchTip = computed(() => {
+  if (arrayType.value) return t('redisValue.fieldExactSearchArray')
+  if (vectorsetType.value) return t('redisValue.fieldExactSearchVectorSet')
+  return t('redisValue.fieldExactSearch')
+})
 const scanToggleTip = computed(() =>
   loading.value ? t('keyMain.pauseScan') : t('keyMain.resumeScan'),
 )
@@ -484,6 +488,12 @@ function fieldScanValueForJsonView(type: string, value: unknown): unknown {
         value: wireToUtf8JsonText(row.value),
         score: row.score,
       }))
+    case 'vectorset':
+      // key=元素名（wire）；value=向量 JSON 展示串（非 wire）
+      return (value as ValueTableRow[]).map(row => ({
+        key: wireToUtf8JsonText(row.key),
+        value: row.value,
+      }))
     default:
       return value
   }
@@ -503,7 +513,14 @@ const showValue = computed(() => {
   }
 
   // 集合类型：JSON 视图用 UTF-8，不直接 dump base64
-  if (hashType.value || listType.value || setType.value || zsetType.value || arrayType.value) {
+  if (
+    hashType.value ||
+    listType.value ||
+    setType.value ||
+    zsetType.value ||
+    arrayType.value ||
+    vectorsetType.value
+  ) {
     const display = fieldScanValueForJsonView(rv.type, obj)
     return JSON.stringify(display, null, isPretty.value ? 2 : undefined)
   }
@@ -565,6 +582,15 @@ const filterFieldPattern = computed(() =>
 const filterFieldList = computed(() => {
   if (!filterFieldPattern.value) return dataList.value
   const pattern = filterFieldPattern.value
+  // Vector Set：仅按元素名本地过滤（向量浮点无检索意义；相似度走 VSIM）
+  if (vectorsetType.value) {
+    return dataList.value.filter(
+      row =>
+        row.key != null &&
+        row.key !== '' &&
+        minimatch(formatTableCell(row.key), pattern, MINIMATCH_SCAN_OPTS),
+    )
+  }
   return dataList.value.filter(row => {
     if (row.key != null && row.key !== '') {
       if (minimatch(formatTableCell(row.key), pattern, MINIMATCH_SCAN_OPTS)) return true
@@ -580,7 +606,9 @@ const filterFieldList = computed(() => {
 })
 
 const tableDisplayList = computed(() => {
-  if (hashType.value || setType.value || zsetType.value) return filterFieldList.value
+  if (hashType.value || setType.value || zsetType.value || vectorsetType.value) {
+    return filterFieldList.value
+  }
   return filterDataList.value
 })
 
@@ -589,6 +617,7 @@ const tableDefaultSort = computed(
   (): { prop: string; order: 'ascending' | 'descending' } | undefined => {
     switch (redisValue.value?.type) {
       case 'hash':
+      case 'vectorset':
         return { prop: 'key', order: 'ascending' }
       case 'zset':
         return { prop: 'score', order: 'ascending' }
@@ -945,7 +974,21 @@ function formatFieldTtl(ttl: number | undefined): string {
   return String(meHumanSeconds(ttl))
 }
 function fieldRowDisplayValue(row: ValueTableRow): string {
-  return streamType.value ? JSON.stringify(row.value) : formatTableCell(row.value)
+  if (streamType.value) return JSON.stringify(row.value)
+  // Vector Set 的 value 已是 JSON 展示串，勿当 wire 解码；高维表格截断预览
+  if (vectorsetType.value) {
+    const s = String(row.value ?? '')
+    try {
+      const arr = JSON.parse(s) as unknown
+      if (Array.isArray(arr) && arr.length > 8) {
+        return `[${arr.slice(0, 8).join(',')},… dim=${arr.length}]`
+      }
+    } catch {
+      /* 非 JSON 原样展示 */
+    }
+    return s
+  }
+  return formatTableCell(row.value)
 }
 function compareFieldRowValue(a: ValueTableRow, b: ValueTableRow): number {
   return fieldRowDisplayValue(a).localeCompare(fieldRowDisplayValue(b), undefined, {
@@ -1459,6 +1502,12 @@ const textArLen = computed(() => {
   if (!rv || !arrayType.value || rv.logicalLength == null) return ''
   return t('redisValue.arLen') + rv.logicalLength
 })
+/** Vector Set：VDIM，与 VCARD 总数分开展示 */
+const textVectorDim = computed(() => {
+  const rv = redisValue.value
+  if (!rv || !vectorsetType.value || rv.vectorDim == null) return ''
+  return t('redisValue.vectorDim') + rv.vectorDim
+})
 const textEntries = computed(() => {
   const rv = redisValue.value
   if (!rv || jsonType.value || stringType.value) return ''
@@ -1501,7 +1550,7 @@ onUnmounted(() => {
                 icon="me-icon-location"
                 class="suffix-ttl icon-btn"
                 icon-left
-                :name="redisValue.type.toUpperCase()"
+                :name="toKeyTypeLabel(redisValue.type)"
                 :info="t('redisValue.locateKeyHint')"
                 placement="top"
                 @click.stop="locateKeyInTree" />
@@ -1825,8 +1874,12 @@ onUnmounted(() => {
                 </template>
               </el-table-column>
 
-              <!-- 哈希键 -->
-              <el-table-column :label="t('redisValue.key')" prop="key" sortable v-if="hashType">
+              <!-- Hash：哈希键；Vector Set：元素名（Redis 官方称 element，勿用「键」） -->
+              <el-table-column
+                :label="vectorsetType ? t('redisValue.element') : t('redisValue.key')"
+                prop="key"
+                sortable
+                v-if="hashType || vectorsetType">
                 <template #default="scope">
                   {{ formatTableCell(scope.row.key) }}
                 </template>
@@ -1840,9 +1893,9 @@ onUnmounted(() => {
                 sortable
                 v-if="listType || arrayType" />
 
-              <!-- 字段值 -->
+              <!-- 字段值 / Vector Set 向量 -->
               <el-table-column
-                :label="t('redisValue.value')"
+                :label="vectorsetType ? t('redisValue.vector') : t('redisValue.value')"
                 prop="value"
                 min-width="200"
                 sortable
@@ -1910,8 +1963,14 @@ onUnmounted(() => {
                               icon="el-icon-refresh-right"
                               :name="t('redisValue.refreshFieldRow')" />
                           </el-dropdown-item>
-                          <el-dropdown-item v-if="hashType" command="copyKey">
-                            <me-icon icon="el-icon-document-copy" :name="t('redisValue.copyKey')" />
+                          <el-dropdown-item v-if="hashType || vectorsetType" command="copyKey">
+                            <me-icon
+                              icon="el-icon-document-copy"
+                              :name="
+                                vectorsetType
+                                  ? t('redisValue.copyElement')
+                                  : t('redisValue.copyKey')
+                              " />
                           </el-dropdown-item>
                           <el-dropdown-item v-if="listType || arrayType" command="copyIndex">
                             <me-icon
@@ -1926,7 +1985,11 @@ onUnmounted(() => {
                           <el-dropdown-item command="copyValue">
                             <me-icon
                               icon="el-icon-document-copy"
-                              :name="t('redisValue.copyValue')" />
+                              :name="
+                                vectorsetType
+                                  ? t('redisValue.copyVector')
+                                  : t('redisValue.copyValue')
+                              " />
                           </el-dropdown-item>
                           <el-dropdown-item v-if="zsetType" command="copyScore">
                             <me-icon
@@ -2005,9 +2068,11 @@ onUnmounted(() => {
           <!-- 已扫描：筛选 / 已加载（与总数关联，紧挨展示） -->
           <el-text> {{ textEntries }} </el-text>
 
-          <!-- Array ARLEN 放最后，避免插在总数与已扫描之间 -->
+          <!-- Array ARLEN / VectorSet VDIM 放最后，避免插在总数与已扫描之间 -->
           <el-divider direction="vertical" v-if="textArLen" />
           <el-text v-if="textArLen"> {{ textArLen }} </el-text>
+          <el-divider direction="vertical" v-if="textVectorDim" />
+          <el-text v-if="textVectorDim"> {{ textVectorDim }} </el-text>
         </div>
 
         <div class="me-flex" style="position: relative">

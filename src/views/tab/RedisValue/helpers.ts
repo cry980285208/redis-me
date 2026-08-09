@@ -51,9 +51,11 @@ export function streamIdToDate(id: string): string {
 
 // 键类型能力
 
-// Hash/Set/ZSet/Array：支持服务端 pattern 扫描（Array 精确勾选走 ARGET）
+// Hash/Set/ZSet/Array/VectorSet：支持服务端扫描或精确勾选（Array→ARGET；VectorSet→VISMEMBER，无 MATCH）
 export function supportsFieldServerScan(type: string | undefined) {
-  return type === 'hash' || type === 'set' || type === 'zset' || type === 'array'
+  return (
+    type === 'hash' || type === 'set' || type === 'zset' || type === 'array' || type === 'vectorset'
+  )
 }
 
 // 支持表格视图的类型（与底部 segmented 可见条件一致）
@@ -64,7 +66,8 @@ export function supportsTableView(type: string | undefined) {
     type === 'set' ||
     type === 'zset' ||
     type === 'stream' ||
-    type === 'array'
+    type === 'array' ||
+    type === 'vectorset'
   )
 }
 
@@ -94,6 +97,7 @@ export const KEY_TYPE_TO_GROUP: Record<string, string> = {
   stream: 'stream',
   json: 'json',
   array: 'array',
+  vectorset: 'vector_set',
 }
 
 // 扫描纯函数
@@ -112,6 +116,7 @@ export function mergeFieldScanPage(
     prev.ttl = data.ttl
     prev.size = data.size
     prev.logicalLength = data.logicalLength
+    prev.vectorDim = data.vectorDim
   }
   return true
 }

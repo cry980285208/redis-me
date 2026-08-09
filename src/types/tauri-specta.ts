@@ -215,6 +215,8 @@ export type FieldScanResult_Deserialize = {
 	valueTruncated: boolean,
 	/**  Array：ARLEN（逻辑长度 maxIndex+1）；其它类型为 None */
 	logicalLength?: number | null,
+	/**  Vector Set：VDIM（向量维度）；其它类型为 None */
+	vectorDim?: number | null,
 };
 
 export type FieldScanResult_Serialize = {
@@ -228,6 +230,8 @@ export type FieldScanResult_Serialize = {
 	valueTruncated: boolean,
 	/**  Array：ARLEN（逻辑长度 maxIndex+1）；其它类型为 None */
 	logicalLength?: number | null,
+	/**  Vector Set：VDIM（向量维度）；其它类型为 None */
+	vectorDim?: number | null,
 };
 
 export type FiledScanMeta = {
@@ -409,6 +413,8 @@ export type RedisFieldAdd_Deserialize = {
 	listPushMethod: string,
 	/**  Array 写入方式：arset（指定索引）/ arinsert（游标插入） */
 	arrayWriteMethod: string,
+	/**  Vector Set：前端已解析的浮点分量（勿传多格式文本；空=非 vectorset） */
+	vector?: (number | null)[],
 	fieldValueList: RedisFieldValue[],
 	streamId: string,
 	/**  仅 Redis 顶层键名（`key`）如何解码为字节；不含 Hash/Stream 的字段名 */
@@ -427,6 +433,8 @@ export type RedisFieldAdd_Serialize = {
 	listPushMethod: string,
 	/**  Array 写入方式：arset（指定索引）/ arinsert（游标插入） */
 	arrayWriteMethod: string,
+	/**  Vector Set：前端已解析的浮点分量（勿传多格式文本；空=非 vectorset） */
+	vector: (number | null)[],
 	fieldValueList: RedisFieldValue[],
 	streamId: string,
 	/**  仅 Redis 顶层键名（`key`）如何解码为字节；不含 Hash/Stream 的字段名 */
@@ -513,6 +521,8 @@ export type RedisFieldSet_Deserialize = {
 	includeFieldTtl: boolean | null,
 	/**  编辑字段时解析用户输入（含 Hash 字段名）；Redis 键由 `key` 承载，不再经此格式解析 */
 	valFmt: BytesFormat | null,
+	/**  Vector Set：前端已解析的浮点分量（与 `RedisFieldAdd.vector` 一致；空=非 vectorset） */
+	vector?: (number | null)[],
 };
 
 export type RedisFieldSet_Serialize = {
@@ -527,6 +537,8 @@ export type RedisFieldSet_Serialize = {
 	includeFieldTtl: boolean | null,
 	/**  编辑字段时解析用户输入（含 Hash 字段名）；Redis 键由 `key` 承载，不再经此格式解析 */
 	valFmt: BytesFormat | null,
+	/**  Vector Set：前端已解析的浮点分量（与 `RedisFieldAdd.vector` 一致；空=非 vectorset） */
+	vector: (number | null)[],
 };
 
 export type RedisFieldValue = {

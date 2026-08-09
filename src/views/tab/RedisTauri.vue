@@ -119,6 +119,8 @@ const minimalFieldAdd: RedisFieldAdd_Deserialize = {
   keyFmt: null,
   valFmt: null,
   listPushMethod: 'lpush',
+  arrayWriteMethod: 'arset',
+  vector: [],
   fieldValueList: [],
   streamId: '',
 }
@@ -133,6 +135,7 @@ const minimalFieldSet: RedisFieldSet_Deserialize = {
   fieldTtl: -1,
   includeFieldTtl: false,
   valFmt: null,
+  vector: [],
 }
 
 const minimalFieldGet: RedisFieldGet_Deserialize = {

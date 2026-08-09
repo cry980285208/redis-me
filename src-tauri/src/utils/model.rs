@@ -397,6 +397,17 @@ api_model!(FieldScanResult {
     /// Array：ARLEN（逻辑长度 maxIndex+1）；其它类型为 None
     #[serde(default, skip_serializing_if = "Option::is_none")]
     logical_length: Option<u64>,
+    /// Vector Set：VDIM（向量维度）；其它类型为 None
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    vector_dim: Option<u64>,
+});
+
+// Vector Set 表格行：key=元素名（wire），value=向量 JSON 展示串，attrs=可选 JSON
+api_model!(RedisVectorItem {
+    key: String,
+    value: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    attrs: Option<String>,
 });
 
 // Redis键: 由于键是字节存储的，考虑转换为utf-8字符串显示后可能会丢失信息，因此封装为对象
@@ -580,6 +591,9 @@ api_model!(RedisFieldAdd {
     list_push_method: String, // lpush, rpush
     /// Array 写入方式：arset（指定索引）/ arinsert（游标插入）
     array_write_method: String,
+    /// Vector Set：前端已解析的浮点分量（勿传多格式文本；空=非 vectorset）
+    #[serde(default)]
+    vector: Vec<f64>,
     field_value_list: Vec<RedisFieldValue>,
     stream_id: String, // stream
 
@@ -626,6 +640,9 @@ api_model!(RedisFieldSet {
     include_field_ttl: Option<bool>,
     /// 编辑字段时解析用户输入（含 Hash 字段名）；Redis 键由 `key` 承载，不再经此格式解析
     val_fmt: Option<BytesFormat>,
+    /// Vector Set：前端已解析的浮点分量（与 `RedisFieldAdd.vector` 一致；空=非 vectorset）
+    #[serde(default)]
+    vector: Vec<f64>,
 });
 
 // Hash HKEYS / HVALS 共用参数
