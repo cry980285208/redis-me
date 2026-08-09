@@ -578,7 +578,7 @@ api_model!(RedisFieldAdd {
     value: String, // 字段类型为String时的值
 
     list_push_method: String, // lpush, rpush
-    /// Array 写入方式：arset（指定索引）/ arinsert（顺序追加）
+    /// Array 写入方式：arset（指定索引）/ arinsert（游标插入）
     array_write_method: String,
     field_value_list: Vec<RedisFieldValue>,
     stream_id: String, // stream
