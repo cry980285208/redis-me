@@ -975,7 +975,10 @@ function openFieldPanel(row: ValueTableRow, index: number, readonly: boolean) {
   fieldSetReadonly.value = readonly
   fieldSetRow.value = row
   prepareFieldRowContext(row)
-  const rowValWire = streamType.value ? JSON.stringify(row.value ?? {}) : String(row.value ?? '')
+  // Stream 行为 JSON 对象；FieldSet 的 srcFieldValue 须为 base64 wire（与 Hash 等一致）
+  const rowValWire = streamType.value
+    ? meViewToWire(JSON.stringify(row.value ?? {}), 'utf8')
+    : String(row.value ?? '')
   const params = {
     fieldKey: row.key || '',
     fieldScore: row.score || 0,
