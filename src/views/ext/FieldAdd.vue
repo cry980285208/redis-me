@@ -16,14 +16,19 @@ const { t } = useI18n()
 const emit = defineEmits(['success', 'closed'])
 defineExpose({ open })
 
-function open(data: Partial<RedisFieldAdd_Deserialize & { viewValFmt?: ViewBytesFormat }>) {
+function open(
+  data: Partial<
+    RedisFieldAdd_Deserialize & { viewValFmt?: ViewBytesFormat; vectorDim?: number | null }
+  >,
+) {
   visible.value = true
   Object.assign(form.value, cloneDeep(toRaw(initForm.value)))
-  const { viewValFmt, ...rest } = data
+  const { viewValFmt, vectorDim, ...rest } = data
   Object.assign(form.value, rest)
   if (viewValFmt) {
     form.value.valFmt = viewValFmt
   }
+  expectedVectorDim.value = vectorDim ?? null
 }
 
 // 共享数据
@@ -65,6 +70,8 @@ const form = ref(cloneDeep(toRaw(initForm.value)))
 const stringOrJsonType = computed(() => form.value.type === 'string' || form.value.type === 'json')
 const jsonType = computed(() => form.value.type === 'json')
 const vectorsetType = computed(() => form.value.type === 'vectorset')
+/** 键的 VDIM（打开时传入；非 vectorset 或未知时为 null） */
+const expectedVectorDim = ref<number | null>(null)
 const arrayArsetMode = computed(
   () => form.value.type === 'array' && form.value.arrayWriteMethod !== 'arinsert',
 )
@@ -179,6 +186,16 @@ function submit() {
         return
       }
       vector = parsed.nums
+      // 维度预检：已知 VDIM 时拦截不一致，避免 Redis 服务端报错
+      if (expectedVectorDim.value != null && vector.length !== expectedVectorDim.value) {
+        meErr(
+          t('fieldAdd.vectorDimMismatch', {
+            dim: vector.length,
+            expected: expectedVectorDim.value,
+          }),
+        )
+        return
+      }
       const attrsParsed = parseAttrsInput(form.value.attrsText)
       if (!attrsParsed.ok) {
         meErr(t('fieldAdd.attrsInvalid'))
@@ -361,14 +378,17 @@ function handleKeyTypeChange() {
             :placeholder="t('fieldAdd.element')"
             :validate-event="false" />
         </el-form-item>
-        <el-form-item :label="t('fieldAdd.vector')">
+        <el-form-item>
+          <template #label>
+            {{ t('fieldAdd.vector') }}
+            <span class="label-hint">{{ t('fieldAdd.vectorValueHint') }}</span>
+          </template>
           <el-input
             type="textarea"
             v-model="form.vectorText"
             :rows="4"
             :placeholder="'[0.1, 0.2, 0.3]'"
             :validate-event="false" />
-          <div class="array-write-hint">{{ t('fieldAdd.vectorValueHint') }}</div>
         </el-form-item>
         <el-form-item :label="t('fieldAdd.attrs')">
           <el-input
@@ -481,5 +501,11 @@ function handleKeyTypeChange() {
   font-size: 12px;
   color: var(--el-text-color-secondary);
   line-height: 1.4;
+}
+.label-hint {
+  margin-left: 6px;
+  font-size: 12px;
+  font-weight: normal;
+  color: var(--el-text-color-secondary);
 }
 </style>

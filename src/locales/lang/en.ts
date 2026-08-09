@@ -430,6 +430,8 @@ export default {
     /** Vector input format tip (label is "Vector") */
     vectorValueHint: 'JSON array or space/comma-separated floats',
     vectorInvalid: 'Invalid vector format',
+    /** Vector Set: dimension mismatch with key VDIM */
+    vectorDimMismatch: 'Vector dimension ({dim}) does not match key dimension ({expected})',
     attrs: 'Attributes',
     attrsInvalid: 'Attributes must be a JSON object',
     elementRequired: 'Element is required',

@@ -419,6 +419,8 @@ export default {
     /** 向量输入格式说明（标签用「向量」） */
     vectorValueHint: 'JSON 数组或空格/逗号分隔浮点',
     vectorInvalid: '向量格式无效',
+    /** Vector Set：维度与键的 VDIM 不一致 */
+    vectorDimMismatch: '向量维度({dim})与键维度({expected})不一致',
     attrs: '属性',
     attrsInvalid: '属性须为 JSON 对象',
     elementRequired: '请输入元素',

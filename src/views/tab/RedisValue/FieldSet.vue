@@ -40,6 +40,8 @@ type FieldSetOpen = Partial<FieldSetForm> & {
   streamId?: string
   /** 查看模式：表单只读，隐藏保存 */
   readonly?: boolean
+  /** Vector Set：键的 VDIM（用于维度预检） */
+  vectorDim?: number | null
 }
 
 const props = withDefaults(
@@ -78,6 +80,8 @@ const form = ref<FieldSetForm>(cloneDeep(initForm))
 
 /** fieldScan 原始 base64 wire，切换字段编码时始终以此为源 */
 const srcFieldWire = ref('')
+/** Vector Set：键的 VDIM（打开时传入；用于维度预检） */
+const expectedVectorDim = ref<number | null>(null)
 /** Vector Set：attrs 展示文本（打开时 VGETATTR；不进 RedisFieldSet） */
 const attrsText = ref('')
 const initialAttrsDisplay = ref('')
@@ -226,6 +230,7 @@ async function loadVectorAttrs() {
 function open(data: FieldSetOpen) {
   visible.value = true
   readonly.value = !!data.readonly
+  expectedVectorDim.value = data.vectorDim ?? null
   Object.assign(form.value, cloneDeep(initForm))
   Object.assign(form.value, data)
   srcFieldWire.value = String(data.srcFieldValue ?? '')
@@ -325,6 +330,16 @@ function submit() {
           return
         }
         vector = parsed.nums
+        // 维度预检：已知 VDIM 时拦截不一致，避免 Redis 服务端报错
+        if (expectedVectorDim.value != null && vector.length !== expectedVectorDim.value) {
+          meErr(
+            t('fieldAdd.vectorDimMismatch', {
+              dim: vector.length,
+              expected: expectedVectorDim.value,
+            }),
+          )
+          return
+        }
         fieldValue = ''
       }
       if (attrsDirty.value) {

@@ -936,6 +936,7 @@ function fieldAdd() {
     valFmt: IPC_WIRE_FORMAT,
     viewValFmt: viewFmtForField(bytesFormat.value),
     key: { ...share.redisKey! },
+    vectorDim: rv.vectorDim,
   })
 }
 
@@ -1034,6 +1035,7 @@ function openFieldPanel(row: ValueTableRow, index: number, readonly: boolean) {
     fieldIndex: -1,
     streamId: row.id || '',
     readonly,
+    vectorDim: rv.vectorDim,
   }
   if (listType.value || arrayType.value) {
     params.fieldIndex = fieldEditIndex.value
