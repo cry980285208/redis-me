@@ -31,7 +31,11 @@ import { meCommands, meCopy, meErr, meFormatDisplayValue, meJsonNormal, meOk } f
 import { attrsNormalizedEqual, parseAttrsInput, parseVectorInput } from '@/utils/vector'
 
 /** 含 UI 用 type / wireFieldKey，提交时剔除 */
-type FieldSetForm = RedisFieldSet_Deserialize & { type: string; wireFieldKey?: string }
+type FieldSetForm = RedisFieldSet_Deserialize & {
+  type: string
+  wireFieldKey?: string
+  streamId?: string
+}
 
 type FieldSetOpen = Partial<FieldSetForm> & {
   /** fieldScan 返回的 wire 形态（恒 base64） */
@@ -462,8 +466,11 @@ async function refreshField() {
     v-show="visible"
     class="field-set">
     <el-form ref="formRef" class="field-set-form" :model="form" :rules="rules" label-position="top">
-      <el-form-item :label="t('fieldSet.hashKey')" v-if="form.type === 'hash'">
+      <el-form-item :label="t('fieldSet.fieldKey')" v-if="form.type === 'hash'">
         <el-input v-model="form.fieldKey" disabled />
+      </el-form-item>
+      <el-form-item :label="t('fieldSet.streamId')" v-if="form.type === 'stream'">
+        <el-input :model-value="form.streamId || ''" disabled />
       </el-form-item>
       <el-form-item :label="t('fieldSet.element')" v-if="vectorsetType">
         <el-input v-model="form.fieldKey" disabled />

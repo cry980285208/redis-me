@@ -458,6 +458,8 @@ export default {
     fieldScoreRequired: 'Score Required',
     editField: 'Edit Field',
     viewField: 'View Field',
+    fieldKey: 'Key',
+    streamId: 'ID',
     hashKey: 'HashKey',
     element: 'Element',
     vector: 'Vector',

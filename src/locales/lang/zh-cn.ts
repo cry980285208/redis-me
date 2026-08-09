@@ -447,6 +447,8 @@ export default {
     fieldScoreRequired: '请输入分数',
     editField: '编辑字段',
     viewField: '查看字段',
+    fieldKey: '键',
+    streamId: 'ID',
     hashKey: '哈希键',
     element: '元素',
     vector: '向量',
