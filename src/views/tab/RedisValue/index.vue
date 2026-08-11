@@ -489,11 +489,8 @@ function fieldScanValueForJsonView(type: string, value: unknown): unknown {
         score: row.score,
       }))
     case 'vectorset':
-      // key=元素名（wire）；value=向量 JSON（attrs 按需 VGETATTR，不进扫描）
-      return (value as ValueTableRow[]).map(row => ({
-        key: wireToUtf8JsonText(row.key),
-        value: row.value,
-      }))
+      // 裸字符串数组（与 Set 一致）
+      return (value as unknown[]).map(v => wireToUtf8JsonText(v))
     default:
       return value
   }
@@ -553,8 +550,8 @@ const dataList = computed(() => {
 
   const data: ValueTableRow[] = []
   fieldValueRows(rv.value).forEach(value => {
-    // set 为裸字符串；其余类型已是对象
-    if (setType.value) data.push({ value })
+    // set / vectorset 为裸字符串；其余类型已是对象
+    if (setType.value || vectorsetType.value) data.push({ value })
     else data.push(value as ValueTableRow)
   })
   return data
@@ -582,13 +579,13 @@ const filterFieldPattern = computed(() =>
 const filterFieldList = computed(() => {
   if (!filterFieldPattern.value) return dataList.value
   const pattern = filterFieldPattern.value
-  // Vector Set：仅按元素名本地过滤（向量浮点无检索意义；相似度走 VSIM）
+  // Vector Set：按元素名（row.value）本地过滤（向量浮点无检索意义；相似度走 VSIM）
   if (vectorsetType.value) {
     return dataList.value.filter(
       row =>
-        row.key != null &&
-        row.key !== '' &&
-        minimatch(formatTableCell(row.key), pattern, MINIMATCH_SCAN_OPTS),
+        row.value != null &&
+        row.value !== '' &&
+        minimatch(formatTableCell(row.value), pattern, MINIMATCH_SCAN_OPTS),
     )
   }
   return dataList.value.filter(row => {
@@ -617,11 +614,11 @@ const tableDefaultSort = computed(
   (): { prop: string; order: 'ascending' | 'descending' } | undefined => {
     switch (redisValue.value?.type) {
       case 'hash':
-      case 'vectorset':
         return { prop: 'key', order: 'ascending' }
       case 'zset':
         return { prop: 'score', order: 'ascending' }
       case 'set':
+      case 'vectorset':
         return { prop: 'value', order: 'ascending' }
       default:
         return undefined
@@ -950,7 +947,8 @@ function fieldSetInit() {
 }
 
 function prepareFieldRowContext(row: ValueTableRow) {
-  fieldEditKey.value = row.key || ''
+  // VectorSet 元素名在 row.value（与 Set 一致）
+  fieldEditKey.value = vectorsetType.value ? String(row.value ?? '') : row.key || ''
   fieldEditIndex.value = -1
   if (listType.value || arrayType.value) {
     fieldEditIndex.value = listRowRedisIndex(row)
@@ -976,19 +974,6 @@ function formatFieldTtl(ttl: number | undefined): string {
 }
 function fieldRowDisplayValue(row: ValueTableRow): string {
   if (streamType.value) return JSON.stringify(row.value)
-  // Vector Set 的 value 已是 JSON 展示串，勿当 wire 解码；高维表格截断预览
-  if (vectorsetType.value) {
-    const s = String(row.value ?? '')
-    try {
-      const arr = JSON.parse(s) as unknown
-      if (Array.isArray(arr) && arr.length > 8) {
-        return `[${arr.slice(0, 8).join(',')},… dim=${arr.length}]`
-      }
-    } catch {
-      /* 非 JSON 原样展示 */
-    }
-    return s
-  }
   return formatTableCell(row.value)
 }
 function compareFieldRowValue(a: ValueTableRow, b: ValueTableRow): number {
@@ -1012,23 +997,46 @@ function buildFieldGetParam(row?: ValueTableRow): RedisFieldGet_Deserialize | nu
 }
 
 // 打开面板 / 行点击
-function openFieldPanel(row: ValueTableRow, index: number, readonly: boolean) {
+async function openFieldPanel(row: ValueTableRow, index: number, readonly: boolean) {
   const rv = redisValue.value
   if (!rv) return
   fieldSetIndex.value = index
   fieldSetReadonly.value = readonly
   fieldSetRow.value = row
   prepareFieldRowContext(row)
-  // Stream 行为 JSON 对象；FieldSet 的 srcFieldValue 须为 base64 wire（与 Hash 等一致）
+
+  // VectorSet：扫描无向量/属性，按需 field_get 一次拿齐
+  let vectorValue = ''
+  let vectorAttrs: string | undefined
+  if (vectorsetType.value) {
+    const elemName = String(row.value ?? '')
+    try {
+      const data = await meCommands.fieldGet(share.conn!.id, {
+        key: share.redisKey!,
+        fieldIndex: -1,
+        fieldKey: elemName,
+        fieldValue: '',
+        valFmt: IPC_WIRE_FORMAT,
+        includeFieldTtl: null,
+      })
+      vectorValue = data.fieldValue || ''
+      vectorAttrs = data.fieldAttrs
+    } catch {
+      // 获取失败仍打开面板，向量和属性为空
+    }
+  }
+
   const rowValWire = streamType.value
     ? meViewToWire(JSON.stringify(row.value ?? {}), 'utf8')
-    : String(row.value ?? '')
+    : vectorsetType.value
+      ? vectorValue
+      : String(row.value ?? '')
   const params = {
-    fieldKey: row.key || '',
+    fieldKey: vectorsetType.value ? String(row.value ?? '') : row.key || '',
     fieldScore: row.score || 0,
     fieldTtl: row.ttl ?? -1,
     srcFieldValue: rowValWire,
-    wireFieldKey: row.key || '',
+    wireFieldKey: vectorsetType.value ? String(row.value ?? '') : row.key || '',
     keyWireFmt: IPC_WIRE_FORMAT,
     type: rv.type,
     key: share.redisKey!,
@@ -1036,6 +1044,7 @@ function openFieldPanel(row: ValueTableRow, index: number, readonly: boolean) {
     streamId: row.id || '',
     readonly,
     vectorDim: rv.vectorDim,
+    srcFieldAttrs: vectorAttrs,
   }
   if (listType.value || arrayType.value) {
     params.fieldIndex = fieldEditIndex.value
@@ -1130,8 +1139,8 @@ function buildFieldAsCommandParam(row: ValueTableRow): RedisFieldAsCommand_Deser
   if (!rv || !rk) return null
   const param: RedisFieldAsCommand_Deserialize = {
     key: rk,
-    fieldKey: row.key || '',
-    fieldValue: String(row.value ?? ''),
+    fieldKey: vectorsetType.value ? String(row.value ?? '') : row.key || '',
+    fieldValue: vectorsetType.value ? '' : String(row.value ?? ''),
     streamId: row.id || '',
     fieldIndex: -1,
     valFmt: IPC_WIRE_FORMAT,
@@ -1234,8 +1243,8 @@ async function fieldDel(row: ValueTableRow) {
   const rv = redisValue.value
   if (!rv) return
   const param: RedisFieldDel_Deserialize = {
-    fieldKey: row.key || '',
-    fieldValue: String(row.value ?? ''),
+    fieldKey: vectorsetType.value ? String(row.value ?? '') : row.key || '',
+    fieldValue: vectorsetType.value ? '' : String(row.value ?? ''),
     key: share.redisKey!,
     streamId: row.id || '',
     fieldIndex: -1,
@@ -1889,12 +1898,8 @@ onUnmounted(() => {
                 </template>
               </el-table-column>
 
-              <!-- Hash：哈希键；Vector Set：元素名（Redis 官方称 element，勿用「键」） -->
-              <el-table-column
-                :label="vectorsetType ? t('redisValue.element') : t('redisValue.key')"
-                prop="key"
-                sortable
-                v-if="hashType || vectorsetType">
+              <!-- Hash：哈希键 -->
+              <el-table-column :label="t('redisValue.key')" prop="key" sortable v-if="hashType">
                 <template #default="scope">
                   {{ formatTableCell(scope.row.key) }}
                 </template>
@@ -1908,9 +1913,9 @@ onUnmounted(() => {
                 sortable
                 v-if="listType || arrayType" />
 
-              <!-- 字段值 / Vector Set 向量 -->
+              <!-- 字段值 / Vector Set 元素名 -->
               <el-table-column
-                :label="vectorsetType ? t('redisValue.vector') : t('redisValue.value')"
+                :label="vectorsetType ? t('redisValue.element') : t('redisValue.value')"
                 prop="value"
                 min-width="200"
                 sortable
@@ -1978,14 +1983,8 @@ onUnmounted(() => {
                               icon="el-icon-refresh-right"
                               :name="t('redisValue.refreshFieldRow')" />
                           </el-dropdown-item>
-                          <el-dropdown-item v-if="hashType || vectorsetType" command="copyKey">
-                            <me-icon
-                              icon="el-icon-document-copy"
-                              :name="
-                                vectorsetType
-                                  ? t('redisValue.copyElement')
-                                  : t('redisValue.copyKey')
-                              " />
+                          <el-dropdown-item v-if="hashType" command="copyKey">
+                            <me-icon icon="el-icon-document-copy" :name="t('redisValue.copyKey')" />
                           </el-dropdown-item>
                           <el-dropdown-item v-if="listType || arrayType" command="copyIndex">
                             <me-icon
@@ -2002,7 +2001,7 @@ onUnmounted(() => {
                               icon="el-icon-document-copy"
                               :name="
                                 vectorsetType
-                                  ? t('redisValue.copyVector')
+                                  ? t('redisValue.copyElement')
                                   : t('redisValue.copyValue')
                               " />
                           </el-dropdown-item>

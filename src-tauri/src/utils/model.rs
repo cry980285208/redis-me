@@ -402,13 +402,6 @@ api_model!(FieldScanResult {
     vector_dim: Option<u64>,
 });
 
-// Vector Set 表格行：key=元素名（wire），value=向量 JSON 展示串
-// attrs 不随 VRANGE 拉取（按需 VGETATTR，见 RedisVAttr）
-api_model!(RedisVectorItem {
-    key: String,
-    value: String,
-});
-
 // Redis键: 由于键是字节存储的，考虑转换为utf-8字符串显示后可能会丢失信息，因此封装为对象
 // 备注: bytes 序列化为 base64。合法 UTF-8 键可省略 bytes（空 Vec），to_bytes 回退 key.as_bytes()；
 //       非法 UTF-8 / 二进制键必须带 bytes，key 仅作 lossy 展示。
@@ -691,6 +684,9 @@ api_model!(RedisFieldSet {
     /// Vector Set：前端已解析的浮点分量（与 `RedisFieldAdd.vector` 一致；空=非 vectorset）
     #[serde(default)]
     vector: Vec<f64>,
+    /// Vector Set：前端恒提交当前全量 attrs JSON（空串=清除属性，官方约定）
+    #[serde(default)]
+    attrs: String
 });
 
 // Hash HKEYS / HVALS 共用参数
@@ -737,6 +733,9 @@ api_model!(RedisFieldValue {
     field_value: String,
     field_score: f64,
     field_ttl: i64, // 字段 TTL（秒），仅 Redis/Valkey >= 7.4
+    /// VectorSet：VGETATTR 返回的属性 JSON；无属性或其他类型为空串
+    #[serde(default)]
+    field_attrs: String
 });
 
 // ZSet 排名查询

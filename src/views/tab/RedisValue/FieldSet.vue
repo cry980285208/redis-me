@@ -46,6 +46,8 @@ type FieldSetOpen = Partial<FieldSetForm> & {
   readonly?: boolean
   /** Vector Set：键的 VDIM（用于维度预检） */
   vectorDim?: number | null
+  /** Vector Set：field_get 已拿到的 attrs（跳过 VGETATTR） */
+  srcFieldAttrs?: string
 }
 
 const props = withDefaults(
@@ -86,7 +88,7 @@ const form = ref<FieldSetForm>(cloneDeep(initForm))
 const srcFieldWire = ref('')
 /** Vector Set：键的 VDIM（打开时传入；用于维度预检） */
 const expectedVectorDim = ref<number | null>(null)
-/** Vector Set：attrs 展示文本（打开时 VGETATTR；不进 RedisFieldSet） */
+/** Vector Set：attrs 展示文本（打开时由 field_get 提供；保存时全量提交） */
 const attrsText = ref('')
 const initialAttrsDisplay = ref('')
 /** 下拉选中项；默认 Auto，与 STRING 键级一致 */
@@ -134,14 +136,8 @@ const canSaveField = computed(
     (vectorsetType.value || (!isViewReadonlyFmt.value && !decodeFailed.value)) &&
     fieldDirty.value,
 )
-/** 保存钮文案：Vector Set 按脏字段标明范围，避免「保存」歧义 */
-const saveFieldLabel = computed(() => {
-  if (!vectorsetType.value) return t('save')
-  if (vectorDirty.value && attrsDirty.value) return t('fieldSet.saveVectorAndAttrs')
-  if (vectorDirty.value) return t('fieldSet.saveVector')
-  if (attrsDirty.value) return t('fieldSet.saveAttrs')
-  return t('save')
-})
+/** 保存钮文案：Vector Set 与普通类型一致（全量提交，无需区分范围） */
+const saveFieldLabel = computed(() => t('save'))
 /** 禁用原因提示；可保存时与按钮文案一致 */
 const saveFieldTip = computed(() => {
   if (!vectorsetType.value && isViewReadonlyFmt.value) {
@@ -163,7 +159,7 @@ const supportsFieldRefresh = computed(() => {
 
 /** wire + 生效 view → 编辑区文本 */
 async function syncFieldEditor() {
-  // Vector Set：向量为 JSON 明文；attrs 另由 loadVectorAttrs 拉取
+  // Vector Set：向量为 JSON 明文；attrs 由 field_get 一并返回（open 中设置）
   if (vectorsetType.value) {
     form.value.fieldValue = meFormatDisplayValue(srcFieldWire.value, fieldPretty.value)
     initialFieldDisplay.value = form.value.fieldValue
@@ -207,30 +203,6 @@ async function syncFieldEditor() {
   }
 }
 
-async function loadVectorAttrs() {
-  attrsText.value = ''
-  initialAttrsDisplay.value = ''
-  if (!vectorsetType.value) return
-  const conn = share.conn
-  const wire = form.value.wireFieldKey || ''
-  const key = form.value.key
-  if (!conn || !wire || !key?.key) return
-  try {
-    const raw = await meCommands.vGetattr(conn.id, {
-      key,
-      fieldKey: wire,
-      attrs: '',
-      valFmt: IPC_WIRE_FORMAT,
-    })
-    const display = meFormatDisplayValue(raw || '', fieldPretty.value)
-    attrsText.value = display
-    initialAttrsDisplay.value = display
-  } catch {
-    attrsText.value = ''
-    initialAttrsDisplay.value = ''
-  }
-}
-
 function open(data: FieldSetOpen) {
   visible.value = true
   readonly.value = !!data.readonly
@@ -240,6 +212,12 @@ function open(data: FieldSetOpen) {
   srcFieldWire.value = String(data.srcFieldValue ?? '')
   attrsText.value = ''
   initialAttrsDisplay.value = ''
+  // VectorSet：attrs 已由 field_get 一并返回，直接设置
+  if (vectorsetType.value && data.srcFieldAttrs != null) {
+    const display = meFormatDisplayValue(data.srcFieldAttrs || '', fieldPretty.value)
+    attrsText.value = display
+    initialAttrsDisplay.value = display
+  }
   // Hash / VectorSet 元素名：wireFieldKey 为 base64；fieldKey 仅展示
   const wireKey = String(data.wireFieldKey || data.fieldKey || '')
   if ((form.value.type === 'hash' || form.value.type === 'vectorset') && wireKey) {
@@ -250,7 +228,6 @@ function open(data: FieldSetOpen) {
   fieldPretty.value = props.pretty
   void (async () => {
     await syncFieldEditor()
-    await loadVectorAttrs()
   })()
 }
 
@@ -325,35 +302,31 @@ function submit() {
     let fieldValue = form.value.fieldValue
     let vector: number[] = []
     let attrsJson = ''
-    // Vector Set：按脏字段分别写 VADD / VSETATTR
+    // Vector Set：恒提交当前全量向量 + attrs，field_set 一次完成 VADD + VSETATTR
     if (vectorsetType.value) {
-      if (vectorDirty.value) {
-        const parsed = parseVectorInput(form.value.fieldValue)
-        if (!parsed.ok) {
-          meErr(t('fieldAdd.vectorInvalid'))
-          return
-        }
-        vector = parsed.nums
-        // 维度预检：已知 VDIM 时拦截不一致，避免 Redis 服务端报错
-        if (expectedVectorDim.value != null && vector.length !== expectedVectorDim.value) {
-          meErr(
-            t('fieldAdd.vectorDimMismatch', {
-              dim: vector.length,
-              expected: expectedVectorDim.value,
-            }),
-          )
-          return
-        }
-        fieldValue = ''
+      const parsed = parseVectorInput(form.value.fieldValue)
+      if (!parsed.ok) {
+        meErr(t('fieldAdd.vectorInvalid'))
+        return
       }
-      if (attrsDirty.value) {
-        const attrsParsed = parseAttrsInput(attrsText.value)
-        if (!attrsParsed.ok) {
-          meErr(t('fieldAdd.attrsInvalid'))
-          return
-        }
-        attrsJson = attrsParsed.json
+      vector = parsed.nums
+      // 维度预检：已知 VDIM 时拦截不一致，避免 Redis 服务端报错
+      if (expectedVectorDim.value != null && vector.length !== expectedVectorDim.value) {
+        meErr(
+          t('fieldAdd.vectorDimMismatch', {
+            dim: vector.length,
+            expected: expectedVectorDim.value,
+          }),
+        )
+        return
       }
+      fieldValue = ''
+      const attrsParsed = parseAttrsInput(attrsText.value)
+      if (!attrsParsed.ok) {
+        meErr(t('fieldAdd.attrsInvalid'))
+        return
+      }
+      attrsJson = attrsParsed.json
     } else {
       // 与 KeyRename / FieldAdd 一致：提交前先编码检查，失败 meErr 并 return
       try {
@@ -382,26 +355,17 @@ function submit() {
 
     isSaving.value = true
     try {
-      if (!vectorsetType.value || vectorDirty.value) {
-        await meCommands.fieldSet(share.conn!.id, {
-          ...rest,
-          srcFieldValue,
-          fieldKey: useWireKey ? wireFieldKey! : form.value.fieldKey,
-          fieldValue,
-          vector,
-          // Vector Set 元素名仍走 wire；向量走 vector[]
-          valFmt: IPC_WIRE_FORMAT,
-          includeFieldTtl: form.value.type === 'hash' ? props.hashFieldTtlEnabled : null,
-        })
-      }
-      if (vectorsetType.value && attrsDirty.value && wireFieldKey) {
-        await meCommands.vSetattr(share.conn!.id, {
-          key: form.value.key,
-          fieldKey: wireFieldKey,
-          attrs: attrsJson,
-          valFmt: IPC_WIRE_FORMAT,
-        })
-      }
+      await meCommands.fieldSet(share.conn!.id, {
+        ...rest,
+        srcFieldValue,
+        fieldKey: useWireKey ? wireFieldKey! : form.value.fieldKey,
+        fieldValue,
+        vector,
+        attrs: vectorsetType.value ? attrsJson : '',
+        // Vector Set 元素名仍走 wire；向量走 vector[]
+        valFmt: IPC_WIRE_FORMAT,
+        includeFieldTtl: form.value.type === 'hash' ? props.hashFieldTtlEnabled : null,
+      })
       visible.value = false
       emit('success')
       meOk(t('editOk'))

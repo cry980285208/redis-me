@@ -349,15 +349,15 @@ pub fn field_scan_0_exact(
             };
             serde_json::to_value(items)?
         }
-        // Vector Set：VISMEMBER + VEMB（库无 VISMEMBER 封装；pattern 见本函数头注释）
+        // Vector Set：VISMEMBER 检查存在，返回元素名（与扫描一致）
         ValueType::VectorSet => {
             let elem = member.as_bytes().to_vec();
             let exists: bool = redis::cmd("VISMEMBER")
                 .arg(key)
                 .arg(&elem)
                 .query(conn)?;
-            let items = if exists {
-                vec![redis_vector_item(conn, key, &elem, bytes_format)]
+            let items: Vec<String> = if exists {
+                vec![format_bytes(&elem, bytes_format)]
             } else {
                 Vec::new()
             };
@@ -646,19 +646,6 @@ fn vsetattr_json_or_clear(
     Ok(())
 }
 
-fn redis_vector_item(
-    conn: &mut impl Commands,
-    key: &RedisKey,
-    name: &[u8],
-    bytes_format: &BytesFormat,
-) -> RedisVectorItem {
-    // 浏览只拉 VEMB；attrs 在 FieldSet 打开时 VGETATTR
-    RedisVectorItem {
-        key: format_bytes(name, bytes_format),
-        value: vemb_json_or_dash(conn, key, name),
-    }
-}
-
 /// VRANGE 元素名列表（库无命令封装；回复用 `Vec<Vec<u8>>` 反序列化）
 fn vrange_elements(
     conn: &mut impl Commands,
@@ -675,13 +662,14 @@ fn vrange_elements(
 }
 
 /// Vector Set VRANGE 分页；`stream_cursor` 存上一页最后元素 wire（见 plan 19）。
+/// 浏览时仅返回元素名列表（与 Set 一致），向量在编辑时按需 VEMB。
 fn field_scan_vectorset_page(
     conn: &mut MutexGuard<impl Commands>,
     key: &RedisKey,
     param: &FieldScanParam,
     bytes_format: &BytesFormat,
     cc: &mut ScanCursor,
-) -> AnyResult<Vec<RedisVectorItem>> {
+) -> AnyResult<Vec<String>> {
     let count = field_scan_batch_count(param.count);
     let start: Vec<u8> = if cc.stream_cursor.is_empty() {
         b"-".to_vec()
@@ -692,17 +680,14 @@ fn field_scan_vectorset_page(
     };
 
     let names = vrange_elements(conn, key, &start, count)?;
-    let mut items = Vec::with_capacity(names.len());
-    for name in &names {
-        items.push(redis_vector_item(conn, key, name, bytes_format));
-    }
+    let items: Vec<String> = names.iter().map(|n| format_bytes(n, bytes_format)).collect();
 
     if (items.len() as u64) < count {
         cc.finished = true;
     } else {
         cc.finished = false;
-        if let Some(last) = items.last() {
-            cc.stream_cursor = last.key.clone();
+        if let Some(last) = names.last() {
+            cc.stream_cursor = format_bytes(last, bytes_format);
         }
     }
     Ok(items)
@@ -1291,10 +1276,11 @@ pub fn field_set0(
                 .arg(&bytes)
                 .query(&mut conn)?;
         }
-        // Vector Set：VADD upsert；attrs 改走独立 v_setattr（不随字段保存）
+        // Vector Set：VADD upsert + VSETATTR；前端恒提交当前全量，空串=清除属性（官方约定）
         ValueType::VectorSet => {
             let elem = parse_bytes(&param.field_key, &val_fmt)?;
             vadd_values(&mut conn, &key, &param.vector, &elem)?;
+            vsetattr_json_or_clear(&mut conn, &key, &elem, &param.attrs)?;
         }
         _ => {
             handle_other_value_type(&key_type, &key)?;
@@ -1339,6 +1325,7 @@ pub fn field_get0(
                 field_value: format_bytes(&value_bytes, &val_fmt),
                 field_score: 0.0,
                 field_ttl,
+                field_attrs: String::new(),
             })
         }
         ValueType::List => {
@@ -1351,6 +1338,7 @@ pub fn field_get0(
                 field_value: format_bytes(&value_bytes, &val_fmt),
                 field_score: 0.0,
                 field_ttl: -1,
+                field_attrs: String::new(),
             })
         }
         ValueType::ZSet => {
@@ -1364,6 +1352,7 @@ pub fn field_get0(
                 field_value: format_bytes(&member_bytes, &val_fmt),
                 field_score: score,
                 field_ttl: -1,
+                field_attrs: String::new(),
             })
         }
         // Array：ARGET；见 is_array_type 升级注释
@@ -1381,6 +1370,29 @@ pub fn field_get0(
                 field_value: format_bytes(&value_bytes, &val_fmt),
                 field_score: 0.0,
                 field_ttl: -1,
+                field_attrs: String::new(),
+            })
+        }
+        // VectorSet：VISMEMBER + VEMB + VGETATTR
+        ValueType::VectorSet => {
+            let elem = parse_bytes(&param.field_key, &val_fmt)?;
+            let exists: bool = redis::cmd("VISMEMBER")
+                .arg(&key)
+                .arg(&elem)
+                .query(&mut conn)?;
+            if !exists {
+                bail!(AppError::FieldNotFound {
+                    hash_key: param.field_key.clone(),
+                });
+            }
+            let vector = vemb_json_or_dash(&mut conn, &key, &elem);
+            let attrs = vgetattr_opt(&mut conn, &key, &elem).unwrap_or_default();
+            Ok(RedisFieldValue {
+                field_key: format_bytes(&elem, &val_fmt),
+                field_value: vector,
+                field_score: 0.0,
+                field_ttl: -1,
+                field_attrs: attrs,
             })
         }
         _ => {

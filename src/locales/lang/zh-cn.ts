@@ -458,10 +458,6 @@ export default {
     score: '分数',
     value: '值',
     prettyHint: '默认与键值区美化设置同步；可临时切换以查看原始字段值',
-    /** Vector Set：按脏字段区分保存范围，避免「保存」语义不清 */
-    saveVector: '保存向量',
-    saveAttrs: '保存属性',
-    saveVectorAndAttrs: '保存向量与属性',
   },
 
   nodeList: {
@@ -874,8 +870,6 @@ export default {
     id: 'ID',
     key: '键',
     element: '元素',
-    /** Vector Set 行内向量列（对应 Redis element↔vector） */
-    vector: '向量',
     index: '索引',
     ttl: '过期',
     value: '值',

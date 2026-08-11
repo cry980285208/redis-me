@@ -531,6 +531,8 @@ export type RedisFieldSet_Deserialize = {
 	valFmt: BytesFormat | null,
 	/**  Vector Set：前端已解析的浮点分量（与 `RedisFieldAdd.vector` 一致；空=非 vectorset） */
 	vector?: (number | null)[],
+	/**  Vector Set：前端恒提交当前全量 attrs JSON（空串=清除属性，官方约定） */
+	attrs?: string,
 };
 
 export type RedisFieldSet_Serialize = {
@@ -547,6 +549,8 @@ export type RedisFieldSet_Serialize = {
 	valFmt: BytesFormat | null,
 	/**  Vector Set：前端已解析的浮点分量（与 `RedisFieldAdd.vector` 一致；空=非 vectorset） */
 	vector: (number | null)[],
+	/**  Vector Set：前端恒提交当前全量 attrs JSON（空串=清除属性，官方约定） */
+	attrs: string,
 };
 
 export type RedisFieldValue = {
@@ -554,6 +558,8 @@ export type RedisFieldValue = {
 	fieldValue: string,
 	fieldScore: number | null,
 	fieldTtl: number,
+	/**  VectorSet：VGETATTR 返回的属性 JSON；无属性或其他类型为空串 */
+	fieldAttrs?: string,
 };
 
 export type RedisHashKeys = RedisHashKeys_Serialize | RedisHashKeys_Deserialize;

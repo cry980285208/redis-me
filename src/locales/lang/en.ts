@@ -470,10 +470,6 @@ export default {
     value: 'Value',
     prettyHint:
       'Defaults to the key view pretty setting; toggle temporarily to view the raw field value',
-    /** Vector Set: label save by dirty parts so scope is clear */
-    saveVector: 'Save Vector',
-    saveAttrs: 'Save Attributes',
-    saveVectorAndAttrs: 'Save Vector & Attributes',
   },
 
   nodeList: {
@@ -889,8 +885,6 @@ export default {
     id: 'ID',
     key: 'Key',
     element: 'Element',
-    /** Vector Set column for the associated vector */
-    vector: 'Vector',
     index: 'Index',
     ttl: 'TTL',
     value: 'Value',
