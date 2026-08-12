@@ -63,8 +63,8 @@ import KeyCopy from '@/views/key/KeyCopy.vue'
 import KeyImport from '@/views/key/KeyImport.vue'
 import KeyRename from '@/views/key/KeyRename.vue'
 
-import FavoriteFolderPanel from './key/FavoriteFolderPanel.vue'
 import KeyBatch from './key/KeyBatch.vue'
+import KeyFavoriteFolder from './key/KeyFavoriteFolder.vue'
 import KeyMemory from './key/KeyMemory.vue'
 import KeyTree from './key/KeyTree.vue'
 // #endregion
@@ -151,7 +151,7 @@ if (typeof favSplit.value.folderSize !== 'string' || !/^\d+%$/.test(favSplit.val
   favSplit.value = { ...favSplit.value, folderSize: '40%' }
 }
 const favFolderPanelRef =
-  useTemplateRef<InstanceType<typeof FavoriteFolderPanel>>('favFolderPanelRef')
+  useTemplateRef<InstanceType<typeof KeyFavoriteFolder>>('favFolderPanelRef')
 const favFlexRef = useTemplateRef<HTMLElement>('favFlexRef')
 
 // 收藏模式跨区多选暂存（声明靠前供 initReset 使用）
@@ -1329,7 +1329,7 @@ function editDbName(db: number): void {
                 :icon="favSplit.folderCollapsed ? 'el-icon-arrow-right' : 'el-icon-arrow-down'" />
             </div>
             <div v-show="!favSplit.folderCollapsed" class="fav-pane-body">
-              <FavoriteFolderPanel
+              <KeyFavoriteFolder
                 ref="favFolderPanelRef"
                 :folders="currentFavoriteFolderPaths"
                 :filter-keyword="keyword"
