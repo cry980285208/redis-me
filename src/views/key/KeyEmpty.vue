@@ -1,9 +1,14 @@
 <script setup lang="ts">
+// #region 导入
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { useI18n } from 'vue-i18n'
+// #endregion
 
+// #region 核心状态
 const { t } = useI18n()
+// #endregion
 
+// #region 面板操作
 function handleLogoClick(): void {
   openUrl('https://www.hepengju.com')
 }
@@ -15,6 +20,7 @@ function handleGithubClick(): void {
 function handleBugClick(): void {
   openUrl('https://github.com/hepengju/redis-me/issues')
 }
+// #endregion
 </script>
 
 <template>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// #region 导入
 import { useVirtualList } from '@vueuse/core'
 import { computed, inject, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -6,7 +7,9 @@ import { useI18n } from 'vue-i18n'
 import { shareProvideKey } from '@/types/me-interface'
 import type { RedisKeySize_Serialize } from '@/types/tauri-specta'
 import { meHumanSize, meCommands } from '@/utils/util'
+// #endregion
 
+// #region 核心状态
 const { t } = useI18n()
 defineExpose({ open })
 function open(data: { match: string }) {
@@ -31,7 +34,6 @@ const form = ref({
   scanTotal: 0,
   sleepMillis: 0,
 })
-
 // 内存分析
 const keyList = ref<RedisKeySize_Serialize[]>([])
 async function keyMemory() {
@@ -43,14 +45,16 @@ async function keyMemory() {
     loading.value = false
   }
 }
+// #endregion
 
+// #region 计算属性
 const totalSize = computed(() =>
   keyList.value.map(item => item.size).reduce((sum, cur) => sum + cur, 0),
 )
-
 // 虚拟列表
 const items = computed(() => keyList.value)
 const { list, containerProps, wrapperProps } = useVirtualList(items, { itemHeight: 14 })
+// #endregion
 </script>
 
 <template>
