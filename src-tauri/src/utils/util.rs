@@ -70,6 +70,8 @@ pub fn to_api_result<T>(result: anyhow::Result<T>) -> ApiResult<T> {
                 }
                 _ => err.to_string(),
             };
+            // 剥离 redis-rs 的 ServerErrorKind 前缀（如 ResponseError:）
+            let message = message.replace("ResponseError: ", "");
             error!("错误：{}", message);
             Err(message)
         }
