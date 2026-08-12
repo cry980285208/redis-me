@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { capitalize } from 'lodash'
-import { computed, h, inject, ref, watchEffect } from 'vue'
+// #region 导入
+import { computed, inject, ref, watchEffect } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { shareProvideKey } from '@/types/me-interface'
@@ -20,7 +20,9 @@ import {
   meCommands,
   meOk,
 } from '@/utils/util'
+// #endregion
 
+// #region 核心状态
 const { t } = useI18n()
 // 共享数据
 const share = inject(shareProvideKey)!
@@ -77,14 +79,6 @@ function humanTotalSize(list: { value: RedisKeySize_Serialize[] }) {
   return meHumanSize(list.value.map(d => d.size).reduce((sum, cur) => sum + cur, 0) ?? 0)
 }
 
-// 合计列
-// function getSummaries() {
-//   const count = filterDataList.value.length + ' / ' + dataList.value.length
-//   const size = humanTotalSize(filterDataList) + ' / ' + humanTotalSize(dataList)
-//   const show = h('div', { class: 'me-flex' }, [h('div', null, count), h('div', null, size)])
-//   return ['', t('redisMemory.total'), show, '']
-// }
-
 async function refresh() {
   loading.value = true
   try {
@@ -102,14 +96,9 @@ async function refresh() {
     loading.value = false
   }
 }
-// refresh()
 
 function memoryUsage() {
-  // if (scanTotal.value > 10_0000 || scanTotal.value <= 0 || sleepMillis.value > 100) {
-  //   meConfirm(t('redisMemory.longTimeHint'), () => refresh())
-  // } else {
   refresh()
-  // }
 }
 
 // 选中键
@@ -150,6 +139,7 @@ function batchDelKey() {
     },
   )
 }
+// #endregion
 </script>
 
 <template>

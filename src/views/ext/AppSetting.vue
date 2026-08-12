@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// #region 导入
 import { getVersion } from '@tauri-apps/api/app'
 import { appConfigDir, appLogDir } from '@tauri-apps/api/path'
 import { openPath } from '@tauri-apps/plugin-opener'
@@ -11,7 +12,9 @@ import { meCheckUpdate } from '@/utils/app-update'
 import { resetWindowToDefault } from '@/utils/app-window'
 import { defaultSettings } from '@/utils/settings-defaults'
 import { meConfirm, meCommands, meErr, meOk } from '@/utils/util'
+// #endregion
 
+// #region 核心状态
 const { t } = useI18n()
 const settings = window.meTauri.settings
 const isAppStore = window.meTauri.isAppStore
@@ -19,7 +22,7 @@ const connUi = inject(connUiProvideKey)!
 
 const visible = ref(false)
 
-/** `window.queryLocalFonts()` 返回项中用到的字段（Local Font Access，与 FontData 子集一致） */
+// `window.queryLocalFonts()` 返回项中用到的字段（Local Font Access，与 FontData 子集一致）
 interface LocalFontFace {
   readonly style: string
   readonly fullName: string
@@ -91,7 +94,9 @@ async function checkUpdate() {
     loading.value = false
   }
 }
+// #endregion
 
+// #region 设置配置
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 const keyShowList = computed(() => [
   { value: 'tree', label: t('setting.keyShowTree') },
@@ -175,7 +180,7 @@ function toDefault(name: 'baseSetting' | 'moreSetting') {
   })
 }
 
-/** 键高度：失焦时纠正非法输入（方向键/步进由 el-input-number 处理） */
+// 键高度：失焦时纠正非法输入（方向键/步进由 el-input-number 处理）
 function normalizeKeyHeight() {
   const { min, max } = MORE_SETTING_LIMITS.keyHeight
   let n = Number(settings.keyHeight)
@@ -210,6 +215,7 @@ async function resetWindowSize() {
     meErr(e)
   }
 }
+// #endregion
 </script>
 
 <template>

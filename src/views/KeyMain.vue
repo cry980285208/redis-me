@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// #region 导入
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { useStorage } from '@vueuse/core'
 import { sortBy } from 'lodash'
@@ -66,6 +67,7 @@ import FavoriteFolderPanel from './key/FavoriteFolderPanel.vue'
 import KeyBatch from './key/KeyBatch.vue'
 import KeyMemory from './key/KeyMemory.vue'
 import KeyTree from './key/KeyTree.vue'
+// #endregion
 
 interface ImportExportProgressPayload {
   id: string
@@ -152,10 +154,10 @@ const favFolderPanelRef =
   useTemplateRef<InstanceType<typeof FavoriteFolderPanel>>('favFolderPanelRef')
 const favFlexRef = useTemplateRef<HTMLElement>('favFlexRef')
 
-/** 收藏模式跨区多选暂存（声明靠前供 initReset 使用） */
+// 收藏模式跨区多选暂存（声明靠前供 initReset 使用）
 const favFolderChecked = ref<RedisKey_Deserialize[]>([])
 const favKeysChecked = ref<RedisKey_Deserialize[]>([])
-/** 上区勾选的收藏目录根 path（批量取消收藏目录） */
+// 上区勾选的收藏目录根 path（批量取消收藏目录）
 const favFolderPathsChecked = ref<string[]>([])
 
 const currentFavorites = computed(() => {
@@ -165,7 +167,7 @@ const currentFavorites = computed(() => {
     .map(f => f.redisKey)
 })
 
-/** 当前库收藏目录 path（字典序） */
+// 当前库收藏目录 path（字典序）
 const currentFavoriteFolderPaths = computed(() => {
   if (!share.conn) return []
   return favoriteFolders.value
@@ -178,7 +180,7 @@ const hasAnyFavorite = computed(
   () => currentFavorites.value.length > 0 || currentFavoriteFolderPaths.value.length > 0,
 )
 
-/** 两侧都展开时可拖分割条；折叠态用 flex，避免 el-splitter 把固定高度放大导致一侧「消失」 */
+// 两侧都展开时可拖分割条；折叠态用 flex，避免 el-splitter 把固定高度放大导致一侧「消失」
 const favBothExpanded = computed(
   () => !favSplit.value.folderCollapsed && !favSplit.value.keysCollapsed,
 )
@@ -275,7 +277,7 @@ function selectHistory(item: string) {
   void scanKey(false, false)
 }
 
-/** 仅点击输入框本体时展开历史；suffix 内控件（含复选框）不触发 */
+// 仅点击输入框本体时展开历史；suffix 内控件（含复选框）不触发
 function handleKeywordClick(e: MouseEvent) {
   if ((e.target as HTMLElement).classList.contains('el-input__inner')) {
     showHistory.value = true
@@ -313,7 +315,7 @@ async function onRefreshKey() {
   await scanKey(false, false, true)
 }
 
-/** F5 刷新键列表（连接内全局生效，需阻止浏览器默认刷新） */
+// F5 刷新键列表（连接内全局生效，需阻止浏览器默认刷新）
 function onKeyListRefreshHotkey(e: KeyboardEvent) {
   if (e.key !== 'F5') return
   e.preventDefault()
@@ -326,11 +328,11 @@ const match = computed(() =>
   buildScanPattern(keyword.value, exact.value, loadFolder.value, keySep.value),
 )
 
-/** Redis SCAN COUNT / 自动续扫阈值 / 进度估算：均取 settings.keyScanCount */
+// Redis SCAN COUNT / 自动续扫阈值 / 进度估算：均取 settings.keyScanCount
 const SCAN_FETCH_COUNT = computed(() => meTauri.settings.keyScanCount as number)
 const scanBatchSize = SCAN_FETCH_COUNT
 
-/** 当前库键总量：单机取 INFO dbN；集群为单 master 键数 × master 节点数 */
+// 当前库键总量：单机取 INFO dbN；集群为单 master 键数 × master 节点数
 const dbSize = computed(() => {
   if (!share.conn) return 0
   const perDb = Number(share.dbSizeMap['db' + share.conn.db] ?? 0)
@@ -361,9 +363,7 @@ const filterPattern = computed(() =>
   buildLocalFilterPattern(keyword.value, exact.value && !loadFolder.value, match.value),
 )
 
-/**
- * 扫描工作缓冲：每轮 SCAN 结束后 push → 排序 → flush 到 keyList（边扫边看）。
- */
+// 扫描工作缓冲：每轮 SCAN 结束后 push → 排序 → flush 到 keyList（边扫边看）。
 let scanBuffer: RedisKey_Deserialize[] = []
 
 const keyList = shallowRef<RedisKey_Deserialize[]>([])
@@ -389,7 +389,7 @@ const filterKeyList = computed(() => {
   return source.filter(k => minimatch(k.key, filterPattern.value, MINIMATCH_SCAN_OPTS))
 })
 
-/** 若正在扫描则取消并等到 loading 结束（refresh / scanKey restart 共用） */
+// 若正在扫描则取消并等到 loading 结束（refresh / scanKey restart 共用）
 async function stopScanIfRunning(): Promise<void> {
   if (!loading.value) return
   scanCancelled.value = true
@@ -495,7 +495,7 @@ function deleteKey(redisKey: RedisKey_Deserialize): void {
   }
 }
 
-/** 重命名后：flush 键树（label/id 按新 key 重建），并同步收藏里的键身份 */
+// 重命名后：flush 键树（label/id 按新 key 重建），并同步收藏里的键身份
 function renameKey(payload: { oldKey: RedisKey_Deserialize; newKey: RedisKey_Deserialize }): void {
   const { oldKey, newKey } = payload
   // KeyRename 已原地改过列表里的对象；再写一遍以兼容非同一引用
@@ -1072,7 +1072,7 @@ function onFolderPanelContextFolder(command: string, folder: string): void {
   contextFolder(command, folder)
 }
 
-/** 下区右键：多选只进键区 */
+// 下区右键：多选只进键区
 function onKeysPanelContextKey(command: string, redisKey: RedisKey_Deserialize): void {
   if (command === 'checkedMode') {
     enterCheckedMode('keys')
@@ -1097,22 +1097,20 @@ function onKeysPanelContextFolder(command: string, folder: string): void {
   contextFolder(command, folder)
 }
 
-/**
- * 多选底栏批处理设计：
- * - 普通模式：导出 | TTL | 删除 | 收藏；对象=勾选叶子键
- * - 收藏上区（目录）：导出 | TTL | 删除 | 取消收藏
- * - 收藏下区（键）：仅取消收藏
- * - 导出/TTL/删除只处理「已 SCAN 上屏且已勾选」的叶子键（扫描多少处理多少），
- *   不因勾选目录根再去 path:* 二次 SCAN；仅勾选空目录根时这三项禁用
- * - 取消收藏：目录根 path + 勾选键都算（目录根不依赖是否已扫出子键）
- */
-/** 取消收藏等：键或目录根任一即可 */
+// 多选底栏批处理设计：
+// - 普通模式：导出 | TTL | 删除 | 收藏；对象=勾选叶子键
+// - 收藏上区（目录）：导出 | TTL | 删除 | 取消收藏
+// - 收藏下区（键）：仅取消收藏
+// - 导出/TTL/删除只处理「已 SCAN 上屏且已勾选」的叶子键（扫描多少处理多少），
+//   不因勾选目录根再去 path:* 二次 SCAN；仅勾选空目录根时这三项禁用
+// - 取消收藏：目录根 path + 勾选键都算（目录根不依赖是否已扫出子键）
+// 取消收藏等：键或目录根任一即可
 const checkedDisabled = computed(() => {
   if (share.exportImporting) return true
   if (favoriteMode.value) return favoriteCheckedCount.value === 0
   return checkedKeyList.value.length === 0
 })
-/** 导出/TTL/删除：必须有已上屏的勾选叶子键 */
+// 导出/TTL/删除：必须有已上屏的勾选叶子键
 const checkedKeysDisabled = computed(() => {
   if (share.exportImporting) return true
   return checkedKeyList.value.length === 0
@@ -1121,7 +1119,7 @@ const checkedBtnClass = computed(() => (checkedDisabled.value ? ['icon-disabled'
 const checkedKeysBtnClass = computed(() =>
   checkedKeysDisabled.value ? ['icon-disabled'] : ['icon-btn'],
 )
-/** 收藏上区多选：展示导出/TTL/删除；下区走仅取消收藏的分支 */
+// 收藏上区多选：展示导出/TTL/删除；下区走仅取消收藏的分支
 const favFolderBatchOps = computed(
   () => favoriteMode.value && favoriteCheckedZone.value === 'folders',
 )
@@ -1682,7 +1680,6 @@ function editDbName(db: number): void {
 
 <style scoped lang="scss">
 .key-main {
-  //border: 2px solid red;
   flex-grow: 1;
   position: relative;
 

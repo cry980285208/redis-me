@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// #region 导入
 import type { FormItemRule } from 'element-plus'
 import { cloneDeep } from 'lodash'
 import { computed, inject, ref, useTemplateRef } from 'vue'
@@ -7,6 +8,9 @@ import { useI18n } from 'vue-i18n'
 import { shareProvideKey } from '@/types/me-interface'
 import type { RedisKey_Deserialize } from '@/types/tauri-specta'
 import { meCommands, meOk, meTtlSeconds } from '@/utils/util'
+// #endregion
+
+// #region 核心状态
 
 type TtlForm = { ttl: number; ttlUnit: string; keyList: RedisKey_Deserialize[] }
 
@@ -28,6 +32,9 @@ const visible = ref(false)
 const loading = ref(false)
 const initForm: TtlForm = { ttl: -1, ttlUnit: 'second', keyList: [] }
 const form = ref<TtlForm>(cloneDeep(initForm))
+// #endregion
+
+// #region 计算属性
 const rules = computed(() => ({
   ttl: [
     { required: true, message: t('ttlSet.ttlRequired') },
@@ -70,8 +77,9 @@ function submit() {
     }
   })
 }
+// #endregion
 
-// 快速设置
+// #region 面板操作
 function quickSet(ttl: number, ttlUnit: string) {
   form.value.ttl = ttl
   form.value.ttlUnit = ttlUnit
@@ -81,6 +89,7 @@ const isBatch = computed(() => form.value.keyList.length > 0)
 const title = computed(() =>
   isBatch.value ? t('ttlSet.batchTitle') + ` (${form.value.keyList.length})` : t('ttlSet.title'),
 )
+// #endregion
 </script>
 
 <template>

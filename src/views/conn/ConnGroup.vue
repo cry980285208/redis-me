@@ -1,5 +1,6 @@
 <script setup lang="ts">
-/** 分组视图：文件夹行 + 连接行；SortableJS 支持文件夹排序、连接跨组/组内拖拽 */
+// #region 导入
+// 分组视图：文件夹行 + 连接行；SortableJS 支持文件夹排序、连接跨组/组内拖拽
 import { Sortable, type SortableEvent } from 'sortablejs'
 import { nextTick, onBeforeUnmount, onMounted, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -14,6 +15,9 @@ import {
   moveConnToGroup,
 } from '@/utils/conn'
 import { PREDEFINE_COLORS } from '@/utils/util'
+// #endregion
+
+// #region 核心状态
 
 const props = defineProps<{
   sections: ConnGroupSection[]
@@ -34,8 +38,11 @@ const { t } = useI18n()
 const listRef = useTemplateRef<HTMLElement>('listRef')
 
 const CONN_DRAG_GROUP = 'conn-groups'
+// #endregion
 
-/** 分组折叠状态持久化在 settings.connGroupExpanded，键为分组名（默认分组用 ''） */
+// #region 折叠与拖拽
+
+// 分组折叠状态持久化在 settings.connGroupExpanded，键为分组名（默认分组用 ''）
 function expandedStore(): Record<string, boolean> {
   return meTauri.settings.connGroupExpanded as Record<string, boolean>
 }
@@ -124,7 +131,7 @@ function groupKeyFromSortableTarget(el: HTMLElement | null): string | null {
   return listEl ? getListGroupKey(listEl as HTMLElement) : null
 }
 
-/** 跨组放置：写回数据后移除 Sortable 移动的 DOM，避免与 Vue 重渲染重复 */
+// 跨组放置：写回数据后移除 Sortable 移动的 DOM，避免与 Vue 重渲染重复
 function applyCrossGroupDrop(
   conn: UiConn,
   item: HTMLElement,
@@ -197,6 +204,7 @@ watch(
 
 onMounted(() => void nextTick(setupDrag))
 onBeforeUnmount(() => destroySortables())
+// #endregion
 </script>
 
 <template>

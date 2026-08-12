@@ -1,9 +1,12 @@
 <script setup lang="ts">
-/** 快捷键列表展示 */
+// #region 导入
+// 快捷键列表展示
 import { type as getOsType } from '@tauri-apps/plugin-os'
 
 import { displayShortcutKey, shortcutKbdClass, type ShortcutItem } from '@/utils/shortcut'
+// #endregion
 
+// #region 核心状态
 const props = withDefaults(
   defineProps<{
     items: ShortcutItem[]
@@ -15,7 +18,9 @@ const props = withDefaults(
   }>(),
   { clickable: false, width: 'min(400px, 100%)', compact: false },
 )
+// #endregion
 
+// #region 面板操作
 const emit = defineEmits<{ action: [id: string] }>()
 
 const isMacOS = getOsType() === 'macos'
@@ -23,6 +28,7 @@ const isMacOS = getOsType() === 'macos'
 function onRowClick(item: ShortcutItem): void {
   if (props.clickable && item.id) emit('action', item.id)
 }
+// #endregion
 </script>
 
 <template>

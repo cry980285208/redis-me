@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// #region 导入
 import { LanguageSupport, StreamLanguage, syntaxHighlighting } from '@codemirror/language'
 import { properties as propertiesMode } from '@codemirror/legacy-modes/mode/properties'
 import { Prec } from '@codemirror/state'
@@ -15,11 +16,13 @@ import {
   zhPhrases,
 } from '@/plugins/codemirror'
 import { isZh } from '@/utils/util'
+// #endregion
 
-/** Java .properties 流式解析：适配 Redis INFO/CONFIG（key:value、# 段注释、续行） */
+// #region 核心状态
+// Java .properties 流式解析：适配 Redis INFO/CONFIG（key:value、# 段注释、续行）
 const propertiesLang = new LanguageSupport(StreamLanguage.define(propertiesMode))
 
-/** 在编辑器聚焦时 F11：对 `.cm-editor` 调用 Fullscreen API（再按 F11 或 Esc 退出） */
+// 在编辑器聚焦时 F11：对 `.cm-editor` 调用 Fullscreen API（再按 F11 或 Esc 退出）
 function toggleCmEditorFullscreen(el: HTMLElement) {
   const doc = el.ownerDocument
   if (doc.fullscreenElement === el) {
@@ -29,12 +32,12 @@ function toggleCmEditorFullscreen(el: HTMLElement) {
   void el.requestFullscreen().catch(() => {})
 }
 
-/** 自动换行默认开启，Mod+B 切换（Mac ⌘ / Win·Linux Ctrl） */
+// 自动换行默认开启，Mod+B 切换（Mac ⌘ / Win·Linux Ctrl）
 const lineWrap = ref(true)
-/** 行号默认显示，Mod+N 切换 */
+// 行号默认显示，Mod+N 切换
 const showLineNumbers = ref(true)
 
-/** 编辑器字号（px），Mod+= / Mod+- 调节，Mod+0 恢复默认 */
+// 编辑器字号（px），Mod+= / Mod+- 调节，Mod+0 恢复默认
 const FONT_SIZE_DEFAULT = 15
 const FONT_SIZE_MIN = 10
 const FONT_SIZE_MAX = 28
@@ -44,7 +47,9 @@ const fontSizePx = ref(FONT_SIZE_DEFAULT)
 function bumpFontSize(delta: number) {
   fontSizePx.value = Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, fontSizePx.value + delta))
 }
+// #endregion
 
+// #region 计算属性
 const meCodePrecKeymap = Prec.highest(
   keymap.of([
     {
@@ -135,6 +140,7 @@ const extensions = computed(() => {
   }
   return list
 })
+// #endregion
 </script>
 
 <template>

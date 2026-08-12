@@ -44,7 +44,6 @@ function handleBugClick(): void {
   display: flex;
   flex-direction: column;
   align-items: center;
-  // justify-content: center;
 
   /* 与文档站 hero 一致的紫/青对角渐变光晕，blur 仅作用于底层，图标保持清晰 */
   .logo-wrap {

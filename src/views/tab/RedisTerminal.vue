@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// #region 导入
 import { computed, inject, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -13,15 +14,18 @@ import { meCopy, meCommands, isZh } from '@/utils/util'
 
 import CommandHelp from '../ext/CommandHelp.vue'
 import NodeList from '../ext/NodeList.vue'
+// #endregion
+
+// #region 核心状态
 
 const { t } = useI18n()
 // 共享数据
 const share = inject(shareProvideKey)!
 const canEdit = computed(() => !share.readonly)
-/** 只读列表头：英文 Read-only 较宽，中文只读可窄一些 */
+// 只读列表头：英文 Read-only 较宽，中文只读可窄一些
 const readonlyColWidth = computed(() => (isZh.value ? 88 : 120))
 
-/** 终端输出格式（对齐 redis-cli --raw / --json / --csv；每次进入默认 TTY） */
+// 终端输出格式（对齐 redis-cli --raw / --json / --csv；每次进入默认 TTY）
 const outputModeOptions: { value: CliOutputMode; labelKey: string }[] = [
   { value: 'standard', labelKey: 'redisTerminal.outputStandard' },
   { value: 'raw', labelKey: 'redisTerminal.outputRaw' },
@@ -92,6 +96,9 @@ watch(commandHelp, () => {
     showCode.value = true
   })
 })
+// #endregion
+
+// #region 面板操作
 
 // 命令帮助弹窗
 const commandHelpRef = ref<InstanceType<typeof CommandHelp>>()
@@ -105,6 +112,7 @@ function openKeyShortDialog() {
 }
 
 const keyShortcuts = computed(() => getTerminalShortcuts(t))
+// #endregion
 </script>
 
 <template>

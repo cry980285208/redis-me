@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// #region 导入
 import { invoke } from '@tauri-apps/api/core'
 import { inject, ref, watch } from 'vue'
 
@@ -26,12 +27,14 @@ import type {
 } from '@/types/tauri-specta'
 import { commands } from '@/types/tauri-specta'
 import { meJsonParse } from '@/utils/util'
+// #endregion
 
+// #region 默认参数构建
 type CommandKey = keyof typeof commands
 
 const share = inject(shareProvideKey)!
 
-/** 默认 JSON 里的连接 id：当前标签页连接，未连接时用占位 */
+// 默认 JSON 里的连接 id：当前标签页连接，未连接时用占位
 function connIdForDefaults(): string {
   return share.conn?.id ?? 'test'
 }
@@ -332,7 +335,9 @@ function defaultPayload(cmd: CommandKey): Record<string, unknown> {
 function formatDefault(cmd: CommandKey): string {
   return JSON.stringify(defaultPayload(cmd), null, 2)
 }
+// #endregion
 
+// #region 命令调用
 const selectedCommand = ref<CommandKey>('greet')
 const paramText = ref(formatDefault('greet'))
 const resultText = ref('')
@@ -374,6 +379,7 @@ function invokeCommand(): void {
       resultText.value = typeof error === 'string' ? error : JSON.stringify(error, null, 2)
     })
 }
+// #endregion
 </script>
 
 <template>
@@ -431,6 +437,5 @@ function invokeCommand(): void {
 .body {
   flex: 1;
   min-height: 0;
-  // border: 2px solid skyblue;
 }
 </style>

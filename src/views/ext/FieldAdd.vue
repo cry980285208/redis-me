@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// #region 导入
 import type { FormItemRule } from 'element-plus'
 import { cloneDeep } from 'lodash'
 import { computed, inject, ref, toRaw, useTemplateRef, watch } from 'vue'
@@ -11,7 +12,9 @@ import { KEY_TYPE_LIST, meType, toKeyTypeLabel, toRedisTypeName } from '@/utils/
 import { redisKeyWireBase64 } from '@/utils/redis-key'
 import { meCommands, meErr, meOk, meJsonParse, meJsonNormal, meTtlSeconds } from '@/utils/util'
 import { parseAttrsInput, parseVectorInput } from '@/utils/vector'
+// #endregion
 
+// #region 核心状态
 const { t } = useI18n()
 const emit = defineEmits(['success', 'closed'])
 defineExpose({ open })
@@ -51,16 +54,16 @@ const initForm = computed(() => ({
     { label: t('fieldAdd.append'), value: 'rpush' },
     { label: t('fieldAdd.prepend'), value: 'lpush' },
   ],
-  /** Array：arset 指定索引 / arinsert 游标插入（非末尾追加） */
+  // Array：arset 指定索引 / arinsert 游标插入（非末尾追加）
   arrayWriteMethod: 'arset',
   arrayWriteOptions: [
     { label: t('fieldAdd.arrayWriteArset'), value: 'arset' },
     { label: t('fieldAdd.arrayWriteArinsert'), value: 'arinsert' },
   ],
   fieldValueList: [{ fieldKey: '', fieldValue: '', fieldScore: 0, fieldTtl: -1 }],
-  /** Vector Set：编辑区文本；提交前 parseVectorInput → IPC vector:number[] */
+  // Vector Set：编辑区文本；提交前 parseVectorInput → IPC vector:number[]
   vectorText: '',
-  /** Vector Set：attrs JSON 文本；空=不带 SETATTR */
+  // Vector Set：attrs JSON 文本；空=不带 SETATTR
   attrsText: '',
   keyFmt: 'utf8' as ViewBytesFormat,
   valFmt: 'utf8' as ViewBytesFormat,
@@ -70,7 +73,7 @@ const form = ref(cloneDeep(toRaw(initForm.value)))
 const stringOrJsonType = computed(() => form.value.type === 'string' || form.value.type === 'json')
 const jsonType = computed(() => form.value.type === 'json')
 const vectorsetType = computed(() => form.value.type === 'vectorset')
-/** 键的 VDIM（打开时传入；非 vectorset 或未知时为 null） */
+// 键的 VDIM（打开时传入；非 vectorset 或未知时为 null）
 const expectedVectorDim = ref<number | null>(null)
 const arrayArsetMode = computed(
   () => form.value.type === 'array' && form.value.arrayWriteMethod !== 'arinsert',
@@ -135,7 +138,9 @@ const rules = computed(() => ({
     },
   ],
 }))
+// #endregion
 
+// #region 元素操作
 function deleteElement(index: number) {
   form.value.fieldValueList.splice(index, 1)
 }
@@ -144,7 +149,9 @@ function newElement(index: number) {
   const newValue = { fieldKey: '', fieldValue: '', fieldScore: 0, fieldTtl: -1 }
   form.value.fieldValueList.splice(index + 1, 0, newValue)
 }
+// #endregion
 
+// #region 提交处理
 // 提交数据
 const ttlUnit = ref('second')
 const formRef = useTemplateRef('formRef')
@@ -282,6 +289,7 @@ function handleKeyTypeChange() {
     form.value.valFmt = 'utf8'
   }
 }
+// #endregion
 </script>
 
 <template>

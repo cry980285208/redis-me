@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// #region 导入
 import { inject, nextTick, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -7,11 +8,12 @@ import { openNewWindow } from '@/utils/app-window'
 import { getConnIcon } from '@/utils/conn'
 import { bus, CONN_REFRESH, meCommands, meOk } from '@/utils/util'
 import AppAbout from '@/views/ext/AppAbout.vue'
-// import AppOfficial from '@/views/ext/AppOfficial.vue'
 import AppSetting from '@/views/ext/AppSetting.vue'
 import AppShortcut from '@/views/ext/AppShortcut.vue'
 import CommandLog from '@/views/ext/CommandLog.vue'
+// #endregion
 
+// #region 核心状态
 const share = inject(shareProvideKey)!
 const connUi = inject(connUiProvideKey)!
 const { t } = useI18n()
@@ -20,8 +22,6 @@ const dialog = reactive({ commandLog: false })
 const settingRef = ref<InstanceType<typeof AppSetting>>()
 const shortcutRef = ref<InstanceType<typeof AppShortcut>>()
 const aboutRef = ref<InstanceType<typeof AppAbout>>()
-// const officialRef = ref<InstanceType<typeof AppOfficial>>()
-
 function openSetting(): void {
   settingRef.value?.open()
 }
@@ -34,7 +34,9 @@ onMounted(() => {
   connUi.openSetting = openSetting
   connUi.openShortcuts = openShortcuts
 })
+// #endregion
 
+// #region 命令处理
 async function handleCommand(command: string): Promise<void> {
   if (command === 'refreshConn') {
     if (!share.conn) return
@@ -64,6 +66,7 @@ async function handleCommand(command: string): Promise<void> {
     meOk(`TODO: ${command}`)
   }
 }
+// #endregion
 </script>
 
 <template>

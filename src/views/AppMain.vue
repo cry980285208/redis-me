@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// #region 导入
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { check, type Update } from '@tauri-apps/plugin-updater'
 import {
@@ -56,6 +57,9 @@ import KeyMain from '@/views/KeyMain.vue'
 import TabConn from '@/views/TabConn.vue'
 
 import TabMain from './TabMain.vue'
+// #endregion
+
+// #region 核心状态
 
 const { t } = useI18n()
 
@@ -87,6 +91,9 @@ const share = reactive<AppMainShare>({
   },
 })
 provide(shareProvideKey, share)
+// #endregion
+
+// #region 连接切换
 
 // 当环境发生变化时，销毁整个key和tag组件（避免状态保留）
 onMounted(() => {
@@ -147,7 +154,9 @@ watch(
   },
   { deep: true },
 )
+// #endregion
 
+// #region 连接列表同步
 const tauriWindow = getCurrentWindow()
 const connListToString = computed(() => JSON.stringify(share.connList))
 watch(
@@ -169,8 +178,11 @@ onMounted(
       share.connList = (e.payload as ConnListWindowsSyncPayload).connList
     }),
 )
+// #endregion
 
-/** shallowReactive：`Update` 含私有字段，deep reactive 会解成普通对象导致与 `AppMainInject` 不兼容 */
+// #region 自动更新
+
+// shallowReactive：`Update` 含私有字段，deep reactive 会解成普通对象导致与 `AppMainInject` 不兼容
 const app = shallowReactive<AppMainInject>({
   update: null,
   downloading: false,
@@ -183,13 +195,15 @@ async function checkAutoUpdate(): Promise<void> {
   app.update = (await check().catch((): null => null)) as Update | null
 }
 onMounted(checkAutoUpdate)
+// #endregion
 
+// #region 面板操作
 function changeReadonly(): void {
   share.readonly = !share.readonly
   meOk(share.readonly ? t('appMain.readonlyTip') : t('appMain.writableTip'))
 }
 
-/** 连接相关弹窗：ConnSave/Import 挂 AppMain；设置弹窗在 KeyHeader（始终挂载） */
+// 连接相关弹窗：ConnSave/Import 挂 AppMain；设置弹窗在 KeyHeader（始终挂载）
 const connSaveRef = useTemplateRef<InstanceType<typeof ConnSave>>('connSave')
 const connImportRef = useTemplateRef<InstanceType<typeof ConnImport>>('connImport')
 const dialog = reactive({ conn: false, import: false })
@@ -256,6 +270,7 @@ function onConnImported(impConnList: UiConn[]): void {
 }
 
 provide(connUiProvideKey, connUi)
+// #endregion
 </script>
 
 <template>
@@ -314,12 +329,10 @@ provide(connUiProvideKey, connUi)
 <style scoped lang="scss">
 .redis-main {
   height: calc(100% - 30px);
-  //border: 2px solid blue;
   padding: 0px 5px 5px 5px;
   flex: 1;
 
   .redis-key {
-    //border: 2px solid red;
     height: 100%;
     display: flex;
     flex-direction: column;

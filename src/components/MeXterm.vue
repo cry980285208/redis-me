@@ -1,10 +1,14 @@
 <script setup lang="ts">
+// #region 导入
 import { computed, onMounted, ref, useTemplateRef } from 'vue'
 import type { FailedFunc, Message, SuccessFunc } from 'vue-web-terminal'
 
 import { handleInputTipsSearch } from '@/plugins/ternimal'
 import type { MeXtermCommandItem } from '@/types/me-interface'
 import { isDark } from '@/utils/util'
+// #endregion
+
+// #region 核心状态
 
 type ExecCommandFn = (command: string) => string | Promise<string>
 
@@ -22,6 +26,9 @@ const props = withDefaults(
     commandHelp: () => [],
   },
 )
+// #endregion
+
+// #region 面板操作
 
 type TerminalExpose = {
   pushMessage: (message: string | Message) => void
@@ -31,7 +38,7 @@ type TerminalExpose = {
 }
 
 const terminalRef = useTemplateRef<TerminalExpose | null>('terminal')
-/** 自动换行默认开启，Mod+B 切换（与 CodeMirror 一致） */
+// 自动换行默认开启，Mod+B 切换（与 CodeMirror 一致）
 const lineWrap = ref(true)
 
 onMounted(() => {
@@ -51,7 +58,9 @@ async function execCmd(
 }
 
 const theme = computed(() => (isDark.value ? 'dark' : 'light'))
+// #endregion
 
+// #region 键盘事件
 function onKeydown(e: KeyboardEvent): void {
   const term = terminalRef.value
   if (!term) return
@@ -80,6 +89,7 @@ function onKeydown(e: KeyboardEvent): void {
       break
   }
 }
+// #endregion
 </script>
 
 <template>

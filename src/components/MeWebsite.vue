@@ -1,10 +1,13 @@
 <script setup lang="ts">
+// #region 导入
 // 跳转到官网: Redis中英文/Valkey中英文；可选 command 拼具体命令文档路径
 import { openUrl } from '@tauri-apps/plugin-opener'
 
 import { isZh } from '@/utils/util'
+// #endregion
 
-/** 与 `<me-website to="…">`、DOC_PATHS 键一致（供外部 props） */
+// #region 核心状态
+// 与 `<me-website to="…">`、DOC_PATHS 键一致（供外部 props）
 const DOC_PATHS = {
   info: { redis: '/docs/latest/commands/info/', valkey: '/commands/info/' },
   config: {
@@ -27,9 +30,9 @@ type DocTopic = keyof typeof DOC_PATHS
 const props = withDefaults(
   defineProps<{
     to: DocTopic
-    /** 命令名（如 ACL CAT），拼到 to 对应路径后：acl-cat/ */
+    // 命令名（如 ACL CAT），拼到 to 对应路径后：acl-cat/
     command?: string
-    /** 有值时用 el-link 展示文案，否则用外链图标 */
+    // 有值时用 el-link 展示文案，否则用外链图标
     label?: string
     placement?: string
     marginLeft?: string
@@ -37,7 +40,7 @@ const props = withDefaults(
   { placement: 'right', marginLeft: '10px' },
 )
 
-/** 下拉项 command，与模板中 el-dropdown-item 一致 */
+// 下拉项 command，与模板中 el-dropdown-item 一致
 const WEB_ORIGIN = {
   redis: 'https://redis.io',
   valkey: 'https://valkey.io',
@@ -48,8 +51,10 @@ const WEB_ORIGIN = {
 type SiteCmd = keyof typeof WEB_ORIGIN
 
 type Vendor = keyof (typeof DOC_PATHS)['info']
+// #endregion
 
-/** 官网路径统一：空格转连字符、小写，如 OBJECT ENCODING → object-encoding */
+// #region 面板操作
+// 官网路径统一：空格转连字符、小写，如 OBJECT ENCODING → object-encoding
 function commandSlug(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, '-')
 }
@@ -62,6 +67,7 @@ function handleCommand(cmd: string): void {
   if (props.command) path += `${commandSlug(props.command)}/`
   void openUrl(base + path)
 }
+// #endregion
 </script>
 
 <template>

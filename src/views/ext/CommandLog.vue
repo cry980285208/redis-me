@@ -1,5 +1,6 @@
 <script setup lang="ts">
-/** RedisME 客户端命令执行日志；非模态弹窗，标题栏可拖动 */
+// #region 导入
+// RedisME 客户端命令执行日志；非模态弹窗，标题栏可拖动
 import { listen } from '@tauri-apps/api/event'
 import { computed, inject, nextTick, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -7,6 +8,9 @@ import { useI18n } from 'vue-i18n'
 import { shareProvideKey } from '@/types/me-interface'
 import type { CommandLogEntry } from '@/types/tauri-specta'
 import { meCommands, meConfirm, meOk } from '@/utils/util'
+// #endregion
+
+// #region 核心状态
 
 interface CommandLogEvent {
   id: string
@@ -66,8 +70,10 @@ function markNewEntry(entry: CommandLogEntry) {
   }
   highlightIds.value = ids
 }
+// #endregion
 
-// 停止监听命令日志事件
+// #region 日志监听
+
 function stopListening() {
   unlisten?.()
   unlisten = null
@@ -85,6 +91,9 @@ async function startListening() {
     markNewEntry(entry)
   })
 }
+// #endregion
+
+// #region 面板操作
 
 // 获取弹框DOM元素
 function getDialogEl(): HTMLElement | null {
@@ -339,6 +348,7 @@ function clearLogs() {
     logs.value = []
   })
 }
+// #endregion
 </script>
 
 <template>
