@@ -1,25 +1,29 @@
 <script setup lang="ts">
-/** ACL DRYRUN 模拟测试对话框 */
+// #region 导入
+// ACL DRYRUN 模拟测试对话框
 import { computed, inject, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { shareProvideKey } from '@/types/me-interface'
 import { meCommands } from '@/utils/util'
+// #endregion
 
+// #region 核心状态
 const visible = defineModel<boolean>({ default: false })
-
 const props = defineProps<{ username: string }>()
-
 const { t } = useI18n()
 const share = inject(shareProvideKey)!
-
 const loading = ref(false)
 const command = ref('')
 const result = ref('')
+// #endregion
 
+// #region 计算属性
 const allowed = computed(() => result.value.trim() === 'OK')
 const canExecute = computed(() => !!command.value.trim())
+// #endregion
 
+// #region 面板操作
 watch(visible, val => {
   if (val) {
     command.value = ''
@@ -36,6 +40,7 @@ async function execute() {
     loading.value = false
   }
 }
+// #endregion
 </script>
 
 <template>

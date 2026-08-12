@@ -1,5 +1,6 @@
 <script setup lang="ts">
-/** ACL 用户管理主界面：列表展示 + 编辑态 form 由本组件持有，对话框 UI 在 UserAdd.vue */
+// #region 导入
+// ACL 用户管理主界面：列表展示 + 编辑态 form 由本组件持有，对话框 UI 在 UserAdd.vue
 import { computed, inject, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -20,29 +21,30 @@ import AclDryrun from './AclDryrun.vue'
 import AclLog from './AclLog.vue'
 import AclResetPassword from './AclResetPassword.vue'
 import UserAdd from './UserAdd.vue'
+// #endregion
 
+// #region 核心状态
 const { t } = useI18n()
 const share = inject(shareProvideKey)!
-const canEdit = computed(() => !share.readonly)
-const dryrunSupported = computed(() => share.capabilities.aclDryrunSupported)
-
 const keyword = ref('')
 const loading = ref(false)
 const users = ref<AclUserDetail[]>([])
 const whoami = ref('')
-
 const dryrunVisible = ref(false)
 const dryrunUsername = ref('')
 const logVisible = ref(false)
 const resetPasswordVisible = ref(false)
 const resetPasswordUser = ref<AclUserDetail | null>(null)
-
-/** 编辑对话框：form 与 UserAdd 共享同一 reactive 对象 */
+// 编辑对话框：form 与 UserAdd 共享同一 reactive 对象
 const editVisible = ref(false)
 const editLoading = ref(false)
 const editMode = ref<'add' | 'edit' | 'view'>('add')
 const form = reactive<AclEditModel>(createDefaultAclModel())
+// #endregion
 
+// #region 计算属性
+const canEdit = computed(() => !share.readonly)
+const dryrunSupported = computed(() => share.capabilities.aclDryrunSupported)
 const filterUsers = computed(() => {
   const key = keyword.value.trim().toLowerCase()
   const list = key
@@ -64,10 +66,8 @@ const filterUsers = computed(() => {
     return 0
   })
 })
-
 const previewCommand = computed(() => buildAclPreviewCommand(form))
-
-/** 危险命令黑名单 ↔ form.commandRules 中的 -@dangerous，由 UserAdd 双向绑定 */
+// 危险命令黑名单 ↔ form.commandRules 中的 -@dangerous，由 UserAdd 双向绑定
 const dangerousBlocked = computed({
   get: () => form.commandRules.includes('-@dangerous'),
   set: (blocked: boolean) => {
@@ -76,12 +76,14 @@ const dangerousBlocked = computed({
     form.commandRules = next
   },
 })
+// #endregion
 
+// #region 面板操作
 function resetForm() {
   Object.assign(form, createDefaultAclModel())
 }
 
-/** ACL LIST 一次拉取并解析全部用户；另配合 ACL WHOAMI */
+// ACL LIST 一次拉取并解析全部用户；另配合 ACL WHOAMI
 async function refresh() {
   loading.value = true
   try {
@@ -126,7 +128,7 @@ async function genPassword() {
   meOk(t('redisACL.passwordGenerated'))
 }
 
-/** 校验 → buildAclSavePayload（密码 SHA256）→ aclSetuser；键/频道空列表在后端会放宽权限，故前端拦截 */
+// 校验 → buildAclSavePayload（密码 SHA256）→ aclSetuser；键/频道空列表在后端会放宽权限，故前端拦截
 async function saveUser() {
   if (editMode.value === 'view') return
   const username = form.username.trim()
@@ -184,7 +186,7 @@ function deleteUser(row: AclUserDetail) {
   })
 }
 
-/** 复制用户：预填规则/模式，用户名加后缀，需重新设密码（同连接管理复制） */
+// 复制用户：预填规则/模式，用户名加后缀，需重新设密码（同连接管理复制）
 function openCopy(row: AclUserDetail) {
   editMode.value = 'add'
   Object.assign(form, createAclModelFromDetail(row), {
@@ -287,6 +289,7 @@ function handleRowCommand(row: AclUserDetail, command: string) {
 }
 
 void refresh()
+// #endregion
 </script>
 
 <template>

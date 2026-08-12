@@ -1,5 +1,6 @@
 <script setup lang="ts">
-/** ACL 新增/编辑对话框：只负责表单 UI，form 数据与保存逻辑在 RedisACL.vue */
+// #region 导入
+// ACL 新增/编辑对话框：只负责表单 UI，form 数据与保存逻辑在 RedisACL.vue
 import { Sortable, type SortableEvent } from 'sortablejs'
 import { computed, inject, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -17,29 +18,42 @@ import {
   type AclPreset,
 } from '@/utils/acl'
 import { meCommands, meCopy, meWarn } from '@/utils/util'
+// #endregion
 
+// #region 核心状态
 const { t } = useI18n()
 const share = inject(shareProvideKey)!
-
 const visible = defineModel<boolean>({ default: false })
 const dangerousBlocked = defineModel<boolean>('dangerousBlocked', { required: true })
-
 const props = defineProps<{
   mode: 'add' | 'edit' | 'view'
   loading: boolean
   form: AclEditModel
   previewCommand: string
 }>()
-
 const emit = defineEmits<{ (e: 'save'): void; (e: 'generatePassword'): void }>()
-
-/** 规则/模式输入框草稿，未点「添加」前不入 form；打开对话框时清空 */
+// 规则/模式输入框草稿，未点「添加」前不入 form；打开对话框时清空
 const ruleInput = ref('')
 const keyPatternInput = ref('')
 const channelPatternInput = ref('')
 const selectorInput = ref('')
+// ACL 命令类别列表
+const aclCategories = ref<string[]>([])
+const categoriesLoading = ref(false)
+const selectedCategory = ref('')
+// 类别命令 popover 仅对话框打开时展示（popover 挂 body，关窗须显式隐藏）
+const categoryCommandsLoading = ref(false)
+// 当前选中类别的命令详情
+const categoryCommands = ref<string[]>([])
+// 命令规则 / 键模式 / 频道模式标签区拖拽排序，顺序影响预览与 ACL SETUSER
+const commandTagsRef = useTemplateRef<HTMLElement>('commandTagsRef')
+const keyPatternTagsRef = useTemplateRef<HTMLElement>('keyPatternTagsRef')
+const channelPatternTagsRef = useTemplateRef<HTMLElement>('channelPatternTagsRef')
+let tagSortables: Sortable[] = []
+// #endregion
 
-/** 7.2+ 可编辑 selector；已有 selector 的用户在旧版本上也展示；查看且无配置时不占空行 */
+// #region 计算属性
+// 7.2+ 可编辑 selector；已有 selector 的用户在旧版本上也展示；查看且无配置时不占空行
 const selectorUiVisible = computed(() => {
   if (props.form.selectors.length > 0) return true
   if (props.mode === 'view') return false
@@ -51,42 +65,28 @@ const dialogTitle = computed(() => {
   if (props.mode === 'view') return t('redisACL.viewUser')
   return t('redisACL.editUser')
 })
-
-/** ACL 命令类别列表 */
-const aclCategories = ref<string[]>([])
-const categoriesLoading = ref(false)
-const selectedCategory = ref('')
-
-/** 类别命令 popover 仅对话框打开时展示（popover 挂 body，关窗须显式隐藏） */
 const categoryPopoverVisible = computed(() => visible.value && !!selectedCategory.value)
-const categoryCommandsLoading = ref(false)
+// #endregion
 
-/** 当前选中类别的命令详情 */
-const categoryCommands = ref<string[]>([])
-
-/** 加载 ACL 命令类别 */
+// #region 命令类别
 async function loadAclCategories() {
   if (!share.conn?.id || aclCategories.value.length > 0) return
-
   categoriesLoading.value = true
   try {
     const categories = await meCommands.aclCat(share.conn.id, null)
     aclCategories.value = categories.sort()
   } catch (error) {
     console.error('Failed to load ACL categories:', error)
-    // 静默失败，不影响用户体验
   } finally {
     categoriesLoading.value = false
   }
 }
 
-/** 加载选中类别的命令列表 */
 async function loadCategoryCommands(category: string) {
   if (!category || !share.conn?.id) {
     categoryCommands.value = []
     return
   }
-
   categoryCommandsLoading.value = true
   try {
     const commands = await meCommands.aclCat(share.conn.id, category)
@@ -99,7 +99,7 @@ async function loadCategoryCommands(category: string) {
   }
 }
 
-/** 类别选择变化时加载命令详情 */
+// 类别选择变化时加载命令详情
 watch(selectedCategory, async newCategory => {
   if (newCategory) {
     await loadCategoryCommands(newCategory)
@@ -108,21 +108,17 @@ watch(selectedCategory, async newCategory => {
   }
 })
 
-/** 复制类别命令列表 */
 function copyCategoryCommands() {
   if (categoryCommands.value.length === 0) return
   const text = categoryCommands.value.join(', ')
   meCopy(text, t('redisACL.commandsCopied'))
 }
 
-/** 添加选中的类别规则 */
 function addCategoryRule() {
   if (!selectedCategory.value) return
-
   const rule = `+@${selectedCategory.value}`
   pushUnique(props.form.commandRules, rule)
   selectedCategory.value = ''
-  // 清空命令详情，避免显示旧数据
   categoryCommands.value = []
 }
 
@@ -131,8 +127,10 @@ function pushUnique(target: string[], value: string) {
   if (!text) return
   if (!target.includes(text)) target.push(text)
 }
+// #endregion
 
-/** 快捷模板：覆盖 commandRules；只读项按当前连接是否集群取默认列表 */
+// #region 表单操作
+// 快捷模板：覆盖 commandRules；只读项按当前连接是否集群取默认列表
 function applyPreset(preset: AclPreset) {
   props.form.commandRules =
     preset === 'readonly'
@@ -170,14 +168,14 @@ async function copyPreviewCommand() {
   meCopy(await buildAclExecutableCommand(props.form))
 }
 
-/** 键模式存不含 ~ 前缀的纯 pattern，展示/保存时由 acl.ts 统一加 ~ */
+// 键模式存不含 ~ 前缀的纯 pattern，展示/保存时由 acl.ts 统一加 ~
 function addKeyPattern() {
   const v = keyPatternInput.value.trim().replace(/^~/, '')
   pushUnique(props.form.keyPatterns, v)
   keyPatternInput.value = ''
 }
 
-/** 频道模式同理，不含 & 前缀 */
+// 频道模式同理，不含 & 前缀
 function addChannelPattern() {
   const v = channelPatternInput.value.trim().replace(/^&/, '')
   pushUnique(props.form.channelPatterns, v)
@@ -204,7 +202,7 @@ function resetDraftInputs() {
   categoryCommands.value = []
 }
 
-/** 至少保留一条，避免保存时后端 empty → allkeys / resetchannels */
+// 至少保留一条，避免保存时后端 empty → allkeys / resetchannels
 function removeKeyPattern(item: string) {
   if (props.form.keyPatterns.length <= 1) {
     meWarn(t('redisACL.keyPatternsRequired'))
@@ -220,14 +218,9 @@ function removeChannelPattern(item: string) {
   }
   props.form.channelPatterns = props.form.channelPatterns.filter(v => v !== item)
 }
+// #endregion
 
-/** 命令规则 / 键模式 / 频道模式标签区拖拽排序，顺序影响预览与 ACL SETUSER */
-const commandTagsRef = useTemplateRef<HTMLElement>('commandTagsRef')
-const keyPatternTagsRef = useTemplateRef<HTMLElement>('keyPatternTagsRef')
-const channelPatternTagsRef = useTemplateRef<HTMLElement>('channelPatternTagsRef')
-
-let tagSortables: Sortable[] = []
-
+// #region 拖拽排序
 function destroyTagSortables() {
   for (const s of tagSortables) s.destroy()
   tagSortables = []
@@ -276,6 +269,7 @@ watch(visible, open => {
   void loadAclCategories()
   void setupTagSortables()
 })
+// #endregion
 </script>
 
 <template>

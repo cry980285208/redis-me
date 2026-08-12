@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// #region 导入
 import { computed, inject, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -7,41 +8,41 @@ import { shareProvideKey } from '@/types/me-interface'
 import type { RedisClientInfo, RedisCommand } from '@/types/tauri-specta'
 import { meConfirm, meHumanSeconds, meCommands, meOk } from '@/utils/util'
 import NodeList from '@/views/ext/NodeList.vue'
-
-/** `client_list` 实际载荷字段齐全；`Required` 与 specta 在 `#[serde(default)]` 下生成的可选字段对齐 */
+// `client_list` 实际载荷字段齐全；`Required` 与 specta 在 `#[serde(default)]` 下生成的可选字段对齐
 type RedisClientListRow = Required<RedisClientInfo>
+// #endregion
 
+// #region 核心状态
 const { t } = useI18n()
-// 共享数据
 const share = inject(shareProvideKey)!
-const canEdit = computed(() => !share.readonly)
 const props = defineProps({ initNode: { type: String, default: '' } })
-
 const node = ref(props.initNode)
-watch(
-  () => props.initNode,
-  v => {
-    node.value = v
-  },
-)
 const clientType = ref('')
 const keyword = ref('')
 const loading = ref(false)
 const dataList = ref<RedisClientListRow[]>([])
 const sortProperty = ref('id')
 const sortOrder = ref('ascending')
+// #endregion
 
+// #region 计算属性
+const canEdit = computed(() => !share.readonly)
 const tipMap = computed(() => tips.value as Record<string, string | undefined>)
-
 const filterDataList = computed(() => {
   const key = keyword.value.toLowerCase()
-  const arr = dataList.value.filter(
-    row =>
-      !key || row.addr.toLowerCase().indexOf(key) > -1 || row.name.toLowerCase().indexOf(key) > -1,
+  return dataList.value.filter(
+    row => !key || row.addr.toLowerCase().includes(key) || row.name.toLowerCase().includes(key),
   )
-
-  return arr
 })
+// #endregion
+
+// #region 面板操作
+watch(
+  () => props.initNode,
+  v => {
+    node.value = v
+  },
+)
 
 async function refresh() {
   loading.value = true
@@ -119,6 +120,7 @@ function propWidth(item: string) {
   if (item.length == 5) return 100
   return 130
 }
+// #endregion
 </script>
 
 <template>
