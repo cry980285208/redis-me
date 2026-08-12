@@ -1,13 +1,15 @@
 <script setup lang="ts">
-/** 键值页编辑器快捷键说明弹框 */
+// #region 导入
+// 键值页编辑器快捷键说明弹框
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import MeShortcut from '@/components/MeShortcut.vue'
 import { getValueShortcuts } from '@/utils/shortcut'
+// #endregion
 
+// #region 核心状态
 const { t } = useI18n()
-
 const visible = ref(false)
 const shortcuts = computed(() => getValueShortcuts(t))
 
@@ -16,6 +18,7 @@ function open() {
 }
 
 defineExpose({ open })
+// #endregion
 </script>
 
 <template>

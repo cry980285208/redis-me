@@ -1,5 +1,6 @@
 <script setup lang="ts">
-/** Stream 消费者组弹框：XINFO GROUPS + 展开 XINFO CONSUMERS */
+// #region 导入
+// Stream 消费者组弹框：XINFO GROUPS + 展开 XINFO CONSUMERS
 import type { TableInstance } from 'element-plus'
 import { inject, ref, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -7,17 +8,20 @@ import { useI18n } from 'vue-i18n'
 import { shareProvideKey } from '@/types/me-interface'
 import type { XInfoConsumer, XInfoGroup } from '@/types/tauri-specta'
 import { meCommands } from '@/utils/util'
+// #endregion
 
+// #region 核心状态
 const { t } = useI18n()
 const share = inject(shareProvideKey)!
-
 const visible = ref(false)
 const loading = ref(false)
 const dataList = ref<XInfoGroup[]>([])
 const table = useTemplateRef<TableInstance>('table')
 const consumerData = ref<XInfoConsumer[]>([])
 const consumerLoading = ref(false)
+// #endregion
 
+// #region 面板操作
 async function open() {
   const conn = share.conn
   const redisKey = share.redisKey
@@ -51,6 +55,7 @@ async function handleExpand(row: XInfoGroup, expandedRows: XInfoGroup[]) {
 }
 
 defineExpose({ open })
+// #endregion
 </script>
 
 <template>

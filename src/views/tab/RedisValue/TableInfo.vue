@@ -1,15 +1,15 @@
 <script setup lang="ts">
-/**
- * 键元信息弹框：ARINFO / VINFO / OBJECT 共用。
- * - arinfo|vinfo：标题用原命令名，两列 field/value
- * - object：OBJECT 自省，三列 + tip / 不可用提示
- */
+// #region 导入
+// 键元信息弹框：ARINFO / VINFO / OBJECT 共用。
+// - arinfo|vinfo：标题用原命令名，两列 field/value
+// - object：OBJECT 自省，三列 + tip / 不可用提示
 import { computed, inject, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { shareProvideKey } from '@/types/me-interface'
 import type { RedisArInfoItem, RedisObjectInfo } from '@/types/tauri-specta'
 import { meCommands, meHumanSeconds } from '@/utils/util'
+// #endregion
 
 export type TableInfoKind = 'arinfo' | 'vinfo' | 'object'
 
@@ -21,17 +21,18 @@ type ObjectRow = {
   unavailable?: boolean
 }
 
+// #region 核心状态
 const { t } = useI18n()
 const share = inject(shareProvideKey)!
-
 const visible = ref(false)
 const loading = ref(false)
 const kind = ref<TableInfoKind>('object')
 const kvRows = ref<RedisArInfoItem[]>([])
 const objectInfo = ref<RedisObjectInfo | null>(null)
+// #endregion
 
+// #region 计算属性
 const isKv = computed(() => kind.value === 'arinfo' || kind.value === 'vinfo')
-
 const title = computed(() => {
   if (kind.value === 'arinfo') return 'ARINFO'
   if (kind.value === 'vinfo') return 'VINFO'
@@ -86,7 +87,9 @@ const objectRows = computed<ObjectRow[]>(() => {
     },
   ]
 })
+// #endregion
 
+// #region 面板操作
 async function open(next: TableInfoKind) {
   const conn = share.conn
   const rk = share.redisKey
@@ -110,6 +113,7 @@ async function open(next: TableInfoKind) {
 }
 
 defineExpose({ open })
+// #endregion
 </script>
 
 <template>

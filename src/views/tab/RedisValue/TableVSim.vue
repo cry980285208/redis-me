@@ -1,8 +1,7 @@
 <script setup lang="ts">
-/**
- * Vector Set VSIM 弹框：ELE / VALUES 相似度查询。
- * WITHSCORES 固定；可选 WITHATTRIBS / FILTER / EPSILON / EF。
- */
+// #region 导入
+// Vector Set VSIM 弹框：ELE / VALUES 相似度查询。
+// WITHSCORES 固定；可选 WITHATTRIBS / FILTER / EPSILON / EF。
 import { computed, inject, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -16,13 +15,14 @@ import {
 } from '@/utils/format'
 import { meCommands, meErr } from '@/utils/util'
 import { parseVectorInput } from '@/utils/vector'
+// #endregion
 
+// #region 核心状态
 const { t } = useI18n()
 const share = inject(shareProvideKey)!
-
 const visible = ref(false)
 const loading = ref(false)
-/** ele | values */
+// ele | values
 const mode = ref<'ele' | 'values'>('ele')
 const elementText = ref('')
 const vectorText = ref('')
@@ -33,9 +33,10 @@ const epsilonText = ref('')
 const efText = ref('')
 const itemList = ref<RedisVSimItem[]>([])
 const keyword = ref('')
+// #endregion
 
+// #region 计算属性
 const dialogTitle = computed(() => t('redisValue.vSimTitle'))
-
 const filteredList = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
   if (!kw) return itemList.value
@@ -46,9 +47,11 @@ const filteredList = computed(() => {
       (item.attrs || '').toLowerCase().includes(kw),
   )
 })
+// #endregion
 
 let currentViewFmt: ViewBytesFormat = 'utf8'
 
+// #region 面板操作
 async function open(viewFmt: ViewBytesFormat = 'utf8', seed?: { elementDisplay?: string }) {
   const conn = share.conn
   const redisKey = share.redisKey
@@ -151,6 +154,7 @@ async function query() {
 }
 
 defineExpose({ open })
+// #endregion
 </script>
 
 <template>

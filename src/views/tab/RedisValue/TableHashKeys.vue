@@ -1,5 +1,6 @@
 <script setup lang="ts">
-/** Hash 全量字段名/值（HKEYS/HVALS）弹框：me-table 前端分页，避免万级卡顿 */
+// #region 导入
+// Hash 全量字段名/值（HKEYS/HVALS）弹框：me-table 前端分页，避免万级卡顿
 import { computed, inject, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -7,20 +8,22 @@ import { shareProvideKey } from '@/types/me-interface'
 import type { BytesFormat } from '@/types/tauri-specta'
 import { meFormatViewValue, type ViewBytesFormat } from '@/utils/format'
 import { meCommands } from '@/utils/util'
+// #endregion
 
 type HashListMode = 'keys' | 'values'
 
+// #region 核心状态
 const { t } = useI18n()
 const share = inject(shareProvideKey)!
-
 const visible = ref(false)
 const loading = ref(false)
 const mode = ref<HashListMode>('keys')
 const itemList = ref<string[]>([])
 const keyword = ref('')
+// #endregion
 
+// #region 计算属性
 const columnProp = computed(() => (mode.value === 'keys' ? 'key' : 'value'))
-
 const displayList = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
   const rows = kw ? itemList.value.filter(s => s.toLowerCase().includes(kw)) : itemList.value
@@ -41,7 +44,9 @@ const emptyText = computed(() =>
 )
 
 const exportName = computed(() => (mode.value === 'keys' ? 'hash-keys' : 'hash-values'))
+// #endregion
 
+// #region 面板操作
 async function open(
   valFmt: BytesFormat | null,
   listMode: HashListMode = 'keys',
@@ -69,6 +74,7 @@ async function open(
 }
 
 defineExpose({ open })
+// #endregion
 </script>
 
 <template>

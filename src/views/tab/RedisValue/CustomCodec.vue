@@ -1,5 +1,6 @@
 <script setup lang="ts">
-/** 自定义编解码 CRUD：由 RedisValue 编解码下拉头部编辑入口打开；列表顺序即下拉展示顺序 */
+// #region 导入
+// 自定义编解码 CRUD：由 RedisValue 编解码下拉头部编辑入口打开；列表顺序即下拉展示顺序
 import { writeTextFile } from '@tauri-apps/plugin-fs'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import type { TableInstance } from 'element-plus'
@@ -16,22 +17,23 @@ import {
   type CustomCodec,
 } from '@/utils/format'
 import { meConfirm, meErr, meErrHtml, meOk } from '@/utils/util'
+// #endregion
 
+// #region 核心状态
 const visible = defineModel<boolean>({ default: false })
-
 const { t } = useI18n()
-
 const tableRef = useTemplateRef<TableInstance>('table')
 const list = computed(() => window.meTauri.settings.customCodecs ?? [])
+// #endregion
 
+// #region 拖拽排序
 let sortable: Sortable | null = null
-
 function destroySortable() {
   sortable?.destroy()
   sortable = null
 }
 
-/** 绑定 el-table tbody；顺序写入 settings.customCodecs */
+// 绑定 el-table tbody；顺序写入 settings.customCodecs
 function setupSortable() {
   destroySortable()
   const tbody = tableRef.value?.$el.querySelector(
@@ -65,7 +67,9 @@ watch(
 )
 
 onBeforeUnmount(() => destroySortable())
+// #endregion
 
+// #region 表单编辑
 const formVisible = ref(false)
 const editIndex = ref(-1)
 const testingDecode = ref(false)
@@ -98,7 +102,7 @@ function openEdit(row: CustomCodec, index: number) {
   formVisible.value = true
 }
 
-/** 从模板导出脚本到本机，再预填添加表单 */
+// 从模板导出脚本到本机，再预填添加表单
 async function applyTemplate(id: string) {
   const tpl = findCodecTemplate(id)
   if (!tpl) return
@@ -143,19 +147,22 @@ function saveForm() {
   }
   formVisible.value = false
 }
+// #endregion
 
+// #region 测试
 async function runTest(mode: 'decode' | 'encode') {
   const codec = readForm()
   if (!codec) {
     meErr(t('customCodec.emptyCommand'))
     return
   }
-  const sample = (mode === 'decode' ? testDecodeSample : testEncodeSample).value.trim()
-  const loading = mode === 'decode' ? testingDecode : testingEncode
+  const isDecode = mode === 'decode'
+  const sample = (isDecode ? testDecodeSample : testEncodeSample).value.trim()
+  const loading = isDecode ? testingDecode : testingEncode
+  const preview = buildCodecCommand(codec, mode, sample)
   loading.value = true
   try {
     const out = await testCodec(codec, mode, sample)
-    const preview = buildCodecCommand(codec, mode, sample)
     meOk(
       t('customCodec.testResult', { command: preview, input: sample, output: out }),
       true,
@@ -163,7 +170,6 @@ async function runTest(mode: 'decode' | 'encode') {
       { dangerouslyUseHTMLString: true },
     )
   } catch (e) {
-    const preview = buildCodecCommand(codec, mode, sample)
     const detail = parseCodecErrorDetail(e instanceof Error ? e.message : String(e))
     meErrHtml(t('customCodec.testErrorResult', { command: preview, input: sample, detail }))
   } finally {
@@ -174,6 +180,7 @@ async function runTest(mode: 'decode' | 'encode') {
 function openCodecDoc() {
   void openUrl(t('customCodec.docUrl'))
 }
+// #endregion
 </script>
 
 <template>
@@ -288,7 +295,7 @@ function openCodecDoc() {
   align-items: center;
 }
 
-/* 命令标签与必填星号、? 保持同一行 */
+// 命令标签与必填星号、? 保持同一行
 .custom-codec-field :deep(.el-form-item__label) {
   display: inline-flex;
   align-items: center;

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-/** ZSet TopN 弹框：输入数量和排序方向，ZRANGE/ZREVRANGE 查询 */
+// #region 导入
+// ZSet TopN 弹框：输入数量和排序方向，ZRANGE/ZREVRANGE 查询
 import { computed, inject, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -7,20 +8,22 @@ import { shareProvideKey } from '@/types/me-interface'
 import type { BytesFormat, RedisZsetRangeItem } from '@/types/tauri-specta'
 import { meFormatViewValue, type ViewBytesFormat } from '@/utils/format'
 import { meCommands } from '@/utils/util'
+// #endregion
 
+// #region 核心状态
 const { t } = useI18n()
 const share = inject(shareProvideKey)!
-
 const visible = ref(false)
 const loading = ref(false)
 const count = ref(10)
 const reverse = ref(false)
 const itemList = ref<RedisZsetRangeItem[]>([])
 const keyword = ref('')
+// #endregion
 
+// #region 计算属性
 const dialogTitle = computed(() => t('redisValue.zsetRangeTitle'))
 const dialogIcon = 'me-icon-rank'
-
 const filteredList = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
   if (!kw) return itemList.value
@@ -28,11 +31,13 @@ const filteredList = computed(() => {
     item => item.value.toLowerCase().includes(kw) || String(item.score).includes(kw),
   )
 })
+// #endregion
 
 let currentValFmt: BytesFormat | null = null
-/** 打开弹框时的键级展示编码；query 复用 */
+// 打开弹框时的键级展示编码；query 复用
 let currentViewFmt: ViewBytesFormat = 'utf8'
 
+// #region 面板操作
 async function open(valFmt: BytesFormat | null, viewFmt: ViewBytesFormat = 'utf8') {
   const conn = share.conn
   const redisKey = share.redisKey
@@ -82,6 +87,7 @@ watch(reverse, () => {
 })
 
 defineExpose({ open })
+// #endregion
 </script>
 
 <template>
