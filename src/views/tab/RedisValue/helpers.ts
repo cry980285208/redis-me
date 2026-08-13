@@ -16,6 +16,8 @@ export type ValueTableRow = Record<string, unknown> & {
   score?: number
   ttl?: number
   index?: number // List 行真实 Redis 索引
+  vector?: string // VectorSet 向量 JSON 字符串
+  attrs?: string // VectorSet 属性 JSON 字符串
 }
 
 // fieldScan 的 value 在 Specta 中为联合类型，表格/拼接按行数组处理
@@ -73,7 +75,13 @@ export function supportsTableView(type: string | undefined) {
 
 // field_get 可单行刷新的表格类型
 export function supportsFieldRowRefresh(type: string | undefined) {
-  return type === 'hash' || type === 'list' || type === 'zset' || type === 'array'
+  return (
+    type === 'hash' ||
+    type === 'list' ||
+    type === 'zset' ||
+    type === 'array' ||
+    type === 'vectorset'
+  )
 }
 
 // string / json：仅 JSON 编辑器，无表格/字段扫描

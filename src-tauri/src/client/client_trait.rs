@@ -349,15 +349,18 @@ pub fn field_scan_0_exact(
             };
             serde_json::to_value(items)?
         }
-        // Vector Set：VISMEMBER 检查存在，返回元素名（与扫描一致）
+        // Vector Set：VISMEMBER 检查存在，返回元素+向量+属性（与扫描格式一致）
         ValueType::VectorSet => {
             let elem = member.as_bytes().to_vec();
             let exists: bool = redis::cmd("VISMEMBER")
                 .arg(key)
                 .arg(&elem)
                 .query(conn)?;
-            let items: Vec<String> = if exists {
-                vec![format_bytes(&elem, bytes_format)]
+            let items: Vec<RedisVectorSetItem> = if exists {
+                let name = format_bytes(&elem, bytes_format);
+                let vector = vemb_json_or_dash(conn, key, &elem);
+                let attrs = vgetattr_opt(conn, key, &elem).unwrap_or_default();
+                vec![RedisVectorSetItem { name, vector, attrs }]
             } else {
                 Vec::new()
             };
@@ -646,30 +649,50 @@ fn vsetattr_json_or_clear(
     Ok(())
 }
 
-/// VRANGE 元素名列表（库无命令封装；回复用 `Vec<Vec<u8>>` 反序列化）
-fn vrange_elements(
+/// 尝试 VRANGE；失败降级返回 None
+fn try_vrange(
     conn: &mut impl Commands,
     key: &RedisKey,
     start: &[u8],
     count: u64,
-) -> AnyResult<Vec<Vec<u8>>> {
-    Ok(redis::cmd("VRANGE")
+) -> AnyResult<Option<Vec<Vec<u8>>>> {
+    match redis::cmd("VRANGE")
         .arg(key)
         .arg(start)
         .arg("+")
         .arg(count)
-        .query(conn)?)
+        .query(conn)
+    {
+        Ok(names) => Ok(Some(names)),
+        Err(_) => Ok(None),
+    }
 }
 
-/// Vector Set VRANGE 分页；`stream_cursor` 存上一页最后元素 wire（见 plan 19）。
-/// 浏览时仅返回元素名列表（与 Set 一致），向量在编辑时按需 VEMB。
+/// 尝试 VRANDMEMBER；失败降级返回 None
+fn try_vrandmember(
+    conn: &mut impl Commands,
+    key: &RedisKey,
+    count: u64,
+) -> AnyResult<Option<Vec<Vec<u8>>>> {
+    match redis::cmd("VRANDMEMBER")
+        .arg(key)
+        .arg(count)
+        .query(conn)
+    {
+        Ok(names) => Ok(Some(names)),
+        Err(_) => Ok(None),
+    }
+}
+
+/// Vector Set 分页浏览，返回元素名+向量+属性。
+/// 优先 VRANGE（exclusive 游标），回退 VRANDMEMBER（无分页）。
 fn field_scan_vectorset_page(
     conn: &mut MutexGuard<impl Commands>,
     key: &RedisKey,
     param: &FieldScanParam,
     bytes_format: &BytesFormat,
     cc: &mut ScanCursor,
-) -> AnyResult<Vec<String>> {
+) -> AnyResult<Vec<RedisVectorSetItem>> {
     let count = field_scan_batch_count(param.count);
     let start: Vec<u8> = if cc.stream_cursor.is_empty() {
         b"-".to_vec()
@@ -679,18 +702,70 @@ fn field_scan_vectorset_page(
         b
     };
 
-    let names = vrange_elements(conn, key, &start, count)?;
-    let items: Vec<String> = names.iter().map(|n| format_bytes(n, bytes_format)).collect();
+    // 1. 优先 VRANGE，回退 VRANDMEMBER
+    let names = match try_vrange(conn, key, &start, count)? {
+        Some(names) => {
+            if (names.len() as u64) < count {
+                cc.finished = true;
+            } else {
+                cc.finished = false;
+                if let Some(last) = names.last() {
+                    cc.stream_cursor = format_bytes(last, bytes_format);
+                }
+            }
+            names
+        }
+        None => {
+            // VRANGE 不支持 → VRANDMEMBER
+            match try_vrandmember(conn, key, count)? {
+                Some(names) => {
+                    cc.finished = true;
+                    cc.fallback = true;
+                    cc.stream_cursor = String::new();
+                    names
+                }
+                None => bail!("VRANGE and VRANDMEMBER both unsupported"),
+            }
+        }
+    };
 
-    if (items.len() as u64) < count {
-        cc.finished = true;
-    } else {
-        cc.finished = false;
-        if let Some(last) = names.last() {
-            cc.stream_cursor = format_bytes(last, bytes_format);
+    // 2. Pipeline VEMB 批量获取向量
+    let mut elements = Vec::with_capacity(names.len());
+    if !names.is_empty() {
+        let mut pipe = redis::pipe();
+        for name_bytes in &names {
+            pipe.cmd("VEMB").arg(key).arg(name_bytes.as_slice());
+        }
+        let packed = pipe.get_packed_pipeline();
+        let vemb_results: Vec<redis::Value> =
+            conn.req_packed_commands(&packed, 0, names.len())?;
+
+        // 3. Pipeline VGETATTR 批量获取属性
+        let mut pipe = redis::pipe();
+        for name_bytes in &names {
+            pipe.cmd("VGETATTR").arg(key).arg(name_bytes.as_slice());
+        }
+        let packed = pipe.get_packed_pipeline();
+        let vgetattr_results: Vec<redis::Value> =
+            conn.req_packed_commands(&packed, 0, names.len())?;
+
+        // 4. 组装 RedisVectorSetItem
+        for (i, name_bytes) in names.iter().enumerate() {
+            let name = format_bytes(name_bytes, bytes_format);
+            let vector: Vec<f64> =
+                FromRedisValue::from_redis_value_ref(&vemb_results[i]).unwrap_or_default();
+            let vector = serde_json::to_string(&vector).unwrap_or_else(|_| "-".into());
+            let attrs: Option<String> =
+                FromRedisValue::from_redis_value_ref(&vgetattr_results[i]).unwrap_or_default();
+            elements.push(RedisVectorSetItem {
+                name,
+                vector,
+                attrs: attrs.unwrap_or_default(),
+            });
         }
     }
-    Ok(items)
+
+    Ok(elements)
 }
 
 pub fn field_scan_0_get(
@@ -2528,7 +2603,10 @@ fn key_as_command_lines(conn: &mut impl Commands, key: &RedisKey) -> AnyResult<V
             let mut lines = Vec::new();
             let mut start: Vec<u8> = b"-".to_vec();
             loop {
-                let names = vrange_elements(conn, key, &start, 100)?;
+                let names = match try_vrange(conn, key, &start, 100)? {
+                    Some(names) => names,
+                    None => break, // VRANGE 不支持，跳过导出
+                };
                 if names.is_empty() {
                     break;
                 }

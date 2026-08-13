@@ -206,10 +206,10 @@ fn try_vrandmember(
 }
 ```
 
-**1b. 新增 `VectorSetElement` 结构体**（`src-tauri/src/utils/model.rs`）
+**1b. 新增 `RedisVectorSetItem` 结构体**（`src-tauri/src/utils/model.rs`）
 
 ```rust
-api_model!(VectorSetElement {
+api_model!(RedisVectorSetItem {
     /// 元素名（val_fmt 编码）
     name: String,
     /// 向量 JSON 数组字符串 "[1.0, 2.0, ...]"
@@ -221,7 +221,7 @@ api_model!(VectorSetElement {
 
 **1c. 改造 `field_scan_vectorset_page` 返回值**
 
-从 `Vec<String>` 改为 `Vec<VectorSetElement>`，包含 pipeline 获取的向量和属性：
+从 `Vec<String>` 改为 `Vec<RedisVectorSetItem>`，包含 pipeline 获取的向量和属性：
 
 ```rust
 fn field_scan_vectorset_page(
@@ -230,7 +230,7 @@ fn field_scan_vectorset_page(
     param: &FieldScanParam,
     bytes_format: &BytesFormat,
     cc: &mut ScanCursor,
-) -> AnyResult<Vec<VectorSetElement>> {
+) -> AnyResult<Vec<RedisVectorSetItem>> {
     let count = field_scan_batch_count(param.count);
     let start: Vec<u8> = /* ... existing cursor logic ... */;
 
@@ -266,7 +266,7 @@ fn field_scan_vectorset_page(
         let name = format_bytes(name_bytes, bytes_format);
         let vector = vemb_json_or_dash(conn, key, name_bytes);
         let attrs = vgetattr_opt(conn, key, name_bytes).unwrap_or_default();
-        elements.push(VectorSetElement { name, vector, attrs });
+        elements.push(RedisVectorSetItem { name, vector, attrs });
     }
 
     Ok(elements)
@@ -653,7 +653,7 @@ for name_bytes in &names {
     let name = format_bytes(name_bytes, bytes_format);
     let vector = vemb_json_or_dash(conn, key, name_bytes);
     let attrs = vgetattr_opt(conn, key, name_bytes).unwrap_or_default();
-    elements.push(VectorSetElement { name, vector, attrs });
+    elements.push(RedisVectorSetItem { name, vector, attrs });
 }
 ```
 
@@ -674,7 +674,7 @@ for name_bytes in &names {
 const vectorSetAttrKeys = ref(new Set<string>())
 
 // 每次加载新页时更新
-function updateVectorSetAttrKeys(elements: VectorSetElement[]) {
+function updateVectorSetAttrKeys(elements: RedisVectorSetItem[]) {
   for (const el of elements) {
     try {
       const attrs = JSON.parse(el.attrs || '{}')
@@ -705,7 +705,7 @@ function updateVectorSetAttrKeys(elements: VectorSetElement[]) {
 
 ### 5.5 数据格式兼容性
 
-`field_scan_vectorset_page` 的返回值从 `Vec<String>` 改为 `Vec<VectorSetElement>` 后，需要确保：
+`field_scan_vectorset_page` 的返回值从 `Vec<String>` 改为 `Vec<RedisVectorSetItem>` 后，需要确保：
 
 - 前端 `dataList` 的 `vectorsetType` 分支能正确解析新格式
 - `fieldValueRows` 能正确提取数组

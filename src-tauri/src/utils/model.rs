@@ -375,6 +375,9 @@ ScanCursor {
     now_cursor: u64,
     stream_cursor: String,
     finished: bool,
+    /// VRANGE 降级为 VRANDMEMBER（无分页，仅随机采样）
+    #[serde(default)]
+    fallback: bool,
 });
 
 // 扫描结果
@@ -664,6 +667,17 @@ api_model!(RedisVSimItem {
     /// 相似度 1=同向，0=反向
     score: f64,
     /// WITHATTRIBS 时返回；无属性为空串
+    #[serde(default)]
+    attrs: String,
+});
+
+// Vector Set 元素（field_scan 返回，含向量+属性）
+api_model!(RedisVectorSetItem {
+    /// 元素名（val_fmt 编码）
+    name: String,
+    /// 向量 JSON 数组字符串 "[1.0, 2.0, ...]"
+    vector: String,
+    /// 属性 JSON 对象字符串 "{\"pos\":\"noun\"}"
     #[serde(default)]
     attrs: String,
 });

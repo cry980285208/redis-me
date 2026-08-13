@@ -816,6 +816,8 @@ export type ScanCursor = {
 	nowCursor: number,
 	streamCursor: string,
 	finished: boolean,
+	/**  VRANGE 降级为 VRANDMEMBER（无分页，仅随机采样） */
+	fallback?: boolean,
 };
 
 export type ScanParam = {

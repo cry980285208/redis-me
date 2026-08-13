@@ -140,6 +140,7 @@ const minimalFieldSet: RedisFieldSet_Deserialize = {
   includeFieldTtl: false,
   valFmt: null,
   vector: [],
+  attrs: '',
 }
 
 const minimalFieldGet: RedisFieldGet_Deserialize = {

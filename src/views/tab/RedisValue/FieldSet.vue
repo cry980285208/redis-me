@@ -84,6 +84,7 @@ const initForm: FieldSetForm = {
   includeFieldTtl: false,
   valFmt: IPC_WIRE_FORMAT,
   vector: [],
+  attrs: '',
 }
 const form = ref<FieldSetForm>(cloneDeep(initForm))
 
