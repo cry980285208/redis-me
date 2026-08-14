@@ -1130,12 +1130,13 @@ function applyFieldGetResult(rv: FieldScanViewState, data: RedisFieldValue, row:
       rows[idx] = { value: data.fieldValue, score: data.fieldScore ?? row.score }
     }
   } else if (vectorsetType.value) {
+    // 原始行结构为 { name, vector, attrs }（dataList 才映射成 value），按 name 匹配并写回
     const rows = fieldValueRows(rv.value) as ValueTableRow[]
-    const idx = rows.findIndex(r => r.value === (row.value || fieldEditKey.value))
+    const idx = rows.findIndex(r => r.name === (row.value || fieldEditKey.value))
     if (idx >= 0) {
       rows[idx] = {
         ...rows[idx],
-        value: data.fieldKey,
+        name: data.fieldKey,
         vector: data.fieldValue,
         attrs: data.fieldAttrs ?? '',
       }
