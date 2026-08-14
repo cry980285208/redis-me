@@ -730,6 +730,8 @@ fn field_scan_vectorset_page(
     };
 
     // 2. Pipeline VEMB 批量获取向量
+    // 此处不用 ClusterPipeline：命令全部针对同一 key（同 slot），req_packed_commands
+    // 会按 slot 整批路由到目标节点（1 次 RTT），比 ClusterPipeline 更轻；仅跨 slot 键才需 ClusterPipeline
     let mut elements = Vec::with_capacity(names.len());
     if !names.is_empty() {
         let mut pipe = redis::pipe();
