@@ -8,7 +8,7 @@ export const defaultSettings = {
 
   // 扩展设置
   keyScanCount: 1000,
-  fieldScanCount: 100,
+  fieldScanCount: 20,
   keyShow: 'tree',
   keySort: 'count',
   keyHeight: 20,

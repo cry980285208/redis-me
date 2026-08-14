@@ -735,7 +735,7 @@ function buildFieldScanParam() {
   const includeMeta = fieldScanIncludeMeta()
   return {
     key: share.redisKey!,
-    count: meTauri.settings.fieldScanCount ?? 10,
+    count: meTauri.settings.fieldScanCount ?? 20,
     cursor: cursor.value,
     match: serverScan ? fieldMatch.value : '*',
     exact: serverScan ? fieldExact.value : false,
