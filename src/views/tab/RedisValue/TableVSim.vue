@@ -6,14 +6,14 @@ import { computed, inject, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { shareProvideKey } from '@/types/me-interface'
-import type { BytesFormat, RedisVSimItem } from '@/types/tauri-specta'
+import type { RedisVSimItem } from '@/types/tauri-specta'
 import {
   IPC_WIRE_FORMAT,
   meFormatViewValue,
   meViewToWire,
   type ViewBytesFormat,
 } from '@/utils/format'
-import { meCommands, meErr } from '@/utils/util'
+import { meCommands, meCopy, meErr } from '@/utils/util'
 import { parseVectorInput } from '@/utils/vector'
 // #endregion
 
@@ -37,6 +37,18 @@ const keyword = ref('')
 
 // #region 计算属性
 const dialogTitle = computed(() => t('redisValue.vSimTitle'))
+// 高相似度阈值（对齐 RedisInsight）；高亮色优先用连接颜色，整行高亮（与命令日志同方案）
+const HIGH_SIMILARITY = 0.85
+const highlightColor = computed(() => share.conn?.color || share.color || 'var(--el-color-primary)')
+function isHighSimilarity(row: RedisVSimItem) {
+  return (row.score ?? 0) >= HIGH_SIMILARITY
+}
+function rowClassName({ row }: { row: RedisVSimItem }) {
+  return isHighSimilarity(row) ? 'vsim-high-similarity' : ''
+}
+function rowStyle({ row }: { row: RedisVSimItem }) {
+  return isHighSimilarity(row) ? { color: highlightColor.value } : {}
+}
 const filteredList = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
   if (!kw) return itemList.value
@@ -92,20 +104,20 @@ function parseOptionalU64(text: string): number | null | undefined {
   return n
 }
 
-async function query() {
-  const conn = share.conn
-  const redisKey = share.redisKey
-  if (!conn || !redisKey) return
-
+// 校验当前表单输入，返回查询参数；校验失败返回 null（query 与复制命令共用，保证两者一致）
+function parsedForm(): {
+  fieldKey: string
+  vector: number[]
+  epsilon: number | null
+  ef: number | null
+} | null {
   let fieldKey = ''
   let vector: number[] = []
-  const valFmt: BytesFormat | null = IPC_WIRE_FORMAT
-
   if (mode.value === 'ele') {
     const name = elementText.value.trim()
     if (!name) {
       meErr(t('redisValue.vSimElementRequired'))
-      return
+      return null
     }
     fieldKey = meViewToWire(name, currentViewFmt)
   } else {
@@ -113,35 +125,44 @@ async function query() {
     // 空向量 parse 仍 ok；VSIM VALUES 必须非空
     if (!parsed.ok || parsed.nums.length === 0) {
       meErr(t('fieldAdd.vectorInvalid'))
-      return
+      return null
     }
     vector = parsed.nums
   }
-
   const epsilon = parseOptionalFloat(epsilonText.value)
   if (epsilon === undefined) {
     meErr(t('redisValue.vSimEpsilonInvalid'))
-    return
+    return null
   }
   const ef = parseOptionalU64(efText.value)
   if (ef === undefined) {
     meErr(t('redisValue.vSimEfInvalid'))
-    return
+    return null
   }
+  return { fieldKey, vector, epsilon, ef }
+}
+
+async function query() {
+  const conn = share.conn
+  const redisKey = share.redisKey
+  if (!conn || !redisKey) return
+
+  const form = parsedForm()
+  if (!form) return
 
   loading.value = true
   try {
     const raw = await meCommands.vSim(conn.id, {
       key: redisKey,
       mode: mode.value,
-      fieldKey,
-      vector,
+      fieldKey: form.fieldKey,
+      vector: form.vector,
       count: count.value,
       withAttribs: withAttribs.value,
       filter: filterText.value.trim(),
-      epsilon,
-      ef,
-      valFmt,
+      epsilon: form.epsilon,
+      ef: form.ef,
+      valFmt: IPC_WIRE_FORMAT,
     })
     itemList.value = raw.map(item => ({
       ...item,
@@ -153,6 +174,52 @@ async function query() {
   }
 }
 
+// 以结果行为种子重新查询（ELE 模式预填元素名）
+function seedSearch(row: RedisVSimItem) {
+  mode.value = 'ele'
+  elementText.value = row.key
+  void query()
+}
+
+// redis-cli 风格引号：双引号包裹 + 转义 \ " 换行等
+function quoteCliArg(s: string): string {
+  const escaped = s
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/\t/g, '\\t')
+  return `"${escaped}"`
+}
+
+// 按当前表单拼 VSIM 命令文本（参数顺序与后端 v_sim0 一致）；校验失败返回 null
+function buildVsimCommand(): string | null {
+  const redisKey = share.redisKey
+  if (!redisKey) return null
+  const form = parsedForm()
+  if (!form) return null
+
+  const parts = ['VSIM', quoteCliArg(redisKey.key)]
+  if (mode.value === 'ele') {
+    parts.push('ELE', quoteCliArg(elementText.value.trim()))
+  } else {
+    parts.push('VALUES', String(form.vector.length), ...form.vector.map(String))
+  }
+  parts.push('WITHSCORES')
+  if (withAttribs.value) parts.push('WITHATTRIBS')
+  parts.push('COUNT', String(count.value))
+  if (form.epsilon !== null) parts.push('EPSILON', String(form.epsilon))
+  if (form.ef !== null) parts.push('EF', String(form.ef))
+  const filter = filterText.value.trim()
+  if (filter) parts.push('FILTER', quoteCliArg(filter))
+  return parts.join(' ')
+}
+
+function copyVsimCommand() {
+  const cmd = buildVsimCommand()
+  if (cmd) meCopy(cmd, t('redisValue.copyCommandOk'))
+}
+
 defineExpose({ open })
 // #endregion
 </script>
@@ -162,7 +229,7 @@ defineExpose({ open })
     <div v-loading="loading" class="table-vsim">
       <!-- 两行同列：EF 与 COUNT 对齐；ELE/VALUES 主输入同宽 -->
       <div class="vsim-form">
-        <el-radio-group v-model="mode" class="c-mode" size="default">
+        <el-radio-group v-model="mode" size="default">
           <el-radio-button value="ele">ELE</el-radio-button>
           <el-radio-button value="values">VALUES</el-radio-button>
         </el-radio-group>
@@ -179,8 +246,14 @@ defineExpose({ open })
           :placeholder="t('fieldAdd.vectorValueHint')"
           clearable />
         <el-input-number v-model="count" class="c-count" :min="1" :max="10000" />
-        <el-checkbox v-model="withAttribs" class="c-attr">WITHATTRIBS</el-checkbox>
-        <el-button class="c-go" icon="el-icon-search" type="primary" @click="query">
+        <el-checkbox v-model="withAttribs">WITHATTRIBS</el-checkbox>
+        <me-icon
+          class="icon-btn"
+          icon="el-icon-document"
+          :info="t('redisValue.vSimCopyCommand')"
+          placement="top"
+          @click="copyVsimCommand" />
+        <el-button icon="el-icon-search" type="primary" @click="query">
           {{ t('redisValue.vSimQuery') }}
         </el-button>
 
@@ -212,6 +285,8 @@ defineExpose({ open })
           height="100%"
           stripe
           border
+          :row-class-name="rowClassName"
+          :row-style="rowStyle"
           :default-sort="{ prop: 'score', order: 'descending' }">
           <el-table-column type="index" label="#" width="55" align="center" />
           <el-table-column
@@ -233,6 +308,18 @@ defineExpose({ open })
             min-width="120"
             show-overflow-tooltip
             sortable />
+          <!-- 行操作：以此为种子查询 -->
+          <el-table-column :label="t('action')" width="70" align="center">
+            <template #default="scope">
+              <div class="me-flex" style="justify-content: center">
+                <me-icon
+                  :info="t('redisValue.vSimSeed')"
+                  icon="me-icon-rank"
+                  class="icon-btn"
+                  @click.stop="seedSearch(scope.row)" />
+              </div>
+            </template>
+          </el-table-column>
         </me-table>
         <el-empty v-else-if="!loading" :description="t('redisValue.vSimEmpty')" />
       </div>
@@ -247,10 +334,10 @@ defineExpose({ open })
   display: flex;
   flex-direction: column;
 
-  // 列：模式 | 主输入 | COUNT/EF | WITHATTRIBS | 查询
+  // 列：模式 | 主输入 | COUNT/EF | WITHATTRIBS | 复制命令 | 查询
   .vsim-form {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) 110px auto auto;
+    grid-template-columns: auto minmax(0, 1fr) 110px auto auto auto;
     gap: 8px;
     align-items: center;
     margin-bottom: 10px;
@@ -297,6 +384,13 @@ defineExpose({ open })
   .vsim-main {
     flex: 1;
     min-height: 0;
+
+    // 高相似度整行高亮：颜色由 row-style 内联到 tr，单元格继承（与命令日志一致）
+    :deep(.vsim-high-similarity) {
+      .cell {
+        color: inherit;
+      }
+    }
   }
 }
 </style>

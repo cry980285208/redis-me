@@ -1703,21 +1703,41 @@ pub fn v_sim0(
     mut conn: MutexGuard<impl Commands>,
     param: RedisVSim,
 ) -> AnyResult<Vec<RedisVSimItem>> {
-    let key: RedisKey = param.key;
-    let key_type: ValueType = conn.key_type(&key)?;
+    let key_type: ValueType = conn.key_type(&param.key)?;
     if key_type != ValueType::VectorSet {
-        handle_other_value_type(&key_type, &key)?;
+        handle_other_value_type(&key_type, &param.key)?;
         unreachable!()
     }
     let val_fmt = param.val_fmt.as_ref().cloned().unwrap_or_default();
+
+    match vsim_query(&mut conn, &param, &val_fmt, param.with_attribs) {
+        Ok(raw) => parse_vsim_items(raw, param.with_attribs, &val_fmt),
+        // WITHATTRIBS 不支持（Redis 8.0.0–8.0.2）：去掉重试，再用 VGETATTR pipeline 补属性（语义无损）
+        Err(_) if param.with_attribs => {
+            let raw = vsim_query(&mut conn, &param, &val_fmt, false)?;
+            let mut items = parse_vsim_items(raw, false, &val_fmt)?;
+            fill_vsim_attrs(&mut conn, &param.key, &mut items, &val_fmt);
+            Ok(items)
+        }
+        Err(e) => Err(e),
+    }
+}
+
+/// 组装并执行 VSIM；with_attribs 控制是否附带 WITHATTRIBS
+fn vsim_query(
+    conn: &mut impl Commands,
+    param: &RedisVSim,
+    val_fmt: &BytesFormat,
+    with_attribs: bool,
+) -> AnyResult<Value> {
     let count = if param.count == 0 { 10 } else { param.count };
     let mode = param.mode.trim().to_ascii_lowercase();
 
     let mut cmd = redis::cmd("VSIM");
-    cmd.arg(&key);
+    cmd.arg(&param.key);
     match mode.as_str() {
         "ele" => {
-            let elem = parse_bytes(&param.field_key, &val_fmt)?;
+            let elem = parse_bytes(&param.field_key, val_fmt)?;
             if elem.is_empty() {
                 bail!("VSIM ELE requires element name");
             }
@@ -1736,7 +1756,7 @@ pub fn v_sim0(
     }
     // 固定开分；双 WITH* 时 RESP2 序为 ele, score, attribs
     cmd.arg("WITHSCORES");
-    if param.with_attribs {
+    if with_attribs {
         cmd.arg("WITHATTRIBS");
     }
     cmd.arg("COUNT").arg(count);
@@ -1750,9 +1770,40 @@ pub fn v_sim0(
     if !filter.is_empty() {
         cmd.arg("FILTER").arg(filter);
     }
+    Ok(cmd.query(conn)?)
+}
 
-    let raw: Value = cmd.query(&mut conn)?;
-    parse_vsim_items(raw, param.with_attribs, &val_fmt)
+/// VGETATTR pipeline 补 VSIM 结果属性（同一 key 同 slot，1 RTT）；失败保留空属性不阻断
+fn fill_vsim_attrs(
+    conn: &mut impl Commands,
+    key: &RedisKey,
+    items: &mut [RedisVSimItem],
+    val_fmt: &BytesFormat,
+) {
+    if items.is_empty() {
+        return;
+    }
+    let elems: Vec<Vec<u8>> = match items
+        .iter()
+        .map(|it| parse_bytes(&it.key, val_fmt))
+        .collect::<AnyResult<Vec<_>>>()
+    {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    let mut pipe = redis::pipe();
+    for elem in &elems {
+        pipe.cmd("VGETATTR").arg(key).arg(elem.as_slice());
+    }
+    let packed = pipe.get_packed_pipeline();
+    let results: Vec<redis::Value> = match conn.req_packed_commands(&packed, 0, elems.len()) {
+        Ok(r) => r,
+        Err(_) => return,
+    };
+    for (item, raw) in items.iter_mut().zip(results) {
+        let attrs: Option<String> = FromRedisValue::from_redis_value_ref(&raw).unwrap_or_default();
+        item.attrs = attrs.unwrap_or_default();
+    }
 }
 
 /// RESP2：仅 WITHSCORES → ele,score；双 WITH* → ele,score,attribs

@@ -931,6 +931,8 @@ export default {
     vSimEfInvalid: 'EF must be a non-negative integer',
     vSimElementRequired: 'Element name is required',
     vSimEmpty: 'No data',
+    vSimSeed: 'Find similar by this element',
+    vSimCopyCommand: 'Copy VSIM command with current query parameters',
     arLastItems: 'LastN',
     arLastItemsTitle: 'Array Last Inserted',
     arLastItemsAsc: 'Insert order',

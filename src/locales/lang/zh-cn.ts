@@ -923,6 +923,8 @@ export default {
     vSimEfInvalid: 'EF 须为非负整数',
     vSimElementRequired: '请输入元素名',
     vSimEmpty: '暂无数据',
+    vSimSeed: '以此为种子查询',
+    vSimCopyCommand: '按当前查询参数复制 VSIM 命令',
     copyAsCommand: '复制为命令',
     refreshFieldRow: '刷新行',
     refreshFieldRowOk: '行已刷新',
