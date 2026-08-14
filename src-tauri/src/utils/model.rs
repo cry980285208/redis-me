@@ -306,7 +306,7 @@ api_model!(ScanParam {
 });
 
 // fieldScan 按类型的扩展参数：Stream 范围、STRING 大值预览阈值等
-api_model!(FiledScanMeta {
+api_model!(FieldScanMeta {
     /// Stream XREVRANGE 上界和下界
     max_id: String,
     min_id: String,
@@ -322,6 +322,8 @@ api_model!(FiledScanMeta {
     list_desc: Option<bool>,
     /// Stream 扫描方向：true 从 max 向 min（XREVRANGE），false 从 min 向 max（XRANGE）
     stream_desc: Option<bool>,
+    /// VectorSet 浏览模式：true 随机采样（VRANDMEMBER，无分页）；false 范围查询（VRANGE）；默认 true
+    vectorset_sample: Option<bool>,
 });
 
 api_model!(FieldScanParam {
@@ -333,7 +335,7 @@ api_model!(FieldScanParam {
     pattern: String,
     /// 完全匹配：true 时走 HGET / SISMEMBER / ZSCORE
     exact: bool,
-    meta: Option<FiledScanMeta>,
+    meta: Option<FieldScanMeta>,
     bytes_format: Option<BytesFormat>, // 扫描/展示用字节格式
     /// 是否拉取 TYPE/TTL/MEMORY/HLEN；前端续扫时为 false
     include_meta: Option<bool>,
@@ -375,9 +377,6 @@ ScanCursor {
     now_cursor: u64,
     stream_cursor: String,
     finished: bool,
-    /// VRANGE 降级为 VRANDMEMBER（无分页，仅随机采样）
-    #[serde(default)]
-    fallback: bool,
 });
 
 // 扫描结果

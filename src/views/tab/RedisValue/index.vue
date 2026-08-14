@@ -188,8 +188,12 @@ const suppressCodeUpdate = ref(false)
 const valueEditorRemountKey = ref(0) // fieldScan 后强制 me-code remount
 const showMore = ref(false) // 手动控制，避免 cursor 变化导致按钮闪现
 
-// VectorSet VRANDMEMBER 降级：搜索框旁显示「随机采样」提示
-const showRefreshSample = computed(() => vectorsetType.value && cursor.value?.fallback === true)
+// VectorSet 浏览模式：随机采样（默认，全版本支持）/ 范围查询（需 ≥ 8.4，不支持时报错提示）
+const vectorsetSample = ref(true)
+const vectorsetBrowseOptions = computed(() => [
+  { label: t('redisValue.vectorsetSample'), value: true },
+  { label: t('redisValue.vectorsetRange'), value: false },
+])
 
 // STRING 大值截断预览
 const VALUE_BYTE_LIMIT = computed(
@@ -720,6 +724,7 @@ function resetParam() {
   listIndexMax.value = ''
   listDescAsc.value = true
   streamDescAsc.value = true
+  vectorsetSample.value = true
 }
 function fieldScanIncludeMeta(): boolean {
   return cursor.value == null // 续扫跳过 TYPE/TTL/MEMORY 等
@@ -740,6 +745,7 @@ function buildFieldScanParam() {
       listMaxIndex: parseListIndexInput(listIndexMax.value),
       listDesc: listType.value ? !listDescAsc.value : null,
       streamDesc: streamType.value ? !streamDescAsc.value : null,
+      vectorsetSample: vectorsetType.value ? vectorsetSample.value : null,
       valueByteLimit: VALUE_BYTE_LIMIT.value,
       valuePreviewBytes: VALUE_PREVIEW_BYTES.value,
       forceFullValue: forceFullValue.value,
@@ -753,6 +759,11 @@ function buildFieldScanParam() {
 
 function toggleHashFieldTtl() {
   scanHashFieldTtl.value = !scanHashFieldTtl.value
+  void restartFieldScan()
+}
+
+// VectorSet 浏览模式切换：重置游标重扫（采样无分页，范围查询从头遍历）
+function onVectorsetBrowseChange() {
   void restartFieldScan()
 }
 
@@ -1756,17 +1767,6 @@ onUnmounted(() => {
                 </div>
               </template>
             </el-input>
-            <!-- VRANDMEMBER 降级：随机采样提示 -->
-            <span
-              v-if="showRefreshSample"
-              style="
-                margin-left: 8px;
-                font-size: 12px;
-                color: var(--el-color-info);
-                white-space: nowrap;
-              ">
-              {{ t('redisValue.randomSample') }}
-            </span>
 
             <div v-if="streamType" class="stream-range-inputs">
               <el-input
@@ -1798,6 +1798,13 @@ onUnmounted(() => {
 
             <!-- 右侧更多+插入行 -->
             <div class="table-toolbar-actions">
+              <!-- VectorSet 浏览模式：随机采样 / 范围查询 -->
+              <el-segmented
+                v-if="vectorsetType"
+                v-model="vectorsetSample"
+                style="margin-left: 10px"
+                :options="vectorsetBrowseOptions"
+                @change="onVectorsetBrowseChange" />
               <me-button
                 v-if="showHashFieldTtlOption"
                 icon="el-icon-clock"

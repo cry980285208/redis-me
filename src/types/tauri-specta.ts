@@ -168,6 +168,26 @@ export type ConnConfig = {
 /**  连接 meta 值（与前端 JSON 结构一致，供 specta 导出） */
 export type ConnMetaValue = string | number | null | boolean | { [key in string]: ConnMetaValue } | ConnMetaValue[] | "Null";
 
+export type FieldScanMeta = {
+	/**  Stream XREVRANGE 上界和下界 */
+	maxId: string,
+	minId: string,
+	/**  STRING 全量加载字节上限；超过且未 force 时仅 GETRANGE 预览前 value_preview_bytes */
+	valueByteLimit: number | null,
+	valuePreviewBytes: number | null,
+	forceFullValue: boolean | null,
+	/**  List LRANGE / Array ARSCAN 下界；空则 0 */
+	listMinIndex: number | null,
+	/**  List LRANGE 上界（空则 len-1）；Array ARSCAN 上界（空则索引最大值） */
+	listMaxIndex: number | null,
+	/**  List 扫描方向：true 从 max 向 min，false 从 min 向 max */
+	listDesc: boolean | null,
+	/**  Stream 扫描方向：true 从 max 向 min（XREVRANGE），false 从 min 向 max（XRANGE） */
+	streamDesc: boolean | null,
+	/**  VectorSet 浏览模式：true 随机采样（VRANDMEMBER，无分页）；false 范围查询（VRANGE）；默认 true */
+	vectorsetSample: boolean | null,
+};
+
 export type FieldScanParam = FieldScanParam_Serialize | FieldScanParam_Deserialize;
 
 export type FieldScanParam_Deserialize = {
@@ -178,7 +198,7 @@ export type FieldScanParam_Deserialize = {
 	match: string,
 	/**  完全匹配：true 时走 HGET / SISMEMBER / ZSCORE */
 	exact: boolean,
-	meta: FiledScanMeta | null,
+	meta: FieldScanMeta | null,
 	bytesFormat: BytesFormat | null,
 	/**  是否拉取 TYPE/TTL/MEMORY/HLEN；前端续扫时为 false */
 	includeMeta: boolean | null,
@@ -196,7 +216,7 @@ export type FieldScanParam_Serialize = {
 	match: string,
 	/**  完全匹配：true 时走 HGET / SISMEMBER / ZSCORE */
 	exact: boolean,
-	meta: FiledScanMeta | null,
+	meta: FieldScanMeta | null,
 	bytesFormat: BytesFormat | null,
 	/**  是否拉取 TYPE/TTL/MEMORY/HLEN；前端续扫时为 false */
 	includeMeta: boolean | null,
@@ -236,24 +256,6 @@ export type FieldScanResult_Serialize = {
 	logicalLength?: number | null,
 	/**  Vector Set：VDIM（向量维度）；其它类型为 None */
 	vectorDim?: number | null,
-};
-
-export type FiledScanMeta = {
-	/**  Stream XREVRANGE 上界和下界 */
-	maxId: string,
-	minId: string,
-	/**  STRING 全量加载字节上限；超过且未 force 时仅 GETRANGE 预览前 value_preview_bytes */
-	valueByteLimit: number | null,
-	valuePreviewBytes: number | null,
-	forceFullValue: boolean | null,
-	/**  List LRANGE / Array ARSCAN 下界；空则 0 */
-	listMinIndex: number | null,
-	/**  List LRANGE 上界（空则 len-1）；Array ARSCAN 上界（空则索引最大值） */
-	listMaxIndex: number | null,
-	/**  List 扫描方向：true 从 max 向 min，false 从 min 向 max */
-	listDesc: boolean | null,
-	/**  Stream 扫描方向：true 从 max 向 min（XREVRANGE），false 从 min 向 max（XRANGE） */
-	streamDesc: boolean | null,
 };
 
 export type RedisArInfoItem = {
@@ -816,8 +818,6 @@ export type ScanCursor = {
 	nowCursor: number,
 	streamCursor: string,
 	finished: boolean,
-	/**  VRANGE 降级为 VRANDMEMBER（无分页，仅随机采样） */
-	fallback?: boolean,
 };
 
 export type ScanParam = {

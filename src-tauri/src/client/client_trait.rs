@@ -543,7 +543,7 @@ fn field_scan_list_page(
 /// Array 索引上界：Redis `arrayParseIndex` 拒绝 UINT64_MAX（仅 ARSEEK 例外），故用 MAX-1。
 const ARRAY_INDEX_MAX: u64 = u64::MAX - 1;
 
-/// Array 扫描区间：复用 FiledScanMeta.list_min/max_index（与 List 工具栏同一套输入）；负值按 0 / MAX 处理。
+/// Array 扫描区间：复用 FieldScanMeta.list_min/max_index（与 List 工具栏同一套输入）；负值按 0 / MAX 处理。
 fn resolve_array_scan_bounds(param: &FieldScanParam) -> Option<(u64, u64)> {
     let meta = param.meta.as_ref();
     let min = match meta.and_then(|m| m.list_min_index) {
@@ -649,43 +649,9 @@ fn vsetattr_json_or_clear(
     Ok(())
 }
 
-/// 尝试 VRANGE；失败降级返回 None
-fn try_vrange(
-    conn: &mut impl Commands,
-    key: &RedisKey,
-    start: &[u8],
-    count: u64,
-) -> AnyResult<Option<Vec<Vec<u8>>>> {
-    match redis::cmd("VRANGE")
-        .arg(key)
-        .arg(start)
-        .arg("+")
-        .arg(count)
-        .query(conn)
-    {
-        Ok(names) => Ok(Some(names)),
-        Err(_) => Ok(None),
-    }
-}
-
-/// 尝试 VRANDMEMBER；失败降级返回 None
-fn try_vrandmember(
-    conn: &mut impl Commands,
-    key: &RedisKey,
-    count: u64,
-) -> AnyResult<Option<Vec<Vec<u8>>>> {
-    match redis::cmd("VRANDMEMBER")
-        .arg(key)
-        .arg(count)
-        .query(conn)
-    {
-        Ok(names) => Ok(Some(names)),
-        Err(_) => Ok(None),
-    }
-}
-
 /// Vector Set 分页浏览，返回元素名+向量+属性。
-/// 优先 VRANGE（exclusive 游标），回退 VRANDMEMBER（无分页）。
+/// 模式由前端选择：随机采样 VRANDMEMBER（默认，无分页）；范围查询 VRANGE（exclusive 游标）。
+/// 错误（命令不支持 / 无权限等）直接透出，由前端提示，不再隐式降级。
 fn field_scan_vectorset_page(
     conn: &mut MutexGuard<impl Commands>,
     key: &RedisKey,
@@ -694,39 +660,41 @@ fn field_scan_vectorset_page(
     cc: &mut ScanCursor,
 ) -> AnyResult<Vec<RedisVectorSetItem>> {
     let count = field_scan_batch_count(param.count);
-    let start: Vec<u8> = if cc.stream_cursor.is_empty() {
-        b"-".to_vec()
-    } else {
-        let mut b = vec![b'('];
-        b.extend(parse_bytes(&cc.stream_cursor, bytes_format)?);
-        b
-    };
+    let sample = param
+        .meta
+        .as_ref()
+        .and_then(|m| m.vectorset_sample)
+        .unwrap_or(true);
 
-    // 1. 优先 VRANGE，回退 VRANDMEMBER
-    let names = match try_vrange(conn, key, &start, count)? {
-        Some(names) => {
-            if (names.len() as u64) < count {
-                cc.finished = true;
-            } else {
-                cc.finished = false;
-                if let Some(last) = names.last() {
-                    cc.stream_cursor = format_bytes(last, bytes_format);
-                }
+    let names: Vec<Vec<u8>> = if sample {
+        // 随机采样：一次拉完即结束，无分页
+        cc.finished = true;
+        cc.stream_cursor = String::new();
+        redis::cmd("VRANDMEMBER").arg(key).arg(count).query(conn)?
+    } else {
+        // 范围查询：exclusive 游标续页
+        let start: Vec<u8> = if cc.stream_cursor.is_empty() {
+            b"-".to_vec()
+        } else {
+            let mut b = vec![b'('];
+            b.extend(parse_bytes(&cc.stream_cursor, bytes_format)?);
+            b
+        };
+        let names: Vec<Vec<u8>> = redis::cmd("VRANGE")
+            .arg(key)
+            .arg(start)
+            .arg("+")
+            .arg(count)
+            .query(conn)?;
+        if (names.len() as u64) < count {
+            cc.finished = true;
+        } else {
+            cc.finished = false;
+            if let Some(last) = names.last() {
+                cc.stream_cursor = format_bytes(last, bytes_format);
             }
-            names
         }
-        None => {
-            // VRANGE 不支持 → VRANDMEMBER
-            match try_vrandmember(conn, key, count)? {
-                Some(names) => {
-                    cc.finished = true;
-                    cc.fallback = true;
-                    cc.stream_cursor = String::new();
-                    names
-                }
-                None => bail!("VRANGE and VRANDMEMBER both unsupported"),
-            }
-        }
+        names
     };
 
     // 2. Pipeline VEMB 批量获取向量
@@ -818,7 +786,7 @@ pub fn field_scan_0_get(
                 Some(serde_json::to_value(items)?)
             }
         }
-        // Vector Set：非精确 VRANGE；精确交 field_scan_0_exact
+        // Vector Set：非精确按所选模式浏览；精确交 field_scan_0_exact
         ValueType::VectorSet => {
             if param.exact {
                 None
@@ -2605,9 +2573,15 @@ fn key_as_command_lines(conn: &mut impl Commands, key: &RedisKey) -> AnyResult<V
             let mut lines = Vec::new();
             let mut start: Vec<u8> = b"-".to_vec();
             loop {
-                let names = match try_vrange(conn, key, &start, 100)? {
-                    Some(names) => names,
-                    None => break, // VRANGE 不支持，跳过导出
+                let names: Vec<Vec<u8>> = match redis::cmd("VRANGE")
+                    .arg(key)
+                    .arg(&start)
+                    .arg("+")
+                    .arg(100)
+                    .query(conn)
+                {
+                    Ok(names) => names,
+                    Err(_) => break, // VRANGE 不支持，跳过导出
                 };
                 if names.is_empty() {
                     break;
