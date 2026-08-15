@@ -1,5 +1,27 @@
 # 4.x Changelog
 
+## [v4.8.0](https://mp.weixin.qq.com/s/QxY6JSff7IEriojrYiNICA) (2026-08-15)
+
+### ✨ New Features
+
+- Support Redis 8.x **Vector Set** type
+  - Basic browsing: element / attributes / vector three-column display, with VCARD count / VDIM dimension
+  - Dual browse modes: **Random Sampling** (VRANDMEMBER, default) / **Range Query** (VRANGE, cursor-based paged scan)
+  - CRUD: VADD to add / VREM to delete / vector & attributes editing, exact element-name lookup
+  - Extras: new **VINFO** metadata dialog; copy whole key (VRANGE batch) / single row (VADD) as command
+  - **VSIM similarity query**: query conditions, highlight results with similarity >= 0.85, use a result as query seed, and more
+- Command Log: PIPELINE aggregate logs now show the **first command**; binary arguments displayed with redis-cli style escaping
+- Other details
+  - Default field scan count lowered to 20 to reduce the wait when first opening large keys
+  - Unified field table column names; Stream field viewer now shows the ID
+  - MeDialog: unified maximize/close icons; aligned fullscreen layout
+  - Error messages drop redundant prefixes and show raw server info
+  - Vue component comment regions, dead code cleanup and component naming unification
+
+### 🐞 Bug Fixes
+
+- Fixed Stream field viewer misjudging JSON as Hex; now displayed as UTF-8
+
 ## [v4.7.0](https://mp.weixin.qq.com/s/OfWq32Ibn7FOz2vYPqxdQQ) (2026-08-08)
 
 ### ✨ New Features
