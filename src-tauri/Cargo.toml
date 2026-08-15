@@ -31,6 +31,7 @@ redis = { version = "1", features = [
   "cluster",
   "sentinel",
   "json",
+  "vector-sets",
   "tls-rustls",
   "tls-rustls-insecure",
 ] }

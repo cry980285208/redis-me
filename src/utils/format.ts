@@ -334,15 +334,15 @@ export function isViewDecodeError(text: string): boolean {
 }
 
 /**
- * 视图 → 后端 BytesFormat。适用类型恒 base64（编码只控展示）。
- * 保留参数以兼容旧调用；JSON 等特殊路径可仍传 utf8 文本但勿经此写二进制。
+ * 非 STRING 键级：string-only view 降为 utf8 展示（不改 wire）；auto 也降 utf8
  */
 export function toWireFormat(_view?: ViewBytesFormat): BytesFormat {
   return IPC_WIRE_FORMAT
 }
 
-/** 非 STRING 键级：string-only view 降为 utf8 展示（不改 wire） */
+/** 非 STRING 键级：string-only view 降为 utf8 展示（不改 wire）；auto 也降 utf8 */
 export function viewFmtForField(view: ViewBytesFormat): ViewBytesFormat {
+  if (view === 'auto') return 'utf8'
   return isStringOnlyView(view) ? 'utf8' : view
 }
 

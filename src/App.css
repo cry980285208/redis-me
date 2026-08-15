@@ -207,18 +207,6 @@ svg {
   color: var(--el-color-warning);
 }
 
-/*ElDialog新增的全屏按钮*/
-.fullscreen-icon {
-  cursor: pointer;
-  color: var(--el-color-info);
-  font-size: 14px;
-  margin-top: -8px;
-
-  &:hover {
-    color: var(--el-color-primary);
-  }
-}
-
 /* 覆盖所有禁用按钮 */
 *:disabled {
   cursor:

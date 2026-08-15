@@ -1,8 +1,8 @@
 <script setup lang="ts">
+// #region 导入
 import type { TreeNode } from 'element-plus/es/components/tree-v2/src/types'
 import { nanoid } from 'nanoid'
 import { computed, inject, nextTick, ref, useTemplateRef, watch } from 'vue'
-// 共享数据
 import { useI18n } from 'vue-i18n'
 
 import { shareProvideKey } from '@/types/me-interface'
@@ -18,11 +18,11 @@ import { redisKeyId, sameRedisKey } from '@/utils/redis-key'
 import { meDeleteKey, TREE_KEY_ID_PREFIX } from '@/utils/util'
 
 import KeyTypeTag from './KeyTypeTag.vue'
+// #endregion
 
-/**
- * 收藏单树节点 id 命名空间，避免同时收藏 A 与 A:B 时子树/根 id 冲突。
- * 根：`\0fav\0{path}`；其子：`\0fav\0{path}\0{innerId}`
- */
+// #region 核心状态
+// 收藏单树节点 id 命名空间，避免同时收藏 A 与 A:B 时子树/根 id 冲突。
+// 根：`\0fav\0{path}`；其子：`\0fav\0{path}\0{innerId}`
 const FAV_ID_MARK = '\0fav\0'
 
 function favRootTreeId(favPath: string): string {
@@ -36,7 +36,7 @@ function favIdPrefix(favPath: string): string {
 const { t } = useI18n()
 const share = inject(shareProvideKey)!
 const canEdit = computed(() => !share.readonly)
-/** 当前连接的树形键分隔符（默认 `:`） */
+// 当前连接的树形键分隔符（默认 `:`）
 const keySep = computed(() => getConnKeySeparator(share.conn))
 
 defineExpose({ setCurrentKey, clearChecksAndEmit })
@@ -46,13 +46,13 @@ const emit = defineEmits([
   'contextKey',
   'contextFolder',
   'checkChange',
-  /** 收藏单树：勾选的收藏目录根 path 列表（供批量取消收藏目录） */
+  // 收藏单树：勾选的收藏目录根 path 列表（供批量取消收藏目录）
   'favoriteFolderCheckChange',
   'favoriteKey',
   'unfavoriteKey',
-  /** 收藏目录根被展开（触发 SCAN） */
+  // 收藏目录根被展开（触发 SCAN）
   'folderExpand',
-  /** 收藏目录根被折叠 */
+  // 收藏目录根被折叠
   'folderCollapse',
 ])
 const props = withDefaults(
@@ -65,21 +65,18 @@ const props = withDefaults(
     sortByCount?: boolean
     loading?: boolean
     favorites?: RedisKey_Deserialize[]
-    /** 当前库已收藏的目录 path 列表（正常模式星标 / 菜单） */
+    // 当前库已收藏的目录 path 列表（正常模式星标 / 菜单）
     favoriteFolders?: string[]
     favoriteMode?: boolean
-    /** 收藏目录下挂键时去掉公共前缀，避免与外层目录行重复 */
+    // 收藏目录下挂键时去掉公共前缀，避免与外层目录行重复
     trimRoot?: string
-    /**
-     * 收藏目录单树：顶层为各收藏 path，children 由其 SCAN 键构建。
-     * 有值时优先于 filterKeyList 建树。
-     */
+    // 收藏目录单树：顶层为各收藏 path，children 由其 SCAN 键构建。有值时优先于 filterKeyList 建树。
     folderKeyGroups?: { path: string; keys: RedisKey_Deserialize[]; loaded?: boolean }[]
-    /** 尚有 SCAN cursor 未扫完的收藏目录 path（右键显示加载更多） */
+    // 尚有 SCAN cursor 未扫完的收藏目录 path（右键显示加载更多）
     folderLoadMorePaths?: string[]
-    /** 正在 SCAN 的收藏目录 path（目录图标换成 loading） */
+    // 正在 SCAN 的收藏目录 path（目录图标换成 loading）
     folderLoadingPaths?: string[]
-    /** 为 false 时右键不提供「多选模式」（另一区已在多选时） */
+    // 为 false 时右键不提供「多选模式」（另一区已在多选时）
     allowEnterCheckedMode?: boolean
   }>(),
   {
@@ -100,7 +97,7 @@ const props = withDefaults(
   },
 )
 
-/** 本地构建的树节点（文件夹 / 键叶子） */
+// 本地构建的树节点（文件夹 / 键叶子）
 interface KeyBuildNode {
   id: string
   label: string
@@ -108,15 +105,108 @@ interface KeyBuildNode {
   redisKey?: RedisKey_Deserialize
   keyCount?: number
   isRootNode?: boolean
-  /** 收藏目录面板顶层根 */
+  // 收藏目录面板顶层根
   isFavoriteFolderRoot?: boolean
-  /** 收藏根对应的真实 path（id 已 namespaced） */
+  // 收藏根对应的真实 path（id 已 namespaced）
   favFolderPath?: string
-  /** 未 SCAN 前占位，保证根节点可展开 */
+  // 未 SCAN 前占位，保证根节点可展开
   isPending?: boolean
 }
 
-/** 从树节点取出逻辑文件夹 path（供 copy / SCAN / 右键），而非 namespaced id */
+// 右键点击
+const contextMenuNode = ref<TreeNode | null>(null)
+const meContextRef = useTemplateRef('meContextRef')
+
+// 显示复选框时补充根节点
+const rootId = nanoid() + Date.now()
+const treeRef = useTemplateRef('tree')
+// 用户手动展开的节点 id；同步到 defaultExpandedKeys，data 刷新时避免先折叠再恢复
+const expandedKeys = ref<string[]>([])
+// #endregion
+
+// #region 计算属性
+const useFolderGroups = computed(() => props.folderKeyGroups.length > 0)
+
+const emptyText = computed(() => {
+  if (useFolderGroups.value) {
+    return props.loading ? t('keyMain.scanning') : t('keyTree.noData')
+  }
+  return props.filterKeyList.length === 0 && !props.loading
+    ? t('keyTree.noData')
+    : t('keyMain.scanning')
+})
+
+const treeData = computed(() => {
+  // 收藏目录单树：顶层为各收藏 path
+  if (useFolderGroups.value) {
+    return props.folderKeyGroups.map(g => buildFavoriteFolderRoot(g))
+  }
+  // 列表展示
+  if (!props.keyShowTree) {
+    return buildList(props.filterKeyList)
+  }
+  // 树形展示
+  const root = buildTree(props.filterKeyList, props.trimRoot)
+  root.forEach(node => countLeaves(node))
+  // 根节点排序及其子节点排序
+  root.sort((n1, n2) => nodesSort(n1, n2))
+  root.forEach(node => sortNodeChildrenLoop(node))
+  return root
+})
+
+const defaultExpandedKeys = computed(() => {
+  if (props.showCheckbox) {
+    return expandedKeys.value.length > 0 ? [...new Set([rootId, ...expandedKeys.value])] : [rootId]
+  }
+  return [...expandedKeys.value]
+})
+
+const rootTreeData = computed((): KeyBuildNode[] => {
+  if (props.showCheckbox) {
+    const keyCount = useFolderGroups.value
+      ? props.folderKeyGroups.reduce((n, g) => n + g.keys.length, 0)
+      : props.filterKeyList.length || 0
+    return [
+      {
+        id: rootId,
+        label: 'db' + String(share.conn?.db ?? ''),
+        children: treeData.value as KeyBuildNode[],
+        keyCount,
+        isRootNode: true,
+      },
+    ]
+  }
+  return treeData.value as KeyBuildNode[]
+})
+
+// 键高度配置
+const keyHeight = computed(() => meTauri.settings.keyHeight ?? 20)
+
+const isContextNodeFavorited = computed(() => {
+  if (!contextMenuNode.value?.isLeaf) return false
+  return isFavoritedLocal(contextMenuNode.value.data.redisKey)
+})
+
+const isContextFolderFavorited = computed(() => {
+  if (!contextMenuNode.value || contextMenuNode.value.isLeaf) return false
+  return isFolderFavoritedLocal(String(contextMenuNode.value.key))
+})
+
+const isContextFavoriteFolderRoot = computed(() =>
+  Boolean(contextMenuNode.value?.data?.isFavoriteFolderRoot),
+)
+
+const contextFolderHasMore = computed(() => {
+  if (!isContextFavoriteFolderRoot.value || !contextMenuNode.value) return false
+  const path =
+    (contextMenuNode.value.data as KeyBuildNode).favFolderPath ??
+    logicalFolderPath(contextMenuNode.value)
+  return props.folderLoadMorePaths.includes(path)
+})
+// #endregion
+
+// #region 树构建
+// 从树节点取出逻辑文件夹 path（供 copy / SCAN / 右键），而非 namespaced id
 function logicalFolderPath(node: TreeNode): string {
   const data = node.data as KeyBuildNode | undefined
   if (data?.favFolderPath) return data.favFolderPath
@@ -129,6 +219,157 @@ function logicalFolderPath(node: TreeNode): string {
   return key
 }
 
+// 收藏目录根：未 SCAN 时挂占位以便展开触发扫描；已加载无子键则 children 为空
+function buildFavoriteFolderRoot(g: {
+  path: string
+  keys: RedisKey_Deserialize[]
+  loaded?: boolean
+}): KeyBuildNode {
+  const idPrefix = favIdPrefix(g.path)
+  let children: KeyBuildNode[]
+  if (!g.loaded) {
+    children = [{ id: idPrefix + 'pending', label: '', children: [], isPending: true }]
+  } else if (g.keys.length === 0) {
+    children = []
+  } else if (!props.keyShowTree) {
+    children = buildList(g.keys, idPrefix)
+  } else {
+    children = buildTree(g.keys, g.path, idPrefix)
+    children.forEach(node => countLeaves(node))
+    children.sort((n1, n2) => nodesSort(n1, n2))
+    children.forEach(node => sortNodeChildrenLoop(node))
+  }
+  return {
+    id: favRootTreeId(g.path),
+    label: g.path,
+    children,
+    // 未 SCAN 完不显示 [0]，避免误导
+    keyCount: g.loaded ? g.keys.length : undefined,
+    isFavoriteFolderRoot: true,
+    favFolderPath: g.path,
+  }
+}
+
+// 循环方式排序节点的子节点（避免递归栈溢出）
+function sortNodeChildrenLoop(rootNode: KeyBuildNode) {
+  const stack = [rootNode]
+  while (stack.length > 0) {
+    const node = stack.pop()
+    if (node === undefined) continue
+    if (node.children && node.children.length > 0) {
+      node.children.sort((n1, n2) => nodesSort(n1, n2))
+      node.children.forEach(child => stack.push(child))
+    }
+  }
+}
+
+function nodesSort(n1: KeyBuildNode, n2: KeyBuildNode) {
+  let cmp: number
+  if (props.sortByCount) {
+    // 文件夹在上面，叶子在下面（将叶子节点的数量归零，避免和只有1个键的文件夹混在一起）
+    const n1Count: number = n1.children.length > 0 ? (n1.keyCount ?? 0) : 0
+    const n2Count: number = n2.children.length > 0 ? (n2.keyCount ?? 0) : 0
+    cmp = n2Count - n1Count
+  } else {
+    // 保存文件夹在上面，叶子在下面（文件夹的数量为都设置为1）
+    const n1Count: number = n1.children.length > 0 ? 1 : 0
+    const n2Count: number = n2.children.length > 0 ? 1 : 0
+    cmp = n2Count - n1Count
+  }
+  // 键数量或文件夹/叶子分组相同时按 id 排序
+  return cmp === 0 ? (n2.id > n1.id ? -1 : 1) : cmp
+}
+
+// 构建树：同层文件夹用 Map 查找，避免 find 线性扫描；idPrefix 用于收藏单树命名空间
+function buildTree(keyList: RedisKey_Deserialize[], trim = '', idPrefix = '') {
+  const root: KeyBuildNode[] = []
+  // 每层 children 数组 → label → 文件夹节点（不含叶子）
+  const folderMaps = new WeakMap<KeyBuildNode[], Map<string, KeyBuildNode>>()
+
+  function folderMapOf(level: KeyBuildNode[]): Map<string, KeyBuildNode> {
+    let m = folderMaps.get(level)
+    if (!m) {
+      m = new Map()
+      folderMaps.set(level, m)
+    }
+    return m
+  }
+
+  const sep = keySep.value
+  keyList.forEach(rk => {
+    // trim 时只展示相对路径段，叶子仍挂完整 redisKey
+    let pathForParts = rk.key
+    if (trim) {
+      const rel = keyRelativePath(rk.key, trim, sep)
+      if (rel !== null) pathForParts = rel
+    }
+    const parts = pathForParts === '' ? [''] : splitKeyPath(pathForParts, sep)
+    let nowLevel = root
+    parts.forEach((part, index) => {
+      // 叶子节点：hepengju 这种无分隔符的键直接作为叶子
+      if (index === parts.length - 1) {
+        const label = part
+        let node = { id: idPrefix + TREE_KEY_ID_PREFIX + rk.key, label, children: [], redisKey: rk }
+        nowLevel.push(node)
+        return
+      }
+      // 文件夹 id 仍用完整路径（单 sep 拼接），便于展开定位
+      const folders = folderMapOf(nowLevel)
+      let node = folders.get(part)
+      if (!node) {
+        const fullParts = trim ? [trim, ...parts.slice(0, index + 1)] : parts.slice(0, index + 1)
+        node = { id: idPrefix + joinKeyPath(fullParts, sep), label: part, children: [] }
+        nowLevel.push(node)
+        folders.set(part, node)
+      }
+      nowLevel = node.children
+    })
+  })
+  return root
+}
+
+// 统计叶子节点个数: 循环方式（豆包） ==> 递归方式在数据量比较大时会栈溢出
+function countLeaves(node: KeyBuildNode) {
+  const stack = [node]
+  const keyCounts = new Map()
+
+  while (stack.length > 0) {
+    const nowNode = stack[stack.length - 1]
+    if (nowNode.children.every(child => keyCounts.has(child))) {
+      stack.pop()
+      if (nowNode.children.length === 0) {
+        keyCounts.set(nowNode, 1)
+      } else {
+        let keyCount = 0
+        nowNode.children.forEach(child => {
+          keyCount += keyCounts.get(child)
+        })
+        keyCounts.set(nowNode, keyCount)
+      }
+      nowNode.keyCount = keyCounts.get(nowNode)
+    } else {
+      nowNode.children.forEach(child => {
+        if (!keyCounts.has(child)) {
+          stack.push(child)
+        }
+      })
+    }
+  }
+  return keyCounts.get(node)
+}
+
+// 构建树: 仅仅叶子节点（即List显示）
+function buildList(keyList: RedisKey_Deserialize[], idPrefix = '') {
+  return keyList.map(rk => ({
+    id: idPrefix + TREE_KEY_ID_PREFIX + rk.key,
+    label: rk.key,
+    children: [],
+    redisKey: rk,
+  }))
+}
+// #endregion
+
+// #region 面板操作
 // 左键点击（收藏根即使无子键也会被树标成 leaf，仍按文件夹处理）
 function nodeClick(_data: unknown, node: TreeNode) {
   if (node.data?.isFavoriteFolderRoot || !node.isLeaf) {
@@ -137,10 +378,6 @@ function nodeClick(_data: unknown, node: TreeNode) {
     emit('chooseKey', node.data.redisKey)
   }
 }
-
-// 右键点击
-const contextMenuNode = ref<TreeNode | null>(null)
-const meContextRef = useTemplateRef('meContextRef')
 
 function nodeContextMenu(e: MouseEvent, _data: unknown, node: TreeNode) {
   // db0根节点 / SCAN 占位不显示上下文
@@ -176,119 +413,6 @@ function getNodeClass(node: TreeNode) {
   return clazz
 }
 
-const useFolderGroups = computed(() => props.folderKeyGroups.length > 0)
-
-// 计算树的数据
-const emptyText = computed(() => {
-  if (useFolderGroups.value) {
-    return props.loading ? t('keyMain.scanning') : t('keyTree.noData')
-  }
-  return props.filterKeyList.length === 0 && !props.loading
-    ? t('keyTree.noData')
-    : t('keyMain.scanning')
-})
-
-const treeData = computed(() => {
-  // 收藏目录单树：顶层为各收藏 path
-  if (useFolderGroups.value) {
-    return props.folderKeyGroups.map(g => buildFavoriteFolderRoot(g))
-  }
-
-  // 列表展示
-  if (!props.keyShowTree) {
-    return buildList(props.filterKeyList)
-  }
-
-  // 树形展示
-  const root = buildTree(props.filterKeyList, props.trimRoot)
-  root.forEach(node => countLeaves(node))
-
-  // 根节点排序及其子节点排序
-  root.sort((n1, n2) => nodesSort(n1, n2))
-  root.forEach(node => sortNodeChildrenLoop(node))
-  return root
-})
-
-/**
- * 收藏目录根：未 SCAN 时挂占位以便展开触发扫描；
- * 已加载无子键则 children 为空（可能被标成 leaf），靠 isFavoriteFolderRoot 走文件夹 UI/菜单。
- */
-function buildFavoriteFolderRoot(g: {
-  path: string
-  keys: RedisKey_Deserialize[]
-  loaded?: boolean
-}): KeyBuildNode {
-  const idPrefix = favIdPrefix(g.path)
-  let children: KeyBuildNode[]
-  if (!g.loaded) {
-    children = [{ id: idPrefix + 'pending', label: '', children: [], isPending: true }]
-  } else if (g.keys.length === 0) {
-    children = []
-  } else if (!props.keyShowTree) {
-    children = buildList(g.keys, idPrefix)
-  } else {
-    children = buildTree(g.keys, g.path, idPrefix)
-    children.forEach(node => countLeaves(node))
-    children.sort((n1, n2) => nodesSort(n1, n2))
-    children.forEach(node => sortNodeChildrenLoop(node))
-  }
-  return {
-    id: favRootTreeId(g.path),
-    label: g.path,
-    children,
-    // 未 SCAN 完不显示 [0]，避免误导
-    keyCount: g.loaded ? g.keys.length : undefined,
-    isFavoriteFolderRoot: true,
-    favFolderPath: g.path,
-  }
-}
-
-// 循环方式排序节点的子节点（避免递归栈溢出）
-function sortNodeChildrenLoop(rootNode: KeyBuildNode) {
-  // 初始化一个栈，将根节点压入栈中
-  const stack = [rootNode]
-  while (stack.length > 0) {
-    // 取出栈顶节点
-    const node = stack.pop()
-    if (node === undefined) continue
-    if (node.children && node.children.length > 0) {
-      // 对当前节点的子节点进行排序
-      node.children.sort((n1, n2) => nodesSort(n1, n2))
-      // 将所有子节点压入栈中，以便后续处理
-      node.children.forEach(child => stack.push(child))
-    }
-  }
-}
-
-function nodesSort(n1: KeyBuildNode, n2: KeyBuildNode) {
-  let cmp: number
-  if (props.sortByCount) {
-    // 文件夹在上面，叶子在下面（将叶子节点的数量归零，避免和只有1个键的文件夹混在一起）
-    const n1Count: number = n1.children.length > 0 ? (n1.keyCount ?? 0) : 0
-    const n2Count: number = n2.children.length > 0 ? (n2.keyCount ?? 0) : 0
-    cmp = n2Count - n1Count
-  } else {
-    // 保存文件夹在上面，叶子在下面（文件夹的数量为都设置为1）
-    const n1Count: number = n1.children.length > 0 ? 1 : 0
-    const n2Count: number = n2.children.length > 0 ? 1 : 0
-    cmp = n2Count - n1Count
-  }
-  // 键数量或文件夹/叶子分组相同时按 id 排序
-  return cmp === 0 ? (n2.id > n1.id ? -1 : 1) : cmp
-}
-
-// 显示复选框时补充根节点
-const rootId = nanoid() + Date.now()
-const treeRef = useTemplateRef('tree')
-/** 用户手动展开的节点 id；同步到 defaultExpandedKeys，data 刷新时避免先折叠再恢复 */
-const expandedKeys = ref<string[]>([])
-const defaultExpandedKeys = computed(() => {
-  if (props.showCheckbox) {
-    return expandedKeys.value.length > 0 ? [...new Set([rootId, ...expandedKeys.value])] : [rootId]
-  }
-  return [...expandedKeys.value]
-})
-
 function onNodeExpand(_data: unknown, node: TreeNode) {
   const key = String(node.key)
   if (!expandedKeys.value.includes(key)) {
@@ -299,10 +423,8 @@ function onNodeExpand(_data: unknown, node: TreeNode) {
   }
 }
 
-/**
- * 判断 key 是否属于 folderKey 文件夹或其子树（含叶子键）。
- * 收藏 namespaced id 只用 `\0` 分隔判断，避免折叠 `\0fav\0A` 误伤根 `\0fav\0A:B`。
- */
+// 判断 key 是否属于 folderKey 文件夹或其子树（含叶子键）。
+// 收藏 namespaced id 只用 `\0` 分隔判断，避免折叠 `\0fav\0A` 误伤根 `\0fav\0A:B`。
 function isUnderFolder(key: string, folderKey: string): boolean {
   if (key === folderKey) return true
   if (folderKey.startsWith(FAV_ID_MARK)) {
@@ -319,7 +441,7 @@ function isUnderFolder(key: string, folderKey: string): boolean {
 
 function onNodeCollapse(_data: unknown, node: TreeNode) {
   const key = String(node.key)
-  // 折叠父节点时子节点不会触发 collapse，需一并移除，否则刷新后会因 setExpandedKeys 沿父链展开而“弹回”
+  // 折叠父节点时子节点不会触发 collapse，需一并移除，否则刷新后会因 setExpandedKeys 沿父链展开而"弹回"
   if (key === rootId) {
     expandedKeys.value = []
   } else {
@@ -330,7 +452,7 @@ function onNodeCollapse(_data: unknown, node: TreeNode) {
   }
 }
 
-/** 程序清空勾选并回写父级（setCheckedKeys 不会触发 check-change） */
+// 程序清空勾选并回写父级（setCheckedKeys 不会触发 check-change）
 function clearChecksAndEmit(): void {
   treeRef.value?.setCheckedKeys([])
   emit('checkChange', [])
@@ -350,124 +472,6 @@ watch(
     clearChecksAndEmit()
   },
 )
-
-const rootTreeData = computed((): KeyBuildNode[] => {
-  if (props.showCheckbox) {
-    const keyCount = useFolderGroups.value
-      ? props.folderKeyGroups.reduce((n, g) => n + g.keys.length, 0)
-      : props.filterKeyList.length || 0
-    return [
-      {
-        id: rootId,
-        label: 'db' + String(share.conn?.db ?? ''),
-        children: treeData.value as KeyBuildNode[],
-        keyCount,
-        isRootNode: true,
-      },
-    ]
-  }
-  return treeData.value as KeyBuildNode[]
-})
-
-// 构建树：同层文件夹用 Map 查找，避免 find 线性扫描；idPrefix 用于收藏单树命名空间
-function buildTree(keyList: RedisKey_Deserialize[], trim = '', idPrefix = '') {
-  const root: KeyBuildNode[] = []
-  /** 每层 children 数组 → label → 文件夹节点（不含叶子） */
-  const folderMaps = new WeakMap<KeyBuildNode[], Map<string, KeyBuildNode>>()
-
-  function folderMapOf(level: KeyBuildNode[]): Map<string, KeyBuildNode> {
-    let m = folderMaps.get(level)
-    if (!m) {
-      m = new Map()
-      folderMaps.set(level, m)
-    }
-    return m
-  }
-
-  const sep = keySep.value
-  keyList.forEach(rk => {
-    // trim 时只展示相对路径段，叶子仍挂完整 redisKey
-    let pathForParts = rk.key
-    if (trim) {
-      const rel = keyRelativePath(rk.key, trim, sep)
-      if (rel !== null) pathForParts = rel
-    }
-    const parts = pathForParts === '' ? [''] : splitKeyPath(pathForParts, sep)
-    let nowLevel = root
-    parts.forEach((part, index) => {
-      // 叶子节点：hepengju 这种无分隔符的键直接作为叶子
-      if (index === parts.length - 1) {
-        const label = part
-        let node = { id: idPrefix + TREE_KEY_ID_PREFIX + rk.key, label, children: [], redisKey: rk }
-        nowLevel.push(node)
-        return
-      }
-
-      // 文件夹 id 仍用完整路径（单 sep 拼接），便于展开定位
-      const folders = folderMapOf(nowLevel)
-      let node = folders.get(part)
-      if (!node) {
-        const fullParts = trim ? [trim, ...parts.slice(0, index + 1)] : parts.slice(0, index + 1)
-        node = { id: idPrefix + joinKeyPath(fullParts, sep), label: part, children: [] }
-        nowLevel.push(node)
-        folders.set(part, node)
-      }
-      nowLevel = node.children
-    })
-  })
-  return root
-}
-
-// 统计叶子节点个数: 循环方式（豆包）  ==> 递归方式在数据量比较大时会栈溢出
-function countLeaves(node: KeyBuildNode) {
-  // 初始化一个栈，将根节点压入栈中
-  const stack = [node]
-  // 用于存储每个节点的叶子节点数量
-  const keyCounts = new Map()
-
-  while (stack.length > 0) {
-    // 取出栈顶节点
-    const nowNode = stack[stack.length - 1]
-
-    // 如果当前节点的所有子节点都已经处理过
-    if (nowNode.children.every(child => keyCounts.has(child))) {
-      // 弹出栈顶节点
-      stack.pop()
-      if (nowNode.children.length === 0) {
-        // 如果是叶子节点，叶子数量为 1
-        keyCounts.set(nowNode, 1)
-      } else {
-        // 计算当前节点的叶子节点数量，等于所有子节点叶子节点数量之和
-        let keyCount = 0
-        nowNode.children.forEach(child => {
-          keyCount += keyCounts.get(child)
-        })
-        keyCounts.set(nowNode, keyCount)
-      }
-      // 将计算好的叶子节点数量赋值给节点的 keyCount 属性
-      nowNode.keyCount = keyCounts.get(nowNode)
-    } else {
-      // 如果当前节点的子节点还有未处理的，将未处理的子节点压入栈中
-      nowNode.children.forEach(child => {
-        if (!keyCounts.has(child)) {
-          stack.push(child)
-        }
-      })
-    }
-  }
-  // 返回根节点的叶子节点数量
-  return keyCounts.get(node)
-}
-
-// 构建树: 仅仅叶子节点（即List显示）
-function buildList(keyList: RedisKey_Deserialize[], idPrefix = '') {
-  return keyList.map(rk => ({
-    id: idPrefix + TREE_KEY_ID_PREFIX + rk.key,
-    label: rk.key,
-    children: [],
-    redisKey: rk,
-  }))
-}
 
 // 获取选中的节点键；收藏单树额外上报勾选的收藏目录根
 function checkChange() {
@@ -493,7 +497,7 @@ function checkChange() {
   emit('checkChange', redisKeys)
 }
 
-/** 定位键时优先落在最长匹配的已加载收藏目录下 */
+// 定位键时优先落在最长匹配的已加载收藏目录下
 function resolveFavPathForKey(key: string): string | null {
   const sep = keySep.value
   let best: string | null = null
@@ -549,9 +553,6 @@ function setCurrentKey(redisKey: RedisKey_Deserialize) {
   })
 }
 
-// 键高度配置
-const keyHeight = computed(() => meTauri.settings.keyHeight ?? 20)
-
 function quickDeleteKey(redisKey: RedisKey_Deserialize): void {
   if (!share.conn) return
   meDeleteKey(share.conn.id, redisKey)
@@ -562,41 +563,19 @@ function isFavoritedLocal(redisKey: RedisKey_Deserialize | undefined): boolean {
   return props.favorites.some(f => sameRedisKey(f, redisKey))
 }
 
-const isContextNodeFavorited = computed(() => {
-  if (!contextMenuNode.value?.isLeaf) return false
-  return isFavoritedLocal(contextMenuNode.value.data.redisKey)
-})
-
 function isFolderFavoritedLocal(folder: string | undefined): boolean {
   if (!folder) return false
   return props.favoriteFolders.includes(folder)
 }
 
-const isContextFolderFavorited = computed(() => {
-  if (!contextMenuNode.value || contextMenuNode.value.isLeaf) return false
-  return isFolderFavoritedLocal(String(contextMenuNode.value.key))
-})
-
-const isContextFavoriteFolderRoot = computed(() =>
-  Boolean(contextMenuNode.value?.data?.isFavoriteFolderRoot),
-)
-
-const contextFolderHasMore = computed(() => {
-  if (!isContextFavoriteFolderRoot.value || !contextMenuNode.value) return false
-  const path =
-    (contextMenuNode.value.data as KeyBuildNode).favFolderPath ??
-    logicalFolderPath(contextMenuNode.value)
-  return props.folderLoadMorePaths.includes(path)
-})
-
-/** 收藏目录根是否正在 SCAN */
+// 收藏目录根是否正在 SCAN
 function isFavoriteFolderLoading(node: TreeNode): boolean {
   if (!node.data?.isFavoriteFolderRoot) return false
   const path = node.data.favFolderPath ?? logicalFolderPath(node)
   return props.folderLoadingPaths.includes(path)
 }
 
-/** 收藏目录用实心 me-icon；普通目录仍用 Element 线框图标；SCAN 中换 loading */
+// 收藏目录用实心 me-icon；普通目录仍用 Element 线框图标；SCAN 中换 loading
 function folderIconName(node: TreeNode): string {
   if (node.data.isRootNode) return 'me-icon-db'
   if (isFavoriteFolderLoading(node)) return 'el-icon-loading'
@@ -608,6 +587,7 @@ function folderIconName(node: TreeNode): string {
   }
   return node.expanded ? 'el-icon-folder-opened' : 'el-icon-folder'
 }
+// #endregion
 </script>
 
 <template>

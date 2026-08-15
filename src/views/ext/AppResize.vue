@@ -1,12 +1,13 @@
 <script setup lang="ts">
-/**
- * Linux 无边框窗口没有系统边缘缩放，用透明手柄 + startResizeDragging 补上。
- * Windows / macOS 本就可用系统边缘，此处不渲染，避免干扰。
- */
+// #region 导入
+// Linux 无边框窗口没有系统边缘缩放，用透明手柄 + startResizeDragging 补上。
+// Windows / macOS 本就可用系统边缘，此处不渲染，避免干扰。
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { type as getOsType } from '@tauri-apps/plugin-os'
 import { onMounted, onUnmounted, ref } from 'vue'
+// #endregion
 
+// #region 核心状态
 type ResizeDirection =
   | 'East'
   | 'North'
@@ -31,7 +32,9 @@ const dirs: { dir: ResizeDirection; cls: string }[] = [
   { dir: 'SouthEast', cls: 'se' },
   { dir: 'SouthWest', cls: 'sw' },
 ]
+// #endregion
 
+// #region 面板操作
 async function refreshVisibility() {
   if (!enabled) return
   showHandles.value = !(await appWindow.isMaximized()) && !(await appWindow.isFullscreen())
@@ -52,6 +55,7 @@ onMounted(async () => {
 onUnmounted(() => {
   unlisten?.()
 })
+// #endregion
 </script>
 
 <template>

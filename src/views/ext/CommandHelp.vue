@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// #region 导入
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -6,6 +7,9 @@ import MeWebsite from '@/components/MeWebsite.vue'
 import { commandHelp } from '@/locales/cmd'
 import { sortVersionsDesc } from '@/utils/redis-version'
 import { isZh } from '@/utils/util'
+// #endregion
+
+// #region 核心状态
 
 const { t } = useI18n()
 
@@ -24,7 +28,7 @@ const props = withDefaults(
 const keyword = ref(props.initialKeyword)
 const group = ref(props.initialGroup)
 const tableKey = ref(0)
-/** 列头筛选（MeTable 分页前先过滤全量数据，列上 filter-method 仅保留 UI） */
+// 列头筛选（MeTable 分页前先过滤全量数据，列上 filter-method 仅保留 UI）
 const activeFilters = ref<Record<string, unknown[]>>({})
 
 const groupList = computed(() => new Set(commandHelp.value.map(row => row.group)))
@@ -60,8 +64,11 @@ function onFilterChange(filters: Record<string, unknown[]>) {
   // EP 每次只回传当前列，需合并保留其它列已选条件
   activeFilters.value = { ...activeFilters.value, ...filters }
 }
+// #endregion
 
-/** 外部调用打开弹窗 */
+// #region 面板操作
+
+// 外部调用打开弹窗
 function open(options?: { keyword?: string; group?: string }) {
   keyword.value = options?.keyword ?? props.initialKeyword
   group.value = options?.group ?? props.initialGroup
@@ -70,15 +77,16 @@ function open(options?: { keyword?: string; group?: string }) {
   visible.value = true
 }
 
-/** 外部调用关闭弹窗 */
+// 外部调用关闭弹窗
 function close() {
   visible.value = false
 }
 
-/** 只读列表头：英文 Read-only 较宽，中文只读可窄一些 */
+// 只读列表头：英文 Read-only 较宽，中文只读可窄一些
 const readonlyColWidth = computed(() => (isZh.value ? 88 : 120))
 
 defineExpose({ open, close })
+// #endregion
 </script>
 
 <template>

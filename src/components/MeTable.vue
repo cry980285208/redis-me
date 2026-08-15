@@ -53,7 +53,7 @@ const pageSize = ref(20)
 // #endregion
 
 // #region 排序（default-sort、sort-change、整表 orderBy 与 EP 列行为一致）
-/** 与 Element Plus sort-change 中 column 对齐的字段（避免深类型依赖） */
+// 与 Element Plus sort-change 中 column 对齐的字段（避免深类型依赖）
 interface SortColumnLike {
   sortable?: boolean | string
   sortMethod?: (a: unknown, b: unknown) => number
@@ -170,7 +170,7 @@ const showPagination = computed(() => {
   return sortedData.value.length > pageSize.value
 })
 
-/** 无数据时不显示 footer；有数据时显示分页和/或 … */
+// 无数据时不显示 footer；有数据时显示分页和/或 …
 const showTableFooter = computed(() => showExportMenu.value || showPagination.value)
 
 function handleChange(page: number, size: number): void {
@@ -197,7 +197,7 @@ function exportFileName(ext: string): string {
   return buildExportFileName(props.exportName, ext)
 }
 
-/** 导出前临时展示全部 sortedData，以便 DOM 含自定义 slot 列（如 Info 说明） */
+// 导出前临时展示全部 sortedData，以便 DOM 含自定义 slot 列（如 Info 说明）
 async function readFullTableMatrix(): Promise<{ headers: string[]; rows: string[][] } | null> {
   const table = tableRef.value
   if (!table) return null
@@ -332,8 +332,6 @@ defineExpose({
 <style scoped lang="scss">
 .me-table {
   height: 100%;
-  //border: 2px solid red;
-
   display: flex;
   flex-direction: column;
   justify-content: space-between;

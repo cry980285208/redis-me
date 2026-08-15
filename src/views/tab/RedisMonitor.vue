@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// #region 导入
 import { listen } from '@tauri-apps/api/event'
 import { computed, inject, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -7,6 +8,9 @@ import MeWebsite from '@/components/MeWebsite.vue'
 import { shareProvideKey } from '@/types/me-interface'
 import { meConfirm, meCopy, meCommands, meOk } from '@/utils/util'
 import NodeList from '@/views/ext/NodeList.vue'
+// #endregion
+
+// #region 核心状态
 
 const { t } = useI18n()
 // 共享数据
@@ -16,7 +20,7 @@ const node = ref('')
 const keyword = ref('')
 const monitoring = ref(false)
 
-/** 与 Tauri `monitor` 事件 payload 一致（表格列 datetime / command） */
+// 与 Tauri `monitor` 事件 payload 一致（表格列 datetime / command）
 interface MonitorRow {
   id?: string
   datetime?: string
@@ -57,7 +61,6 @@ const monitor = async () => {
 
 function clearData() {
   dataList.value = []
-  //meConfirm('确定清空消息吗？', () => dataList.value = [])
 }
 
 // 监听消息
@@ -74,6 +77,7 @@ async function tauriUnlisten() {
   unlisten?.()
 }
 onUnmounted(() => tauriUnlisten())
+// #endregion
 </script>
 
 <template>

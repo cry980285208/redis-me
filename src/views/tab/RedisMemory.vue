@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import { capitalize } from 'lodash'
-import { computed, h, inject, ref, watchEffect } from 'vue'
+// #region 导入
+import { computed, inject, ref, watchEffect } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { shareProvideKey } from '@/types/me-interface'
 import type { RedisKey_Deserialize, RedisKeySize_Serialize } from '@/types/tauri-specta'
 import { clearKeyTypeCacheForConn } from '@/utils/key-type-cache'
 // 官网参考: https://redis.ac.cn/docs/latest/commands/slowlog-get/
-import { meType } from '@/utils/redis-display'
+import { meType, toKeyTypeLabel } from '@/utils/redis-display'
 import { sameRedisKey } from '@/utils/redis-key'
 import {
   bus,
@@ -20,7 +20,9 @@ import {
   meCommands,
   meOk,
 } from '@/utils/util'
+// #endregion
 
+// #region 核心状态
 const { t } = useI18n()
 // 共享数据
 const share = inject(shareProvideKey)!
@@ -67,7 +69,7 @@ const filterDataList = computed(() => {
 })
 const filterTypes = computed(() => {
   return [...new Set(dataList.value.map(d => d.type))].map(d => ({
-    text: d?.toUpperCase(),
+    text: toKeyTypeLabel(d),
     value: d,
   }))
 })
@@ -76,14 +78,6 @@ const filterTypes = computed(() => {
 function humanTotalSize(list: { value: RedisKeySize_Serialize[] }) {
   return meHumanSize(list.value.map(d => d.size).reduce((sum, cur) => sum + cur, 0) ?? 0)
 }
-
-// 合计列
-// function getSummaries() {
-//   const count = filterDataList.value.length + ' / ' + dataList.value.length
-//   const size = humanTotalSize(filterDataList) + ' / ' + humanTotalSize(dataList)
-//   const show = h('div', { class: 'me-flex' }, [h('div', null, count), h('div', null, size)])
-//   return ['', t('redisMemory.total'), show, '']
-// }
 
 async function refresh() {
   loading.value = true
@@ -102,14 +96,9 @@ async function refresh() {
     loading.value = false
   }
 }
-// refresh()
 
 function memoryUsage() {
-  // if (scanTotal.value > 10_0000 || scanTotal.value <= 0 || sleepMillis.value > 100) {
-  //   meConfirm(t('redisMemory.longTimeHint'), () => refresh())
-  // } else {
   refresh()
-  // }
 }
 
 // 选中键
@@ -150,6 +139,7 @@ function batchDelKey() {
     },
   )
 }
+// #endregion
 </script>
 
 <template>
@@ -261,7 +251,7 @@ function batchDelKey() {
           :filters="filterTypes"
           :filter-method="meFilterHandler">
           <template #default="scope">
-            <el-text :type="meType(scope.row.type)"> {{ scope.row.type?.toUpperCase() }}</el-text>
+            <el-text :type="meType(scope.row.type)">{{ toKeyTypeLabel(scope.row.type) }}</el-text>
           </template>
         </el-table-column>
         <el-table-column :label="t('redisMemory.key')" prop="key" show-overflow-tooltip>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// #region 导入
 import { listen } from '@tauri-apps/api/event'
 import { computed, inject, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -7,6 +8,9 @@ import MeWebsite from '@/components/MeWebsite.vue'
 import { shareProvideKey } from '@/types/me-interface'
 import { BYTES_FORMAT, IPC_WIRE_FORMAT, meViewToWire, type ViewBytesFormat } from '@/utils/format'
 import { meCopy, meCommands, meErr, meOk } from '@/utils/util'
+// #endregion
+
+// #region 核心状态
 
 const { t } = useI18n()
 // 共享数据
@@ -79,7 +83,7 @@ async function publish() {
   }
 }
 
-/** 消息框回车发送（与发送按钮一致：频道非空且消息非空） */
+// 消息框回车发送（与发送按钮一致：频道非空且消息非空）
 function publishOnEnter() {
   if (sendLoading.value) return
   if (!sendChannel.value || !sendMessage.value) return
@@ -105,6 +109,7 @@ async function tauriUnlisten() {
   unlisten?.()
 }
 onUnmounted(() => tauriUnlisten())
+// #endregion
 </script>
 
 <template>

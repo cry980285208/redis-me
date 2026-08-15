@@ -306,7 +306,7 @@ api_model!(ScanParam {
 });
 
 // fieldScan 按类型的扩展参数：Stream 范围、STRING 大值预览阈值等
-api_model!(FiledScanMeta {
+api_model!(FieldScanMeta {
     /// Stream XREVRANGE 上界和下界
     max_id: String,
     min_id: String,
@@ -322,6 +322,8 @@ api_model!(FiledScanMeta {
     list_desc: Option<bool>,
     /// Stream 扫描方向：true 从 max 向 min（XREVRANGE），false 从 min 向 max（XRANGE）
     stream_desc: Option<bool>,
+    /// VectorSet 浏览模式：true 随机采样（VRANDMEMBER，无分页）；false 范围查询（VRANGE）；默认 true
+    vectorset_sample: Option<bool>,
 });
 
 api_model!(FieldScanParam {
@@ -333,7 +335,7 @@ api_model!(FieldScanParam {
     pattern: String,
     /// 完全匹配：true 时走 HGET / SISMEMBER / ZSCORE
     exact: bool,
-    meta: Option<FiledScanMeta>,
+    meta: Option<FieldScanMeta>,
     bytes_format: Option<BytesFormat>, // 扫描/展示用字节格式
     /// 是否拉取 TYPE/TTL/MEMORY/HLEN；前端续扫时为 false
     include_meta: Option<bool>,
@@ -397,6 +399,9 @@ api_model!(FieldScanResult {
     /// Array：ARLEN（逻辑长度 maxIndex+1）；其它类型为 None
     #[serde(default, skip_serializing_if = "Option::is_none")]
     logical_length: Option<u64>,
+    /// Vector Set：VDIM（向量维度）；其它类型为 None
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    vector_dim: Option<u64>,
 });
 
 // Redis键: 由于键是字节存储的，考虑转换为utf-8字符串显示后可能会丢失信息，因此封装为对象
@@ -578,8 +583,14 @@ api_model!(RedisFieldAdd {
     value: String, // 字段类型为String时的值
 
     list_push_method: String, // lpush, rpush
-    /// Array 写入方式：arset（指定索引）/ arinsert（顺序追加）
+    /// Array 写入方式：arset（指定索引）/ arinsert（游标插入）
     array_write_method: String,
+    /// Vector Set：前端已解析的浮点分量（勿传多格式文本；空=非 vectorset）
+    #[serde(default)]
+    vector: Vec<f64>,
+    /// Vector Set：attrs JSON 文本；空=不设 SETATTR（新建不带属性）
+    #[serde(default)]
+    attrs: String,
     field_value_list: Vec<RedisFieldValue>,
     stream_id: String, // stream
 
@@ -613,6 +624,63 @@ api_model!(RedisArInfoItem {
     value: String,
 });
 
+// Vector Set：按元素读写 attrs（VGETATTR / VSETATTR；不随 VRANGE）
+api_model!(RedisVAttr {
+    key: RedisKey,
+    /// 元素名 wire（与 fieldScan 行 key 一致）
+    field_key: String,
+    /// 仅 VSETATTR：JSON 文本；空串删除属性
+    #[serde(default)]
+    attrs: String,
+    val_fmt: Option<BytesFormat>,
+});
+
+// Vector Set VSIM：相似度查询（WITHSCORES 固定开启）
+api_model!(RedisVSim {
+    key: RedisKey,
+    /// ele | values
+    mode: String,
+    /// ELE：查询元素名（按 val_fmt 解码）
+    #[serde(default)]
+    field_key: String,
+    /// VALUES：查询向量
+    #[serde(default)]
+    vector: Vec<f64>,
+    /// COUNT；默认由调用方填
+    count: u64,
+    /// 是否 WITHATTRIBS
+    with_attribs: bool,
+    /// FILTER 表达式；空=不加
+    #[serde(default)]
+    filter: String,
+    /// EPSILON；None=不加
+    epsilon: Option<f64>,
+    /// EF；None=不加
+    ef: Option<u64>,
+    val_fmt: Option<BytesFormat>,
+});
+
+api_model!(RedisVSimItem {
+    /// 元素名（val_fmt 编码）
+    key: String,
+    /// 相似度 1=同向，0=反向
+    score: f64,
+    /// WITHATTRIBS 时返回；无属性为空串
+    #[serde(default)]
+    attrs: String,
+});
+
+// Vector Set 元素（field_scan 返回，含向量+属性）
+api_model!(RedisVectorSetItem {
+    /// 元素名（val_fmt 编码）
+    name: String,
+    /// 向量 JSON 数组字符串 "[1.0, 2.0, ...]"
+    vector: String,
+    /// 属性 JSON 对象字符串 "{\"pos\":\"noun\"}"
+    #[serde(default)]
+    attrs: String,
+});
+
 // 字段修改
 api_model!(RedisFieldSet {
     key: RedisKey,
@@ -626,6 +694,12 @@ api_model!(RedisFieldSet {
     include_field_ttl: Option<bool>,
     /// 编辑字段时解析用户输入（含 Hash 字段名）；Redis 键由 `key` 承载，不再经此格式解析
     val_fmt: Option<BytesFormat>,
+    /// Vector Set：前端已解析的浮点分量（与 `RedisFieldAdd.vector` 一致；空=非 vectorset）
+    #[serde(default)]
+    vector: Vec<f64>,
+    /// Vector Set：前端恒提交当前全量 attrs JSON（空串=清除属性，官方约定）
+    #[serde(default)]
+    attrs: String
 });
 
 // Hash HKEYS / HVALS 共用参数
@@ -672,6 +746,9 @@ api_model!(RedisFieldValue {
     field_value: String,
     field_score: f64,
     field_ttl: i64, // 字段 TTL（秒），仅 Redis/Valkey >= 7.4
+    /// VectorSet：VGETATTR 返回的属性 JSON；无属性或其他类型为空串
+    #[serde(default)]
+    field_attrs: String
 });
 
 // ZSet 排名查询

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// #region 导入
 import { readTextFile } from '@tauri-apps/plugin-fs'
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -15,6 +16,9 @@ import {
   type ConnImportSource,
 } from '@/utils/rdm'
 import { meErr, meWarn } from '@/utils/util'
+// #endregion
+
+// #region 核心状态
 
 const emit = defineEmits<{ import: [list: UiConn[]]; closed: [] }>()
 
@@ -27,7 +31,7 @@ const loading = ref(false)
 
 const fileSuffix = computed(() => connImportFileSuffix(source.value))
 
-/** 产品名，不做 i18n */
+// 产品名，不做 i18n
 const sourceOptions: { label: string; value: ConnImportSource }[] = [
   { label: 'RedisME', value: 'redisme' },
   { label: 'AnotherRDM', value: 'another' },
@@ -45,6 +49,9 @@ const filePlaceholder = computed(() => {
 watch(source, () => {
   filePath.value = ''
 })
+// #endregion
+
+// #region 面板操作
 
 defineExpose({ open })
 
@@ -100,6 +107,7 @@ async function submit(): Promise<void> {
     loading.value = false
   }
 }
+// #endregion
 </script>
 
 <template>

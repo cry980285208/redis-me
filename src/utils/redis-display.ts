@@ -7,30 +7,74 @@ import type { RedisNode } from '@/types/tauri-specta'
 
 const t = i18n.global.t
 
+/** value：界面展示名（驼峰）；SCAN/新建键经 toRedisTypeName 转 Redis TYPE */
 export const KEY_TYPE_LIST: KeyTypeListItem[] = [
-  { short: 'S', value: 'STRING', type: 'primary' },
-  { short: 'H', value: 'HASH', type: 'primary' },
-  { short: 'L', value: 'LIST', type: 'danger' },
-  { short: 'E', value: 'SET', type: 'danger' },
-  { short: 'Z', value: 'ZSET', type: 'danger' },
-  { short: 'X', value: 'STREAM', type: 'warning' },
-  { short: 'J', value: 'JSON', type: 'warning' },
-  { short: 'A', value: 'ARRAY', type: 'warning' }, // Redis 8.8 Array；色同 JSON/Stream
+  { short: 'S', value: 'String', type: 'primary' },
+  { short: 'H', value: 'Hash', type: 'success' },
+  { short: 'L', value: 'List', type: 'warning' },
+  { short: 'E', value: 'Set', type: 'warning' },
+  { short: 'Z', value: 'SortedSet', type: 'warning' },
+  { short: 'V', value: 'VectorSet', type: 'warning' }, // Redis 8.4+；与 *Set 同色，紧挨 SortedSet
+  { short: 'X', value: 'Stream', type: 'danger' },
+  { short: 'J', value: 'Json', type: 'danger' },
+  { short: 'A', value: 'Array', type: 'danger' }, // Redis 8.8
 ]
 
 const keyTypeMap = new Map(KEY_TYPE_LIST.map(item => [item.value, item.type]))
 const keyShortMap = new Map(KEY_TYPE_LIST.map(item => [item.value, item.short]))
 
+/** Redis TYPE / 旧大写名 / 展示名 → 列表 value（如 zset→SortedSet） */
+export function toKeyTypeLabel(keyType: string | undefined | null): string {
+  if (!keyType) return ''
+  switch (keyType.toLowerCase()) {
+    case 'zset':
+    case 'sortedset':
+      return 'SortedSet'
+    case 'vectorset':
+      return 'VectorSet'
+    case 'rejson-rl':
+    case 'json':
+      return 'Json'
+    case 'string':
+      return 'String'
+    case 'hash':
+      return 'Hash'
+    case 'list':
+      return 'List'
+    case 'set':
+      return 'Set'
+    case 'stream':
+      return 'Stream'
+    case 'array':
+      return 'Array'
+    default:
+      return (
+        KEY_TYPE_LIST.find(i => i.value.toLowerCase() === keyType.toLowerCase())?.value ?? keyType
+      )
+  }
+}
+
+/** 展示名或杂糅输入 → Redis TYPE 小写（SCAN / fieldAdd） */
+export function toRedisTypeName(displayOrRedis: string): string {
+  switch (displayOrRedis.toLowerCase()) {
+    case 'sortedset':
+    case 'zset':
+      return 'zset'
+    default:
+      return displayOrRedis.toLowerCase()
+  }
+}
+
 /** 键类型：el-text, el-tag 的 type */
 export function meType(keyType: string | undefined | null): string {
   if (!keyType) return 'info'
-  return keyTypeMap.get(keyType?.toUpperCase() ?? '') || 'info'
+  return keyTypeMap.get(toKeyTypeLabel(keyType)) || 'info'
 }
 
 /** 键类型短：避免 String、Set 的简称都是 S */
 export function meKeyShort(keyType: string | undefined | null, defaultValue = '?'): string {
   if (!keyType) return defaultValue
-  return keyShortMap.get(keyType?.toUpperCase() ?? '') || defaultValue
+  return keyShortMap.get(toKeyTypeLabel(keyType)) || defaultValue
 }
 
 /**

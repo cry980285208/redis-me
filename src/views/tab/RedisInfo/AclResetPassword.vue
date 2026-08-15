@@ -1,5 +1,6 @@
 <script setup lang="ts">
-/** ACL 重置密码：保留用户现有规则，仅更新密码 hash */
+// #region 导入
+// ACL 重置密码：保留用户现有规则，仅更新密码 hash
 import { computed, inject, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -7,20 +8,23 @@ import { shareProvideKey } from '@/types/me-interface'
 import type { AclUserDetail } from '@/types/tauri-specta'
 import { buildAclSavePayload, createAclModelFromDetail } from '@/utils/acl'
 import { meCommands, meCopy, meOk, meWarn } from '@/utils/util'
+// #endregion
 
+// #region 核心状态
 const visible = defineModel<boolean>({ default: false })
-
 const props = defineProps<{ user: AclUserDetail | null }>()
-
 const emit = defineEmits<{ success: [] }>()
-
 const { t } = useI18n()
 const share = inject(shareProvideKey)!
-const canEdit = computed(() => !share.readonly)
-
 const loading = ref(false)
 const password = ref('')
+// #endregion
 
+// #region 计算属性
+const canEdit = computed(() => !share.readonly)
+// #endregion
+
+// #region 面板操作
 watch(visible, val => {
   if (val) password.value = ''
 })
@@ -60,6 +64,7 @@ async function save() {
     loading.value = false
   }
 }
+// #endregion
 </script>
 
 <template>

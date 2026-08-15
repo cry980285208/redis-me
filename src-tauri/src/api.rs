@@ -149,6 +149,10 @@ api_commands!(
     zset_range(param: RedisZsetRange) -> Vec<RedisZsetRangeItem>;  // ZSet Top/Bottom 范围查询（ZRANGE/ZREVRANGE）
     ar_last_items(param: RedisArLastItems) -> Vec<RedisArLastItemsItem>; // Array ARLASTITEMS
     ar_info(key: RedisKey) -> Vec<RedisArInfoItem>;               // Array ARINFO 元数据
+    v_info(key: RedisKey) -> Vec<RedisArInfoItem>;                // Vector Set VINFO 元数据（行结构同 ARINFO）
+    v_getattr(param: RedisVAttr) -> String;                       // Vector Set VGETATTR（按需，不随 VRANGE）
+    v_setattr(param: RedisVAttr) -> ();                           // Vector Set VSETATTR（空串删除）
+    v_sim(param: RedisVSim) -> Vec<RedisVSimItem>;                // Vector Set VSIM 相似度查询
     object_info(key: RedisKey) -> RedisObjectInfo;                // OBJECT 自省（ENCODING/IDLETIME/REFCOUNT/FREQ）
     execute_command(param: RedisCommand) -> String;               // 执行命令
     config_get(pattern: &str, node: Option<String>) -> HashMap<String, String>; // 获取配置

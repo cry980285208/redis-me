@@ -1,7 +1,6 @@
 <script setup lang="ts">
-/**
- * 收藏模式上区：单棵 KeyTree，顶层为收藏目录；展开后 SCAN 挂键（跟随 keyShow）。
- */
+// #region 导入
+// 收藏模式上区：单棵 KeyTree，顶层为收藏目录；展开后 SCAN 挂键（跟随 keyShow）。
 import { sortBy } from 'lodash'
 import { computed, inject, reactive, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -13,11 +12,12 @@ import { redisKeyId, sameRedisKey } from '@/utils/redis-key'
 import { meCommands, meCopy, meWarn, sleep } from '@/utils/util'
 
 import KeyTree from './KeyTree.vue'
+// #endregion
 
+// #region 核心状态
 const { t } = useI18n()
 const share = inject(shareProvideKey)!
 const keySep = computed(() => getConnKeySeparator(share.conn))
-
 const props = withDefaults(
   defineProps<{
     folders: string[]
@@ -26,7 +26,7 @@ const props = withDefaults(
     keyShowTree?: boolean
     sortByCount?: boolean
     showCheckbox?: boolean
-    /** 另一区已在多选时为 false，右键不提供进入多选 */
+    // 另一区已在多选时为 false，右键不提供进入多选
     allowEnterCheckedMode?: boolean
     color?: string
   }>(),
@@ -40,14 +40,13 @@ const props = withDefaults(
     color: 'var(--el-color-primary)',
   },
 )
-
 const emit = defineEmits<{
   chooseKey: [redisKey: RedisKey_Deserialize]
   contextKey: [command: string, redisKey: RedisKey_Deserialize]
   contextFolder: [command: string, folder: string]
   unfavoriteFolder: [path: string]
   checkChange: [redisKeys: RedisKey_Deserialize[]]
-  /** 勾选的收藏目录根 path，供批量取消收藏目录 */
+  // 勾选的收藏目录根 path，供批量取消收藏目录
   favoriteFolderCheckChange: [paths: string[]]
 }>()
 
@@ -60,22 +59,16 @@ interface FolderScanState {
 }
 
 const scanMap = reactive(new Map<string, FolderScanState>())
-/** 已展开的收藏目录（F5 重扫用；展开 UI 由 KeyTree 管理） */
+// 已展开的收藏目录（F5 重扫用；展开 UI 由 KeyTree 管理）
 const expanded = ref<Set<string>>(new Set())
 const SCAN_FETCH_COUNT = computed(() => meTauri.settings.keyScanCount as number)
+const keyTreeRef = useTemplateRef<InstanceType<typeof KeyTree>>('keyTreeRef')
+// #endregion
 
-function ensureState(path: string): FolderScanState {
-  let s = scanMap.get(path)
-  if (!s) {
-    s = { keys: [], cursor: null, loading: false, loaded: false, cancelled: false }
-    scanMap.set(path, s)
-  }
-  return s
-}
-
+// #region 计算属性
 const kw = computed(() => props.filterKeyword.trim().toLowerCase())
 
-/** path 命中或已加载子键命中则保留目录；子键再按关键字滤 */
+// path 命中或已加载子键命中则保留目录；子键再按关键字滤
 const visibleFolders = computed(() => {
   const q = kw.value
   if (!q) return props.folders
@@ -86,14 +79,7 @@ const visibleFolders = computed(() => {
   })
 })
 
-function filteredKeys(path: string): RedisKey_Deserialize[] {
-  const keys = scanMap.get(path)?.keys ?? []
-  const q = kw.value
-  if (!q) return keys
-  return keys.filter(k => k.key.toLowerCase().includes(q))
-}
-
-/** 交给 KeyTree 的顶层收藏目录 + 已 SCAN 键 */
+// 交给 KeyTree 的顶层收藏目录 + 已 SCAN 键
 const folderKeyGroups = computed(() =>
   visibleFolders.value.map(path => {
     const s = scanMap.get(path)
@@ -108,30 +94,30 @@ const folderLoadMorePaths = computed(() =>
   }),
 )
 
-/** SCAN 中的收藏目录 path（目录图标换成 loading） */
+// SCAN 中的收藏目录 path（目录图标换成 loading）
 const folderLoadingPaths = computed(() =>
   visibleFolders.value.filter(path => scanMap.get(path)?.loading),
 )
 
 const anyScanning = computed(() => Array.from(scanMap.values()).some(s => s.loading && !s.loaded))
+// #endregion
 
-/** 收藏列表移除某目录时清掉其扫描残留 */
-watch(
-  () => props.folders,
-  paths => {
-    const set = new Set(paths)
-    const stale = Array.from(scanMap.keys()).filter(p => !set.has(p))
-    if (stale.length === 0) return
-    for (const path of stale) {
-      const s = scanMap.get(path)
-      if (s) s.cancelled = true
-      scanMap.delete(path)
-      const next = new Set(expanded.value)
-      next.delete(path)
-      expanded.value = next
-    }
-  },
-)
+// #region 扫描逻辑
+function ensureState(path: string): FolderScanState {
+  let s = scanMap.get(path)
+  if (!s) {
+    s = { keys: [], cursor: null, loading: false, loaded: false, cancelled: false }
+    scanMap.set(path, s)
+  }
+  return s
+}
+
+function filteredKeys(path: string): RedisKey_Deserialize[] {
+  const keys = scanMap.get(path)?.keys ?? []
+  const q = kw.value
+  if (!q) return keys
+  return keys.filter(k => k.key.toLowerCase().includes(q))
+}
 
 async function onFolderExpand(path: string): Promise<void> {
   const next = new Set(expanded.value)
@@ -175,7 +161,7 @@ async function scanFolder(path: string, useCursor: boolean, loadAll: boolean): P
   }
 }
 
-/** SCAN 可能跨 cursor 重复返回同一键；身份与 sameRedisKey/redisKeyId 一致 */
+// SCAN 可能跨 cursor 重复返回同一键；身份与 sameRedisKey/redisKeyId 一致
 function mergeScanKeys(
   prev: RedisKey_Deserialize[],
   batch: RedisKey_Deserialize[],
@@ -227,7 +213,7 @@ async function loadMore(path: string, loadAll: boolean): Promise<void> {
   await scanFolder(path, true, loadAll)
 }
 
-/** 重新扫描目录；loadAll 时扫完全部键，否则按阈值自动续扫 */
+// 重新扫描目录；loadAll 时扫完全部键，否则按阈值自动续扫
 async function reloadFolder(path: string, loadAll = false): Promise<void> {
   const s = ensureState(path)
   if (s.loading) {
@@ -241,7 +227,7 @@ async function reloadFolder(path: string, loadAll = false): Promise<void> {
   await scanFolder(path, false, loadAll)
 }
 
-/** 刷新所有已展开目录（F5）；串行避免多目录同时 cancel/重扫把状态打乱 */
+// 刷新所有已展开目录（F5）；串行避免多目录同时 cancel/重扫把状态打乱
 async function reloadExpanded(): Promise<void> {
   const paths = [...expanded.value]
   for (const p of paths) await reloadFolder(p)
@@ -252,8 +238,28 @@ function resetScans(): void {
   scanMap.clear()
   expanded.value = new Set()
 }
+// #endregion
 
-/** 值区删除键后同步上区缓存 */
+// #region 面板操作
+// 收藏列表移除某目录时清掉其扫描残留
+watch(
+  () => props.folders,
+  paths => {
+    const set = new Set(paths)
+    const stale = Array.from(scanMap.keys()).filter(p => !set.has(p))
+    if (stale.length === 0) return
+    for (const path of stale) {
+      const s = scanMap.get(path)
+      if (s) s.cancelled = true
+      scanMap.delete(path)
+      const next = new Set(expanded.value)
+      next.delete(path)
+      expanded.value = next
+    }
+  },
+)
+
+// 值区删除键后同步上区缓存
 function applyKeyDelete(redisKey: RedisKey_Deserialize): void {
   for (const [, s] of scanMap) {
     const next = s.keys.filter(k => !sameRedisKey(k, redisKey))
@@ -261,12 +267,7 @@ function applyKeyDelete(redisKey: RedisKey_Deserialize): void {
   }
 }
 
-/**
- * 重命名后同步上区缓存：
- * - 迁出命名空间：从该目录去掉
- * - 迁入已加载目录：写入新键（含跨目录）
- * - 覆盖已存在键：merge 去重，避免重复叶子
- */
+// 重命名后同步上区缓存：迁出→去掉，迁入→写入，覆盖→去重
 function applyKeyRename(oldKey: RedisKey_Deserialize, newKey: RedisKey_Deserialize): void {
   for (const [path, s] of scanMap) {
     const had = s.keys.some(k => sameRedisKey(k, oldKey) || sameRedisKey(k, newKey))
@@ -279,7 +280,7 @@ function applyKeyRename(oldKey: RedisKey_Deserialize, newKey: RedisKey_Deseriali
   }
 }
 
-/** 多选勾选在 rename 后按 scan 缓存校正（树重建未必触发 checkChange） */
+// 多选勾选在 rename 后按 scan 缓存校正（树重建未必触发 checkChange）
 function patchCheckedAfterRename(
   checked: RedisKey_Deserialize[],
   oldKey: RedisKey_Deserialize,
@@ -308,9 +309,7 @@ function onContextFolder(command: string, folder: string): void {
   else emit('contextFolder', command, folder)
 }
 
-const keyTreeRef = useTemplateRef<InstanceType<typeof KeyTree>>('keyTreeRef')
-
-/** 过滤只改子键、path 不变时 KeyTree 不会清勾选；关键字变化时主动回写 */
+// 过滤只改子键、path 不变时 KeyTree 不会清勾选；关键字变化时主动回写
 watch(kw, () => {
   if (!props.showCheckbox) return
   if (keyTreeRef.value) {
@@ -334,6 +333,7 @@ defineExpose({
   patchCheckedAfterRename,
   setCurrentKey,
 })
+// #endregion
 </script>
 
 <template>

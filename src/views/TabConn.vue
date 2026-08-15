@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// #region 导入
 import { debounce } from 'lodash'
 import { Sortable, type SortableEvent } from 'sortablejs'
 import {
@@ -34,12 +35,14 @@ import { meConfirm, meErr, meOk, mePrompt, meWarn } from '@/utils/util'
 import ConnEmpty from '@/views/conn/ConnEmpty.vue'
 import ConnGroup from '@/views/conn/ConnGroup.vue'
 import ConnTable from '@/views/conn/ConnTable.vue'
+// #endregion
 
+// #region 核心状态
 const { t } = useI18n()
 const share = inject(shareProvideKey)!
 const connUi = inject(connUiProvideKey)!
 
-/** 分组名有序列表（持久化）；空数组时自动初始化 */
+// 分组名有序列表（持久化）；空数组时自动初始化
 const connGroups = computed(() => {
   const list = meTauri.settings.connGroups
   if (!Array.isArray(list)) {
@@ -49,7 +52,7 @@ const connGroups = computed(() => {
   return list
 })
 
-/** 平铺 ConnTable / 分组 ConnGroup，由 settings.connShow 切换 */
+// 平铺 ConnTable / 分组 ConnGroup，由 settings.connShow 切换
 const connShowGroup = computed({
   get: () => meTauri.settings.connShow === 'group',
   set: (v: boolean) => {
@@ -68,7 +71,7 @@ const filterDataList = computed(() => {
   )
 })
 
-/** 分组视图数据源：按 connGroups 顺序拆 section，并应用 keyword 筛选 */
+// 分组视图数据源：按 connGroups 顺序拆 section，并应用 keyword 筛选
 const groupSections = computed(() =>
   buildConnGroupSections(share.connList, connGroups.value, keyword.value),
 )
@@ -130,7 +133,9 @@ function refreshFlatSortable(): void {
 onMounted(refreshFlatSortable)
 onBeforeUnmount(destroySortables)
 watch([connShowGroup, filterDataList], () => refreshFlatSortable())
+// #endregion
 
+// #region 面板操作
 const isDev = import.meta.env.DEV
 
 function handleCommand(command: string): void {
@@ -225,6 +230,7 @@ function clickNew(): void {
   if (!u) return
   void meDownloadUpdate(false, toRaw(u), app)
 }
+// #endregion
 </script>
 
 <template>

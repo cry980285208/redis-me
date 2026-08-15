@@ -16,6 +16,8 @@ export type ValueTableRow = Record<string, unknown> & {
   score?: number
   ttl?: number
   index?: number // List 行真实 Redis 索引
+  vector?: string // VectorSet 向量 JSON 字符串
+  attrs?: string // VectorSet 属性 JSON 字符串
 }
 
 // fieldScan 的 value 在 Specta 中为联合类型，表格/拼接按行数组处理
@@ -51,9 +53,11 @@ export function streamIdToDate(id: string): string {
 
 // 键类型能力
 
-// Hash/Set/ZSet/Array：支持服务端 pattern 扫描（Array 精确勾选走 ARGET）
+// Hash/Set/ZSet/Array/VectorSet：支持服务端扫描或精确勾选（Array→ARGET；VectorSet→VISMEMBER，无 MATCH）
 export function supportsFieldServerScan(type: string | undefined) {
-  return type === 'hash' || type === 'set' || type === 'zset' || type === 'array'
+  return (
+    type === 'hash' || type === 'set' || type === 'zset' || type === 'array' || type === 'vectorset'
+  )
 }
 
 // 支持表格视图的类型（与底部 segmented 可见条件一致）
@@ -64,13 +68,20 @@ export function supportsTableView(type: string | undefined) {
     type === 'set' ||
     type === 'zset' ||
     type === 'stream' ||
-    type === 'array'
+    type === 'array' ||
+    type === 'vectorset'
   )
 }
 
 // field_get 可单行刷新的表格类型
 export function supportsFieldRowRefresh(type: string | undefined) {
-  return type === 'hash' || type === 'list' || type === 'zset' || type === 'array'
+  return (
+    type === 'hash' ||
+    type === 'list' ||
+    type === 'zset' ||
+    type === 'array' ||
+    type === 'vectorset'
+  )
 }
 
 // string / json：仅 JSON 编辑器，无表格/字段扫描
@@ -94,6 +105,7 @@ export const KEY_TYPE_TO_GROUP: Record<string, string> = {
   stream: 'stream',
   json: 'json',
   array: 'array',
+  vectorset: 'vector_set',
 }
 
 // 扫描纯函数
@@ -112,6 +124,7 @@ export function mergeFieldScanPage(
     prev.ttl = data.ttl
     prev.size = data.size
     prev.logicalLength = data.logicalLength
+    prev.vectorDim = data.vectorDim
   }
   return true
 }

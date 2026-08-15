@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// #region 导入
 import { sortBy } from 'lodash'
 import { computed, inject, nextTick, reactive, ref, useTemplateRef, watch, watchEffect } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -9,23 +10,16 @@ import { shareProvideKey } from '@/types/me-interface'
 import { compareVersionLabel, sortVersionsDesc } from '@/utils/redis-version'
 import { meCopy, meCommands, meOk } from '@/utils/util'
 import NodeList from '@/views/ext/NodeList.vue'
+// #endregion
 
+// #region 核心状态
 const { t } = useI18n()
-// 共享数据
 const share = inject(shareProvideKey)!
-const canEdit = computed(() => !share.readonly)
 const props = defineProps({
   initNode: { type: String, default: '' },
   initVersion: { type: String, default: '' },
 })
-
 const node = ref(props.initNode)
-watch(
-  () => props.initNode,
-  v => {
-    node.value = v
-  },
-)
 const keyword = ref('')
 const loading = ref(false)
 interface ConfigTableRow {
@@ -33,9 +27,53 @@ interface ConfigTableRow {
   value: string
 }
 const dataList = ref<ConfigTableRow[]>([])
+const configVersion = ref('') // 版本
+const configRaw = ref('')
+const dialog = reactive({ raw: false })
+const formRef = useTemplateRef('formRef')
+const editLoading = ref(false)
+const editShow = ref(false)
+const form = reactive({ param: '', value: '', autoBroadcast: true })
+// #endregion
 
+// #region 计算属性
 const serverType = computed(() => (share.capabilities.isValkey ? 'Valkey' : 'Redis'))
+const canEdit = computed(() => !share.readonly)
+const command = computed(
+  () =>
+    `CONFIG SET ${form.param} ${form.value?.includes(' ') ? '"' + form.value + '"' : form.value}`,
+)
+const rules = computed(() => ({
+  value: [{ required: true, message: t('redisConfig.valueRequired') }],
+}))
+// Json格式的默认配置
+const confDict = computed(() => (share.capabilities.isValkey ? valkeyConfDict : redisConfDict))
+const dictVersionList = sortVersionsDesc(Object.keys(confDict.value))
+const dictVersion = ref(getDefaultVersion())
+const dictRaw = computed(
+  () => confDict.value[dictVersion.value] as Record<string, string | undefined>,
+)
+const tipMap = computed(() => tips.value as Record<string, string | undefined>)
+const showTypeOptions = [
+  { label: t('redisConfig.all'), value: 'All' },
+  { label: t('redisConfig.diff'), value: 'Diff' },
+]
+const showType = ref('All')
+const filterDataList = computed(() => {
+  const key = keyword.value.toLowerCase()
+  return dataList.value.filter(
+    row =>
+      (!key ||
+        row.param?.toLowerCase().indexOf(key) > -1 ||
+        row.value?.toLowerCase().indexOf(key) > -1 ||
+        (tipMap.value[row.param]?.toLowerCase() ?? '').indexOf(key) > -1) &&
+      (showType.value === 'All' ||
+        (showType.value === 'Diff' && row.value !== dictRaw.value[row.param])),
+  )
+})
+// #endregion
 
+// #region 配置文件加载
 // 构建期枚举 assets/conf/*.conf：增删文件后下拉列表自动同步，无需再维护版本常量
 const confModules = import.meta.glob('../../../assets/conf/*.conf', {
   query: '?raw',
@@ -69,8 +107,6 @@ async function loadConfigFile(version: string) {
 
 const dirConfigList = sortVersionsDesc(Object.keys(confLoaderByVersion))
 const configVersionList = computed(() => dirConfigList.filter(d => d.startsWith(serverType.value)))
-const configVersion = ref('') // 版本
-const configRaw = ref('')
 
 // 读取配置文件的值
 watchEffect(async () => {
@@ -91,10 +127,6 @@ function handleCommand(command: string) {
   nextTick(() => (dialog.raw = true))
 }
 
-// Json格式的默认配置
-const confDict = computed(() => (share.capabilities.isValkey ? valkeyConfDict : redisConfDict))
-
-const dictVersionList = sortVersionsDesc(Object.keys(confDict.value))
 function getDefaultVersion() {
   // 选不超过当前服务版本的最新默认值字典（数值比较，避免 8.10 / 8.2 字典序误判）
   const current = serverType.value + props.initVersion
@@ -105,40 +137,22 @@ function getDefaultVersion() {
   }
   return configVersionList.value[0] ?? ''
 }
-const dictVersion = ref(getDefaultVersion())
-const dictRaw = computed(
-  () => confDict.value[dictVersion.value] as Record<string, string | undefined>,
+// #endregion
+
+// #region 面板操作
+watch(
+  () => props.initNode,
+  v => {
+    node.value = v
+  },
 )
-const tipMap = computed(() => tips.value as Record<string, string | undefined>)
-const showTypeOptions = [
-  { label: t('redisConfig.all'), value: 'All' },
-  { label: t('redisConfig.diff'), value: 'Diff' },
-]
-const showType = ref('All')
-
-const filterDataList = computed(() => {
-  const key = keyword.value.toLowerCase()
-  return dataList.value.filter(
-    row =>
-      (!key ||
-        row.param?.toLowerCase().indexOf(key) > -1 ||
-        row.value?.toLowerCase().indexOf(key) > -1 ||
-        (tipMap.value[row.param]?.toLowerCase() ?? '').indexOf(key) > -1) &&
-      (showType.value === 'All' ||
-        (showType.value === 'Diff' && row.value !== dictRaw.value[row.param])),
-  )
-})
-
-// 合计列
-// function getSummaries() {
-//   return [t('redisConfig.total'), filterDataList.value.length + ' / ' + dataList.value.length, '']
-// }
 
 async function apiConfigGet() {
   const data = await meCommands.configGet(share.conn!.id, '*', node.value)
-  const tableData: ConfigTableRow[] = []
-  Object.entries(data).forEach(([key, value]) => tableData.push({ param: key, value }))
-  dataList.value = sortBy(tableData, ['param'])
+  dataList.value = sortBy(
+    Object.entries(data).map(([param, value]) => ({ param, value })),
+    ['param'],
+  )
 }
 
 async function refresh() {
@@ -151,23 +165,11 @@ async function refresh() {
 }
 refresh()
 
-// 官网默认配置参考
-const dialog = reactive({ raw: false })
-
 // 行样式展示
 function calcRowStyle({ row }: { row: ConfigTableRow }) {
   return { color: row.value === dictRaw.value[row.param] ? '' : share.color }
 }
 
-// 设置参数
-const formRef = useTemplateRef('formRef')
-const editLoading = ref(false)
-const editShow = ref(false)
-const form = reactive({ param: '', value: '', autoBroadcast: true })
-const command = computed(
-  () =>
-    `CONFIG SET ${form.param} ${form.value?.includes(' ') ? '"' + form.value + '"' : form.value}`,
-)
 async function editConfig(row: ConfigTableRow) {
   form.param = row.param
   form.value = row.value
@@ -175,6 +177,7 @@ async function editConfig(row: ConfigTableRow) {
     editShow.value = true
   })
 }
+
 async function configSet() {
   formRef.value.validate(async (valid: boolean) => {
     if (!valid) return
@@ -195,10 +198,7 @@ async function configSet() {
     }
   })
 }
-
-const rules = computed(() => ({
-  value: [{ required: true, message: t('redisConfig.valueRequired') }],
-}))
+// #endregion
 </script>
 
 <template>

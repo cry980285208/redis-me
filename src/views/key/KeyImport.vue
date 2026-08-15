@@ -1,4 +1,6 @@
 <script setup lang="ts">
+// #region 导入
+// csv：DUMP 格式；cmd：redis-cli 命令文本
 import { cloneDeep } from 'lodash'
 import { computed, inject, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -6,8 +8,9 @@ import { useI18n } from 'vue-i18n'
 import { shareProvideKey } from '@/types/me-interface'
 import type { RedisImportCsv } from '@/types/tauri-specta'
 import { meCommands } from '@/utils/util'
+// #endregion
 
-/** csv：DUMP 格式；cmd：redis-cli 命令文本 */
+// #region 核心状态
 type KeyImportForm = RedisImportCsv & { importFormat: 'csv' | 'cmd' }
 
 const { t } = useI18n()
@@ -39,6 +42,9 @@ const isCmdFile = computed(() => form.value.importFormat === 'cmd')
 const fileSuffixTip = computed(() => (isCmdFile.value ? cmdFileExtensions.join(', ') : 'csv'))
 
 const form = ref<KeyImportForm>(cloneDeep(initForm))
+// #endregion
+
+// #region 计算属性
 const importFormatOptions = computed(() => [
   { label: 'CSV', value: 'csv' as const },
   { label: 'CMD', value: 'cmd' as const },
@@ -62,7 +68,9 @@ const handleTtlOptions = computed(() => [
   { label: t('keyImport.parse'), value: 'parse' },
   { label: t('keyImport.forever'), value: 'forever' },
 ])
+// #endregion
 
+// #region 面板操作
 // 提交数据
 const formRef = useTemplateRef('formRef')
 function submit() {
@@ -83,6 +91,7 @@ function submit() {
     }
   })
 }
+// #endregion
 </script>
 
 <template>

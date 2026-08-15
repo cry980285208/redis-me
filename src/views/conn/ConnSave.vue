@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// #region 导入
 import { ElLoading, type FormItemRule } from 'element-plus'
 import { cloneDeep } from 'lodash'
 import { nanoid } from 'nanoid'
@@ -19,8 +20,11 @@ import {
 } from '@/utils/conn'
 import { meCommands, PREDEFINE_COLORS, meRandomString, meOk, meErr, meWarn } from '@/utils/util'
 const { t } = useI18n()
+// #endregion
 
-/** 与 me-icon 默认 showAfter 一致 */
+// #region 核心状态
+
+// 与 me-icon 默认 showAfter 一致
 const tipShowAfter = 1000
 
 const emit = defineEmits(['success', 'closed'])
@@ -165,6 +169,9 @@ const rules = {
     },
   ],
 }
+// #endregion
+
+// #region 面板操作
 
 // 外部打开对话框
 defineExpose({ open })
@@ -191,7 +198,6 @@ const formRef = useTemplateRef('formRef')
 function submit() {
   formRef.value.validate((valid: boolean) => {
     if (!valid) return
-    //emit('success', form.value, mode.value)
     if (mode.value === 'add') {
       form.id = nanoid()
       autoGenName()
@@ -303,6 +309,9 @@ watch(
     }
   },
 )
+// #endregion
+
+// #region 计算属性
 
 // 分组展示模式下，分组选择与名称 input 并排；值写入 form.meta.group
 const connShowGroup = computed(() => meTauri.settings.connShow === 'group')
@@ -312,7 +321,7 @@ const connGroups = computed(() => {
   return Array.isArray(list) ? list.map(normalizeGroupName).filter(Boolean) : []
 })
 
-/** 下拉选项 = 已登记分组 + 当前连接所属分组（避免仅存在于 meta 时分组名不可选） */
+// 下拉选项 = 已登记分组 + 当前连接所属分组（避免仅存在于 meta 时分组名不可选）
 const connGroupOptions = computed(() => {
   const set = new Set(connGroups.value)
   const current = getConnGroup(form as UiConn)
@@ -346,6 +355,7 @@ function applyAdvanced() {
   setConnCommandMap(form as UiConn, mapped ? { config: mapped } : {})
   advancedVisible.value = false
 }
+// #endregion
 </script>
 
 <template>

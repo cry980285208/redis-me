@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// #region 导入
 import { inject, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -8,7 +9,9 @@ import { BYTES_FORMAT, meFormatBytes, meToBase64 } from '@/utils/format'
 import { invalidateKeyType } from '@/utils/key-type-cache'
 import { redisKeyWireBase64 } from '@/utils/redis-key'
 import { bus, KEY_RENAME, meCommands, meErr, meOk } from '@/utils/util'
+// #endregion
 
+// #region 核心状态
 const { t } = useI18n()
 const share = inject(shareProvideKey)!
 defineExpose({ open })
@@ -18,7 +21,9 @@ const loading = ref(false)
 const targetKey = ref<RedisKey_Deserialize | null>(null)
 const codec = ref('utf8')
 const inputValue = ref('')
+// #endregion
 
+// #region 面板操作
 function open(data: { redisKey: RedisKey_Deserialize }) {
   codec.value = 'utf8'
   targetKey.value = data.redisKey
@@ -66,6 +71,7 @@ async function submit() {
     loading.value = false
   }
 }
+// #endregion
 </script>
 
 <template>

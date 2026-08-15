@@ -1,5 +1,6 @@
 <script setup lang="ts">
-/** ACL LOG 安全日志对话框；客户端列置末便于横向浏览 */
+// #region 导入
+// ACL LOG 安全日志对话框；客户端列置末便于横向浏览
 import dayjs from 'dayjs'
 import { computed, inject, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -7,24 +8,19 @@ import { useI18n } from 'vue-i18n'
 import { shareProvideKey } from '@/types/me-interface'
 import type { AclLogEntry } from '@/types/tauri-specta'
 import { meCommands, meConfirm, meOk } from '@/utils/util'
+// #endregion
 
+// #region 核心状态
 const visible = defineModel<boolean>({ default: false })
-
 const { t } = useI18n()
 const share = inject(shareProvideKey)!
-const canEdit = computed(() => !share.readonly)
-
 const keyword = ref('')
 const loading = ref(false)
 const logs = ref<AclLogEntry[]>([])
+// #endregion
 
-watch(visible, val => {
-  if (val) {
-    keyword.value = ''
-    void loadLogs()
-  }
-})
-
+// #region 计算属性
+const canEdit = computed(() => !share.readonly)
 const filterLogs = computed(() => {
   const key = keyword.value.trim().toLowerCase()
   if (!key) return logs.value
@@ -33,8 +29,17 @@ const filterLogs = computed(() => {
     return text.includes(key)
   })
 })
+// #endregion
 
-/** ACL LOG timestamp-created：7.2+ 为 Unix 毫秒，更早版本无该字段 */
+// #region 面板操作
+watch(visible, val => {
+  if (val) {
+    keyword.value = ''
+    void loadLogs()
+  }
+})
+
+// ACL LOG timestamp-created：7.2+ 为 Unix 毫秒，更早版本无该字段
 function formatTimestamp(ts: number) {
   if (!ts) return '--'
   return dayjs(ts).format('YYYY-MM-DD HH:mm:ss')
@@ -62,6 +67,7 @@ function clearLogs() {
     await loadLogs()
   })
 }
+// #endregion
 </script>
 
 <template>

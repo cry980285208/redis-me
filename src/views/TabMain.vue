@@ -60,7 +60,6 @@ const infoSupported = computed(() => share.capabilities.infoSupported)
 
 <style scoped lang="scss">
 .redis-tab {
-  //border: 2px solid red;
   border: 1px solid var(--el-border-color);
   padding: 0 10px 10px 10px;
 

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-/** 批量删除/导出：查看受影响键时按 cursor 续扫至完成，支持暂停/继续/取消 */
+// #region 导入
+// 批量删除/导出：查看受影响键时按 cursor 续扫至完成，支持暂停/继续/取消
 import { useVirtualList } from '@vueuse/core'
 import type { FormItemRule } from 'element-plus'
 import { cloneDeep } from 'lodash'
@@ -10,15 +11,17 @@ import { shareProvideKey } from '@/types/me-interface'
 import type { RedisKey_Deserialize, ScanCursor } from '@/types/tauri-specta'
 import { clearKeyTypeCacheForConn } from '@/utils/key-type-cache'
 import { meCommands, meOk, sleep } from '@/utils/util'
+// #endregion
 
-/** 打开对话框时合并进表单的字段（与 initForm 一致） */
+// #region 核心状态
+// 打开对话框时合并进表单的字段（与 initForm 一致）
 type KeyBatchForm = {
   match: string
   keyList: RedisKey_Deserialize[]
   deleteDirect: boolean
   file: string
   withTtl: boolean
-  /** csv：DUMP 格式；cmd：redis-cli 可执行命令文本 */
+  // csv：DUMP 格式；cmd：redis-cli 可执行命令文本
   exportFormat: 'csv' | 'cmd'
 }
 
@@ -57,8 +60,10 @@ const initForm: KeyBatchForm = {
 }
 
 const form = ref<KeyBatchForm>(cloneDeep(initForm))
+// #endregion
 
-/** 扫描：续扫至 finished；暂停保留列表与游标，取消则回到初始 */
+// #region 扫描与状态
+// 扫描：续扫至 finished；暂停保留列表与游标，取消则回到初始
 const scanning = ref(false)
 const scanPaused = ref(false)
 const scanCancelled = ref(false)
@@ -187,7 +192,9 @@ function onDialogClosed() {
 // 虚拟列表
 const items = computed(() => form.value.keyList)
 const { list, containerProps, wrapperProps } = useVirtualList(items, { itemHeight: 14 })
+// #endregion
 
+// #region 提交与面板操作
 const scanStatusText = computed(() => {
   if (scanFinished.value) return t('keyBatch.scanDone')
   if (scanning.value) return t('keyBatch.scanScanning')
@@ -211,7 +218,7 @@ const confirmSizeBtn = computed(() => {
     : t('keyBatch.confirmDeleteSize', { count }, count)
 })
 const exportBtnEnabled = computed(() => (isExport.value ? !!form.value.file : true))
-/** 列表路径：扫完才可确认；多选打开时已是完整列表 */
+// 列表路径：扫完才可确认；多选打开时已是完整列表
 const listConfirmEnabled = computed(
   () =>
     scanFinished.value &&
@@ -237,6 +244,7 @@ const exportFormatTip = computed(() =>
     ? t('keyBatch.exportFormatTipCmd')
     : t('keyBatch.exportFormatTipCsv'),
 )
+// #endregion
 </script>
 
 <template>

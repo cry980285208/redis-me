@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// #region 导入
 import {
   CategoryScale,
   Chart as ChartJS,
@@ -33,7 +34,9 @@ import { shareProvideKey } from '@/types/me-interface'
 import type { RedisChart } from '@/types/tauri-specta'
 import { isDark, meHumanNums, meCommands, meLog, PREDEFINE_COLORS } from '@/utils/util'
 import NodeList from '@/views/ext/NodeList.vue'
+// #endregion
 
+// #region Chart.js 初始化
 // 只注册必要的组件即可
 // https://chartjs.cn/docs/latest/getting-started/integration.html
 ChartJS.register(
@@ -46,8 +49,9 @@ ChartJS.register(
   CategoryScale,
   Tooltip,
 )
-// ChartJS.overrides.line.maintainAspectRatio = false
+// #endregion
 
+// #region 核心状态
 const { t } = useI18n()
 
 const share = inject(shareProvideKey)!
@@ -59,7 +63,7 @@ const maxPointCount = ref(100) // 最多保存N个数据
 const nowPointCount = ref(0) // 当前数据条数
 const showMoreChart = ref(false) // 显示更多图表
 
-/** 与 `chartData` 各块 key 一致 */
+// 与 chartData 各块 key 一致
 type ChartBlockKey =
   | 'command'
   | 'memory'
@@ -86,9 +90,11 @@ watch(
   },
   { immediate: true },
 )
+// #endregion
 
+// #region 图表操作
 // 图表实例，手动刷新
-/** vue-chartjs Line 经 reforwardRef 暴露的 chart（可能是 Ref，需 unref） */
+// vue-chartjs Line 经 reforwardRef 暴露的 chart（可能是 Ref，需 unref）
 type LineChartExposed = { chart: unknown }
 const commandRef = useTemplateRef<LineChartExposed>('command')
 const memoryRef = useTemplateRef<LineChartExposed>('memory')
@@ -279,7 +285,9 @@ function calcLabelIndexes(labels: number[]) {
   }
   return indexes
 }
+// #endregion
 
+// #region 图表配置
 // chart.js配置项（基本配置项）
 const baseOptions = {
   maintainAspectRatio: false,
@@ -356,17 +364,6 @@ const darkOptions = {
       },
     },
   },
-  // backgroundColor: '#333',
-  // legend: {
-  //   labels: {
-  //     fontColor: '#ccc',
-  //   }
-  // },
-  // tooltips: {
-  //   backgroundColor: 'rgba(255, 255, 255, 0.8)',
-  //   titleFontColor: '#000',
-  //   bodyFontColor: '#000'
-  // },
 }
 
 const options = computed((): ChartOptions<'line'> => {
@@ -544,6 +541,7 @@ watch(
   () => meTauri.settings.theme,
   () => refreshInstance(),
 )
+// #endregion
 </script>
 
 <template>
@@ -655,8 +653,6 @@ watch(
 .redis-chart {
   height: 100%;
   overflow-y: auto;
-  //border: 2px solid red;
-
   display: flex;
   flex-direction: column;
 

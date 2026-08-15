@@ -51,6 +51,7 @@ import {
   type ViewBytesFormat,
 } from '@/utils/format'
 import { resolveKeyType } from '@/utils/key-type-cache'
+import { toKeyTypeLabel } from '@/utils/redis-display'
 import {
   buildScanPattern,
   buildLocalFilterPattern,
@@ -80,7 +81,6 @@ import FieldAdd from '@/views/ext/FieldAdd.vue'
 import TTLSet from '@/views/ext/TTLSet.vue'
 import KeyRename from '@/views/key/KeyRename.vue'
 
-import ArInfo from './ArInfo.vue'
 import CustomCodec from './CustomCodec.vue'
 import FieldSet from './FieldSet.vue'
 import {
@@ -100,10 +100,11 @@ import {
   type FieldScanViewState,
   type ValueTableRow,
 } from './helpers'
-import ObjectInfo from './ObjectInfo.vue'
 import TableArLastItems from './TableArLastItems.vue'
 import TableGroup from './TableGroup.vue'
 import TableHashKeys from './TableHashKeys.vue'
+import TableInfo from './TableInfo.vue'
+import TableVSim from './TableVSim.vue'
 import TableZsetRange from './TableZsetRange.vue'
 import ValueShortcut from './ValueShortcut.vue'
 // #endregion
@@ -132,6 +133,7 @@ const streamType = computed(() => 'stream' === redisValue.value?.type)
 const hashType = computed(() => 'hash' === redisValue.value?.type)
 const listType = computed(() => 'list' === redisValue.value?.type)
 const arrayType = computed(() => 'array' === redisValue.value?.type)
+const vectorsetType = computed(() => 'vectorset' === redisValue.value?.type)
 const setType = computed(() => 'set' === redisValue.value?.type)
 const zsetType = computed(() => 'zset' === redisValue.value?.type)
 
@@ -158,15 +160,17 @@ const showScanControl = computed(() => {
   return scanPaused.value || (loading.value && scanBatchCount.value >= SCAN_CONTROL_MIN_BATCHES)
 })
 const showFieldExactCheckbox = computed(() => supportsFieldServerScan(redisValue.value?.type))
-// Array 的 ARSCAN 无服务端 MATCH：输入框仅本地过滤；精确勾选走 ARGET
+// Array / VectorSet 无服务端 MATCH：输入框仅本地过滤；精确勾选走 ARGET / VISMEMBER
 const fieldScanInputPlaceholder = computed(() =>
-  listType.value || streamType.value || arrayType.value
+  listType.value || streamType.value || arrayType.value || vectorsetType.value
     ? t('redisValue.listStreamFilterPlaceholder')
     : t('redisValue.fieldScanPlaceholder'),
 )
-const fieldExactSearchTip = computed(() =>
-  arrayType.value ? t('redisValue.fieldExactSearchArray') : t('redisValue.fieldExactSearch'),
-)
+const fieldExactSearchTip = computed(() => {
+  if (arrayType.value) return t('redisValue.fieldExactSearchArray')
+  if (vectorsetType.value) return t('redisValue.fieldExactSearchVectorSet')
+  return t('redisValue.fieldExactSearch')
+})
 const scanToggleTip = computed(() =>
   loading.value ? t('keyMain.pauseScan') : t('keyMain.resumeScan'),
 )
@@ -183,6 +187,13 @@ const scanProgress = computed(() =>
 const suppressCodeUpdate = ref(false)
 const valueEditorRemountKey = ref(0) // fieldScan 后强制 me-code remount
 const showMore = ref(false) // 手动控制，避免 cursor 变化导致按钮闪现
+
+// VectorSet 浏览模式：随机采样（默认，全版本支持）/ 范围查询（需 ≥ 8.4，不支持时报错提示）
+const vectorsetSample = ref(true)
+const vectorsetBrowseOptions = computed(() => [
+  { label: t('redisValue.vectorsetSample'), value: true },
+  { label: t('redisValue.vectorsetRange'), value: false },
+])
 
 // STRING 大值截断预览
 const VALUE_BYTE_LIMIT = computed(
@@ -484,6 +495,23 @@ function fieldScanValueForJsonView(type: string, value: unknown): unknown {
         value: wireToUtf8JsonText(row.value),
         score: row.score,
       }))
+    case 'vectorset':
+      // { name, vector, attrs } 对象数组
+      return (value as { name: string; vector: string; attrs: string }[]).map(v => {
+        const tryParse = (s: string) => {
+          if (!s) return s
+          try {
+            return JSON.parse(s)
+          } catch {
+            return s
+          }
+        }
+        return {
+          name: wireToUtf8JsonText(v.name),
+          vector: tryParse(v.vector || ''),
+          attrs: tryParse(v.attrs || ''),
+        }
+      })
     default:
       return value
   }
@@ -503,7 +531,14 @@ const showValue = computed(() => {
   }
 
   // 集合类型：JSON 视图用 UTF-8，不直接 dump base64
-  if (hashType.value || listType.value || setType.value || zsetType.value || arrayType.value) {
+  if (
+    hashType.value ||
+    listType.value ||
+    setType.value ||
+    zsetType.value ||
+    arrayType.value ||
+    vectorsetType.value
+  ) {
     const display = fieldScanValueForJsonView(rv.type, obj)
     return JSON.stringify(display, null, isPretty.value ? 2 : undefined)
   }
@@ -537,8 +572,15 @@ const dataList = computed(() => {
   const data: ValueTableRow[] = []
   fieldValueRows(rv.value).forEach(value => {
     // set 为裸字符串；其余类型已是对象
-    if (setType.value) data.push({ value })
-    else data.push(value as ValueTableRow)
+    if (setType.value) {
+      data.push({ value })
+    } else if (vectorsetType.value) {
+      // VectorSet：{ name, vector, attrs } 对象
+      const el = value as { name: string; vector: string; attrs: string }
+      data.push({ value: el.name, vector: el.vector, attrs: el.attrs })
+    } else {
+      data.push(value as ValueTableRow)
+    }
   })
   return data
 })
@@ -565,6 +607,15 @@ const filterFieldPattern = computed(() =>
 const filterFieldList = computed(() => {
   if (!filterFieldPattern.value) return dataList.value
   const pattern = filterFieldPattern.value
+  // Vector Set：按元素名（row.value）本地过滤（向量浮点无检索意义；相似度走 VSIM）
+  if (vectorsetType.value) {
+    return dataList.value.filter(
+      row =>
+        row.value != null &&
+        row.value !== '' &&
+        minimatch(formatTableCell(row.value), pattern, MINIMATCH_SCAN_OPTS),
+    )
+  }
   return dataList.value.filter(row => {
     if (row.key != null && row.key !== '') {
       if (minimatch(formatTableCell(row.key), pattern, MINIMATCH_SCAN_OPTS)) return true
@@ -580,7 +631,9 @@ const filterFieldList = computed(() => {
 })
 
 const tableDisplayList = computed(() => {
-  if (hashType.value || setType.value || zsetType.value) return filterFieldList.value
+  if (hashType.value || setType.value || zsetType.value || vectorsetType.value) {
+    return filterFieldList.value
+  }
   return filterDataList.value
 })
 
@@ -593,6 +646,7 @@ const tableDefaultSort = computed(
       case 'zset':
         return { prop: 'score', order: 'ascending' }
       case 'set':
+      case 'vectorset':
         return { prop: 'value', order: 'ascending' }
       default:
         return undefined
@@ -670,6 +724,7 @@ function resetParam() {
   listIndexMax.value = ''
   listDescAsc.value = true
   streamDescAsc.value = true
+  vectorsetSample.value = true
 }
 function fieldScanIncludeMeta(): boolean {
   return cursor.value == null // 续扫跳过 TYPE/TTL/MEMORY 等
@@ -680,7 +735,7 @@ function buildFieldScanParam() {
   const includeMeta = fieldScanIncludeMeta()
   return {
     key: share.redisKey!,
-    count: meTauri.settings.fieldScanCount ?? 10,
+    count: meTauri.settings.fieldScanCount ?? 20,
     cursor: cursor.value,
     match: serverScan ? fieldMatch.value : '*',
     exact: serverScan ? fieldExact.value : false,
@@ -690,6 +745,7 @@ function buildFieldScanParam() {
       listMaxIndex: parseListIndexInput(listIndexMax.value),
       listDesc: listType.value ? !listDescAsc.value : null,
       streamDesc: streamType.value ? !streamDescAsc.value : null,
+      vectorsetSample: vectorsetType.value ? vectorsetSample.value : null,
       valueByteLimit: VALUE_BYTE_LIMIT.value,
       valuePreviewBytes: VALUE_PREVIEW_BYTES.value,
       forceFullValue: forceFullValue.value,
@@ -703,6 +759,11 @@ function buildFieldScanParam() {
 
 function toggleHashFieldTtl() {
   scanHashFieldTtl.value = !scanHashFieldTtl.value
+  void restartFieldScan()
+}
+
+// VectorSet 浏览模式切换：重置游标重扫（采样无分页，范围查询从头遍历）
+function onVectorsetBrowseChange() {
   void restartFieldScan()
 }
 
@@ -907,6 +968,7 @@ function fieldAdd() {
     valFmt: IPC_WIRE_FORMAT,
     viewValFmt: viewFmtForField(bytesFormat.value),
     key: { ...share.redisKey! },
+    vectorDim: rv.vectorDim,
   })
 }
 
@@ -920,7 +982,8 @@ function fieldSetInit() {
 }
 
 function prepareFieldRowContext(row: ValueTableRow) {
-  fieldEditKey.value = row.key || ''
+  // VectorSet 元素名在 row.value（与 Set 一致）
+  fieldEditKey.value = vectorsetType.value ? String(row.value ?? '') : row.key || ''
   fieldEditIndex.value = -1
   if (listType.value || arrayType.value) {
     fieldEditIndex.value = listRowRedisIndex(row)
@@ -945,7 +1008,8 @@ function formatFieldTtl(ttl: number | undefined): string {
   return String(meHumanSeconds(ttl))
 }
 function fieldRowDisplayValue(row: ValueTableRow): string {
-  return streamType.value ? JSON.stringify(row.value) : formatTableCell(row.value)
+  if (streamType.value) return JSON.stringify(row.value)
+  return formatTableCell(row.value)
 }
 function compareFieldRowValue(a: ValueTableRow, b: ValueTableRow): number {
   return fieldRowDisplayValue(a).localeCompare(fieldRowDisplayValue(b), undefined, {
@@ -968,26 +1032,41 @@ function buildFieldGetParam(row?: ValueTableRow): RedisFieldGet_Deserialize | nu
 }
 
 // 打开面板 / 行点击
-function openFieldPanel(row: ValueTableRow, index: number, readonly: boolean) {
+async function openFieldPanel(row: ValueTableRow, index: number, readonly: boolean) {
   const rv = redisValue.value
   if (!rv) return
   fieldSetIndex.value = index
   fieldSetReadonly.value = readonly
   fieldSetRow.value = row
   prepareFieldRowContext(row)
-  const rowValWire = streamType.value ? JSON.stringify(row.value ?? {}) : String(row.value ?? '')
+
+  // VectorSet：扫描已含向量+属性，直接从 row 取，零 RTT
+  let vectorValue = ''
+  let vectorAttrs: string | undefined
+  if (vectorsetType.value) {
+    vectorValue = String(row.vector ?? '')
+    vectorAttrs = row.attrs || undefined
+  }
+
+  const rowValWire = streamType.value
+    ? meViewToWire(JSON.stringify(row.value ?? {}), 'utf8')
+    : vectorsetType.value
+      ? vectorValue
+      : String(row.value ?? '')
   const params = {
-    fieldKey: row.key || '',
+    fieldKey: vectorsetType.value ? String(row.value ?? '') : row.key || '',
     fieldScore: row.score || 0,
     fieldTtl: row.ttl ?? -1,
     srcFieldValue: rowValWire,
-    wireFieldKey: row.key || '',
+    wireFieldKey: vectorsetType.value ? String(row.value ?? '') : row.key || '',
     keyWireFmt: IPC_WIRE_FORMAT,
     type: rv.type,
     key: share.redisKey!,
     fieldIndex: -1,
     streamId: row.id || '',
     readonly,
+    vectorDim: rv.vectorDim,
+    srcFieldAttrs: vectorAttrs,
   }
   if (listType.value || arrayType.value) {
     params.fieldIndex = fieldEditIndex.value
@@ -1050,6 +1129,18 @@ function applyFieldGetResult(rv: FieldScanViewState, data: RedisFieldValue, row:
     if (idx >= 0) {
       rows[idx] = { value: data.fieldValue, score: data.fieldScore ?? row.score }
     }
+  } else if (vectorsetType.value) {
+    // 原始行结构为 { name, vector, attrs }（dataList 才映射成 value），按 name 匹配并写回
+    const rows = fieldValueRows(rv.value) as ValueTableRow[]
+    const idx = rows.findIndex(r => r.name === (row.value || fieldEditKey.value))
+    if (idx >= 0) {
+      rows[idx] = {
+        ...rows[idx],
+        name: data.fieldKey,
+        vector: data.fieldValue,
+        attrs: data.fieldAttrs ?? '',
+      }
+    }
   }
 }
 
@@ -1082,8 +1173,8 @@ function buildFieldAsCommandParam(row: ValueTableRow): RedisFieldAsCommand_Deser
   if (!rv || !rk) return null
   const param: RedisFieldAsCommand_Deserialize = {
     key: rk,
-    fieldKey: row.key || '',
-    fieldValue: String(row.value ?? ''),
+    fieldKey: vectorsetType.value ? String(row.value ?? '') : row.key || '',
+    fieldValue: vectorsetType.value ? '' : String(row.value ?? ''),
     streamId: row.id || '',
     fieldIndex: -1,
     valFmt: IPC_WIRE_FORMAT,
@@ -1109,12 +1200,18 @@ async function copyFieldAsCommand(row: ValueTableRow) {
 }
 
 function onFieldRowMoreCommand(command: string, row: ValueTableRow) {
-  if (command === 'refreshRow') {
+  if (command === 'deleteElement') {
+    void meConfirm(t('redisValue.deleteConfirm'), () => fieldDel(row))
+  } else if (command === 'refreshRow') {
     void refreshFieldRow(row)
   } else if (command === 'copyKey') {
     meCopy(formatTableCell(row.key ?? ''))
   } else if (command === 'copyValue') {
     meCopy(fieldRowDisplayValue(row))
+  } else if (command === 'copyAttrs') {
+    meCopy(String(row.attrs ?? ''))
+  } else if (command === 'copyVector') {
+    meCopy(String(row.vector ?? ''))
   } else if (command === 'copyIndex') {
     meCopy(String(row.index ?? ''))
   } else if (command === 'copyStreamId') {
@@ -1186,8 +1283,8 @@ async function fieldDel(row: ValueTableRow) {
   const rv = redisValue.value
   if (!rv) return
   const param: RedisFieldDel_Deserialize = {
-    fieldKey: row.key || '',
-    fieldValue: String(row.value ?? ''),
+    fieldKey: vectorsetType.value ? String(row.value ?? '') : row.key || '',
+    fieldValue: vectorsetType.value ? '' : String(row.value ?? ''),
     key: share.redisKey!,
     streamId: row.id || '',
     fieldIndex: -1,
@@ -1284,7 +1381,7 @@ function toggleFavorite() {
 }
 
 // 更多菜单 / 快捷键 / 命令帮助
-const objectInfoRef = useTemplateRef<InstanceType<typeof ObjectInfo>>('objectInfoRef')
+const tableInfoRef = useTemplateRef<InstanceType<typeof TableInfo>>('tableInfoRef')
 const valueShortcutRef = useTemplateRef('valueShortcutRef')
 const commandHelpRef = useTemplateRef<InstanceType<typeof CommandHelp>>('commandHelpRef')
 function openKeyShortDialog() {
@@ -1309,7 +1406,7 @@ async function onKeyMoreCommand(command: string) {
   } else if (command === 'duplicateKey') {
     duplicateKey()
   } else if (command === 'objectInfo') {
-    objectInfoRef.value?.open()
+    tableInfoRef.value?.open('object')
   } else if (command === 'showSlot') {
     void showSlot()
   } else if (command === 'showLocation') {
@@ -1369,8 +1466,7 @@ async function setValue() {
 // #endregion
 
 // #region 类型扩展弹窗入口
-// POP / Array 信息
-const arInfoRef = useTemplateRef<InstanceType<typeof ArInfo>>('arInfoRef')
+// POP / 类型专属 INFO（下拉直接显示原命令名）
 async function runFieldPop(mode: string) {
   const conn = share.conn
   const key = share.redisKey
@@ -1386,9 +1482,13 @@ async function runFieldPop(mode: string) {
   await restartFieldScan()
 }
 function onPopCommand(command: string) {
-  // Array 只读扩展走工具栏「更多」，不放键头统一菜单
-  if (command === 'arInfo') {
-    arInfoRef.value?.open()
+  // Array / VectorSet 只读扩展走工具栏「更多」，下拉项用原命令名
+  if (command === 'ARINFO') {
+    tableInfoRef.value?.open('arinfo')
+    return
+  }
+  if (command === 'VINFO') {
+    tableInfoRef.value?.open('vinfo')
     return
   }
   const confirmMap: Record<string, string> = {
@@ -1420,6 +1520,10 @@ function showZsetRange() {
 const arLastItemsRef = useTemplateRef('arLastItemsRef')
 function showArLastItems() {
   arLastItemsRef.value?.open(IPC_WIRE_FORMAT, displayBytesFormat.value)
+}
+const vSimRef = useTemplateRef<InstanceType<typeof TableVSim>>('vSimRef')
+function showVSimWithElement(elementDisplay: string) {
+  vSimRef.value?.open(displayBytesFormat.value, { elementDisplay })
 }
 // #endregion
 
@@ -1455,6 +1559,12 @@ const textArLen = computed(() => {
   const rv = redisValue.value
   if (!rv || !arrayType.value || rv.logicalLength == null) return ''
   return t('redisValue.arLen') + rv.logicalLength
+})
+/** Vector Set：VDIM，与 VCARD 总数分开展示 */
+const textVectorDim = computed(() => {
+  const rv = redisValue.value
+  if (!rv || !vectorsetType.value || rv.vectorDim == null) return ''
+  return t('redisValue.vectorDim') + rv.vectorDim
 })
 const textEntries = computed(() => {
   const rv = redisValue.value
@@ -1498,7 +1608,7 @@ onUnmounted(() => {
                 icon="me-icon-location"
                 class="suffix-ttl icon-btn"
                 icon-left
-                :name="redisValue.type.toUpperCase()"
+                :name="toKeyTypeLabel(redisValue.type)"
                 :info="t('redisValue.locateKeyHint')"
                 placement="top"
                 @click.stop="locateKeyInTree" />
@@ -1689,6 +1799,13 @@ onUnmounted(() => {
 
             <!-- 右侧更多+插入行 -->
             <div class="table-toolbar-actions">
+              <!-- VectorSet 浏览模式：随机采样 / 范围查询 -->
+              <el-segmented
+                v-if="vectorsetType"
+                v-model="vectorsetSample"
+                style="margin-left: 10px"
+                :options="vectorsetBrowseOptions"
+                @change="onVectorsetBrowseChange" />
               <me-button
                 v-if="showHashFieldTtlOption"
                 icon="el-icon-clock"
@@ -1747,7 +1864,7 @@ onUnmounted(() => {
                 {{ t('redisValue.arLastItems') }}
               </me-button>
               <el-dropdown
-                v-if="((listType || setType || zsetType) && canEdit) || arrayType"
+                v-if="((listType || setType || zsetType) && canEdit) || arrayType || vectorsetType"
                 placement="bottom-end"
                 @command="onPopCommand"
                 style="margin-left: 10px">
@@ -1761,9 +1878,8 @@ onUnmounted(() => {
                     <el-dropdown-item v-if="setType" command="SPOP">SPOP</el-dropdown-item>
                     <el-dropdown-item v-if="zsetType" command="ZPOPMIN">ZPOPMIN</el-dropdown-item>
                     <el-dropdown-item v-if="zsetType" command="ZPOPMAX">ZPOPMAX</el-dropdown-item>
-                    <el-dropdown-item v-if="arrayType" command="arInfo">{{
-                      t('redisValue.arInfo')
-                    }}</el-dropdown-item>
+                    <el-dropdown-item v-if="arrayType" command="ARINFO">ARINFO</el-dropdown-item>
+                    <el-dropdown-item v-if="vectorsetType" command="VINFO">VINFO</el-dropdown-item>
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
@@ -1822,7 +1938,7 @@ onUnmounted(() => {
                 </template>
               </el-table-column>
 
-              <!-- 哈希键 -->
+              <!-- Hash：哈希键 -->
               <el-table-column :label="t('redisValue.key')" prop="key" sortable v-if="hashType">
                 <template #default="scope">
                   {{ formatTableCell(scope.row.key) }}
@@ -1837,15 +1953,37 @@ onUnmounted(() => {
                 sortable
                 v-if="listType || arrayType" />
 
-              <!-- 字段值 -->
+              <!-- 字段值 / Vector Set 元素名 -->
               <el-table-column
-                :label="t('redisValue.value')"
+                :label="vectorsetType ? t('redisValue.element') : t('redisValue.value')"
                 prop="value"
-                min-width="200"
+                min-width="180"
                 sortable
                 :sort-method="compareFieldRowValue">
                 <template #default="scope">
                   {{ fieldRowDisplayValue(scope.row) }}
+                </template>
+              </el-table-column>
+
+              <!-- VectorSet：属性 -->
+              <el-table-column
+                :label="t('fieldSet.attrs')"
+                prop="attrs"
+                min-width="180"
+                v-if="vectorsetType">
+                <template #default="scope">
+                  {{ scope.row.attrs || '' }}
+                </template>
+              </el-table-column>
+
+              <!-- VectorSet：向量 -->
+              <el-table-column
+                :label="t('fieldSet.vector')"
+                prop="vector"
+                min-width="180"
+                v-if="vectorsetType">
+                <template #default="scope">
+                  {{ scope.row.vector || '' }}
                 </template>
               </el-table-column>
 
@@ -1884,8 +2022,16 @@ onUnmounted(() => {
                       icon="el-icon-view"
                       class="icon-btn"
                       @click.stop="openFieldPanel(scope.row, scope.$index, true)" />
+                    <!-- VectorSet：以此元素 VSIM 查询 -->
+                    <me-icon
+                      v-if="vectorsetType"
+                      :info="t('redisValue.vSimTitle')"
+                      icon="me-icon-rank"
+                      class="icon-btn"
+                      @click.stop="showVSimWithElement(fieldRowDisplayValue(scope.row))" />
+                    <!-- 删除（非 VectorSet 保持现有） -->
                     <el-popconfirm
-                      v-if="canEdit"
+                      v-if="canEdit && !vectorsetType"
                       :hide-after="0"
                       :title="t('redisValue.deleteConfirm')"
                       @confirm.stop="fieldDel(scope.row)">
@@ -1923,7 +2069,22 @@ onUnmounted(() => {
                           <el-dropdown-item command="copyValue">
                             <me-icon
                               icon="el-icon-document-copy"
-                              :name="t('redisValue.copyValue')" />
+                              :name="
+                                vectorsetType
+                                  ? t('redisValue.copyElement')
+                                  : t('redisValue.copyValue')
+                              " />
+                          </el-dropdown-item>
+                          <!-- VectorSet：复制属性、复制向量 -->
+                          <el-dropdown-item v-if="vectorsetType" command="copyAttrs">
+                            <me-icon
+                              icon="el-icon-document-copy"
+                              :name="t('redisValue.copyAttrs')" />
+                          </el-dropdown-item>
+                          <el-dropdown-item v-if="vectorsetType" command="copyVector">
+                            <me-icon
+                              icon="el-icon-document-copy"
+                              :name="t('redisValue.copyVector')" />
                           </el-dropdown-item>
                           <el-dropdown-item v-if="zsetType" command="copyScore">
                             <me-icon
@@ -1937,6 +2098,10 @@ onUnmounted(() => {
                           </el-dropdown-item>
                           <el-dropdown-item v-if="zsetType" command="showZsetRank">
                             <me-icon icon="me-icon-rank" :name="t('redisValue.showZsetRank')" />
+                          </el-dropdown-item>
+                          <!-- VectorSet：删除放最下面，避免误操作 -->
+                          <el-dropdown-item v-if="vectorsetType && canEdit" command="deleteElement">
+                            <me-icon icon="el-icon-delete" :name="t('delete')" />
                           </el-dropdown-item>
                         </el-dropdown-menu>
                       </template>
@@ -2002,9 +2167,11 @@ onUnmounted(() => {
           <!-- 已扫描：筛选 / 已加载（与总数关联，紧挨展示） -->
           <el-text> {{ textEntries }} </el-text>
 
-          <!-- Array ARLEN 放最后，避免插在总数与已扫描之间 -->
+          <!-- Array ARLEN / VectorSet VDIM 放最后，避免插在总数与已扫描之间 -->
           <el-divider direction="vertical" v-if="textArLen" />
           <el-text v-if="textArLen"> {{ textArLen }} </el-text>
+          <el-divider direction="vertical" v-if="textVectorDim" />
+          <el-text v-if="textVectorDim"> {{ textVectorDim }} </el-text>
         </div>
 
         <div class="me-flex" style="position: relative">
@@ -2117,9 +2284,8 @@ onUnmounted(() => {
     <KeyRename ref="keyRenameRef" />
     <CommandHelp ref="commandHelpRef" />
 
-    <!-- 本域弹窗：对象信息 / Array 信息 / 自定义编解码 -->
-    <ObjectInfo ref="objectInfoRef" />
-    <ArInfo ref="arInfoRef" />
+    <!-- 本域弹窗：OBJECT / ARINFO / VINFO / 自定义编解码 -->
+    <TableInfo ref="tableInfoRef" />
     <CustomCodec v-model="customCodecVisible" />
 
     <!-- 本域类型扩展：Stream 组 / Hash 全量 / ZSet TopN / Array 尾部 -->
@@ -2127,6 +2293,7 @@ onUnmounted(() => {
     <TableHashKeys ref="hashKeysRef" />
     <TableZsetRange ref="zsetRangeRef" />
     <TableArLastItems ref="arLastItemsRef" />
+    <TableVSim ref="vSimRef" />
 
     <!-- 本域帮助：值编辑器快捷键 -->
     <ValueShortcut ref="valueShortcutRef" />

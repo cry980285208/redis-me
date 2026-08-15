@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// #region 导入
 import type { FormItemRule } from 'element-plus'
 import { computed, inject, nextTick, reactive, ref, useTemplateRef, watchEffect } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -9,7 +10,9 @@ import type { RedisSlowLog } from '@/types/tauri-specta'
 // 官网参考: https://redis.ac.cn/docs/latest/commands/slowlog-get/
 import { meCopy, meCommands, meOk } from '@/utils/util'
 import NodeList from '@/views/ext/NodeList.vue'
+// #endregion
 
+// #region 核心状态
 const { t } = useI18n()
 // 共享数据
 const share = inject(shareProvideKey)!
@@ -83,7 +86,9 @@ async function refresh() {
   }
 }
 refresh()
+// #endregion
 
+// #region 编辑操作
 // 编辑慢参数
 const formRef = useTemplateRef('formRef')
 const editShow = ref(false)
@@ -151,6 +156,7 @@ const rules = computed(() => ({
   ],
   slowerMaxLen: [{ required: true, message: t('redisSlow.slowerMaxLenRequired') }],
 }))
+// #endregion
 </script>
 
 <template>

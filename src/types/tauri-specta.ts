@@ -41,6 +41,10 @@ export const commands = {
 	zsetRange: (id: string, param: RedisZsetRange_Deserialize) => typedError<RedisZsetRangeItem[], string>(__TAURI_INVOKE("zset_range", { id, param })),
 	arLastItems: (id: string, param: RedisArLastItems_Deserialize) => typedError<RedisArLastItemsItem[], string>(__TAURI_INVOKE("ar_last_items", { id, param })),
 	arInfo: (id: string, key: RedisKey_Deserialize) => typedError<RedisArInfoItem[], string>(__TAURI_INVOKE("ar_info", { id, key })),
+	vInfo: (id: string, key: RedisKey_Deserialize) => typedError<RedisArInfoItem[], string>(__TAURI_INVOKE("v_info", { id, key })),
+	vGetattr: (id: string, param: RedisVAttr_Deserialize) => typedError<string, string>(__TAURI_INVOKE("v_getattr", { id, param })),
+	vSetattr: (id: string, param: RedisVAttr_Deserialize) => typedError<null, string>(__TAURI_INVOKE("v_setattr", { id, param })),
+	vSim: (id: string, param: RedisVSim_Deserialize) => typedError<RedisVSimItem[], string>(__TAURI_INVOKE("v_sim", { id, param })),
 	objectInfo: (id: string, key: RedisKey_Deserialize) => typedError<RedisObjectInfo, string>(__TAURI_INVOKE("object_info", { id, key })),
 	executeCommand: (id: string, param: RedisCommand) => typedError<string, string>(__TAURI_INVOKE("execute_command", { id, param })),
 	aclUsers: (id: string) => typedError<string[], string>(__TAURI_INVOKE("acl_users", { id })),
@@ -164,6 +168,26 @@ export type ConnConfig = {
 /**  连接 meta 值（与前端 JSON 结构一致，供 specta 导出） */
 export type ConnMetaValue = string | number | null | boolean | { [key in string]: ConnMetaValue } | ConnMetaValue[] | "Null";
 
+export type FieldScanMeta = {
+	/**  Stream XREVRANGE 上界和下界 */
+	maxId: string,
+	minId: string,
+	/**  STRING 全量加载字节上限；超过且未 force 时仅 GETRANGE 预览前 value_preview_bytes */
+	valueByteLimit: number | null,
+	valuePreviewBytes: number | null,
+	forceFullValue: boolean | null,
+	/**  List LRANGE / Array ARSCAN 下界；空则 0 */
+	listMinIndex: number | null,
+	/**  List LRANGE 上界（空则 len-1）；Array ARSCAN 上界（空则索引最大值） */
+	listMaxIndex: number | null,
+	/**  List 扫描方向：true 从 max 向 min，false 从 min 向 max */
+	listDesc: boolean | null,
+	/**  Stream 扫描方向：true 从 max 向 min（XREVRANGE），false 从 min 向 max（XRANGE） */
+	streamDesc: boolean | null,
+	/**  VectorSet 浏览模式：true 随机采样（VRANDMEMBER，无分页）；false 范围查询（VRANGE）；默认 true */
+	vectorsetSample: boolean | null,
+};
+
 export type FieldScanParam = FieldScanParam_Serialize | FieldScanParam_Deserialize;
 
 export type FieldScanParam_Deserialize = {
@@ -174,7 +198,7 @@ export type FieldScanParam_Deserialize = {
 	match: string,
 	/**  完全匹配：true 时走 HGET / SISMEMBER / ZSCORE */
 	exact: boolean,
-	meta: FiledScanMeta | null,
+	meta: FieldScanMeta | null,
 	bytesFormat: BytesFormat | null,
 	/**  是否拉取 TYPE/TTL/MEMORY/HLEN；前端续扫时为 false */
 	includeMeta: boolean | null,
@@ -192,7 +216,7 @@ export type FieldScanParam_Serialize = {
 	match: string,
 	/**  完全匹配：true 时走 HGET / SISMEMBER / ZSCORE */
 	exact: boolean,
-	meta: FiledScanMeta | null,
+	meta: FieldScanMeta | null,
 	bytesFormat: BytesFormat | null,
 	/**  是否拉取 TYPE/TTL/MEMORY/HLEN；前端续扫时为 false */
 	includeMeta: boolean | null,
@@ -215,6 +239,8 @@ export type FieldScanResult_Deserialize = {
 	valueTruncated: boolean,
 	/**  Array：ARLEN（逻辑长度 maxIndex+1）；其它类型为 None */
 	logicalLength?: number | null,
+	/**  Vector Set：VDIM（向量维度）；其它类型为 None */
+	vectorDim?: number | null,
 };
 
 export type FieldScanResult_Serialize = {
@@ -228,24 +254,8 @@ export type FieldScanResult_Serialize = {
 	valueTruncated: boolean,
 	/**  Array：ARLEN（逻辑长度 maxIndex+1）；其它类型为 None */
 	logicalLength?: number | null,
-};
-
-export type FiledScanMeta = {
-	/**  Stream XREVRANGE 上界和下界 */
-	maxId: string,
-	minId: string,
-	/**  STRING 全量加载字节上限；超过且未 force 时仅 GETRANGE 预览前 value_preview_bytes */
-	valueByteLimit: number | null,
-	valuePreviewBytes: number | null,
-	forceFullValue: boolean | null,
-	/**  List LRANGE / Array ARSCAN 下界；空则 0 */
-	listMinIndex: number | null,
-	/**  List LRANGE 上界（空则 len-1）；Array ARSCAN 上界（空则索引最大值） */
-	listMaxIndex: number | null,
-	/**  List 扫描方向：true 从 max 向 min，false 从 min 向 max */
-	listDesc: boolean | null,
-	/**  Stream 扫描方向：true 从 max 向 min（XREVRANGE），false 从 min 向 max（XRANGE） */
-	streamDesc: boolean | null,
+	/**  Vector Set：VDIM（向量维度）；其它类型为 None */
+	vectorDim?: number | null,
 };
 
 export type RedisArInfoItem = {
@@ -409,6 +419,10 @@ export type RedisFieldAdd_Deserialize = {
 	listPushMethod: string,
 	/**  Array 写入方式：arset（指定索引）/ arinsert（游标插入） */
 	arrayWriteMethod: string,
+	/**  Vector Set：前端已解析的浮点分量（勿传多格式文本；空=非 vectorset） */
+	vector?: (number | null)[],
+	/**  Vector Set：attrs JSON 文本；空=不设 SETATTR（新建不带属性） */
+	attrs?: string,
 	fieldValueList: RedisFieldValue[],
 	streamId: string,
 	/**  仅 Redis 顶层键名（`key`）如何解码为字节；不含 Hash/Stream 的字段名 */
@@ -427,6 +441,10 @@ export type RedisFieldAdd_Serialize = {
 	listPushMethod: string,
 	/**  Array 写入方式：arset（指定索引）/ arinsert（游标插入） */
 	arrayWriteMethod: string,
+	/**  Vector Set：前端已解析的浮点分量（勿传多格式文本；空=非 vectorset） */
+	vector: (number | null)[],
+	/**  Vector Set：attrs JSON 文本；空=不设 SETATTR（新建不带属性） */
+	attrs: string,
 	fieldValueList: RedisFieldValue[],
 	streamId: string,
 	/**  仅 Redis 顶层键名（`key`）如何解码为字节；不含 Hash/Stream 的字段名 */
@@ -513,6 +531,10 @@ export type RedisFieldSet_Deserialize = {
 	includeFieldTtl: boolean | null,
 	/**  编辑字段时解析用户输入（含 Hash 字段名）；Redis 键由 `key` 承载，不再经此格式解析 */
 	valFmt: BytesFormat | null,
+	/**  Vector Set：前端已解析的浮点分量（与 `RedisFieldAdd.vector` 一致；空=非 vectorset） */
+	vector?: (number | null)[],
+	/**  Vector Set：前端恒提交当前全量 attrs JSON（空串=清除属性，官方约定） */
+	attrs?: string,
 };
 
 export type RedisFieldSet_Serialize = {
@@ -527,6 +549,10 @@ export type RedisFieldSet_Serialize = {
 	includeFieldTtl: boolean | null,
 	/**  编辑字段时解析用户输入（含 Hash 字段名）；Redis 键由 `key` 承载，不再经此格式解析 */
 	valFmt: BytesFormat | null,
+	/**  Vector Set：前端已解析的浮点分量（与 `RedisFieldAdd.vector` 一致；空=非 vectorset） */
+	vector: (number | null)[],
+	/**  Vector Set：前端恒提交当前全量 attrs JSON（空串=清除属性，官方约定） */
+	attrs: string,
 };
 
 export type RedisFieldValue = {
@@ -534,6 +560,8 @@ export type RedisFieldValue = {
 	fieldValue: string,
 	fieldScore: number | null,
 	fieldTtl: number,
+	/**  VectorSet：VGETATTR 返回的属性 JSON；无属性或其他类型为空串 */
+	fieldAttrs?: string,
 };
 
 export type RedisHashKeys = RedisHashKeys_Serialize | RedisHashKeys_Deserialize;
@@ -663,6 +691,79 @@ export type RedisSlowLog = {
 	command: string,
 	cost: number | null,
 	clientName: string,
+};
+
+export type RedisVAttr = RedisVAttr_Serialize | RedisVAttr_Deserialize;
+
+export type RedisVAttr_Deserialize = {
+	key: RedisKey_Deserialize,
+	/**  元素名 wire（与 fieldScan 行 key 一致） */
+	fieldKey: string,
+	/**  仅 VSETATTR：JSON 文本；空串删除属性 */
+	attrs?: string,
+	valFmt: BytesFormat | null,
+};
+
+export type RedisVAttr_Serialize = {
+	key: RedisKey_Serialize,
+	/**  元素名 wire（与 fieldScan 行 key 一致） */
+	fieldKey: string,
+	/**  仅 VSETATTR：JSON 文本；空串删除属性 */
+	attrs: string,
+	valFmt: BytesFormat | null,
+};
+
+export type RedisVSim = RedisVSim_Serialize | RedisVSim_Deserialize;
+
+export type RedisVSimItem = {
+	/**  元素名（val_fmt 编码） */
+	key: string,
+	/**  相似度 1=同向，0=反向 */
+	score: number | null,
+	/**  WITHATTRIBS 时返回；无属性为空串 */
+	attrs?: string,
+};
+
+export type RedisVSim_Deserialize = {
+	key: RedisKey_Deserialize,
+	/**  ele | values */
+	mode: string,
+	/**  ELE：查询元素名（按 val_fmt 解码） */
+	fieldKey?: string,
+	/**  VALUES：查询向量 */
+	vector?: (number | null)[],
+	/**  COUNT；默认由调用方填 */
+	count: number,
+	/**  是否 WITHATTRIBS */
+	withAttribs: boolean,
+	/**  FILTER 表达式；空=不加 */
+	filter?: string,
+	/**  EPSILON；None=不加 */
+	epsilon: number | null,
+	/**  EF；None=不加 */
+	ef: number | null,
+	valFmt: BytesFormat | null,
+};
+
+export type RedisVSim_Serialize = {
+	key: RedisKey_Serialize,
+	/**  ele | values */
+	mode: string,
+	/**  ELE：查询元素名（按 val_fmt 解码） */
+	fieldKey: string,
+	/**  VALUES：查询向量 */
+	vector: (number | null)[],
+	/**  COUNT；默认由调用方填 */
+	count: number,
+	/**  是否 WITHATTRIBS */
+	withAttribs: boolean,
+	/**  FILTER 表达式；空=不加 */
+	filter: string,
+	/**  EPSILON；None=不加 */
+	epsilon: number | null,
+	/**  EF；None=不加 */
+	ef: number | null,
+	valFmt: BytesFormat | null,
 };
 
 export type RedisZsetRange = RedisZsetRange_Serialize | RedisZsetRange_Deserialize;

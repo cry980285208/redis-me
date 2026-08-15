@@ -1,5 +1,6 @@
 <script setup lang="ts">
-/** Array ARLASTITEMS 弹框：数量 + REV，对标 ZSet TopN */
+// #region 导入
+// Array ARLASTITEMS 弹框：数量 + REV，对标 ZSet TopN
 import { computed, inject, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -7,22 +8,24 @@ import { shareProvideKey } from '@/types/me-interface'
 import type { BytesFormat } from '@/types/tauri-specta'
 import { meFormatViewValue, type ViewBytesFormat } from '@/utils/format'
 import { meCommands } from '@/utils/util'
+// #endregion
 
+// #region 核心状态
 const { t } = useI18n()
 const share = inject(shareProvideKey)!
-
 const visible = ref(false)
 const loading = ref(false)
 const count = ref(10)
 const reverse = ref(false)
-/** 展示行：value=null 表示 Redis 空槽 */
+// 展示行：value=null 表示 Redis 空槽
 type ArLastItemsRow = { index: number; value: string | null }
 const itemList = ref<ArLastItemsRow[]>([])
 const keyword = ref('')
+// #endregion
 
+// #region 计算属性
 const dialogTitle = computed(() => t('redisValue.arLastItemsTitle'))
 const dialogIcon = 'me-icon-rank'
-
 const filteredList = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
   if (!kw) return itemList.value
@@ -32,10 +35,12 @@ const filteredList = computed(() => {
     return text.includes(kw)
   })
 })
+// #endregion
 
 let currentValFmt: BytesFormat | null = null
 let currentViewFmt: ViewBytesFormat = 'utf8'
 
+// #region 面板操作
 async function open(valFmt: BytesFormat | null, viewFmt: ViewBytesFormat = 'utf8') {
   const conn = share.conn
   const redisKey = share.redisKey
@@ -83,6 +88,7 @@ watch(reverse, () => {
 })
 
 defineExpose({ open })
+// #endregion
 </script>
 
 <template>

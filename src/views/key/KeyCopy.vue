@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// #region 导入
 import { inject, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -7,7 +8,9 @@ import type { RedisKey_Deserialize } from '@/types/tauri-specta'
 import { BYTES_FORMAT, meFormatBytes, meToBase64 } from '@/utils/format'
 import { redisKeyWireBase64 } from '@/utils/redis-key'
 import { meCommands, meErr, meOk } from '@/utils/util'
+// #endregion
 
+// #region 核心状态
 const { t } = useI18n()
 const share = inject(shareProvideKey)!
 const emit = defineEmits<{ success: [redisKey: RedisKey_Deserialize] }>()
@@ -18,7 +21,9 @@ const loading = ref(false)
 const sourceKey = ref<RedisKey_Deserialize | null>(null)
 const codec = ref('utf8')
 const inputValue = ref('')
+// #endregion
 
+// #region 面板操作
 function open(data: { redisKey: RedisKey_Deserialize }) {
   codec.value = 'utf8'
   sourceKey.value = data.redisKey
@@ -66,6 +71,7 @@ async function submit() {
     loading.value = false
   }
 }
+// #endregion
 </script>
 
 <template>
