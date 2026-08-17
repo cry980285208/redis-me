@@ -338,6 +338,7 @@ export default {
 
   util: {
     days: 'd',
+    openUrlFail: 'Failed to open the link, URL copied: ',
     deleteKey: 'Delete [{key}]?',
     checking: 'Checking for update, wait a moment...',
     updateHint: 'New version v{version}, Update?',

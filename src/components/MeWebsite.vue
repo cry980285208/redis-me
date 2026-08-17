@@ -1,9 +1,7 @@
 <script setup lang="ts">
 // #region 导入
 // 跳转到官网: Redis中英文/Valkey中英文；可选 command 拼具体命令文档路径
-import { openUrl } from '@tauri-apps/plugin-opener'
-
-import { isZh } from '@/utils/util'
+import { isZh, meOpenUrl } from '@/utils/util'
 // #endregion
 
 // #region 核心状态
@@ -65,7 +63,7 @@ function handleCommand(cmd: string): void {
   const base = WEB_ORIGIN[site]
   let path = DOC_PATHS[props.to][vendor]
   if (props.command) path += `${commandSlug(props.command)}/`
-  void openUrl(base + path)
+  meOpenUrl(base + path)
 }
 // #endregion
 </script>

@@ -2,7 +2,6 @@
 // #region 导入
 // 自定义编解码 CRUD：由 RedisValue 编解码下拉头部编辑入口打开；列表顺序即下拉展示顺序
 import { writeTextFile } from '@tauri-apps/plugin-fs'
-import { openUrl } from '@tauri-apps/plugin-opener'
 import type { TableInstance } from 'element-plus'
 import { Sortable, type SortableEvent } from 'sortablejs'
 import { computed, nextTick, onBeforeUnmount, reactive, ref, useTemplateRef, watch } from 'vue'
@@ -16,7 +15,7 @@ import {
   testCodec,
   type CustomCodec,
 } from '@/utils/format'
-import { meConfirm, meErr, meErrHtml, meOk } from '@/utils/util'
+import { meConfirm, meErr, meErrHtml, meOk, meOpenUrl } from '@/utils/util'
 // #endregion
 
 // #region 核心状态
@@ -178,7 +177,7 @@ async function runTest(mode: 'decode' | 'encode') {
 }
 
 function openCodecDoc() {
-  void openUrl(t('customCodec.docUrl'))
+  meOpenUrl(t('customCodec.docUrl'))
 }
 // #endregion
 </script>

@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { getVersion } from '@tauri-apps/api/app'
-import { openUrl } from '@tauri-apps/plugin-opener'
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+
+import { meOpenUrl } from '@/utils/util'
 
 const { t } = useI18n()
 const visible = ref(false)
@@ -18,11 +19,11 @@ getVersion()
   .catch(() => {})
 
 function openSourceCode(): void {
-  void openUrl('https://github.com/hepengju/redis-me')
+  meOpenUrl('https://github.com/hepengju/redis-me')
 }
 
 function openOfficialWebsite(): void {
-  void openUrl('https://www.hepengju.com')
+  meOpenUrl('https://www.hepengju.com')
 }
 </script>
 

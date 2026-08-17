@@ -327,6 +327,7 @@ export default {
 
   util: {
     days: '天',
+    openUrlFail: '无法打开链接，网址已复制：',
     deleteKey: '确定删除键【{key}】吗？',
     checking: '检查更新中，请稍后...',
     updateHint: '有新版本 v{version}，是否升级？',
