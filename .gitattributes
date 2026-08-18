@@ -1,0 +1,2 @@
+# Shell script distributed to Linux/macOS users must keep LF (CRLF breaks sh parsing)
+test/redisson/run-redisson-codec.sh text eol=lf
