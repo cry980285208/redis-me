@@ -312,10 +312,12 @@ export default {
 
   meTable: {
     copyJson: '复制 JSON',
+    copyRawJson: '复制 RAW',
     copyCsv: '复制 CSV',
     copyHtml: '复制 HTML',
     copyMarkdown: '复制 Markdown',
     exportJson: '导出 JSON',
+    exportRawJson: '导出 RAW',
     exportCsv: '导出 CSV',
     exportExcel: '导出 Excel',
     exportHtml: '导出 HTML',

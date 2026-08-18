@@ -1,18 +1,17 @@
 ## Future
 
-- 研究下怎么上线Linux的应用商店
-- Redis Vector Set 类型的支持（方案见 `zzz/plans/19_vector-set-support.md`；按 Redis ≥ 8.4，不做无 VRANGE 降级；造数 `zzz/seed/VectorSetSeed.py`）
-  - 19.1 基础读写 + VRANGE 浏览（VADD / VREM / VEMB / 精确查询）✅️
-  - 19.2 attrs + VINFO（VINFO 在类型更多；attrs 在 FieldSet 编辑，不随 VRANGE）✅️
-  - 19.3 VSIM 相似度搜索弹窗（ELE/VALUES + FILTER）✅️；VLINKS / FP32 / 量化细调延后
+- 研究下怎么上线Linux的应用商店: deepin, snap, flathub
+- 抖音/B站短视频的制作: 每个痛点解决1个小视频
+- Redis单机/集群安装的UI支持, 快捷docker-compose.yaml生成
+- Redis实战相关文章的编写
 - Time Series 的支持
+- RedisSearch 的支持
+- 连接级自动解压：优先 GZIP，可选 LZ4 / ZSTD / Snappy（对标 RedisInsight；即此前「自动解压缩」）
+- MeTable表格导出新增的复制原始JSON
 
-### 可逐步完善（小点）
-
-按「单点可做、可验收」排，便于分批落地：
+### 可逐步完善
 
 - Viewer 解压查看：Gzip / Deflate / Brotli（对标 TinyRDM / Another）
-- 连接级自动解压：优先 GZIP，可选 LZ4 / ZSTD / Snappy（对标 RedisInsight；即此前「自动解压缩」）
 - 网络代理：HTTP / SOCKS5
 - Unix Socket 支持
 - 解析剪贴板 URL / redis:// 反向解析填表
@@ -24,19 +23,11 @@
 - SSH 隧道支持集群和哨兵
 - 哨兵支持 SSL
 - 旧版 SSH 证书的支持
-
-### 中长期
-
-- RedisSearch 的支持
 - redis 的扩展模块命令支持
-- Redis8.8 已发布，更新命令列表（等 9 发布再更新吧）、配置文件等
 - ACL 管理支持自定义角色
 - cli 功能支持
 - 黑金主题
 - 慢日志治理的微信公众号文章
-
-### 暂缓 / 观望
-
 - 新增 CPU 占比: 需要两次 INFO 才能出来，作用也不大，暂不处理
 - 账号登录(谷歌 firebase，腾讯 cloudbase)
 
@@ -72,3 +63,6 @@
 - 传输层固定 Base64 + 数据编码仅控展示（Hash/List 字段可直接看 JavaSerial）✅️
 - 收藏文件夹功能 ✅️
 - Linux Flatpak/Snap 商店版识别（关自更新）✅️
+- Redis Array 类型的支持 ✅️
+- Redis Vector Set 类型的支持 ✅️
+- Redis8.8 已发布，更新命令列表、配置文件等 ✅️

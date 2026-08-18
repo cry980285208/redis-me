@@ -323,10 +323,12 @@ export default {
 
   meTable: {
     copyJson: 'Copy JSON',
+    copyRawJson: 'Copy RAW',
     copyCsv: 'Copy CSV',
     copyHtml: 'Copy HTML',
     copyMarkdown: 'Copy Markdown',
     exportJson: 'Export JSON',
+    exportRawJson: 'Export RAW',
     exportCsv: 'Export CSV',
     exportExcel: 'Export Excel',
     exportHtml: 'Export HTML',

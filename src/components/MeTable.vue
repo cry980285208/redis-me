@@ -218,8 +218,23 @@ async function readFullTableMatrix(): Promise<{ headers: string[]; rows: string[
   }
 }
 
+// 原始数据 JSON：直接序列化 sortedData，不经过 DOM 展示（不受 slot/格式化/截断影响）
+function rawJsonText(): string {
+  return JSON.stringify(sortedData.value, null, 2)
+}
+
 async function handleExportCommand(command: string): Promise<void> {
   if (!ensureExportRows()) return
+
+  // 原始 JSON 无需临时全量渲染，直接序列化数据
+  if (command === 'copyRawJson') {
+    meCopy(rawJsonText())
+    return
+  }
+  if (command === 'exportRawJson') {
+    await saveTableTextFile(rawJsonText(), exportFileName('json'), ['json'])
+    return
+  }
 
   const matrix = await readFullTableMatrix()
   if (!matrix || matrix.rows.length === 0) {
@@ -305,15 +320,19 @@ defineExpose({
         <me-icon icon="el-icon-more-filled" class="icon-btn me-table-more" />
         <template #dropdown>
           <el-dropdown-menu>
+            <el-dropdown-item command="copyRawJson">{{
+              t('meTable.copyRawJson')
+            }}</el-dropdown-item>
             <el-dropdown-item command="copyJson">{{ t('meTable.copyJson') }}</el-dropdown-item>
             <el-dropdown-item command="copyCsv">{{ t('meTable.copyCsv') }}</el-dropdown-item>
             <el-dropdown-item command="copyHtml">{{ t('meTable.copyHtml') }}</el-dropdown-item>
             <el-dropdown-item command="copyMarkdown">{{
               t('meTable.copyMarkdown')
             }}</el-dropdown-item>
-            <el-dropdown-item command="exportJson" divided>{{
-              t('meTable.exportJson')
+            <el-dropdown-item command="exportRawJson" divided>{{
+              t('meTable.exportRawJson')
             }}</el-dropdown-item>
+            <el-dropdown-item command="exportJson">{{ t('meTable.exportJson') }}</el-dropdown-item>
             <el-dropdown-item command="exportCsv">{{ t('meTable.exportCsv') }}</el-dropdown-item>
             <el-dropdown-item command="exportHtml">{{ t('meTable.exportHtml') }}</el-dropdown-item>
             <el-dropdown-item command="exportMarkdown">{{
