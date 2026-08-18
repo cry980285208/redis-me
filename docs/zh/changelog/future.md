@@ -1,7 +1,7 @@
 ## Future
 
 - 研究下怎么上线Linux的应用商店
-- Redis Vector Set 类型的支持（方案见 `plans/19_vector-set-support.md`；按 Redis ≥ 8.4，不做无 VRANGE 降级；造数 `test/serialization/VectorSetSeed.py`）
+- Redis Vector Set 类型的支持（方案见 `zzz/plans/19_vector-set-support.md`；按 Redis ≥ 8.4，不做无 VRANGE 降级；造数 `zzz/seed/VectorSetSeed.py`）
   - 19.1 基础读写 + VRANGE 浏览（VADD / VREM / VEMB / 精确查询）✅️
   - 19.2 attrs + VINFO（VINFO 在类型更多；attrs 在 FieldSet 编辑，不随 VRANGE）✅️
   - 19.3 VSIM 相似度搜索弹窗（ELE/VALUES + FILTER）✅️；VLINKS / FP32 / 量化细调延后

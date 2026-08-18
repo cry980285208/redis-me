@@ -18,7 +18,7 @@ export const defaultSettings = {
   connShow: 'flat', // 'flat' | 'group'
   connGroups: [] as string[], // 分组名有序列表
   connGroupExpanded: {} as Record<string, boolean>, // 分组折叠状态，键为分组名（''=默认分组）
-  // 自定义 Codec（STRING 值编解码，见 plans/custom-formatter.md）
+  // 自定义 Codec（STRING 值编解码，见 zzz/plans/05_custom-formatter.md）
   customCodecs: [] as { name: string; command: string }[],
   codecExecTimeoutSec: 5,
   // Redis 命令读写超时（秒），同步至 Rust AppSettings
