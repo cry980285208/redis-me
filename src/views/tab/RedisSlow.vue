@@ -7,6 +7,7 @@ import { useI18n } from 'vue-i18n'
 import MeWebsite from '@/components/MeWebsite.vue'
 import { shareProvideKey } from '@/types/me-interface'
 import type { RedisSlowLog } from '@/types/tauri-specta'
+import type { TableExportMatrix } from '@/utils/export'
 // 官网参考: https://redis.ac.cn/docs/latest/commands/slowlog-get/
 import { meCopy, meCommands, meOk } from '@/utils/util'
 import NodeList from '@/views/ext/NodeList.vue'
@@ -62,6 +63,33 @@ function sortChange({ prop, order }: { prop: string; order: string | null }) {
   } else {
     sortProperty.value = 'time'
     sortOrder.value = 'descending'
+  }
+}
+
+// MeTable 导出：由行数据直接计算展示文本，与表格列定义一致（改列时同步改这里）
+function exportRows(data: unknown[]): TableExportMatrix {
+  const cluster = !!share.conn?.cluster
+  const headers = [
+    t('redisSlow.time'),
+    t('redisSlow.cost'),
+    t('redisSlow.command'),
+    t('redisSlow.clientName'),
+    t('redisSlow.client'),
+  ]
+  if (cluster) headers.push(t('redisSlow.node'))
+  return {
+    headers,
+    rows: (data as RedisSlowLog[]).map(row => {
+      const cells = [
+        row.time,
+        `${(row.cost ?? 0).toFixed(2)} ms`,
+        row.command,
+        row.clientName,
+        row.client,
+      ]
+      if (cluster) cells.push(row.node)
+      return cells
+    }),
   }
 }
 
@@ -231,6 +259,7 @@ const rules = computed(() => ({
         v-loading="loading"
         :default-sort="{ prop: 'time', order: 'descending' }"
         export-name="slowlog"
+        :export-rows="exportRows"
         @sort-change="sortChange"
         border
         stripe>

@@ -31,6 +31,7 @@ import {
   detectedViewLabel,
   type DetectedViewFormat,
 } from '@/utils/detect-view-format'
+import type { TableExportMatrix } from '@/utils/export'
 import { useFavorites, addFavorite, removeFavorite, isFavorited } from '@/utils/favorite'
 import {
   BYTES_FORMAT,
@@ -1017,6 +1018,50 @@ function compareFieldRowValue(a: ValueTableRow, b: ValueTableRow): number {
     sensitivity: 'base',
   })
 }
+
+// MeTable 导出：由行数据直接计算展示文本，与表格列定义一致（改列时同步改这里）
+function exportValueTableRows(data: unknown[]): TableExportMatrix {
+  const headers: string[] = ['#']
+  const cells: ((row: ValueTableRow, index: number) => string)[] = [
+    (_row, index) => String(index + 1),
+  ]
+  if (streamType.value) {
+    headers.push(t('redisValue.id'))
+    cells.push(row => {
+      const id = String(row.id ?? '')
+      const date = streamIdToDate(id)
+      return date ? `${id} ${date}` : id
+    })
+  }
+  if (hashType.value) {
+    headers.push(t('redisValue.key'))
+    cells.push(row => formatTableCell(row.key))
+  }
+  if (listType.value || arrayType.value) {
+    headers.push(t('redisValue.index'))
+    cells.push(row => String(row.index ?? ''))
+  }
+  headers.push(vectorsetType.value ? t('redisValue.element') : t('redisValue.value'))
+  cells.push(row => fieldRowDisplayValue(row))
+  if (vectorsetType.value) {
+    headers.push(t('fieldSet.attrs'))
+    cells.push(row => String(row.attrs ?? ''))
+    headers.push(t('fieldSet.vector'))
+    cells.push(row => String(row.vector ?? ''))
+  }
+  if (zsetType.value) {
+    headers.push(t('redisValue.score'))
+    cells.push(row => String(row.score ?? ''))
+  }
+  if (showHashFieldTtlOption.value && scanHashFieldTtl.value) {
+    headers.push(t('redisValue.ttl'))
+    cells.push(row => formatFieldTtl(row.ttl))
+  }
+  return {
+    headers,
+    rows: (data as ValueTableRow[]).map((row, index) => cells.map(fn => fn(row, index))),
+  }
+}
 function buildFieldGetParam(row?: ValueTableRow): RedisFieldGet_Deserialize | null {
   const rv = redisValue.value
   const rk = share.redisKey
@@ -1903,6 +1948,7 @@ onUnmounted(() => {
               ref="table"
               height="100%"
               export-name="value"
+              :export-rows="exportValueTableRows"
               :row-class-name="rowClassName"
               @row-click="rowClick"
               @row-dblclick="rowDblClick">

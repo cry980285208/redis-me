@@ -2,10 +2,11 @@
 // 说明: 前端分页表，用于数据量比较大的场景（比如内存分析等），进行前端分页，避免卡顿。
 // 在分页前对整表排序：与 el-table 的 default-sort、列 sortable / sort-method / sort-by 一致；
 // sortable="custom" 时不改行顺序，由父组件在 sort-change 中自行更新 :data。
-// 分页条右侧「…」菜单：临时渲染 sortedData 全量后从 DOM 读取，与界面展示一致。
+// 分页条右侧「…」菜单：RAW 项直接序列化数据永远可用；其余格式由 exportRows
+// 从数据层计算矩阵（不渲染 DOM），未提供 exportRows 时仅显示 RAW 项。
 import type { TableInstance } from 'element-plus'
 import { orderBy } from 'element-plus/es/components/table/src/util.mjs'
-import { computed, nextTick, ref, useAttrs, watch } from 'vue'
+import { computed, ref, useAttrs, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import {
@@ -15,9 +16,9 @@ import {
   matrixToHtml,
   matrixToJson,
   matrixToMarkdown,
-  readTableFromDom,
   saveTableTextFile,
   saveTableXlsxFile,
+  type TableExportMatrix,
 } from '@/utils/export'
 import { meCopy, meErr } from '@/utils/util'
 
@@ -36,6 +37,8 @@ const props = withDefaults(
     exportName?: string
     /** 隐藏分页条右侧扩展菜单 */
     hideExport?: boolean
+    /** 导出数据计算：由行数据直接生成表头/文本矩阵（不渲染 DOM）；未提供时菜单仅显示 RAW 项 */
+    exportRows?: (data: unknown[]) => TableExportMatrix
   }>(),
   {
     data: () => [],
@@ -162,6 +165,7 @@ const pageData = computed(() => {
   )
 })
 
+// RAW 项不依赖 exportRows 永远可用；其余格式需视图提供 exportRows
 const showExportMenu = computed(() => !props.hideExport && sortedData.value.length > 0)
 
 const showPagination = computed(() => {
@@ -184,7 +188,7 @@ function updatePageSize(size: number): void {
 }
 // #endregion
 
-// #region 导出：临时渲染 sortedData 全量，从 DOM 读取与界面一致的文本
+// #region 导出：RAW 直接序列化数据；其余格式由 exportRows 数据层计算，不渲染 DOM
 const tableRef = ref<TableInstance>()
 
 function ensureExportRows(): boolean {
@@ -197,28 +201,7 @@ function exportFileName(ext: string): string {
   return buildExportFileName(props.exportName, ext)
 }
 
-// 导出前临时展示全部 sortedData，以便 DOM 含自定义 slot 列（如 Info 说明）
-async function readFullTableMatrix(): Promise<{ headers: string[]; rows: string[][] } | null> {
-  const table = tableRef.value
-  if (!table) return null
-
-  const savedPage = currentPage.value
-  const savedSize = pageSize.value
-  currentPage.value = 1
-  pageSize.value = Math.max(sortedData.value.length, 1)
-
-  await nextTick()
-  await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
-
-  try {
-    return readTableFromDom(table)
-  } finally {
-    currentPage.value = savedPage
-    pageSize.value = savedSize
-  }
-}
-
-// 原始数据 JSON：直接序列化 sortedData，不经过 DOM 展示（不受 slot/格式化/截断影响）
+// 原始数据 JSON：直接序列化 sortedData（不受展示格式化/截断影响）
 function rawJsonText(): string {
   return JSON.stringify(sortedData.value, null, 2)
 }
@@ -226,7 +209,7 @@ function rawJsonText(): string {
 async function handleExportCommand(command: string): Promise<void> {
   if (!ensureExportRows()) return
 
-  // 原始 JSON 无需临时全量渲染，直接序列化数据
+  // 原始 JSON 直接序列化数据，不依赖 exportRows
   if (command === 'copyRawJson') {
     meCopy(rawJsonText())
     return
@@ -236,13 +219,9 @@ async function handleExportCommand(command: string): Promise<void> {
     return
   }
 
-  const matrix = await readFullTableMatrix()
-  if (!matrix || matrix.rows.length === 0) {
-    meErr(t('meTable.exportEmpty'))
-    return
-  }
-
-  const { headers, rows } = matrix
+  // 其余格式：由视图提供的 exportRows 计算展示文本（与界面列定义保持一致）
+  if (!props.exportRows) return
+  const { headers, rows } = props.exportRows(sortedData.value)
 
   switch (command) {
     case 'copyJson':
@@ -323,22 +302,34 @@ defineExpose({
             <el-dropdown-item command="copyRawJson">{{
               t('meTable.copyRawJson')
             }}</el-dropdown-item>
-            <el-dropdown-item command="copyJson">{{ t('meTable.copyJson') }}</el-dropdown-item>
-            <el-dropdown-item command="copyCsv">{{ t('meTable.copyCsv') }}</el-dropdown-item>
-            <el-dropdown-item command="copyHtml">{{ t('meTable.copyHtml') }}</el-dropdown-item>
-            <el-dropdown-item command="copyMarkdown">{{
+            <el-dropdown-item v-if="exportRows" command="copyJson">{{
+              t('meTable.copyJson')
+            }}</el-dropdown-item>
+            <el-dropdown-item v-if="exportRows" command="copyCsv">{{
+              t('meTable.copyCsv')
+            }}</el-dropdown-item>
+            <el-dropdown-item v-if="exportRows" command="copyHtml">{{
+              t('meTable.copyHtml')
+            }}</el-dropdown-item>
+            <el-dropdown-item v-if="exportRows" command="copyMarkdown">{{
               t('meTable.copyMarkdown')
             }}</el-dropdown-item>
             <el-dropdown-item command="exportRawJson" divided>{{
               t('meTable.exportRawJson')
             }}</el-dropdown-item>
-            <el-dropdown-item command="exportJson">{{ t('meTable.exportJson') }}</el-dropdown-item>
-            <el-dropdown-item command="exportCsv">{{ t('meTable.exportCsv') }}</el-dropdown-item>
-            <el-dropdown-item command="exportHtml">{{ t('meTable.exportHtml') }}</el-dropdown-item>
-            <el-dropdown-item command="exportMarkdown">{{
+            <el-dropdown-item v-if="exportRows" command="exportJson">{{
+              t('meTable.exportJson')
+            }}</el-dropdown-item>
+            <el-dropdown-item v-if="exportRows" command="exportCsv">{{
+              t('meTable.exportCsv')
+            }}</el-dropdown-item>
+            <el-dropdown-item v-if="exportRows" command="exportHtml">{{
+              t('meTable.exportHtml')
+            }}</el-dropdown-item>
+            <el-dropdown-item v-if="exportRows" command="exportMarkdown">{{
               t('meTable.exportMarkdown')
             }}</el-dropdown-item>
-            <el-dropdown-item command="exportExcel">{{
+            <el-dropdown-item v-if="exportRows" command="exportExcel">{{
               t('meTable.exportExcel')
             }}</el-dropdown-item>
           </el-dropdown-menu>

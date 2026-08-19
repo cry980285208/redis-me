@@ -3,7 +3,6 @@
 import { save, type DialogFilter } from '@tauri-apps/plugin-dialog'
 import { writeFile, writeTextFile } from '@tauri-apps/plugin-fs'
 import dayjs from 'dayjs'
-import type { TableInstance } from 'element-plus'
 import * as XLSX from 'xlsx'
 
 import i18n from '@/locales'
@@ -75,47 +74,10 @@ export async function saveBinaryExport(
 
 // #endregion
 
-// #region MeTable：DOM 读取与矩阵格式
+// #region MeTable：矩阵格式转换
 
-const SKIP_COLUMN_CLASSES = ['el-table-column--selection', 'el-table__expand-column']
-
-function normalizeCellText(text: string): string {
-  return text.replace(/\s+/g, ' ').trim()
-}
-
-function isSkippedColumn(cell: Element): boolean {
-  return SKIP_COLUMN_CLASSES.some(cls => cell.classList.contains(cls))
-}
-
-/** 从 el-table DOM 读表头/行；MeTable 导出前需渲染全量数据 */
-export function readTableFromDom(table: TableInstance): { headers: string[]; rows: string[][] } {
-  const root = table.$el as HTMLElement | undefined
-  if (!root) return { headers: [], rows: [] }
-
-  const headers: string[] = []
-  root
-    .querySelectorAll('.el-table__header-wrapper thead tr:first-child th.el-table__cell')
-    .forEach(th => {
-      if (isSkippedColumn(th)) return
-      const cell = th.querySelector('.cell')
-      headers.push(normalizeCellText(cell?.textContent ?? ''))
-    })
-
-  const rows: string[][] = []
-  const bodyWrapper = root.querySelector('.el-table__body-wrapper')
-  bodyWrapper?.querySelectorAll('tbody tr').forEach(tr => {
-    if ((tr as HTMLElement).style.display === 'none') return
-    const rowCells: string[] = []
-    tr.querySelectorAll('td.el-table__cell').forEach(td => {
-      if (isSkippedColumn(td)) return
-      const cell = td.querySelector('.cell')
-      rowCells.push(normalizeCellText(cell?.textContent ?? ''))
-    })
-    if (rowCells.length) rows.push(rowCells)
-  })
-
-  return { headers, rows }
-}
+/** MeTable exportRows 返回值：表头 + 文本矩阵 */
+export type TableExportMatrix = { headers: string[]; rows: string[][] }
 
 export function matrixToJson(headers: string[], rows: string[][]): string {
   const objects = rows.map(row => {

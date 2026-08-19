@@ -4,7 +4,8 @@ import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import MeWebsite from '@/components/MeWebsite.vue'
-import { commandHelp } from '@/locales/cmd'
+import { commandHelp, type CommandHelpRow } from '@/locales/cmd'
+import type { TableExportMatrix } from '@/utils/export'
 import { sortVersionsDesc } from '@/utils/redis-version'
 import { isZh } from '@/utils/util'
 // #endregion
@@ -63,6 +64,28 @@ const filterDataList = computed(() => {
 function onFilterChange(filters: Record<string, unknown[]>) {
   // EP 每次只回传当前列，需合并保留其它列已选条件
   activeFilters.value = { ...activeFilters.value, ...filters }
+}
+
+// MeTable 导出：由行数据直接计算展示文本，与表格列定义一致（改列时同步改这里）
+function exportRows(data: unknown[]): TableExportMatrix {
+  return {
+    headers: [
+      t('redisTerminal.group'),
+      t('redisTerminal.command'),
+      t('redisTerminal.usage'),
+      t('redisTerminal.summary'),
+      t('redisTerminal.since'),
+      t('redisTerminal.readonly'),
+    ],
+    rows: (data as CommandHelpRow[]).map(row => [
+      row.group,
+      row.key,
+      row.usage,
+      row.summary,
+      row.since,
+      row.readonly ? t('redisTerminal.readonlyYes') : t('redisTerminal.readonlyNo'),
+    ]),
+  }
 }
 // #endregion
 
@@ -124,6 +147,7 @@ defineExpose({ open, close })
           stripe
           height="100%"
           export-name="command"
+          :export-rows="exportRows"
           :default-sort="{ prop: 'key', order: 'ascending' }"
           @filter-change="onFilterChange">
           <el-table-column

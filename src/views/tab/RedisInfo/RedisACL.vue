@@ -15,6 +15,7 @@ import {
   summarizeSelectors,
   type AclEditModel,
 } from '@/utils/acl'
+import type { TableExportMatrix } from '@/utils/export'
 import { meCommands, meConfirm, meOk, meWarn } from '@/utils/util'
 
 import AclDryrun from './AclDryrun.vue'
@@ -66,6 +67,30 @@ const filterUsers = computed(() => {
     return 0
   })
 })
+
+// MeTable 导出：由行数据直接计算展示文本，与表格列定义一致（改列时同步改这里）
+function exportRows(data: unknown[]): TableExportMatrix {
+  return {
+    headers: [
+      t('redisACL.username'),
+      t('redisACL.status'),
+      t('redisACL.commandRules'),
+      t('redisACL.keyPatternsCol'),
+      t('redisACL.channelPatternsCol'),
+      t('redisACL.selectorsCol'),
+    ],
+    rows: (data as AclUserDetail[]).map(row => [
+      row.username,
+      `${row.enabled ? t('redisACL.enabled') : t('redisACL.disabled')}${
+        row.nopass ? ' ' + t('redisACL.passwordNopass') : ''
+      }`,
+      row.commandRules.length ? row.commandRules.join(' ') : '--',
+      summarizeRules(row.keyPatterns, 2),
+      summarizeRules(row.channelPatterns, 2),
+      summarizeSelectors(row.selectors, 2),
+    ]),
+  }
+}
 const previewCommand = computed(() => buildAclPreviewCommand(form))
 // 危险命令黑名单 ↔ form.commandRules 中的 -@dangerous，由 UserAdd 双向绑定
 const dangerousBlocked = computed({
@@ -332,7 +357,7 @@ void refresh()
     </div>
 
     <div class="table">
-      <me-table :data="filterUsers" export-name="acl-users">
+      <me-table :data="filterUsers" export-name="acl-users" :export-rows="exportRows">
         <el-table-column
           prop="username"
           :label="t('redisACL.username')"

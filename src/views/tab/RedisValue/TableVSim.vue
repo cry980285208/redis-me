@@ -7,6 +7,7 @@ import { useI18n } from 'vue-i18n'
 
 import { shareProvideKey } from '@/types/me-interface'
 import type { RedisVSimItem } from '@/types/tauri-specta'
+import type { TableExportMatrix } from '@/utils/export'
 import {
   IPC_WIRE_FORMAT,
   meFormatViewValue,
@@ -181,6 +182,20 @@ function seedSearch(row: RedisVSimItem) {
   void query()
 }
 
+// MeTable 导出：由行数据直接计算展示文本，与表格列定义一致（改列时同步改这里）
+function exportRows(data: unknown[]): TableExportMatrix {
+  const headers = ['#', t('redisValue.element'), t('redisValue.score')]
+  if (withAttribs.value) headers.push(t('fieldSet.attrs'))
+  return {
+    headers,
+    rows: (data as RedisVSimItem[]).map((row, index) => {
+      const cells = [String(index + 1), row.key, String(row.score ?? '')]
+      if (withAttribs.value) cells.push(row.attrs || '')
+      return cells
+    }),
+  }
+}
+
 // redis-cli 风格引号：双引号包裹 + 转义 \ " 换行等
 function quoteCliArg(s: string): string {
   const escaped = s
@@ -282,6 +297,7 @@ defineExpose({ open })
           layout="sizes, prev, pager, next, jumper"
           :data="filteredList"
           export-name="vsim"
+          :export-rows="exportRows"
           height="100%"
           stripe
           border

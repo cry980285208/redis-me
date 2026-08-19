@@ -7,6 +7,7 @@ import { useI18n } from 'vue-i18n'
 
 import { shareProvideKey } from '@/types/me-interface'
 import type { CommandLogEntry } from '@/types/tauri-specta'
+import type { TableExportMatrix } from '@/utils/export'
 import { meCommands, meConfirm, meOk } from '@/utils/util'
 // #endregion
 
@@ -313,6 +314,24 @@ const filterLogs = computed(() => {
   })
 })
 
+// MeTable 导出：由行数据直接计算展示文本，与表格列定义一致（改列时同步改这里）
+function exportRows(data: unknown[]): TableExportMatrix {
+  return {
+    headers: [
+      t('commandLog.time'),
+      t('commandLog.duration'),
+      t('commandLog.db'),
+      t('commandLog.command'),
+    ],
+    rows: (data as CommandLogEntry[]).map(row => [
+      row.timestamp.includes(' ') ? row.timestamp.split(' ')[1] : row.timestamp,
+      `${row.durationMs} ms`,
+      String(row.dbIndex),
+      row.fullCommand,
+    ]),
+  }
+}
+
 // 表格行样式：高亮最近1秒内的命令
 function rowClassName({ row }: { row: CommandLogEntry }) {
   return highlightIds.value.has(row.id) ? 'command-log-row--new' : ''
@@ -375,6 +394,7 @@ function clearLogs() {
       class="command-log-table"
       :data="filterLogs"
       export-name="command-log"
+      :export-rows="exportRows"
       height="100%"
       v-loading="loading"
       stripe

@@ -7,6 +7,7 @@ import { useI18n } from 'vue-i18n'
 import MeWebsite from '@/components/MeWebsite.vue'
 import { configTip as tips, redisConfDict, valkeyConfDict } from '@/locales/config'
 import { shareProvideKey } from '@/types/me-interface'
+import type { TableExportMatrix } from '@/utils/export'
 import { compareVersionLabel, sortVersionsDesc } from '@/utils/redis-version'
 import { meCopy, meCommands, meOk } from '@/utils/util'
 import NodeList from '@/views/ext/NodeList.vue'
@@ -71,6 +72,24 @@ const filterDataList = computed(() => {
         (showType.value === 'Diff' && row.value !== dictRaw.value[row.param])),
   )
 })
+
+// MeTable 导出：由行数据直接计算展示文本，与表格列定义一致（改列时同步改这里）
+function exportRows(data: unknown[]): TableExportMatrix {
+  return {
+    headers: [
+      t('redisConfig.param'),
+      t('redisConfig.value'),
+      `${dictVersion.value} ${t('redisConfig.defaultConfig')}`,
+      t('redisConfig.tip'),
+    ],
+    rows: (data as ConfigTableRow[]).map(row => [
+      row.param,
+      row.value,
+      dictRaw.value[row.param] ?? '',
+      tipMap.value[row.param] ?? '',
+    ]),
+  }
+}
 // #endregion
 
 // #region 配置文件加载
@@ -240,7 +259,8 @@ async function configSet() {
         ref="table"
         v-loading="loading"
         :row-style="calcRowStyle"
-        export-name="config">
+        export-name="config"
+        :export-rows="exportRows">
         <el-table-column
           :label="t('redisConfig.param')"
           prop="param"
