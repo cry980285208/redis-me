@@ -16,6 +16,7 @@ import {
   matrixToHtml,
   matrixToJson,
   matrixToMarkdown,
+  matrixToTsv,
   saveTableTextFile,
   saveTableXlsxFile,
   type TableExportMatrix,
@@ -230,6 +231,9 @@ async function handleExportCommand(command: string): Promise<void> {
     case 'copyCsv':
       meCopy(matrixToCsv(headers, rows))
       break
+    case 'copyTsv':
+      meCopy(matrixToTsv(headers, rows))
+      break
     case 'copyHtml':
       await copyTableHtml(headers, rows)
       break
@@ -241,6 +245,9 @@ async function handleExportCommand(command: string): Promise<void> {
       break
     case 'exportCsv':
       await saveTableTextFile(matrixToCsv(headers, rows), exportFileName('csv'), ['csv'])
+      break
+    case 'exportTsv':
+      await saveTableTextFile(matrixToTsv(headers, rows), exportFileName('tsv'), ['tsv'])
       break
     case 'exportExcel':
       await saveTableXlsxFile(headers, rows, exportFileName('xlsx'))
@@ -308,6 +315,9 @@ defineExpose({
             <el-dropdown-item v-if="exportRows" command="copyCsv">{{
               t('meTable.copyCsv')
             }}</el-dropdown-item>
+            <el-dropdown-item v-if="exportRows" command="copyTsv">{{
+              t('meTable.copyTsv')
+            }}</el-dropdown-item>
             <el-dropdown-item v-if="exportRows" command="copyHtml">{{
               t('meTable.copyHtml')
             }}</el-dropdown-item>
@@ -322,6 +332,9 @@ defineExpose({
             }}</el-dropdown-item>
             <el-dropdown-item v-if="exportRows" command="exportCsv">{{
               t('meTable.exportCsv')
+            }}</el-dropdown-item>
+            <el-dropdown-item v-if="exportRows" command="exportTsv">{{
+              t('meTable.exportTsv')
             }}</el-dropdown-item>
             <el-dropdown-item v-if="exportRows" command="exportHtml">{{
               t('meTable.exportHtml')
