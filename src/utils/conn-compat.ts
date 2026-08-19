@@ -67,6 +67,10 @@ export function checkConnList(connList: ConnFromStore[]): void {
       }
     }
 
+    // 通信协议：仅保留 resp3，其余（含默认 resp2 / 非法值）删除
+    const protocol = meta['protocol']
+    if (protocol !== undefined && protocol !== 'resp3') delete meta['protocol']
+
     // v2.7.0 兼容旧版本，补充SSH属性
     if (!('ssh' in conn) || typeof conn.ssh != 'boolean') conn.ssh = false
     if (!conn.sshOption)

@@ -232,6 +232,8 @@ export default {
     keySeparator: '键分隔符',
     keySeparatorPlaceholder: ':',
     keySeparatorTip: '树形浏览按此分隔命名空间；默认 : ；连续相同分隔符视为一次（如 user::id）',
+    protocol: '通信协议',
+    protocolTip: 'RESP3 需 Redis ≥ 6.0，返回结构有差异；默认 RESP2',
     commandMap: '命令映射',
     commandMapCmdHint: '原命令，如 config',
     commandMapMappedHint: '映射后的命令名',

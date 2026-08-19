@@ -8,7 +8,7 @@ use crate::utils::util::{
     AnyResult, vec8_to_display_string,
 };
 use chrono::Utc;
-use redis::{RedisWrite, ToRedisArgs, ToSingleRedisArg};
+use redis::{ProtocolVersion, RedisWrite, ToRedisArgs, ToSingleRedisArg};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::collections::HashMap;
@@ -102,6 +102,21 @@ impl ConnConfig {
             }
         }
         map
+    }
+
+    /// 通信协议（meta.protocol）：仅 resp3 生效，其余/缺省均为默认 RESP2
+    pub fn protocol_version(&self) -> ProtocolVersion {
+        match self.meta.get("protocol") {
+            Some(ConnMetaValue::String(p)) if p.eq_ignore_ascii_case("resp3") => {
+                ProtocolVersion::RESP3
+            }
+            _ => ProtocolVersion::RESP2,
+        }
+    }
+
+    /// meta.protocol 是否为 resp3
+    pub fn is_resp3(&self) -> bool {
+        self.protocol_version().supports_resp3()
     }
 }
 

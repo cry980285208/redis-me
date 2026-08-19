@@ -1,6 +1,5 @@
 ## Future
 
-- 连接高级配置增加Resp2/Resp3，默认还是resp2
 - ZSet支持按分数范围过滤数据
 - PHP格式序列化
 - 抖音/B站短视频的制作: 每个痛点解决1个小视频
@@ -73,3 +72,4 @@
 - Redis Vector Set 类型的支持 ✅️
 - Redis8.8 已发布，更新命令列表、配置文件等 ✅️
 - MeTable表格导出新增的复制原始JSON ✅️
+- 连接高级配置增加通信协议 RESP2/RESP3，默认 RESP2 ✅️

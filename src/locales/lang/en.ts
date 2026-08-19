@@ -222,6 +222,8 @@ export default {
     keySeparatorPlaceholder: ':',
     keySeparatorTip:
       'Tree view splits namespaces by this separator; default : ; consecutive separators count as one (e.g. user::id)',
+    protocol: 'Protocol',
+    protocolTip: 'RESP3 requires Redis >= 6.0 with different reply structures; default RESP2',
     commandMap: 'Command Map',
     commandMapCmdHint: 'Original command, e.g. config',
     commandMapMappedHint: 'Mapped command name',
