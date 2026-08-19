@@ -1,13 +1,19 @@
 ## Future
 
-- 研究下怎么上线Linux的应用商店: deepin, snap, flathub
+- 连接高级配置增加Resp2/Resp3，默认还是resp2
+- ZSet支持按分数范围过滤数据
+- PHP格式序列化
 - 抖音/B站短视频的制作: 每个痛点解决1个小视频
 - Redis单机/集群安装的UI支持, 快捷docker-compose.yaml生成
 - Redis实战相关文章的编写
 - Time Series 的支持
 - RedisSearch 的支持
 - 连接级自动解压：优先 GZIP，可选 LZ4 / ZSTD / Snappy（对标 RedisInsight；即此前「自动解压缩」）
-- MeTable表格导出新增的复制原始JSON
+- 研究下怎么上线Linux的应用商店: deepin, snap, flathub
+- 连接，收藏等持久化到sqlite的DB中
+- get xxx时，终端支持键提示（已有的）
+- Redisson的键空间通知 模块 参考实现
+- 自定义编码也支持自动识别
 
 ### 可逐步完善
 
@@ -66,3 +72,4 @@
 - Redis Array 类型的支持 ✅️
 - Redis Vector Set 类型的支持 ✅️
 - Redis8.8 已发布，更新命令列表、配置文件等 ✅️
+- MeTable表格导出新增的复制原始JSON ✅️
