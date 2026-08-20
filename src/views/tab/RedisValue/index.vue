@@ -948,6 +948,26 @@ function clearValueAfterKeyGone() {
     timer = null
   }
 }
+
+// 自动刷新：仅当前组件状态，不持久化；配置入口为底栏刷新图标 hover 菜单
+const autoRefresh = ref(false)
+const autoRefreshInterval = ref(5) // 秒，1~10
+let autoRefreshTimer: ReturnType<typeof setInterval> | null = null
+watch(
+  [autoRefresh, autoRefreshInterval],
+  ([on]) => {
+    if (autoRefreshTimer) clearInterval(autoRefreshTimer)
+    autoRefreshTimer = null
+    if (on) {
+      autoRefreshTimer = setInterval(() => {
+        // 查询中跳过，避免请求堆叠
+        if (loading.value) return
+        void restartFieldScan()
+      }, autoRefreshInterval.value * 1000)
+    }
+  },
+  { immediate: true },
+)
 // #endregion
 
 // #region 字段行操作
@@ -1636,6 +1656,7 @@ onUnmounted(() => {
   bus.off(KEY_REFRESH, onKeyRefreshBus)
   bus.off(KEY_DELETE, deleteKey)
   if (timer) clearInterval(timer)
+  if (autoRefreshTimer) clearInterval(autoRefreshTimer)
 })
 // #endregion
 </script>
@@ -2189,14 +2210,35 @@ onUnmounted(() => {
             @click="meCopy(showValue)"
             placement="top-start" />
 
-          <me-icon
-            placement="top-start"
-            :info="t('redisValue.refreshKey')"
-            class="icon-btn"
-            :class="{ rotating: loading }"
-            style="font-size: 18px; margin-left: 5px"
-            :icon="loading ? 'el-icon-loading' : 'el-icon-refresh-right'"
-            @click="onFooterRefreshKey" />
+          <!-- 刷新键：点击手动刷新；hover 展开自动刷新配置（与 RedisChart 一致） -->
+          <el-dropdown placement="top-start" :hide-on-click="false" :teleported="false">
+            <me-icon
+              class="icon-btn"
+              :class="{ rotating: loading || autoRefresh }"
+              style="font-size: 18px; margin-left: 5px"
+              :icon="loading ? 'el-icon-loading' : 'el-icon-refresh-right'"
+              @click="onFooterRefreshKey" />
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-form
+                  label-position="left"
+                  :label-width="t('redisValue.autoRefreshLabelWidth')"
+                  class="auto-refresh-form">
+                  <el-form-item :label="t('redisValue.autoRefresh')">
+                    <el-switch v-model="autoRefresh" />
+                  </el-form-item>
+                  <el-form-item :label="t('redisValue.autoRefreshInterval')">
+                    <el-input-number
+                      v-model="autoRefreshInterval"
+                      :min="1"
+                      :max="10"
+                      size="small"
+                      style="width: 80px" />
+                  </el-form-item>
+                </el-form>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
 
           <el-divider direction="vertical" v-if="textMemory" />
 
@@ -2225,7 +2267,7 @@ onUnmounted(() => {
             v-model="bytesFormat"
             class="bytes-format-select me-select-plain"
             :suffix-icon="MeSelectUpDownIcon"
-            :disabled="jsonType || streamType || loading"
+            :disabled="jsonType || streamType"
             @change="onBytesFormatChange">
             <template #header>
               <div
@@ -2593,6 +2635,19 @@ onUnmounted(() => {
 
     .rotating {
       animation: rotate 1s linear infinite;
+    }
+
+    // 刷新图标 hover 菜单：自动刷新配置
+    .auto-refresh-form {
+      padding: 6px 10px;
+
+      :deep(.el-form-item) {
+        margin-bottom: 6px;
+
+        &:last-child {
+          margin-bottom: 0;
+        }
+      }
     }
 
     .bytes-format-auto-label {

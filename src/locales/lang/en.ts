@@ -954,6 +954,9 @@ export default {
     copyCommandOk: 'Command copied',
     copyCommandEmpty: 'Empty key, nothing to copy',
     refreshKey: 'Refresh Key',
+    autoRefreshLabelWidth: '100',
+    autoRefresh: 'Auto Refresh',
+    autoRefreshInterval: 'Interval (Sec)',
     locateKeyHint: 'Locate current key in key list',
 
     textMemory: 'Memory Usage: ',

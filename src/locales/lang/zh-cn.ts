@@ -939,6 +939,9 @@ export default {
     copyCommandOk: '命令已复制',
     copyCommandEmpty: '空键，无可复制命令',
     refreshKey: '刷新键',
+    autoRefreshLabelWidth: '80',
+    autoRefresh: '自动刷新',
+    autoRefreshInterval: '间隔（秒）',
     locateKeyHint: '在键列表中定位当前键',
 
     textMemory: '内存占用：',
