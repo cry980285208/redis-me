@@ -1248,7 +1248,9 @@ function editDbName(db: number): void {
           <template #prepend>
             <el-dropdown placement="bottom-start" @command="chooseKeyType">
               <el-tag :type="keyTypeTag.type" effect="plain" class="key-type-tag">
-                {{ meKeyShort(keyType, '‒') }}
+                <!-- ALL 状态用减号图标，与右侧新增键的 + 同款同尺寸 -->
+                <me-icon v-if="keyType === 'ALL'" icon="el-icon-minus" />
+                <template v-else>{{ meKeyShort(keyType) }}</template>
               </el-tag>
               <template #dropdown>
                 <el-dropdown-menu>
@@ -1733,7 +1735,6 @@ function editDbName(db: number): void {
 
     // 新增键触发器：镜像左侧类型 tag（圆角/边框在右侧）；须用元素根节点组件，否则下拉指令失效
     .key-add-tag {
-      font-size: 18px;
       width: 40px;
       min-height: var(--el-component-size);
       font-weight: bold;
@@ -1741,6 +1742,14 @@ function editDbName(db: number): void {
       border-top-right-radius: var(--el-input-border-radius, var(--el-border-radius-base));
       border-bottom-right-radius: var(--el-input-border-radius, var(--el-border-radius-base));
       border-left: none;
+    }
+
+    // EP 的 .el-tag .el-icon 会把图标锁死 12px（关闭按钮场景），两侧触发器 tag 内图标解锁并对齐新增连接按钮的 +
+    .key-type-tag :deep(.el-icon),
+    .key-add-tag :deep(.el-icon) {
+      width: 1em;
+      height: 1em;
+      font-size: 15px;
     }
 
     // 新增键按钮不收缩，避免调整侧边栏宽度时变为两行
