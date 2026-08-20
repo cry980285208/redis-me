@@ -1060,7 +1060,6 @@ Once an operation prevents Redis from keeping the space-saving encoding, special
     scanning: 'Scanning...',
     pauseScan: 'Pause Scan',
     resumeScan: 'Resume Scan',
-    addKey: 'Add Key',
     loadMore: 'Load More',
     loadAll: 'Load All',
     exporting: 'Exporting',

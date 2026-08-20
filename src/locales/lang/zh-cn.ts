@@ -1044,7 +1044,6 @@ export default {
     scanning: '扫描中...',
     pauseScan: '暂停扫描',
     resumeScan: '继续扫描',
-    addKey: '新增键',
     loadMore: '加载更多',
     loadAll: '加载全部',
     exporting: '导出中...',
