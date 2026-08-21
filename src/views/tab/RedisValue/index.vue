@@ -48,6 +48,7 @@ import {
   meViewToWire,
   meViewToWireAsync,
   needsJsonNormalize,
+  readonlyViewTip,
   viewFmtForField,
   type ViewBytesFormat,
 } from '@/utils/format'
@@ -346,11 +347,7 @@ const saveDisabled = computed(
   () => viewDecodeFailed.value || !valueDirty.value || isReadonlyView(effectiveViewFormat.value),
 )
 const saveTip = computed(() => {
-  if (isReadonlyView(effectiveViewFormat.value)) {
-    return effectiveViewFormat.value === 'pickle'
-      ? t('util.pickleReadonly')
-      : t('util.javaSerialReadonly')
-  }
+  if (isReadonlyView(effectiveViewFormat.value)) return readonlyViewTip(effectiveViewFormat.value)
   if (viewDecodeFailed.value) return t('util.saveDecodeFailed')
   if (!valueDirty.value) return t('util.saveNoChange')
   return t('save')

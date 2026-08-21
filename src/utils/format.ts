@@ -14,6 +14,7 @@ import i18n from '@/locales'
 import type { BytesFormat } from '@/types/tauri-specta'
 import { base64ToUtf8Text } from '@/utils/detect-view-format'
 import { formatJavaSerDisplay, javaSerBase64ToValue } from '@/utils/javaserial'
+import { formatPhpSerialDisplay, phpSerialBase64ToValue } from '@/utils/phpserial'
 import { formatPickleDisplay, pickleBase64ToValue } from '@/utils/pickle'
 
 const t = i18n.global.t
@@ -260,6 +261,7 @@ export type ViewBytesFormat =
   | 'strjson'
   | 'javaserial'
   | 'pickle'
+  | 'phpserial'
   | `custom:${string}`
 
 export const CUSTOM_FORMAT_PREFIX = 'custom:' as const
@@ -281,7 +283,7 @@ export function customFormatName(view: ViewBytesFormat): string | null {
   return isCustomView(view) ? view.slice(CUSTOM_FORMAT_PREFIX.length) : null
 }
 
-/** 仅 STRING 键级可选（Auto、MsgPack、StrJson、JavaSerial、Pickle、custom）；非 STRING 键级降为 utf8 */
+/** 仅 STRING 键级可选（Auto、MsgPack、StrJson、JavaSerial、Pickle、PhpSerial、custom）；非 STRING 键级降为 utf8 */
 export function isStringOnlyView(view: ViewBytesFormat): boolean {
   return (
     view === 'auto' ||
@@ -289,13 +291,21 @@ export function isStringOnlyView(view: ViewBytesFormat): boolean {
     view === 'strjson' ||
     view === 'javaserial' ||
     view === 'pickle' ||
+    view === 'phpserial' ||
     isCustomView(view)
   )
 }
 
 /** 内置只读视图（不可写回）；RedisValue / FieldSet canSave */
 export function isReadonlyView(view: ViewBytesFormat): boolean {
-  return view === 'javaserial' || view === 'pickle'
+  return view === 'javaserial' || view === 'pickle' || view === 'phpserial'
+}
+
+/** 只读视图的保存按钮 tooltip 文案；RedisValue / FieldSet saveTip */
+export function readonlyViewTip(view: ViewBytesFormat): string {
+  if (view === 'pickle') return t('util.pickleReadonly')
+  if (view === 'phpserial') return t('util.phpSerialReadonly')
+  return t('util.javaSerialReadonly')
 }
 
 function resolveCustomCodec(view: ViewBytesFormat): CustomCodec {
@@ -307,12 +317,13 @@ function resolveCustomCodec(view: ViewBytesFormat): CustomCodec {
 }
 
 /** STRING 值详情下拉扩展项（不含 Auto，Auto 单独置顶）；RedisValue */
-export const EXT_FORMAT = ['StrJson', 'MsgPack', 'JavaSerial', 'Pickle'] as const
+export const EXT_FORMAT = ['StrJson', 'MsgPack', 'JavaSerial', 'Pickle', 'PhpSerial'] as const
 
 export const MSGPACK_DECODE_ERR = 'MsgPack Decode Error'
 export const STRJSON_DECODE_ERR = 'StrJson Decode Error'
 export const JAVASERIAL_DECODE_ERR = 'JavaSerial Decode Error'
 export const PICKLE_DECODE_ERR = 'Pickle Decode Error'
+export const PHPSERIAL_DECODE_ERR = 'PhpSerial Decode Error'
 export const BYTES_DECODE_ERR = 'Bytes Decode Error'
 
 /** 解码失败展示：标题 + 可选 Reason + Base64/Script（编辑区只读提示，不可保存） */
@@ -398,6 +409,7 @@ export function meFormatViewValue(wire: string, view: ViewBytesFormat): string {
     if (view === 'strjson') return meStrJsonWireToDisplay(wire)
     if (view === 'javaserial') return meJavaSerialBase64ToDisplay(wire)
     if (view === 'pickle') return mePickleBase64ToDisplay(wire)
+    if (view === 'phpserial') return mePhpSerialBase64ToDisplay(wire)
     if (isCustomView(view)) {
       throw new Error('custom view requires meFormatViewValueAsync')
     }
@@ -429,6 +441,7 @@ export function meViewToWire(text: string, view: ViewBytesFormat): string {
   if (view === 'strjson') return utf8TextToBase64(meDisplayToStrJsonWire(text))
   if (view === 'javaserial') return meDisplayToJavaSerialBase64(text)
   if (view === 'pickle') return meDisplayToPickleBase64(text)
+  if (view === 'phpserial') return meDisplayToPhpSerialBase64(text)
   if (isCustomView(view)) {
     throw new Error('custom view requires meViewToWireAsync')
   }
@@ -618,6 +631,21 @@ export function mePickleBase64ToDisplay(base64: string): string {
 /** Pickle 只读（与 JavaSerial 一致），不支持写回 */
 export function meDisplayToPickleBase64(_text: string): string {
   throw new Error(t('util.pickleReadonly'))
+}
+
+export function mePhpSerialBase64ToDisplay(base64: string): string {
+  if (!base64) return ''
+  try {
+    return formatPhpSerialDisplay(phpSerialBase64ToValue(base64))
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e)
+    return formatViewDecodeError(PHPSERIAL_DECODE_ERR, base64, detail)
+  }
+}
+
+/** PhpSerial 只读（与 JavaSerial / Pickle 一致），不支持写回 */
+export function meDisplayToPhpSerialBase64(_text: string): string {
+  throw new Error(t('util.phpSerialReadonly'))
 }
 
 // #endregion

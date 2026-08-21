@@ -361,6 +361,7 @@ export default {
     invalidBinaryCharacter: 'Invalid binary character',
     javaSerialReadonly: 'JavaSerial is view-only; saving back is not supported',
     pickleReadonly: 'Pickle is view-only; saving back is not supported',
+    phpSerialReadonly: 'PhpSerial is view-only; saving back is not supported',
     saveNoChange: 'No changes to save',
     saveDecodeFailed: 'Decode failed; cannot save',
   },

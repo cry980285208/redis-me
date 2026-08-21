@@ -43,6 +43,24 @@ describe('detectViewFormat', () => {
     expect(detectViewFormat('gAJ9cQBYAQAAAGtxAVgBAAAAdnECcy4=')).toBe('pickle')
   })
 
+  it('PhpSerial 数组 / 对象', () => {
+    expect(detectViewFormat(utf8ToBase64('a:1:{s:1:"a";i:1;}'))).toBe('phpserial')
+    expect(detectViewFormat(utf8ToBase64('O:4:"User":1:{s:4:"name";s:3:"Bob";}'))).toBe('phpserial')
+  })
+
+  it('PhpSerial 标量根不参与 Auto → utf8', () => {
+    expect(detectViewFormat(utf8ToBase64('s:5:"hello";'))).toBe('utf8')
+    expect(detectViewFormat(utf8ToBase64('i:123;'))).toBe('utf8')
+  })
+
+  it('截断 PhpSerial 试解失败 → 不认', () => {
+    expect(detectViewFormat(utf8ToBase64('a:1:{i:0;'))).toBe('utf8')
+  })
+
+  it('a 开头普通文本不被误判为 PhpSerial', () => {
+    expect(detectViewFormat(utf8ToBase64('apricot and apple'))).toBe('utf8')
+  })
+
   it('MsgPack 空 map(0x80) 不是 Pickle', () => {
     expect(detectViewFormat(bytesToBase64(new Uint8Array([0x80])))).toBe('msgpack')
   })

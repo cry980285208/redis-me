@@ -1,20 +1,28 @@
 /**
  * STRING 值 Auto 编码识别：基于 base64 wire 原始字节。
- * 优先级：JavaSerial(ACED) → Pickle(PROTO 0x80) → MsgPack → StrJson → UTF-8 → Hex。
- * JavaSerial/Pickle：魔数 + 全量试解，失败则继续下一种（展示层再解析一遍）。
- * MsgPack/StrJson：仅 ≤ DETECT_TRY_MAX_BYTES 时试解。
+ * 优先级：JavaSerial(ACED) → Pickle(PROTO 0x80) → PhpSerial(a:/O:/C:) → MsgPack → StrJson → UTF-8 → Hex。
+ * JavaSerial/Pickle/PhpSerial：特征前缀 + 全量试解，失败则继续下一种（展示层再解析一遍）。
+ * MsgPack/StrJson/PhpSerial：仅 ≤ DETECT_TRY_MAX_BYTES 时试解。
  */
 import { decode } from '@msgpack/msgpack'
 import JSON5 from 'json5'
 
 import { javaSerBase64ToValue } from '@/utils/javaserial'
+import { phpSerialBase64ToValue } from '@/utils/phpserial'
 import { pickleBase64ToValue } from '@/utils/pickle'
 
-/** 超过此字节数跳过 MsgPack / StrJson 试解 */
+/** 超过此字节数跳过 MsgPack / StrJson / PhpSerial 试解 */
 export const DETECT_TRY_MAX_BYTES = 512 * 1024
 
 /** Auto 识别结果（不含 auto / binary / base64 / custom） */
-export type DetectedViewFormat = 'javaserial' | 'pickle' | 'msgpack' | 'strjson' | 'utf8' | 'hex'
+export type DetectedViewFormat =
+  | 'javaserial'
+  | 'pickle'
+  | 'phpserial'
+  | 'msgpack'
+  | 'strjson'
+  | 'utf8'
+  | 'hex'
 
 const JAVA_STREAM_MAGIC_0 = 0xac
 const JAVA_STREAM_MAGIC_1 = 0xed
@@ -27,6 +35,7 @@ const JAVA_STREAM_MIN_LEN = 4
 const DETECTED_LABELS: Record<DetectedViewFormat, string> = {
   javaserial: 'JavaSerial',
   pickle: 'Pickle',
+  phpserial: 'PhpSerial',
   msgpack: 'MsgPack',
   strjson: 'StrJson',
   utf8: 'UTF8',
@@ -100,6 +109,22 @@ function looksLikePickle(base64: string, bytes: Uint8Array): boolean {
   }
 }
 
+/**
+ * 复合根（a:/O:/C:）+ 全量试解；标量根（s:/i: 等）与常见文本易撞，不参与 Auto。
+ */
+function looksLikePhpSerial(base64: string, bytes: Uint8Array): boolean {
+  if (bytes.length < 5) return false
+  const c0 = bytes[0]
+  if (c0 !== 0x61 /* a */ && c0 !== 0x4f /* O */ && c0 !== 0x43 /* C */) return false
+  if (bytes[1] !== 0x3a /* : */) return false
+  try {
+    phpSerialBase64ToValue(base64)
+    return true
+  } catch {
+    return false
+  }
+}
+
 /** 保守：仅根为 object/array 才认 MsgPack，避免短文本误判 */
 function looksLikeMsgpack(bytes: Uint8Array): boolean {
   try {
@@ -137,6 +162,7 @@ export function detectViewFormat(base64: string): DetectedViewFormat {
   if (looksLikePickle(base64, bytes)) return 'pickle'
 
   const allowTry = bytes.length <= DETECT_TRY_MAX_BYTES
+  if (allowTry && looksLikePhpSerial(base64, bytes)) return 'phpserial'
   if (allowTry && looksLikeMsgpack(bytes)) return 'msgpack'
 
   const utf8 = base64ToUtf8Text(base64)

@@ -1,7 +1,6 @@
 ## Future
 
 - ZSet支持按分数范围过滤数据
-- PHP格式序列化
 - 抖音/B站短视频的制作: 每个痛点解决1个小视频
 - Redis单机/集群安装的UI支持, 快捷docker-compose.yaml生成
 - Redis实战相关文章的编写
@@ -38,7 +37,7 @@
 
 ### 已完成
 
-- 数据编码魔数自动识别（Auto：ACED / Pickle PROTO / MsgPack / StrJson / UTF-8 / Hex）✅️
+- 数据编码魔数自动识别（Auto：ACED / Pickle PROTO / PhpSerial a:/O:/C: / MsgPack / StrJson / UTF-8 / Hex）✅️
 - String类型阈值保护 ✅️
 - Binary格式恢复支持（setbit等场景还是需要的）✅️
 - Hash/Set/ZSet的扫描模式支持 ✅️
@@ -47,6 +46,7 @@
 - Memory Usage命令不支持时前端显示大小 ✅️
 - Java序列化的支持方案 ✅️
 - Java/Pickle序列化查看 ✅️（JavaSerial / Pickle 均为只读）
+- PhpSerial（PHP 序列化）查看 ✅️（只读，与 Another Redis Desktop Manager 同源 php-serialize 库）
 - 命令执行日志✅️
 - 搜索历史记录✅️
 - 全局快捷键✅️

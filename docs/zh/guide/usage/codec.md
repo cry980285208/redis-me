@@ -7,15 +7,16 @@
 > - STRING / Hash / List / Set / ZSet：与 Redis 之间的 IPC **恒为 Base64 wire**；底部「数据编码」**只控制展示**，切换时**不会重新请求 Redis**。
 > - Stream / JSON：数据编码下拉禁用，逻辑不变。
 >
-> **内置 JavaSerial / Pickle**：
+> **内置 JavaSerial / Pickle / PhpSerial**：
 >
-> - **STRING**：在「数据编码」中选择 **JavaSerial** / **Pickle**（或 Auto 识别）。
+> - **STRING**：在「数据编码」中选择 **JavaSerial** / **Pickle** / **PhpSerial**（或 Auto 识别）。
 > - **Hash / List / Set / ZSet**：打开字段编辑弹窗，可按字段选择；打开时若检测到魔数会自动选中。
 >
 > - **JavaSerial**：将 JDK 序列化字节显示为纯字符串（顶层 `String`）或 JSON（其它对象）。实现与 RedisInsight 同款（`java-object-serialization`），并增强 `java.time`、record、常用集合等展示。
 > - **Pickle**：将 Python `pickle` 字节（协议 0–5）显示为纯字符串（顶层 `str`）或 JSON；常见 dict/list/set/bytes 与带 `$class` / `$type` 的对象均可查看。
+> - **PhpSerial**：将 PHP `serialize()` 文本显示为纯字符串（顶层 `string`）或 JSON；数组、嵌套结构、`O:` 类实例（以 `$class` 展示类名）均可查看，与 Another Redis Desktop Manager 同源（`php-serialize`）。引用（`R:`/`r:`）暂不支持。
 >
-> 二者均**仅支持查看**；需写回时请用下文自定义编解码 + 本机 `java` / `python`。
+> 三者均**仅支持查看**；需写回时请用下文自定义编解码 + 本机 `java` / `python` / `php`。
 
 ## 入口与配置
 
