@@ -1,0 +1,11 @@
+services:
+  redis:
+    image: redis:8
+    container_name: redis8-6379
+    command: redis-server /usr/local/etc/redis/redis.conf
+    volumes:
+      - ./redis.conf:/usr/local/etc/redis/redis.conf
+    restart: always
+    network_mode: 'host'
+    environment:
+      - TZ=Asia/Shanghai

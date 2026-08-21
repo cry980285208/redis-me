@@ -1,0 +1,64 @@
+services:
+  redis8-8801:
+    image: redis:8
+    container_name: redis8-8801-ssl
+    command: redis-server --port 0 --tls-port 8801 --tls-cert-file /etc/redis/redis.crt --tls-key-file /etc/redis/redis.key --tls-ca-cert-file /etc/redis/redis.crt --tls-replication yes --requirepass hepengju --masterauth hepengju --replica-announce-ip 8.159.152.225
+    restart: always
+    network_mode: 'host'
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      - ../redis.crt:/etc/redis/redis.crt
+      - ../redis.key:/etc/redis/redis.key
+  redis8-8802:
+    image: redis:8
+    container_name: redis8-8802-ssl
+    command: redis-server --port 0 --tls-port 8802 --tls-cert-file /etc/redis/redis.crt --tls-key-file /etc/redis/redis.key --tls-ca-cert-file /etc/redis/redis.crt --tls-replication yes --requirepass hepengju --masterauth hepengju --replica-announce-ip 8.159.152.225 --replicaof 8.159.152.225 8801
+    restart: always
+    network_mode: 'host'
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      - ../redis.crt:/etc/redis/redis.crt
+      - ../redis.key:/etc/redis/redis.key
+  redis8-8803:
+    image: redis:8
+    container_name: redis8-8803-ssl
+    command: redis-server --port 0 --tls-port 8803 --tls-cert-file /etc/redis/redis.crt --tls-key-file /etc/redis/redis.key --tls-ca-cert-file /etc/redis/redis.crt --tls-replication yes --requirepass hepengju --masterauth hepengju --replica-announce-ip 8.159.152.225 --replicaof 8.159.152.225 8801
+    restart: always
+    network_mode: 'host'
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      - ../redis.crt:/etc/redis/redis.crt
+      - ../redis.key:/etc/redis/redis.key
+  redis8-28801:
+    image: redis:8
+    container_name: redis8-28801-ssl
+    command: redis-sentinel /etc/redis/sentinel.conf
+    restart: always
+    network_mode: 'host'
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./config-28801/:/etc/redis/
+  redis8-28802:
+    image: redis:8
+    container_name: redis8-28802-ssl
+    command: redis-sentinel /etc/redis/sentinel.conf
+    restart: always
+    network_mode: 'host'
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./config-28802/:/etc/redis/
+  redis8-28803:
+    image: redis:8
+    container_name: redis8-28803-ssl
+    command: redis-sentinel /etc/redis/sentinel.conf
+    restart: always
+    network_mode: 'host'
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./config-28803/:/etc/redis/

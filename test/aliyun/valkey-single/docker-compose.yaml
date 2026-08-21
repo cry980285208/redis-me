@@ -1,0 +1,9 @@
+services:
+  redis:
+    image: valkey/valkey:9
+    container_name: valkey9-9379
+    command: redis-server --requirepass "hepengju"
+    restart: always
+    network_mode: 'host'
+    environment:
+      - TZ=Asia/Shanghai

@@ -1,0 +1,19 @@
+# MSIX Packaging Tool 指导
+hepengju.RedisME
+RedisME
+CN=D28B51FF-39B0-46A0-98A6-EE245D6421B6
+hepengju
+Redis Desktop Manager
+
+# 功能清单修改两处
+<Resources>
+    <Resource Language="en-us"/>
+    <Resource Language="zh-cn"/>    ==> 手动添加中文
+</Resources>
+
+<Extensions>
+    <desktop7:Extension Category="windows.shortcut">
+        <desktop7:Shortcut File="[{Desktop}]\RedisME.lnk"   ==> 此处改为 Desktop，让快捷方式显示在桌面
+                           Icon="[{Package}]\VFS\Local AppData\RedisME\redis-me.exe"/>
+    </desktop7:Extension>
+</Extensions>

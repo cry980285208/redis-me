@@ -1,0 +1,12 @@
+services:
+  redis:
+    image: redis:8
+    container_name: redis8-6380-ssl
+    command: redis-server --requirepass "hepengju" --port 0 --tls-port 6380 --tls-cert-file /etc/redis/redis.crt --tls-key-file /etc/redis/redis.key --tls-ca-cert-file /etc/redis/redis.crt
+    restart: always
+    network_mode: 'host'
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      - ../redis.crt:/etc/redis/redis.crt
+      - ../redis.key:/etc/redis/redis.key
