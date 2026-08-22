@@ -1,7 +1,7 @@
 /**
  * STRING 值 Auto 编码识别：基于 base64 wire 原始字节。
- * 优先级：JavaSerial(ACED) → Pickle(PROTO 0x80) → PhpSerial(a:/O:/C:) → MsgPack → StrJson → UTF-8 → Hex。
- * JavaSerial/Pickle/PhpSerial：特征前缀 + 全量试解，失败则继续下一种（展示层再解析一遍）。
+ * 优先级：JdkSerial(ACED) → Pickle(PROTO 0x80) → PhpSerial(a:/O:/C:) → MsgPack → StrJson → UTF-8 → Hex。
+ * JdkSerial/Pickle/PhpSerial：特征前缀 + 全量试解，失败则继续下一种（展示层再解析一遍）。
  * MsgPack/StrJson/PhpSerial：仅 ≤ DETECT_TRY_MAX_BYTES 时试解。
  */
 import { decode } from '@msgpack/msgpack'
@@ -33,7 +33,7 @@ const PICKLE_PROTO_MAX = 5
 const JAVA_STREAM_MIN_LEN = 4
 
 const DETECTED_LABELS: Record<DetectedViewFormat, string> = {
-  javaserial: 'JavaSerial',
+  javaserial: 'JdkSerial',
   pickle: 'Pickle',
   phpserial: 'PhpSerial',
   msgpack: 'MsgPack',

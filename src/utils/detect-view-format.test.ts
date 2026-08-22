@@ -21,13 +21,13 @@ describe('detectViewFormat', () => {
     expect(detectViewFormat('')).toBe('utf8')
   })
 
-  it('ACED JavaSerial', () => {
+  it('ACED JdkSerial', () => {
     // java.util.TreeSet 样例（与 javaserial 单测同源）
     const b64 = 'rO0ABXNyABFqYXZhLnV0aWwuVHJlZVNldN2YUJOV7YdbAwAAeHBwdwQAAAACdAABYXQAAWJ4'
     expect(detectViewFormat(b64)).toBe('javaserial')
   })
 
-  it('截断 ACED 试解失败 → 不认 JavaSerial', () => {
+  it('截断 ACED 试解失败 → 不认 JdkSerial', () => {
     expect(detectViewFormat(bytesToBase64(new Uint8Array([0xac, 0xed, 0x00, 0x05])))).toBe('hex')
   })
 

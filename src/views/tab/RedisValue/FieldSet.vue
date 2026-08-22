@@ -122,7 +122,7 @@ const prettyEnabled = computed(
     effectiveFieldViewFmt.value === 'utf8' ||
     effectiveFieldViewFmt.value === 'strjson',
 )
-const isViewReadonlyFmt = computed(() => isReadonlyView(effectiveFieldViewFmt.value)) // JavaSerial / Pickle / PhpSerial 不支持写回 → 按钮禁用 + tooltip（连接只读则整钮隐藏）
+const isViewReadonlyFmt = computed(() => isReadonlyView(effectiveFieldViewFmt.value)) // JdkSerial / Pickle / PhpSerial 不支持写回 → 按钮禁用 + tooltip（连接只读则整钮隐藏）
 const vectorDirty = computed(() => form.value.fieldValue !== initialFieldDisplay.value)
 const attrsDirty = computed(
   () => vectorsetType.value && !attrsNormalizedEqual(attrsText.value, initialAttrsDisplay.value),

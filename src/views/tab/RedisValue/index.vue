@@ -34,9 +34,8 @@ import {
 import type { TableExportMatrix } from '@/utils/export'
 import { useFavorites, addFavorite, removeFavorite, isFavorited } from '@/utils/favorite'
 import {
-  BYTES_FORMAT,
-  EXT_FORMAT,
   IPC_WIRE_FORMAT,
+  VIEW_FORMAT_OPTIONS,
   customFormatName,
   customFormatValue,
   isCustomView,
@@ -283,18 +282,12 @@ const detectedViewText = computed(() =>
   bytesFormat.value === 'auto' && stringType.value ? detectedViewLabel(detectedView.value) : '',
 )
 const formatOptions = computed(() => {
-  // Auto / 扩展格式仅 STRING
+  // Auto / string-only 项仅 STRING 可用；顺序由 VIEW_FORMAT_OPTIONS 固定
   const builtin = [
     { label: 'Auto', value: 'auto' as ViewBytesFormat, disabled: !stringType.value },
-    ...BYTES_FORMAT.map(item => ({
-      label: item,
-      value: item.toLowerCase() as ViewBytesFormat,
-      disabled: false,
-    })),
-    ...EXT_FORMAT.map(label => ({
-      label,
-      value: label.toLowerCase() as ViewBytesFormat,
-      disabled: !stringType.value,
+    ...VIEW_FORMAT_OPTIONS.map(item => ({
+      ...item,
+      disabled: isStringOnlyView(item.value) && !stringType.value,
     })),
   ]
   const custom = (window.meTauri.settings.customCodecs ?? []).map(f => ({
@@ -367,7 +360,7 @@ function syncDisplaySnapshot() {
       commitDetectedView('utf8')
       displayBytesFormat.value = 'utf8'
     } else if (stringType.value) {
-      // STRING：下拉即展示格式（勿经 viewFmtForField，避免 JavaSerial 被降成 utf8）
+      // STRING：下拉即展示格式（勿经 viewFmtForField，避免 JdkSerial 被降成 utf8）
       displayBytesFormat.value = bytesFormat.value
     } else {
       displayBytesFormat.value = viewFmtForField(bytesFormat.value)

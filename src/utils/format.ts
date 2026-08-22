@@ -1,6 +1,6 @@
 /**
  * 值/键视图格式与 base64 wire 编解码。
- * IPC 对 STRING/Hash/List/Set/ZSet 恒为 base64；UTF8/Hex/JavaSerial 等仅为前端展示。
+ * IPC 对 STRING/Hash/List/Set/ZSet 恒为 base64；UTF8/Hex/JdkSerial 等仅为前端展示。
  * custom 走 shell 脚本。
  */
 
@@ -283,7 +283,7 @@ export function customFormatName(view: ViewBytesFormat): string | null {
   return isCustomView(view) ? view.slice(CUSTOM_FORMAT_PREFIX.length) : null
 }
 
-/** 仅 STRING 键级可选（Auto、MsgPack、StrJson、JavaSerial、Pickle、PhpSerial、custom）；非 STRING 键级降为 utf8 */
+/** 仅 STRING 键级可选（Auto、StrJson、JdkSerial、Pickle、PhpSerial、MsgPack、custom）；非 STRING 键级降为 utf8 */
 export function isStringOnlyView(view: ViewBytesFormat): boolean {
   return (
     view === 'auto' ||
@@ -316,15 +316,23 @@ function resolveCustomCodec(view: ViewBytesFormat): CustomCodec {
   return codec
 }
 
-/** STRING 值详情下拉扩展项（不含 Auto，Auto 单独置顶）；RedisValue */
-export const EXT_FORMAT = ['StrJson', 'MsgPack', 'JavaSerial', 'Pickle', 'PhpSerial'] as const
+/** 下拉内置项固定顺序（Auto 单独置顶、custom 分组殿后；JdkSerial 值仍为 javaserial）；RedisValue、fieldViewOptions */
+export const VIEW_FORMAT_OPTIONS: ReadonlyArray<{ label: string; value: ViewBytesFormat }> = [
+  { label: 'UTF8', value: 'utf8' },
+  { label: 'StrJson', value: 'strjson' },
+  { label: 'JdkSerial', value: 'javaserial' },
+  { label: 'Pickle', value: 'pickle' },
+  { label: 'PhpSerial', value: 'phpserial' },
+  { label: 'MsgPack', value: 'msgpack' },
+  { label: 'Hex', value: 'hex' },
+  { label: 'Binary', value: 'binary' },
+  { label: 'Base64', value: 'base64' },
+]
 
-export const MSGPACK_DECODE_ERR = 'MsgPack Decode Error'
-export const STRJSON_DECODE_ERR = 'StrJson Decode Error'
-export const JAVASERIAL_DECODE_ERR = 'JavaSerial Decode Error'
-export const PICKLE_DECODE_ERR = 'Pickle Decode Error'
-export const PHPSERIAL_DECODE_ERR = 'PhpSerial Decode Error'
-export const BYTES_DECODE_ERR = 'Bytes Decode Error'
+/** 解码失败标题：下拉 label + Decode Error（isViewDecodeError 依赖该格式） */
+export function decodeErrTitle(label: string): string {
+  return `${label} Decode Error`
+}
 
 /** 解码失败展示：标题 + 可选 Reason + Base64/Script（编辑区只读提示，不可保存） */
 function formatViewDecodeError(
@@ -363,8 +371,7 @@ export type FieldViewOption = { label: string; value: ViewBytesFormat }
 export function fieldViewOptions(customNames: string[] = []): FieldViewOption[] {
   const opts: FieldViewOption[] = [
     { label: 'Auto', value: 'auto' },
-    ...BYTES_FORMAT.map(label => ({ label, value: label.toLowerCase() as ViewBytesFormat })),
-    ...EXT_FORMAT.map(label => ({ label, value: label.toLowerCase() as ViewBytesFormat })),
+    ...VIEW_FORMAT_OPTIONS.map(({ label, value }) => ({ label, value })),
   ]
   for (const name of customNames) {
     opts.push({ label: name, value: customFormatValue(name) })
@@ -392,7 +399,7 @@ export function base64WireToUtf8Display(base64: string): string {
   const strict = base64ToUtf8Text(base64)
   if (strict !== null) return strict
   const binary = tryAtob(base64)
-  if (binary === null) return formatViewDecodeError(BYTES_DECODE_ERR, base64)
+  if (binary === null) return formatViewDecodeError(decodeErrTitle('Bytes'), base64)
   const bytes = new Uint8Array(binary.length)
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
   return new TextDecoder('utf-8').decode(bytes)
@@ -416,7 +423,7 @@ export function meFormatViewValue(wire: string, view: ViewBytesFormat): string {
     return wire
   } catch (e) {
     const detail = e instanceof Error ? e.message : String(e)
-    return formatViewDecodeError(BYTES_DECODE_ERR, wire, detail)
+    return formatViewDecodeError(decodeErrTitle('Bytes'), wire, detail)
   }
 }
 
@@ -490,7 +497,7 @@ function tryAtob(base64: string): string | null {
 function base64ToHex(base64: string): string {
   if (!base64) return ''
   const binary = tryAtob(base64)
-  if (binary === null) return formatViewDecodeError(BYTES_DECODE_ERR, base64)
+  if (binary === null) return formatViewDecodeError(decodeErrTitle('Bytes'), base64)
   return Array.from(binary)
     .map(char => char.charCodeAt(0).toString(16).padStart(2, '0'))
     .join('')
@@ -499,7 +506,7 @@ function base64ToHex(base64: string): string {
 function base64ToBinary(base64: string): string {
   if (!base64) return ''
   const binary = tryAtob(base64)
-  if (binary === null) return formatViewDecodeError(BYTES_DECODE_ERR, base64)
+  if (binary === null) return formatViewDecodeError(decodeErrTitle('Bytes'), base64)
   return Array.from(binary)
     .map(char => char.charCodeAt(0).toString(2).padStart(8, '0'))
     .join('')
@@ -566,7 +573,7 @@ export function meMsgpackBase64ToJson(base64: string): string {
     return JSON.stringify(decoded, null, 2)
   } catch (e) {
     const detail = e instanceof Error ? e.message : String(e)
-    return formatViewDecodeError(MSGPACK_DECODE_ERR, base64, detail)
+    return formatViewDecodeError(decodeErrTitle('MsgPack'), base64, detail)
   }
 }
 
@@ -587,13 +594,14 @@ function unwrapStrJsonValue(wire: string): unknown {
 export function meStrJsonWireToDisplay(base64: string): string {
   if (!base64) return ''
   const utf8 = base64ToUtf8Text(base64)
-  if (utf8 === null) return formatViewDecodeError(STRJSON_DECODE_ERR, base64, 'invalid UTF-8')
+  if (utf8 === null)
+    return formatViewDecodeError(decodeErrTitle('StrJson'), base64, 'invalid UTF-8')
   try {
     const value = unwrapStrJsonValue(utf8)
     return JSON.stringify(value, null, 2)
   } catch (e) {
     const detail = e instanceof Error ? e.message : String(e)
-    return formatViewDecodeError(STRJSON_DECODE_ERR, base64, detail)
+    return formatViewDecodeError(decodeErrTitle('StrJson'), base64, detail)
   }
 }
 
@@ -609,11 +617,11 @@ export function meJavaSerialBase64ToDisplay(base64: string): string {
     return formatJavaSerDisplay(javaSerBase64ToValue(base64))
   } catch (e) {
     const detail = e instanceof Error ? e.message : String(e)
-    return formatViewDecodeError(JAVASERIAL_DECODE_ERR, base64, detail)
+    return formatViewDecodeError(decodeErrTitle('JdkSerial'), base64, detail)
   }
 }
 
-/** JavaSerial 只读（与 RedisInsight / AnotherRDM 一致），不支持写回 */
+/** JdkSerial 只读（与 RedisInsight / AnotherRDM 一致），不支持写回 */
 export function meDisplayToJavaSerialBase64(_text: string): string {
   throw new Error(t('util.javaSerialReadonly'))
 }
@@ -624,11 +632,11 @@ export function mePickleBase64ToDisplay(base64: string): string {
     return formatPickleDisplay(pickleBase64ToValue(base64))
   } catch (e) {
     const detail = e instanceof Error ? e.message : String(e)
-    return formatViewDecodeError(PICKLE_DECODE_ERR, base64, detail)
+    return formatViewDecodeError(decodeErrTitle('Pickle'), base64, detail)
   }
 }
 
-/** Pickle 只读（与 JavaSerial 一致），不支持写回 */
+/** Pickle 只读（与 JdkSerial 一致），不支持写回 */
 export function meDisplayToPickleBase64(_text: string): string {
   throw new Error(t('util.pickleReadonly'))
 }
@@ -639,11 +647,11 @@ export function mePhpSerialBase64ToDisplay(base64: string): string {
     return formatPhpSerialDisplay(phpSerialBase64ToValue(base64))
   } catch (e) {
     const detail = e instanceof Error ? e.message : String(e)
-    return formatViewDecodeError(PHPSERIAL_DECODE_ERR, base64, detail)
+    return formatViewDecodeError(decodeErrTitle('PhpSerial'), base64, detail)
   }
 }
 
-/** PhpSerial 只读（与 JavaSerial / Pickle 一致），不支持写回 */
+/** PhpSerial 只读（与 JdkSerial / Pickle 一致），不支持写回 */
 export function meDisplayToPhpSerialBase64(_text: string): string {
   throw new Error(t('util.phpSerialReadonly'))
 }

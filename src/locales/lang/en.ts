@@ -359,7 +359,7 @@ export default {
     invalidHexCharacter: 'Invalid hex character',
     invalidBinaryString: 'Invalid binary string: length not multiple of 8',
     invalidBinaryCharacter: 'Invalid binary character',
-    javaSerialReadonly: 'JavaSerial is view-only; saving back is not supported',
+    javaSerialReadonly: 'JdkSerial is view-only; saving back is not supported',
     pickleReadonly: 'Pickle is view-only; saving back is not supported',
     phpSerialReadonly: 'PhpSerial is view-only; saving back is not supported',
     saveNoChange: 'No changes to save',
