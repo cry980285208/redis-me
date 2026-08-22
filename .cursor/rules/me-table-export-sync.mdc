@@ -1,0 +1,15 @@
+---
+description: 修改 me-table 表格列时，必须同步检查并更新对应 exportRows 导出逻辑
+alwaysApply: true
+---
+
+# me-table 列与 exportRows 同步
+
+MeTable（`me-table`）的界面列由各视图模板里的 `el-table-column` 定义，而导出内容（JSON/CSV/HTML/Markdown/Excel）由各视图传入的 `exportRows` 从数据层计算，两者是独立的两份描述。修改表格列时必须同步检查 `exportRows`，避免导出与界面不一致：
+
+1. **增删列、调整列顺序** → 同步更新 `headers` 与每行 cells 的数量和顺序。
+2. **条件列**（集群 node、VectorSet attrs、类型切换等 `v-if` 列）→ 同步 `exportRows` 里对应的条件分支，条件判断与模板保持一致。
+3. **单元格展示逻辑**（formatter、slot 文本拼接、单位后缀等）→ 同步 `exportRows` 里的文本计算。
+4. 每个 `exportRows` 上方有注释「与表格列定义一致（改列时同步改这里）」，就在该处修改。
+
+完成后自查一遍：导出列数/顺序/条件与模板列逐一对应，再交用户验证。

@@ -7,6 +7,7 @@ import { useI18n } from 'vue-i18n'
 
 import { shareProvideKey } from '@/types/me-interface'
 import type { AclLogEntry } from '@/types/tauri-specta'
+import type { TableExportMatrix } from '@/utils/export'
 import { meCommands, meConfirm, meOk } from '@/utils/util'
 // #endregion
 
@@ -29,6 +30,36 @@ const filterLogs = computed(() => {
     return text.includes(key)
   })
 })
+
+// MeTable 导出：由行数据直接计算展示文本，与表格列定义一致（改列时同步改这里）
+function exportRows(data: unknown[]): TableExportMatrix {
+  return {
+    headers: [
+      t('redisACL.logCount'),
+      t('redisACL.logReason'),
+      t('redisACL.logContext'),
+      t('redisACL.logObject'),
+      t('redisACL.username'),
+      t('redisACL.logAge'),
+      t('redisACL.logEntryId'),
+      t('redisACL.logTimeCreated'),
+      t('redisACL.logTimeUpdated'),
+      t('redisACL.logClient'),
+    ],
+    rows: (data as AclLogEntry[]).map(row => [
+      String(row.count),
+      row.reason,
+      row.context,
+      row.object,
+      row.username,
+      formatAge(row.ageSeconds ?? Number.NaN),
+      String(row.entryId),
+      formatTimestamp(row.timestampCreated),
+      formatTimestamp(row.timestampLastUpdated),
+      row.clientInfo || '--',
+    ]),
+  }
+}
 // #endregion
 
 // #region 面板操作
@@ -101,6 +132,7 @@ function clearLogs() {
           v-if="logs.length"
           :data="filterLogs"
           export-name="acl-log"
+          :export-rows="exportRows"
           height="100%"
           v-loading="loading"
           stripe

@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 
 import { shareProvideKey } from '@/types/me-interface'
 import type { RedisKey_Deserialize, RedisKeySize_Serialize } from '@/types/tauri-specta'
+import type { TableExportMatrix } from '@/utils/export'
 import { clearKeyTypeCacheForConn } from '@/utils/key-type-cache'
 // 官网参考: https://redis.ac.cn/docs/latest/commands/slowlog-get/
 import { meType, toKeyTypeLabel } from '@/utils/redis-display'
@@ -73,6 +74,18 @@ const filterTypes = computed(() => {
     value: d,
   }))
 })
+
+// MeTable 导出：由行数据直接计算展示文本，与表格列定义一致（改列时同步改这里）
+function exportRows(data: unknown[]): TableExportMatrix {
+  return {
+    headers: [t('redisMemory.type'), t('redisMemory.key'), t('redisMemory.size')],
+    rows: (data as RedisKeySize_Serialize[]).map(row => [
+      toKeyTypeLabel(row.type),
+      row.key,
+      meHumanSize(row.size),
+    ]),
+  }
+}
 
 // 避免表格自动调整列宽时闪烁一下
 function humanTotalSize(list: { value: RedisKeySize_Serialize[] }) {
@@ -240,6 +253,7 @@ function batchDelKey() {
         :default-sort="{ prop: 'size', order: 'descending' }"
         v-loading="loading"
         export-name="memory"
+        :export-rows="exportRows"
         @selection-change="selectionChange">
         <el-table-column type="selection" width="50" align="center" />
         <el-table-column

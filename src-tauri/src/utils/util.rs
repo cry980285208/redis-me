@@ -6,7 +6,7 @@ use anyhow::bail;
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
 use chrono::DateTime;
-use log::error;
+use log::{error, info};
 use rand::RngExt;
 use rand::distr::{Alphanumeric, SampleString};
 use rand::prelude::IteratorRandom;
@@ -480,19 +480,33 @@ pub fn parse_xrange_ordered(raw: Value) -> AnyResult<Vec<(Vec<u8>, Vec<(Vec<u8>,
             _ => continue,
         };
         let id = redis_value_to_bulk_bytes(parts[0].clone());
-        let fields_flat = match &parts[1] {
-            Value::Array(f) => f.as_slice(),
+        // 字段列表：实测 RESP3 下 Redis 核心命令仍返回扁平数组 [f1, v1, ...]；
+        // Map 分支为防御性兼容（RESP3 规范允许 Map 回复，其他服务端实现可能返回 Map）
+        let fields: Vec<(Vec<u8>, Vec<u8>)> = match &parts[1] {
+            Value::Array(f) => f
+                .chunks(2)
+                .filter(|chunk| chunk.len() == 2)
+                .map(|chunk| {
+                    (
+                        redis_value_to_bulk_bytes(chunk[0].clone()),
+                        redis_value_to_bulk_bytes(chunk[1].clone()),
+                    )
+                })
+                .collect(),
+            Value::Map(m) => {
+                // RESP3 Map 形态确认点：日志出现即说明兼容分支生效
+                info!("RESP3: XRANGE 字段列表以 Map 返回，按 Map 保序解析");
+                m.iter()
+                    .map(|(k, v)| {
+                        (
+                            redis_value_to_bulk_bytes(k.clone()),
+                            redis_value_to_bulk_bytes(v.clone()),
+                        )
+                    })
+                    .collect()
+            }
             _ => continue,
         };
-        let mut fields = Vec::with_capacity(fields_flat.len() / 2);
-        for chunk in fields_flat.chunks(2) {
-            if chunk.len() == 2 {
-                fields.push((
-                    redis_value_to_bulk_bytes(chunk[0].clone()),
-                    redis_value_to_bulk_bytes(chunk[1].clone()),
-                ));
-            }
-        }
         result.push((id, fields));
     }
     Ok(result)
@@ -538,6 +552,16 @@ pub fn redis_value_to_string(value: Value, sep: &str) -> String {
 
 // 慢查询结果转换
 pub fn redis_value_to_log(value: Value, node: &str) -> AnyResult<RedisSlowLog> {
+    // 防御性兼容：实测 RESP3 下 Redis 核心命令 SLOWLOG GET 仍返回 Array；
+    // 若其他服务端实现按 RESP3 规范返回 Map（id/timestamp/duration/command/client-addr/client-name），按字段名解析
+    if let Value::Map(map) = value {
+        // 按条循环调用（最多 128 条），进程内只提示一次避免刷屏
+        static RESP3_SLOWLOG_MAP_NOTED: std::sync::Once = std::sync::Once::new();
+        RESP3_SLOWLOG_MAP_NOTED.call_once(|| {
+            info!("RESP3: SLOWLOG 条目以 Map 返回，按字段名解析（slow_log_from_map）");
+        });
+        return slow_log_from_map(map, node);
+    }
     let items = match value {
         Value::Array(arr) if arr.len() >= 4 => arr,
         Value::Array(_) => bail!("slow query entries have at least 4 elements"),
@@ -565,6 +589,36 @@ pub fn redis_value_to_log(value: Value, node: &str) -> AnyResult<RedisSlowLog> {
         id,
         time,
         cost: cost / 1000.0,
+        command,
+        client,
+        client_name,
+    })
+}
+
+/// RESP3 Map 形态的慢日志条目：按字段名取值，与数组形态语义一致
+fn slow_log_from_map(map: Vec<(Value, Value)>, node: &str) -> AnyResult<RedisSlowLog> {
+    let mut id: u64 = 0;
+    let mut timestamp: i64 = 0;
+    let mut duration: f64 = 0.0;
+    let mut command = String::new();
+    let mut client = String::new();
+    let mut client_name = String::new();
+    for (k, v) in map {
+        match redis_value_to_string(k, "").as_str() {
+            "id" => id = FromRedisValue::from_redis_value(v)?,
+            "timestamp" => timestamp = FromRedisValue::from_redis_value(v)?,
+            "duration" => duration = FromRedisValue::from_redis_value(v)?,
+            "command" => command = redis_value_to_string(v, " "),
+            "client-addr" => client = redis_value_to_string(v, ""),
+            "client-name" => client_name = redis_value_to_string(v, ""),
+            _ => {}
+        }
+    }
+    Ok(RedisSlowLog {
+        node: node.to_string(),
+        id,
+        time: timestamp_to_string(timestamp),
+        cost: duration / 1000.0,
         command,
         client,
         client_name,
@@ -904,6 +958,62 @@ mod tests {
                 (b"f1".to_vec(), b"v1".to_vec()),
             ]
         );
+
+        // RESP3：字段部分为 Map（保序）
+        let raw3 = Value::Array(vec![Value::Array(vec![
+            Value::SimpleString("1-0".into()),
+            Value::Map(vec![
+                (
+                    Value::SimpleString("f2".into()),
+                    Value::BulkString(b"v2".to_vec()),
+                ),
+                (
+                    Value::SimpleString("f1".into()),
+                    Value::BulkString(b"v1".to_vec()),
+                ),
+            ]),
+        ])]);
+        let entries = parse_xrange_ordered(raw3).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].0, b"1-0");
+        assert_eq!(
+            entries[0].1,
+            vec![
+                (b"f2".to_vec(), b"v2".to_vec()),
+                (b"f1".to_vec(), b"v1".to_vec()),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_redis_value_to_log_resp3_map() {
+        // RESP3：SLOWLOG GET 单条为 Map
+        let entry = Value::Map(vec![
+            (Value::SimpleString("id".into()), Value::Int(14)),
+            (Value::SimpleString("timestamp".into()), Value::Int(1759409274)),
+            (Value::SimpleString("duration".into()), Value::Int(1500)),
+            (
+                Value::SimpleString("command".into()),
+                Value::Array(vec![
+                    Value::BulkString(b"keys".to_vec()),
+                    Value::BulkString(b"*".to_vec()),
+                ]),
+            ),
+            (
+                Value::SimpleString("client-addr".into()),
+                Value::SimpleString("127.0.0.1:50000".into()),
+            ),
+            (
+                Value::SimpleString("client-name".into()),
+                Value::SimpleString("RedisME".into()),
+            ),
+        ]);
+        let log = redis_value_to_log(entry, "").unwrap();
+        assert_eq!(log.id, 14);
+        assert_eq!(log.cost, 1.5);
+        assert_eq!(log.command, "keys *");
+        assert_eq!(log.client, "127.0.0.1:50000");
+        assert_eq!(log.client_name, "RedisME");
     }
 
     #[test]

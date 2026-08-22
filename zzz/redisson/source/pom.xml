@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.redisme</groupId>
+  <artifactId>redisson-codec</artifactId>
+  <version>1.0-SNAPSHOT</version>
+  <name>redisson-codec</name>
+  <description>RedisME 自定义编解码：Redisson 客户端序列化值 ↔ 可编辑 JSON（零依赖瘦 jar）</description>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.release>8</maven.compiler.release>
+  </properties>
+
+  <!--
+    零依赖瘦 jar：Redisson codec/Kryo/Netty 运行时反射调用（来自用户 lib 目录），
+    Jackson 仅编译期需要（运行时同样来自用户 lib，Redisson 必然携带）。
+    构建：mvn clean package → target/redisson-codec.jar（JDK 8+ 通用）
+  -->
+  <dependencies>
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+      <version>2.18.2</version>
+      <scope>provided</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <finalName>redisson-codec</finalName>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.4.2</version>
+        <configuration>
+          <archive>
+            <manifest>
+              <mainClass>com.redisme.codec.RedissonCodec</mainClass>
+            </manifest>
+          </archive>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

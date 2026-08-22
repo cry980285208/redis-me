@@ -1,5 +1,5 @@
 import { encode } from '@msgpack/msgpack'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 
 import { detectViewFormat } from '@/utils/detect-view-format'
 
@@ -21,13 +21,13 @@ describe('detectViewFormat', () => {
     expect(detectViewFormat('')).toBe('utf8')
   })
 
-  it('ACED JavaSerial', () => {
+  it('ACED JdkSerial', () => {
     // java.util.TreeSet 样例（与 javaserial 单测同源）
     const b64 = 'rO0ABXNyABFqYXZhLnV0aWwuVHJlZVNldN2YUJOV7YdbAwAAeHBwdwQAAAACdAABYXQAAWJ4'
     expect(detectViewFormat(b64)).toBe('javaserial')
   })
 
-  it('截断 ACED 试解失败 → 不认 JavaSerial', () => {
+  it('截断 ACED 试解失败 → 不认 JdkSerial', () => {
     expect(detectViewFormat(bytesToBase64(new Uint8Array([0xac, 0xed, 0x00, 0x05])))).toBe('hex')
   })
 
@@ -41,6 +41,24 @@ describe('detectViewFormat', () => {
 
   it('Pickle PROTO2 不被 MsgPack 误判', () => {
     expect(detectViewFormat('gAJ9cQBYAQAAAGtxAVgBAAAAdnECcy4=')).toBe('pickle')
+  })
+
+  it('PhpSerial 数组 / 对象', () => {
+    expect(detectViewFormat(utf8ToBase64('a:1:{s:1:"a";i:1;}'))).toBe('phpserial')
+    expect(detectViewFormat(utf8ToBase64('O:4:"User":1:{s:4:"name";s:3:"Bob";}'))).toBe('phpserial')
+  })
+
+  it('PhpSerial 标量根不参与 Auto → utf8', () => {
+    expect(detectViewFormat(utf8ToBase64('s:5:"hello";'))).toBe('utf8')
+    expect(detectViewFormat(utf8ToBase64('i:123;'))).toBe('utf8')
+  })
+
+  it('截断 PhpSerial 试解失败 → 不认', () => {
+    expect(detectViewFormat(utf8ToBase64('a:1:{i:0;'))).toBe('utf8')
+  })
+
+  it('a 开头普通文本不被误判为 PhpSerial', () => {
+    expect(detectViewFormat(utf8ToBase64('apricot and apple'))).toBe('utf8')
   })
 
   it('MsgPack 空 map(0x80) 不是 Pickle', () => {

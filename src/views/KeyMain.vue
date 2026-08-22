@@ -725,8 +725,18 @@ onUnmounted(() => {
 
 const fieldAddRef = useTemplateRef<InstanceType<typeof FieldAdd>>('fieldAddRef')
 
-function addKey(): void {
-  fieldAddRef.value?.open({ mode: 'key', key: { key: keyPrefix.value, bytes: '' } })
+// 新增键下拉：选中类型后直接打开对话框并预设该类型
+function chooseAddKeyType(keyTypeSelected: string): void {
+  addKey(keyTypeSelected)
+}
+
+function addKey(type?: string): void {
+  fieldAddRef.value?.open({
+    mode: 'key',
+    key: { key: keyPrefix.value, bytes: '' },
+    // 不传 type 时不能出现 type: undefined，避免 open 内 Object.assign 覆盖默认类型
+    ...(type ? { type: toRedisTypeName(type) } : {}),
+  })
 }
 
 const keyTreeRef = useTemplateRef<InstanceType<typeof KeyTree>>('keyTreeRef')
@@ -1238,7 +1248,9 @@ function editDbName(db: number): void {
           <template #prepend>
             <el-dropdown placement="bottom-start" @command="chooseKeyType">
               <el-tag :type="keyTypeTag.type" effect="plain" class="key-type-tag">
-                {{ meKeyShort(keyType, '-') }}
+                <!-- ALL 状态用减号图标，与右侧新增键的 + 同款同尺寸 -->
+                <me-icon v-if="keyType === 'ALL'" icon="el-icon-minus" />
+                <template v-else>{{ meKeyShort(keyType) }}</template>
               </el-tag>
               <template #dropdown>
                 <el-dropdown-menu>
@@ -1248,7 +1260,7 @@ function editDbName(db: number): void {
                       :effect="'ALL' === keyType ? 'plain' : 'dark'"
                       style="width: 26px"
                       hit>
-                      -
+                      ‒
                     </el-tag>
                     <el-text style="margin-left: 6px" type="info">ALL</el-text>
                   </el-dropdown-item>
@@ -1304,11 +1316,22 @@ function editDbName(db: number): void {
             </div>
           </template>
           <template v-if="canEdit" #append>
-            <me-button
-              :info="t('keyMain.addKey')"
-              @click="addKey()"
-              icon="el-icon-plus"
-              placement="bottom" />
+            <!-- 与左侧类型下拉同款：tag 触发器 + 浮动菜单，选类型后直接打开新增对话框 -->
+            <el-dropdown placement="bottom-start" @command="chooseAddKeyType">
+              <el-tag type="info" effect="plain" class="key-add-tag">
+                <me-icon icon="el-icon-plus" />
+              </el-tag>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item v-for="item in KEY_TYPE_LIST" :command="item.value">
+                    <el-tag :type="item.type" effect="dark" style="width: 26px" hit>
+                      {{ meKeyShort(item.value) }}
+                    </el-tag>
+                    <el-text style="margin-left: 6px">{{ item.value }}</el-text>
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </template>
         </el-input>
       </template>
@@ -1693,8 +1716,9 @@ function editDbName(db: number): void {
       border-color: var(--el-border-color);
     }
 
-    // 类型选择与输入框衔接：prepend 只负责布局，外框由 tag / append 按钮承担，避免双边框
-    :deep(.el-input-group__prepend) {
+    // 类型选择与输入框衔接：prepend/append 只负责布局，外框由两侧 tag 承担，避免双边框
+    :deep(.el-input-group__prepend),
+    :deep(.el-input-group__append) {
       padding: 0;
       box-shadow: none;
     }
@@ -1707,6 +1731,25 @@ function editDbName(db: number): void {
       border-top-left-radius: var(--el-input-border-radius, var(--el-border-radius-base));
       border-bottom-left-radius: var(--el-input-border-radius, var(--el-border-radius-base));
       border-right: none;
+    }
+
+    // 新增键触发器：镜像左侧类型 tag（圆角/边框在右侧）；须用元素根节点组件，否则下拉指令失效
+    .key-add-tag {
+      width: 40px;
+      min-height: var(--el-component-size);
+      font-weight: bold;
+      border-radius: 0;
+      border-top-right-radius: var(--el-input-border-radius, var(--el-border-radius-base));
+      border-bottom-right-radius: var(--el-input-border-radius, var(--el-border-radius-base));
+      border-left: none;
+    }
+
+    // EP 的 .el-tag .el-icon 会把图标锁死 12px（关闭按钮场景），两侧触发器 tag 内图标解锁并对齐新增连接按钮的 +
+    .key-type-tag :deep(.el-icon),
+    .key-add-tag :deep(.el-icon) {
+      width: 1em;
+      height: 1em;
+      font-size: 15px;
     }
 
     // 新增键按钮不收缩，避免调整侧边栏宽度时变为两行

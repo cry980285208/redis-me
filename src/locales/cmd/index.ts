@@ -14,7 +14,7 @@ export { redisCmdSummaryZhCn } from './zh-cn'
  */
 
 // @generated-cmd-flags-start
-/** 由 test/cmd/generate-readonly-flags.mjs 从 commands.json 生成；8.8/8.10 新命令已手工合并 */
+/** 由 zzz/cmd/generate-readonly-flags.mjs 从 commands.json 生成；8.8/8.10 新命令已手工合并 */
 export const commandFlags: Record<string, readonly string[]> = {
   ACL: [],
   'ACL CAT': ['noscript', 'loading', 'stale'],

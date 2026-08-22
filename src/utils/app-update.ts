@@ -1,5 +1,4 @@
 /** 应用内自动更新（Tauri updater） */
-import { openUrl } from '@tauri-apps/plugin-opener'
 import { type } from '@tauri-apps/plugin-os'
 import { relaunch } from '@tauri-apps/plugin-process'
 import {
@@ -14,7 +13,7 @@ import { h } from 'vue'
 
 import i18n from '@/locales'
 import type { MeAppUpdateState } from '@/types/me-interface'
-import { DoNothing, meCommands, meConfirm, meErr, meLog } from '@/utils/util'
+import { DoNothing, meCommands, meConfirm, meErr, meLog, meOpenUrl } from '@/utils/util'
 
 const t = i18n.global.t
 
@@ -80,7 +79,7 @@ export async function meDownloadUpdate(
           style:
             'color: var(--el-color-primary); text-decoration: none; margin-left: 5px; cursor: pointer; ',
           onClick: () => {
-            void openUrl(changelogUrl)
+            meOpenUrl(changelogUrl)
           },
         },
         changelog,

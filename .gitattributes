@@ -1,0 +1,9 @@
+# 文本文件统一 LF（与 oxfmt 默认 endOfLine=lf 一致，避免 Windows autocrlf 检出 CRLF 导致 vp check 报格式问题）
+* text=auto eol=lf
+
+# Windows 批处理脚本保持 CRLF（cmd.exe 对 LF 支持不佳）
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Shell script distributed to Linux/macOS users must keep LF (CRLF breaks sh parsing)
+zzz/redisson/run-redisson-codec.sh text eol=lf

@@ -6,6 +6,7 @@ import { useI18n } from 'vue-i18n'
 
 import MeWebsite from '@/components/MeWebsite.vue'
 import { shareProvideKey } from '@/types/me-interface'
+import type { TableExportMatrix } from '@/utils/export'
 import { meConfirm, meCopy, meCommands, meOk } from '@/utils/util'
 import NodeList from '@/views/ext/NodeList.vue'
 // #endregion
@@ -35,6 +36,14 @@ const filterDataList = computed(() => {
     return text.includes(key)
   })
 })
+
+// MeTable 导出：由行数据直接计算展示文本，与表格列定义一致（改列时同步改这里）
+function exportRows(data: unknown[]): TableExportMatrix {
+  return {
+    headers: [t('redisMonitor.time'), t('redisMonitor.command')],
+    rows: (data as MonitorRow[]).map(row => [row.datetime ?? '', row.command ?? '']),
+  }
+}
 
 // 监控函数防抖
 const loading = ref(false)
@@ -109,7 +118,7 @@ onUnmounted(() => tauriUnlisten())
       </div>
     </div>
     <div class="table">
-      <me-table :data="filterDataList" ref="table" export-name="monitor">
+      <me-table :data="filterDataList" ref="table" export-name="monitor" :export-rows="exportRows">
         <el-table-column :label="t('redisMonitor.time')" prop="datetime" width="200" sortable />
         <el-table-column :label="t('redisMonitor.command')" prop="command" show-overflow-tooltip />
         <el-table-column :label="t('action')" width="80" align="center">

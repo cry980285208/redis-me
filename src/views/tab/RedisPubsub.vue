@@ -6,6 +6,7 @@ import { useI18n } from 'vue-i18n'
 
 import MeWebsite from '@/components/MeWebsite.vue'
 import { shareProvideKey } from '@/types/me-interface'
+import type { TableExportMatrix } from '@/utils/export'
 import { BYTES_FORMAT, IPC_WIRE_FORMAT, meViewToWire, type ViewBytesFormat } from '@/utils/format'
 import { meCopy, meCommands, meErr, meOk } from '@/utils/util'
 // #endregion
@@ -23,6 +24,7 @@ const subscribing = ref(false)
 
 interface PubsubRow {
   id?: string
+  datetime?: string
   channel?: string
   message?: string
 }
@@ -36,6 +38,18 @@ const filterDataList = computed(() => {
       (row.message?.toLowerCase() ?? '').indexOf(key) > -1,
   )
 })
+
+// MeTable 导出：由行数据直接计算展示文本，与表格列定义一致（改列时同步改这里）
+function exportRows(data: unknown[]): TableExportMatrix {
+  return {
+    headers: [t('redisPubSub.datetime'), t('redisPubSub.channel'), t('redisPubSub.message')],
+    rows: (data as PubsubRow[]).map(row => [
+      row.datetime ?? '',
+      row.channel ?? '',
+      row.message ?? '',
+    ]),
+  }
+}
 
 // 订阅按钮防抖
 const loading = ref(false)
@@ -159,7 +173,8 @@ onUnmounted(() => tauriUnlisten())
         :data="filterDataList"
         ref="table"
         :default-sort="{ prop: 'datetime', order: 'descending' }"
-        export-name="pubsub">
+        export-name="pubsub"
+        :export-rows="exportRows">
         <el-table-column :label="t('redisPubSub.datetime')" prop="datetime" sortable width="200" />
         <el-table-column :label="t('redisPubSub.channel')" prop="channel" show-overflow-tooltip />
         <el-table-column :label="t('redisPubSub.message')" prop="message" show-overflow-tooltip />

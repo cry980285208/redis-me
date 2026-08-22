@@ -1,3 +1,7 @@
+// php-serialize（PhpSerial 只读解析）decode 路径依赖 Node Buffer；Tauri webview 无此全局，需先挂 polyfill
+import { Buffer } from 'buffer'
+globalThis.Buffer = Buffer
+
 import { createApp } from 'vue'
 
 import setupElementPlus from '@/plugins/element-plus'

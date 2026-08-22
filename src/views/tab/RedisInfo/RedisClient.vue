@@ -6,6 +6,7 @@ import { useI18n } from 'vue-i18n'
 import { clientTip as tips } from '@/locales/client'
 import { shareProvideKey } from '@/types/me-interface'
 import type { RedisClientInfo, RedisCommand } from '@/types/tauri-specta'
+import type { TableExportMatrix } from '@/utils/export'
 import { meConfirm, meHumanSeconds, meCommands, meOk } from '@/utils/util'
 import NodeList from '@/views/ext/NodeList.vue'
 // `client_list` 实际载荷字段齐全；`Required` 与 specta 在 `#[serde(default)]` 下生成的可选字段对齐
@@ -34,6 +35,30 @@ const filterDataList = computed(() => {
     row => !key || row.addr.toLowerCase().includes(key) || row.name.toLowerCase().includes(key),
   )
 })
+
+// MeTable 导出：由行数据直接计算展示文本，与表格列定义一致（改列时同步改这里）
+function exportRows(data: unknown[]): TableExportMatrix {
+  return {
+    headers: [
+      'ID',
+      t('redisClient.addr'),
+      t('redisClient.name'),
+      t('redisClient.age'),
+      t('redisClient.idle'),
+      t('redisClient.cmd'),
+      ...otherProps,
+    ],
+    rows: (data as RedisClientListRow[]).map(row => [
+      String(row.id),
+      row.addr,
+      row.name,
+      String(meHumanSeconds(row.age)),
+      String(meHumanSeconds(row.idle)),
+      row.cmd,
+      ...otherProps.map(p => String((row as Record<string, unknown>)[p] ?? '')),
+    ]),
+  }
+}
 // #endregion
 
 // #region 面板操作
@@ -158,7 +183,8 @@ function propWidth(item: string) {
         v-loading="loading"
         :default-sort="{ prop: 'id', order: 'ascending' }"
         height="100%"
-        export-name="client">
+        export-name="client"
+        :export-rows="exportRows">
         <el-table-column
           label="ID"
           prop="id"

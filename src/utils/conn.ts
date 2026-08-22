@@ -5,6 +5,7 @@
  * - 每条连接的分组名存在 `conn.meta.group`（空字符串 = 默认分组，UI 显示「默认分组」）
  * - 命令映射存在 `conn.meta.commandMap`（原命令小写 → 重命名后的命令，随 meta 同步后端）
  * - 树形键分隔符存在 `conn.meta.keySeparator`（默认 `:`，等于默认时不写入；连续分隔符视为一次）
+ * - 通信协议存在 `conn.meta.protocol`（`resp2`/`resp3`，默认 resp2 不写入；resp3 需 Redis ≥ 6.0）
  * - `settings.connGroups` 为分组名的有序列表（可含空分组占位，用于控制展示顺序）
  * - `settings.connShow`：`'flat'` 平铺表格 | `'group'` 分组树形列表
  * - `connList` 在分组模式下按「分组顺序 + 组内顺序」扁平存储，拖拽后需写回此顺序
@@ -23,11 +24,15 @@ export const CONN_META_COMMAND_MAP = 'commandMap'
 /** 连接 meta 中树形浏览键分隔符 */
 export const CONN_META_KEY_SEPARATOR = 'keySeparator'
 
+/** 连接 meta 中通信协议：resp2（默认）/ resp3 */
+export const CONN_META_PROTOCOL = 'protocol'
+
 /** 树形浏览默认分隔符（与历史硬编码一致） */
 export const DEFAULT_KEY_SEPARATOR = ':'
 
 export type ConnCommandMap = Record<string, string>
 export type ConnUiMode = 'normal' | 'minimal'
+export type ConnProtocol = 'resp2' | 'resp3'
 
 export function normalizeGroupName(name: unknown): string {
   if (typeof name !== 'string') return ''
@@ -99,6 +104,18 @@ export function setConnKeySeparator(conn: UiConn, value: string): void {
   const sep = typeof value === 'string' ? value.trim() : ''
   if (!sep || sep === DEFAULT_KEY_SEPARATOR) delete conn.meta[CONN_META_KEY_SEPARATOR]
   else conn.meta[CONN_META_KEY_SEPARATOR] = sep
+}
+
+/** 读取连接通信协议；未设 / 非法 → 默认 resp2 */
+export function getConnProtocol(conn: UiConn | null | undefined): ConnProtocol {
+  return conn?.meta?.[CONN_META_PROTOCOL] === 'resp3' ? 'resp3' : 'resp2'
+}
+
+/** 写入通信协议；默认 resp2 时删除 meta 字段 */
+export function setConnProtocol(conn: UiConn, protocol: ConnProtocol): void {
+  conn.meta ??= {}
+  if (protocol === 'resp3') conn.meta[CONN_META_PROTOCOL] = 'resp3'
+  else delete conn.meta[CONN_META_PROTOCOL]
 }
 
 function escapeRegExp(s: string): string {

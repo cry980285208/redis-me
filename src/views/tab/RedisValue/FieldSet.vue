@@ -26,6 +26,7 @@ import {
   meViewToWire,
   meViewToWireAsync,
   needsJsonNormalize,
+  readonlyViewTip,
   type ViewBytesFormat,
 } from '@/utils/format'
 import { meCommands, meCopy, meErr, meFormatDisplayValue, meJsonNormal, meOk } from '@/utils/util'
@@ -121,7 +122,7 @@ const prettyEnabled = computed(
     effectiveFieldViewFmt.value === 'utf8' ||
     effectiveFieldViewFmt.value === 'strjson',
 )
-const isViewReadonlyFmt = computed(() => isReadonlyView(effectiveFieldViewFmt.value)) // JavaSerial / Pickle 不支持写回 → 按钮禁用 + tooltip（连接只读则整钮隐藏）
+const isViewReadonlyFmt = computed(() => isReadonlyView(effectiveFieldViewFmt.value)) // JdkSerial / Pickle / PhpSerial 不支持写回 → 按钮禁用 + tooltip（连接只读则整钮隐藏）
 const vectorDirty = computed(() => form.value.fieldValue !== initialFieldDisplay.value)
 const attrsDirty = computed(
   () => vectorsetType.value && !attrsNormalizedEqual(attrsText.value, initialAttrsDisplay.value),
@@ -139,9 +140,7 @@ const canSaveField = computed(
 const saveFieldTip = computed(() => {
   // 禁用原因提示；可保存时与按钮文案一致
   if (!vectorsetType.value && isViewReadonlyFmt.value) {
-    return effectiveFieldViewFmt.value === 'pickle'
-      ? t('util.pickleReadonly')
-      : t('util.javaSerialReadonly')
+    return readonlyViewTip(effectiveFieldViewFmt.value)
   }
   if (!vectorsetType.value && decodeFailed.value) return t('util.saveDecodeFailed')
   if (!fieldDirty.value) return t('util.saveNoChange')

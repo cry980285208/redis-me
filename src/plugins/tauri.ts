@@ -1,5 +1,4 @@
 import { Window } from '@tauri-apps/api/window'
-import { openUrl } from '@tauri-apps/plugin-opener'
 import { locale } from '@tauri-apps/plugin-os'
 import { LazyStore } from '@tauri-apps/plugin-store'
 import { reactive, watch } from 'vue'
@@ -77,11 +76,6 @@ const meTauri = reactive({
 })
 // 放在Window全局变量中方便使用
 window.meTauri = meTauri as MeTauriGlobal
-
-// window.open不能用，修改为tauri的openUrl
-try {
-  window.open = openUrl as unknown as typeof window.open
-} catch {}
 
 // 配置保存
 watch(meTauri, async newValue => {

@@ -1,4 +1,6 @@
 // 应用级通用工具；以下 `// #region` / `// #endregion` 可在 VS Code / Cursor 中折叠浏览。
+import { isTauri } from '@tauri-apps/api/core'
+import { openUrl } from '@tauri-apps/plugin-opener'
 import { useClipboard, useDark } from '@vueuse/core'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { ElMessageBoxOptions } from 'element-plus'
@@ -237,6 +239,24 @@ export function meCopy(text: string, hintContent?: string, hint = true): void {
   if (hint) {
     meOk(hintContent || t('copyOk'))
   }
+}
+
+/** 打开外部链接：Tauri opener → 原生 window.open（非 Tauri 环境）→ 降级复制网址 + 提示 */
+export function meOpenUrl(url: string): void {
+  void (async () => {
+    if (isTauri()) {
+      try {
+        await openUrl(url)
+        return
+      } catch (e) {
+        meLog('打开链接失败:', url, e)
+      }
+    } else if (window.open(url, '_blank')) {
+      return
+    }
+    meCopy(url, '', false) // 静默复制，便于用户手动粘贴打开
+    meWarn(`${t('util.openUrlFail')}${url}`)
+  })()
 }
 // #endregion
 

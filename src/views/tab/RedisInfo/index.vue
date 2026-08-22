@@ -15,6 +15,7 @@ import { useI18n } from 'vue-i18n'
 import MeWebsite from '@/components/MeWebsite.vue'
 import { infoTip as tips } from '@/locales/info'
 import { shareProvideKey } from '@/types/me-interface'
+import type { TableExportMatrix } from '@/utils/export'
 import { enrichNodeList } from '@/utils/redis-display'
 import { bus, INFO_REFRESH, meCommands } from '@/utils/util'
 import NodeList from '@/views/ext/NodeList.vue'
@@ -176,6 +177,19 @@ const filterDataList = computed(() => {
       (tipMap.value[d.key]?.toLowerCase() ?? '').indexOf(key) > -1,
   )
 })
+
+// MeTable 导出：由行数据直接计算展示文本，与表格列定义一致（改列时同步改这里）
+function exportRows(data: unknown[]): TableExportMatrix {
+  return {
+    headers: [t('redisInfo.tag'), t('redisInfo.key'), t('redisInfo.value'), t('redisInfo.tip')],
+    rows: (data as { tag: string; key: string; value: string }[]).map(row => [
+      row.tag,
+      row.key,
+      row.value,
+      tipMap.value[row.key] ?? '',
+    ]),
+  }
+}
 
 const tableRef = useTemplateRef('table')
 function tagChange() {
@@ -448,7 +462,7 @@ const nodeGroups = computed(() => {
         </div>
       </template>
 
-      <me-table ref="table" :data="filterDataList" export-name="info">
+      <me-table ref="table" :data="filterDataList" export-name="info" :export-rows="exportRows">
         <el-table-column prop="tag" :label="t('redisInfo.tag')" width="100" />
         <el-table-column prop="key" :label="t('redisInfo.key')" show-overflow-tooltip />
         <el-table-column prop="value" :label="t('redisInfo.value')" show-overflow-tooltip />

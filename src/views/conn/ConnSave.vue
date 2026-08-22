@@ -11,12 +11,15 @@ import {
   getConnCommandMap,
   getConnGroup,
   getConnKeySeparator,
+  getConnProtocol,
   getConnUiMode,
   normalizeGroupName,
   setConnCommandMap,
   setConnGroup,
   setConnKeySeparator,
+  setConnProtocol,
   setConnUiMode,
+  type ConnProtocol,
 } from '@/utils/conn'
 import { meCommands, PREDEFINE_COLORS, meRandomString, meOk, meErr, meWarn } from '@/utils/util'
 const { t } = useI18n()
@@ -339,18 +342,24 @@ const connMinimal = computed({
   set: (v: boolean) => setConnUiMode(form as UiConn, v ? 'minimal' : 'normal'),
 })
 
-// 高级选项：键分隔符（meta.keySeparator）+ CONFIG 命令映射（meta.commandMap）
+// 高级选项：键分隔符（meta.keySeparator）+ 通信协议（meta.protocol）+ CONFIG 命令映射（meta.commandMap）
 const advancedVisible = ref(false)
-const advancedForm = reactive({ keySeparator: ':', configMapped: '' })
+const advancedForm = reactive({
+  keySeparator: ':',
+  protocol: 'resp2' as ConnProtocol,
+  configMapped: '',
+})
 
 function openAdvanced() {
   advancedForm.keySeparator = getConnKeySeparator(form as UiConn)
+  advancedForm.protocol = getConnProtocol(form as UiConn)
   advancedForm.configMapped = getConnCommandMap(form as UiConn).config ?? ''
   advancedVisible.value = true
 }
 
 function applyAdvanced() {
   setConnKeySeparator(form as UiConn, advancedForm.keySeparator)
+  setConnProtocol(form as UiConn, advancedForm.protocol)
   const mapped = advancedForm.configMapped.trim()
   setConnCommandMap(form as UiConn, mapped ? { config: mapped } : {})
   advancedVisible.value = false
@@ -662,18 +671,50 @@ function applyAdvanced() {
       v-model="advancedVisible"
       :title="t('conn.advancedTitle')"
       width="520"
+      draggable
       append-to-body
       destroy-on-close
       align-center>
       <el-form label-position="right" :label-width="t('conn.advancedLabelWidth')">
-        <el-form-item :label="t('conn.keySeparator')">
+        <el-form-item>
+          <template #label>
+            <me-icon
+              :name="t('conn.keySeparator')"
+              icon="el-icon-question-filled"
+              :info="t('conn.keySeparatorTip')"
+              :icon-left="false"
+              placement="top" />
+          </template>
           <el-input
             v-model="advancedForm.keySeparator"
             :placeholder="t('conn.keySeparatorPlaceholder')"
             style="width: 120px" />
-          <div class="conn-advanced-hint">{{ t('conn.keySeparatorTip') }}</div>
         </el-form-item>
-        <el-form-item :label="t('conn.commandMap')">
+        <el-form-item>
+          <template #label>
+            <me-icon
+              :name="t('conn.protocol')"
+              icon="el-icon-question-filled"
+              :info="t('conn.protocolTip')"
+              :icon-left="false"
+              placement="top" />
+          </template>
+          <el-segmented
+            v-model="advancedForm.protocol"
+            :options="[
+              { label: 'RESP2', value: 'resp2' },
+              { label: 'RESP3', value: 'resp3' },
+            ]" />
+        </el-form-item>
+        <el-form-item>
+          <template #label>
+            <me-icon
+              :name="t('conn.commandMap')"
+              icon="el-icon-question-filled"
+              :info="t('conn.commandMapTip')"
+              :icon-left="false"
+              placement="top" />
+          </template>
           <div class="conn-command-map-row">
             <span class="conn-command-map-cmd">CONFIG</span>
             <span class="conn-command-map-arrow">→</span>
@@ -681,7 +722,6 @@ function applyAdvanced() {
               v-model.trim="advancedForm.configMapped"
               :placeholder="t('conn.commandMapMappedHint')" />
           </div>
-          <div class="conn-advanced-hint">{{ t('conn.commandMapTip') }}</div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -820,13 +860,6 @@ function applyAdvanced() {
 .conn-command-map-arrow {
   color: var(--el-text-color-secondary);
   flex-shrink: 0;
-}
-
-.conn-advanced-hint {
-  margin-top: 4px;
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-  line-height: 1.4;
 }
 
 .conn-mode-checkboxes {

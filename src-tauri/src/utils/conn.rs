@@ -7,7 +7,8 @@ use log::{info, warn};
 use redis::cluster::{ClusterClient, ClusterConfig};
 use redis::sentinel::{SentinelClientBuilder, SentinelServerType};
 use redis::{
-    Client, ClientTlsConfig, Commands, ConnectionAddr, ConnectionLike, TlsCertificates, TlsMode,
+    Client, ClientTlsConfig, Commands, ConnectionAddr, ConnectionLike, ProtocolVersion,
+    TlsCertificates, TlsMode,
 };
 use std::fs;
 use url::Url;
@@ -47,13 +48,21 @@ pub fn get_client_single(conf: &ConnConfig) -> AnyResult<(Client, Option<SshTunn
     if conf.ssl {
         url.set_fragment(Some("insecure"));
     }
+    // RESP3 协议：redis-rs 约定通过 URL 查询参数启用（?protocol=resp3），默认 RESP2 不加
+    if conf.is_resp3() {
+        url.query_pairs_mut().append_pair("protocol", "resp3");
+    }
 
+    // 日志脱敏：密码固定显示为 ******；查询串仅 protocol 一项，无敏感信息
     let redis_url_log = format!(
-        "{}://{}:******@{}:{}{}",
+        "{}://{}:******@{}:{}{}{}",
         url.scheme(),
         conf.username,
         target_host,
         target_port,
+        url.query()
+            .map(|q| format!("?{}", q))
+            .unwrap_or_default(),
         url.fragment()
             .map(|f| format!("#{}", f))
             .unwrap_or_default()
@@ -83,6 +92,8 @@ pub fn get_client_single(conf: &ConnConfig) -> AnyResult<(Client, Option<SshTunn
 fn get_client_sentinel(conf: &ConnConfig) -> AnyResult<Client> {
     let certs = get_tls_certs(conf.ssl_option.clone())?;
     let conf = conf.clone();
+    // builder 会移走 conf 的字符串字段，协议标记提前取出
+    let resp3 = conf.is_resp3();
     let sentinel_option = conf.sentinel_option.clone();
     let client = if conf.ssl
         && let Some(tls) = certs
@@ -118,6 +129,9 @@ fn get_client_sentinel(conf: &ConnConfig) -> AnyResult<Client> {
         if !sentinel_option.master_password.is_empty() {
             builder = builder.set_client_to_redis_password(sentinel_option.master_password);
         }
+        if resp3 {
+            builder = builder.set_client_to_redis_protocol(ProtocolVersion::RESP3);
+        }
         builder.build()?.get_client()?
     } else {
         let addr = ConnectionAddr::Tcp(conf.host, conf.port);
@@ -138,6 +152,9 @@ fn get_client_sentinel(conf: &ConnConfig) -> AnyResult<Client> {
         }
         if !sentinel_option.master_password.is_empty() {
             builder = builder.set_client_to_redis_password(sentinel_option.master_password);
+        }
+        if resp3 {
+            builder = builder.set_client_to_redis_protocol(ProtocolVersion::RESP3);
         }
         builder.build()?.get_client()?
     };
@@ -164,18 +181,23 @@ pub fn get_client_cluster(conf: &ConnConfig) -> AnyResult<ClusterClient> {
         url.set_fragment(Some("insecure"));
     }
 
+    // 日志脱敏与单机一致：密码固定 ******；RESP3 经 use_protocol 生效，附加标记便于排查
     info!(
-        "redis_url: {}://{}:******@{}:{}{}",
+        "redis_url: {}://{}:******@{}:{}{}{}",
         url.scheme(),
         conf.username,
         conf.host,
         conf.port,
+        if conf.is_resp3() { "?protocol=resp3" } else { "" },
         url.fragment()
             .map(|f| format!("#{}", f))
             .unwrap_or_default()
     );
 
     let mut builder = ClusterClient::builder(vec![url.to_string()]);
+    if conf.is_resp3() {
+        builder = builder.use_protocol(ProtocolVersion::RESP3);
+    }
     if !conf.username.is_empty() {
         builder = builder.username(conf.username.clone());
     }

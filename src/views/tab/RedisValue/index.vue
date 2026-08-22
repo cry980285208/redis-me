@@ -31,11 +31,11 @@ import {
   detectedViewLabel,
   type DetectedViewFormat,
 } from '@/utils/detect-view-format'
+import type { TableExportMatrix } from '@/utils/export'
 import { useFavorites, addFavorite, removeFavorite, isFavorited } from '@/utils/favorite'
 import {
-  BYTES_FORMAT,
-  EXT_FORMAT,
   IPC_WIRE_FORMAT,
+  VIEW_FORMAT_OPTIONS,
   customFormatName,
   customFormatValue,
   isCustomView,
@@ -47,6 +47,7 @@ import {
   meViewToWire,
   meViewToWireAsync,
   needsJsonNormalize,
+  readonlyViewTip,
   viewFmtForField,
   type ViewBytesFormat,
 } from '@/utils/format'
@@ -281,18 +282,12 @@ const detectedViewText = computed(() =>
   bytesFormat.value === 'auto' && stringType.value ? detectedViewLabel(detectedView.value) : '',
 )
 const formatOptions = computed(() => {
-  // Auto / 扩展格式仅 STRING
+  // Auto / string-only 项仅 STRING 可用；顺序由 VIEW_FORMAT_OPTIONS 固定
   const builtin = [
     { label: 'Auto', value: 'auto' as ViewBytesFormat, disabled: !stringType.value },
-    ...BYTES_FORMAT.map(item => ({
-      label: item,
-      value: item.toLowerCase() as ViewBytesFormat,
-      disabled: false,
-    })),
-    ...EXT_FORMAT.map(label => ({
-      label,
-      value: label.toLowerCase() as ViewBytesFormat,
-      disabled: !stringType.value,
+    ...VIEW_FORMAT_OPTIONS.map(item => ({
+      ...item,
+      disabled: isStringOnlyView(item.value) && !stringType.value,
     })),
   ]
   const custom = (window.meTauri.settings.customCodecs ?? []).map(f => ({
@@ -345,11 +340,7 @@ const saveDisabled = computed(
   () => viewDecodeFailed.value || !valueDirty.value || isReadonlyView(effectiveViewFormat.value),
 )
 const saveTip = computed(() => {
-  if (isReadonlyView(effectiveViewFormat.value)) {
-    return effectiveViewFormat.value === 'pickle'
-      ? t('util.pickleReadonly')
-      : t('util.javaSerialReadonly')
-  }
+  if (isReadonlyView(effectiveViewFormat.value)) return readonlyViewTip(effectiveViewFormat.value)
   if (viewDecodeFailed.value) return t('util.saveDecodeFailed')
   if (!valueDirty.value) return t('util.saveNoChange')
   return t('save')
@@ -369,7 +360,7 @@ function syncDisplaySnapshot() {
       commitDetectedView('utf8')
       displayBytesFormat.value = 'utf8'
     } else if (stringType.value) {
-      // STRING：下拉即展示格式（勿经 viewFmtForField，避免 JavaSerial 被降成 utf8）
+      // STRING：下拉即展示格式（勿经 viewFmtForField，避免 JdkSerial 被降成 utf8）
       displayBytesFormat.value = bytesFormat.value
     } else {
       displayBytesFormat.value = viewFmtForField(bytesFormat.value)
@@ -947,6 +938,26 @@ function clearValueAfterKeyGone() {
     timer = null
   }
 }
+
+// 自动刷新：仅当前组件状态，不持久化；配置入口为底栏刷新图标 hover 菜单
+const autoRefresh = ref(false)
+const autoRefreshInterval = ref(5) // 秒，1~10
+let autoRefreshTimer: ReturnType<typeof setInterval> | null = null
+watch(
+  [autoRefresh, autoRefreshInterval],
+  ([on]) => {
+    if (autoRefreshTimer) clearInterval(autoRefreshTimer)
+    autoRefreshTimer = null
+    if (on) {
+      autoRefreshTimer = setInterval(() => {
+        // 查询中跳过，避免请求堆叠
+        if (loading.value) return
+        void restartFieldScan()
+      }, autoRefreshInterval.value * 1000)
+    }
+  },
+  { immediate: true },
+)
 // #endregion
 
 // #region 字段行操作
@@ -1016,6 +1027,50 @@ function compareFieldRowValue(a: ValueTableRow, b: ValueTableRow): number {
     numeric: true,
     sensitivity: 'base',
   })
+}
+
+// MeTable 导出：由行数据直接计算展示文本，与表格列定义一致（改列时同步改这里）
+function exportValueTableRows(data: unknown[]): TableExportMatrix {
+  const headers: string[] = ['#']
+  const cells: ((row: ValueTableRow, index: number) => string)[] = [
+    (_row, index) => String(index + 1),
+  ]
+  if (streamType.value) {
+    headers.push(t('redisValue.id'))
+    cells.push(row => {
+      const id = String(row.id ?? '')
+      const date = streamIdToDate(id)
+      return date ? `${id} ${date}` : id
+    })
+  }
+  if (hashType.value) {
+    headers.push(t('redisValue.key'))
+    cells.push(row => formatTableCell(row.key))
+  }
+  if (listType.value || arrayType.value) {
+    headers.push(t('redisValue.index'))
+    cells.push(row => String(row.index ?? ''))
+  }
+  headers.push(vectorsetType.value ? t('redisValue.element') : t('redisValue.value'))
+  cells.push(row => fieldRowDisplayValue(row))
+  if (vectorsetType.value) {
+    headers.push(t('fieldSet.attrs'))
+    cells.push(row => String(row.attrs ?? ''))
+    headers.push(t('fieldSet.vector'))
+    cells.push(row => String(row.vector ?? ''))
+  }
+  if (zsetType.value) {
+    headers.push(t('redisValue.score'))
+    cells.push(row => String(row.score ?? ''))
+  }
+  if (showHashFieldTtlOption.value && scanHashFieldTtl.value) {
+    headers.push(t('redisValue.ttl'))
+    cells.push(row => formatFieldTtl(row.ttl))
+  }
+  return {
+    headers,
+    rows: (data as ValueTableRow[]).map((row, index) => cells.map(fn => fn(row, index))),
+  }
 }
 function buildFieldGetParam(row?: ValueTableRow): RedisFieldGet_Deserialize | null {
   const rv = redisValue.value
@@ -1591,6 +1646,7 @@ onUnmounted(() => {
   bus.off(KEY_REFRESH, onKeyRefreshBus)
   bus.off(KEY_DELETE, deleteKey)
   if (timer) clearInterval(timer)
+  if (autoRefreshTimer) clearInterval(autoRefreshTimer)
 })
 // #endregion
 </script>
@@ -1903,6 +1959,7 @@ onUnmounted(() => {
               ref="table"
               height="100%"
               export-name="value"
+              :export-rows="exportValueTableRows"
               :row-class-name="rowClassName"
               @row-click="rowClick"
               @row-dblclick="rowDblClick">
@@ -2143,14 +2200,35 @@ onUnmounted(() => {
             @click="meCopy(showValue)"
             placement="top-start" />
 
-          <me-icon
-            placement="top-start"
-            :info="t('redisValue.refreshKey')"
-            class="icon-btn"
-            :class="{ rotating: loading }"
-            style="font-size: 18px; margin-left: 5px"
-            :icon="loading ? 'el-icon-loading' : 'el-icon-refresh-right'"
-            @click="onFooterRefreshKey" />
+          <!-- 刷新键：点击手动刷新；hover 展开自动刷新配置（与 RedisChart 一致） -->
+          <el-dropdown placement="top-start" :hide-on-click="false" :teleported="false">
+            <me-icon
+              class="icon-btn"
+              :class="{ rotating: loading || autoRefresh }"
+              style="font-size: 18px; margin-left: 5px"
+              :icon="loading ? 'el-icon-loading' : 'el-icon-refresh-right'"
+              @click="onFooterRefreshKey" />
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-form
+                  label-position="left"
+                  :label-width="t('redisValue.autoRefreshLabelWidth')"
+                  class="auto-refresh-form">
+                  <el-form-item :label="t('redisValue.autoRefresh')">
+                    <el-switch v-model="autoRefresh" />
+                  </el-form-item>
+                  <el-form-item :label="t('redisValue.autoRefreshInterval')">
+                    <el-input-number
+                      v-model="autoRefreshInterval"
+                      :min="1"
+                      :max="10"
+                      size="small"
+                      style="width: 80px" />
+                  </el-form-item>
+                </el-form>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
 
           <el-divider direction="vertical" v-if="textMemory" />
 
@@ -2179,7 +2257,7 @@ onUnmounted(() => {
             v-model="bytesFormat"
             class="bytes-format-select me-select-plain"
             :suffix-icon="MeSelectUpDownIcon"
-            :disabled="jsonType || streamType || loading"
+            :disabled="jsonType || streamType"
             @change="onBytesFormatChange">
             <template #header>
               <div
@@ -2547,6 +2625,19 @@ onUnmounted(() => {
 
     .rotating {
       animation: rotate 1s linear infinite;
+    }
+
+    // 刷新图标 hover 菜单：自动刷新配置
+    .auto-refresh-form {
+      padding: 6px 10px;
+
+      :deep(.el-form-item) {
+        margin-bottom: 6px;
+
+        &:last-child {
+          margin-bottom: 0;
+        }
+      }
     }
 
     .bytes-format-auto-label {

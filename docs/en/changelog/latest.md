@@ -1,5 +1,23 @@
 # 4.x Changelog
 
+## [v4.9.0](https://mp.weixin.qq.com/s/iLc4m4PICKh8hZA2uMDHeA) (2026-08-22)
+
+### ✨ New Features
+
+- Table: copy / export enhancements
+  - New copy/export **RAW** (raw data JSON)
+  - New copy/export **TSV**; HTML format polish (with line breaks)
+  - **Export performance**: DOM full rendering replaced by data-layer computation
+- Connection: advanced config adds **protocol RESP2 / RESP3** option, default RESP2
+- Codec: new **PhpSerial** read-only viewer
+- Key area: Add Key now uses the same type dropdown as the left side; picking a type opens the add dialog directly
+- Value area: refresh key supports **auto refresh** (toggle + interval) #150
+- Other details
+  - Auto-copy the URL and notify when opening an external link fails #IK90OC
+  - Unified +/- icons for the tags on both sides of the search box
+  - Project tidying: non-essential directories moved into the zzz auxiliary directory
+  - Adjusted and optimized the data codec ordering
+
 ## [v4.8.0](https://mp.weixin.qq.com/s/QxY6JSff7IEriojrYiNICA) (2026-08-15)
 
 ### ✨ New Features

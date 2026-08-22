@@ -6,6 +6,7 @@ import { useI18n } from 'vue-i18n'
 
 import { shareProvideKey } from '@/types/me-interface'
 import type { BytesFormat, RedisZsetRangeItem } from '@/types/tauri-specta'
+import type { TableExportMatrix } from '@/utils/export'
 import { meFormatViewValue, type ViewBytesFormat } from '@/utils/format'
 import { meCommands } from '@/utils/util'
 // #endregion
@@ -31,6 +32,18 @@ const filteredList = computed(() => {
     item => item.value.toLowerCase().includes(kw) || String(item.score).includes(kw),
   )
 })
+
+// MeTable 导出：由行数据直接计算展示文本，与表格列定义一致（改列时同步改这里）
+function exportRows(data: unknown[]): TableExportMatrix {
+  return {
+    headers: ['#', t('redisValue.value'), t('redisValue.score')],
+    rows: (data as RedisZsetRangeItem[]).map((row, index) => [
+      String(index + 1),
+      row.value,
+      String(row.score),
+    ]),
+  }
+}
 // #endregion
 
 let currentValFmt: BytesFormat | null = null
@@ -120,6 +133,7 @@ defineExpose({ open })
           layout="sizes, prev, pager, next, jumper"
           :data="filteredList"
           export-name="zset-range"
+          :export-rows="exportRows"
           height="100%"
           stripe
           border

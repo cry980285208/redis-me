@@ -3,7 +3,6 @@
 import { save, type DialogFilter } from '@tauri-apps/plugin-dialog'
 import { writeFile, writeTextFile } from '@tauri-apps/plugin-fs'
 import dayjs from 'dayjs'
-import type { TableInstance } from 'element-plus'
 import * as XLSX from 'xlsx'
 
 import i18n from '@/locales'
@@ -75,47 +74,10 @@ export async function saveBinaryExport(
 
 // #endregion
 
-// #region MeTable：DOM 读取与矩阵格式
+// #region MeTable：矩阵格式转换
 
-const SKIP_COLUMN_CLASSES = ['el-table-column--selection', 'el-table__expand-column']
-
-function normalizeCellText(text: string): string {
-  return text.replace(/\s+/g, ' ').trim()
-}
-
-function isSkippedColumn(cell: Element): boolean {
-  return SKIP_COLUMN_CLASSES.some(cls => cell.classList.contains(cls))
-}
-
-/** 从 el-table DOM 读表头/行；MeTable 导出前需渲染全量数据 */
-export function readTableFromDom(table: TableInstance): { headers: string[]; rows: string[][] } {
-  const root = table.$el as HTMLElement | undefined
-  if (!root) return { headers: [], rows: [] }
-
-  const headers: string[] = []
-  root
-    .querySelectorAll('.el-table__header-wrapper thead tr:first-child th.el-table__cell')
-    .forEach(th => {
-      if (isSkippedColumn(th)) return
-      const cell = th.querySelector('.cell')
-      headers.push(normalizeCellText(cell?.textContent ?? ''))
-    })
-
-  const rows: string[][] = []
-  const bodyWrapper = root.querySelector('.el-table__body-wrapper')
-  bodyWrapper?.querySelectorAll('tbody tr').forEach(tr => {
-    if ((tr as HTMLElement).style.display === 'none') return
-    const rowCells: string[] = []
-    tr.querySelectorAll('td.el-table__cell').forEach(td => {
-      if (isSkippedColumn(td)) return
-      const cell = td.querySelector('.cell')
-      rowCells.push(normalizeCellText(cell?.textContent ?? ''))
-    })
-    if (rowCells.length) rows.push(rowCells)
-  })
-
-  return { headers, rows }
-}
+/** MeTable exportRows 返回值：表头 + 文本矩阵 */
+export type TableExportMatrix = { headers: string[]; rows: string[][] }
 
 export function matrixToJson(headers: string[], rows: string[][]): string {
   const objects = rows.map(row => {
@@ -147,14 +109,25 @@ function htmlEscape(value: string): string {
 }
 
 function buildTableHtml(headers: string[], rows: string[][]): string {
-  const headerHtml = headers.map(h => `<th>${htmlEscape(h)}</th>`).join('')
+  // 表头不换行：避免浏览器自动布局把短内容列（如「只读」）挤压成竖排
+  const headerHtml = headers
+    .map(h => `        <th style="white-space:nowrap">${htmlEscape(h)}</th>`)
+    .join('\n')
   const bodyHtml = rows
-    .map(row => {
-      const cells = row.map(cell => `<td>${htmlEscape(cell)}</td>`).join('')
-      return `<tr>${cells}</tr>`
-    })
-    .join('')
-  return `<table border="1" cellpadding="4" cellspacing="0" style="border-collapse:collapse;"><thead><tr>${headerHtml}</tr></thead><tbody>${bodyHtml}</tbody></table>`
+    .map(row => `      <tr>${row.map(cell => `<td>${htmlEscape(cell)}</td>`).join('')}</tr>`)
+    .join('\n')
+  return [
+    '<table border="1" cellpadding="4" cellspacing="0" style="border-collapse:collapse;">',
+    '  <thead>',
+    '    <tr>',
+    headerHtml,
+    '    </tr>',
+    '  </thead>',
+    '  <tbody>',
+    bodyHtml,
+    '  </tbody>',
+    '</table>',
+  ].join('\n')
 }
 
 function mdEscapeCell(value: string): string {
@@ -171,15 +144,24 @@ export function matrixToMarkdown(headers: string[], rows: string[][]): string {
   return [headerRow, separator, ...bodyRows].join('\n')
 }
 
-/** 复制 HTML 表格（富文本 + Markdown 回退）；MeTable */
+/** Tab 分隔文本：单元格内 Tab/换行替换为空格；带 BOM 便于 Excel 识别 UTF-8 */
+export function matrixToTsv(headers: string[], rows: string[][]): string {
+  const esc = (v: string) => v.replace(/[\t\r\n]/g, ' ')
+  const lines = [
+    headers.map(esc).join('\t'),
+    ...rows.map(row => headers.map((_, index) => esc(row[index] ?? '')).join('\t')),
+  ]
+  return `\ufeff${lines.join('\n')}`
+}
+
+/** 复制 HTML 表格：text/html 富文本表格（Word/Excel 渲染）+ text/plain HTML 源码 */
 export async function copyTableHtml(headers: string[], rows: string[][]): Promise<void> {
   const html = buildTableHtml(headers, rows)
-  const plain = matrixToMarkdown(headers, rows)
   try {
     await navigator.clipboard.write([
       new ClipboardItem({
         'text/html': new Blob([html], { type: 'text/html' }),
-        'text/plain': new Blob([plain], { type: 'text/plain' }),
+        'text/plain': new Blob([html], { type: 'text/plain' }),
       }),
     ])
     meOk(t('copyOk'))
@@ -204,7 +186,7 @@ export function matrixToHtml(headers: string[], rows: string[][]): string {
   </style>
 </head>
 <body>
-  ${table}
+${table}
 </body>
 </html>`
 }

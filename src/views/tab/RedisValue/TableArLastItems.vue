@@ -6,6 +6,7 @@ import { useI18n } from 'vue-i18n'
 
 import { shareProvideKey } from '@/types/me-interface'
 import type { BytesFormat } from '@/types/tauri-specta'
+import type { TableExportMatrix } from '@/utils/export'
 import { meFormatViewValue, type ViewBytesFormat } from '@/utils/format'
 import { meCommands } from '@/utils/util'
 // #endregion
@@ -35,6 +36,17 @@ const filteredList = computed(() => {
     return text.includes(kw)
   })
 })
+
+// MeTable 导出：由行数据直接计算展示文本，与表格列定义一致（改列时同步改这里）
+function exportRows(data: unknown[]): TableExportMatrix {
+  return {
+    headers: ['#', t('redisValue.value')],
+    rows: (data as ArLastItemsRow[]).map((row, index) => [
+      String(index + 1),
+      row.value == null ? t('redisValue.arLastItemsNil') : row.value,
+    ]),
+  }
+}
 // #endregion
 
 let currentValFmt: BytesFormat | null = null
@@ -121,6 +133,7 @@ defineExpose({ open })
           layout="sizes, prev, pager, next, jumper"
           :data="filteredList"
           export-name="ar-last-items"
+          :export-rows="exportRows"
           height="100%"
           stripe
           border>

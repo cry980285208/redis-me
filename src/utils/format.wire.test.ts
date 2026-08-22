@@ -1,9 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 
 import {
   IPC_WIRE_FORMAT,
-  JAVASERIAL_DECODE_ERR,
   base64WireToUtf8Display,
+  decodeErrTitle,
   fieldViewOptions,
   isViewDecodeError,
   meFormatViewValue,
@@ -41,19 +41,26 @@ describe('format wire=base64 display-only', () => {
     expect(meViewToWire(hex, 'hex')).toBe(wire)
   })
 
-  it('fieldViewOptions：Auto 置顶，含 JavaSerial/Pickle/UTF8', () => {
+  it('fieldViewOptions：Auto 置顶，内置项固定顺序（JdkSerial 展示名）', () => {
     const labels = fieldViewOptions().map(o => o.label)
     expect(labels[0]).toBe('Auto')
-    expect(labels).toContain('UTF8')
-    expect(labels).toContain('JavaSerial')
-    expect(labels).toContain('Pickle')
-    expect(labels).toContain('MsgPack')
+    expect(labels.slice(1)).toEqual([
+      'UTF8',
+      'StrJson',
+      'JdkSerial',
+      'Pickle',
+      'PhpSerial',
+      'MsgPack',
+      'Hex',
+      'Binary',
+      'Base64',
+    ])
   })
 
-  it('JavaSerial 解码失败：标题 + Reason + Base64', () => {
+  it('JdkSerial 解码失败：标题 + Reason + Base64', () => {
     const wire = utf8TextToBase64('Line01\nLine02\nLinu03')
     const text = meJavaSerialBase64ToDisplay(wire)
-    expect(text.startsWith(JAVASERIAL_DECODE_ERR)).toBe(true)
+    expect(text.startsWith(decodeErrTitle('JdkSerial'))).toBe(true)
     expect(text).toContain('Reason:')
     expect(text).toContain(`Base64: ${wire}`)
     expect(isViewDecodeError(text)).toBe(true)

@@ -22,7 +22,6 @@
     "vite.config.ts",
     "docs/.vitepress/**/*.ts",
     "docs/.vitepress/**/*.d.ts",
-    "docs/**/config.ts",
-    "test/**/*.ts"
+    "docs/**/config.ts"
   ]
 }

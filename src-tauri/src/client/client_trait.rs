@@ -1815,6 +1815,12 @@ fn parse_vsim_items(
     let arr = match raw {
         Value::Nil => return Ok(Vec::new()),
         Value::Array(a) => a,
+        // RESP3 下模块命令以 Map 回复（实测确认；ele → score，或 ele → [score, attribs]），拍平后按原 stride 解析
+        Value::Map(pairs) => {
+            // RESP3 Map 形态确认点：日志出现即说明兼容分支生效
+            info!("RESP3: VSIM 以 Map 返回，拍平后按 stride 解析");
+            flatten_vsim_map(pairs, with_attribs)
+        }
         other => bail!(AppError::Internal {
             message: format!("unexpected VSIM reply: {:?}", other)
         }),
@@ -1850,6 +1856,22 @@ fn parse_vsim_items(
         i += stride;
     }
     Ok(items)
+}
+
+/// RESP3 Map 回复拍平：ele→score 展为 [ele, score]；ele→[score, attribs] 展为 [ele, score, attribs]
+fn flatten_vsim_map(pairs: Vec<(Value, Value)>, with_attribs: bool) -> Vec<Value> {
+    let mut flat = Vec::with_capacity(pairs.len() * 3);
+    for (k, v) in pairs {
+        flat.push(k);
+        match v {
+            Value::Array(mut pair) if with_attribs && pair.len() == 2 => {
+                flat.push(pair.remove(0));
+                flat.push(pair.remove(0));
+            }
+            other => flat.push(other),
+        }
+    }
+    flat
 }
 
 fn redis_value_as_f64(value: Value) -> AnyResult<f64> {
