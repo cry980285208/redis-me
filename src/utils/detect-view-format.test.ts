@@ -1,5 +1,5 @@
 import { encode } from '@msgpack/msgpack'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 
 import { detectViewFormat } from '@/utils/detect-view-format'
 

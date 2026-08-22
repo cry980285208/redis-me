@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 
 import { utf8TextToBase64 } from '@/utils/format'
 import { redisKeyId, redisKeyWireBase64, sameRedisKey } from '@/utils/redis-key'
