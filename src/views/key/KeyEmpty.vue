@@ -1,12 +1,15 @@
 <script setup lang="ts">
 // #region 导入
+import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { meOpenUrl } from '@/utils/util'
+import RedisInstall from '@/views/ext/RedisInstall.vue'
 // #endregion
 
 // #region 核心状态
 const { t } = useI18n()
+const redisInstallRef = ref<InstanceType<typeof RedisInstall>>()
 // #endregion
 
 // #region 面板操作
@@ -20,6 +23,10 @@ function handleGithubClick(): void {
 
 function handleBugClick(): void {
   meOpenUrl('https://github.com/hepengju/redis-me/issues')
+}
+
+function handleRedisInstallClick(): void {
+  redisInstallRef.value?.open()
 }
 // #endregion
 </script>
@@ -36,6 +43,12 @@ function handleBugClick(): void {
       <me-icon icon="me-icon-github" :name="t('keyEmpty.sourceCode')" @click="handleGithubClick" />
       <me-icon icon="me-icon-bug" :name="t('keyEmpty.bugReport')" @click="handleBugClick" />
     </div>
+
+    <div class="redis-install" @click="handleRedisInstallClick">
+      <me-icon icon="me-icon-redis" :name="t('keyEmpty.redisInstall')" />
+    </div>
+
+    <RedisInstall ref="redisInstallRef" />
   </div>
 </template>
 
@@ -109,6 +122,21 @@ function handleBugClick(): void {
       &:hover {
         color: var(--el-color-success);
       }
+    }
+  }
+
+  .redis-install {
+    margin-top: auto;
+    margin-bottom: 20px;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: bold;
+    color: var(--el-color-info);
+    opacity: 0.6;
+
+    &:hover {
+      color: var(--el-color-success);
+      opacity: 0.8;
     }
   }
 }
