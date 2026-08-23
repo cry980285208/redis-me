@@ -9,7 +9,7 @@ import RedisInstall from '@/views/ext/RedisInstall.vue'
 
 // #region 核心状态
 const { t } = useI18n()
-const redisInstallRef = ref<InstanceType<typeof RedisInstall>>()
+const showRedisInstall = ref(false)
 // #endregion
 
 // #region 面板操作
@@ -26,7 +26,7 @@ function handleBugClick(): void {
 }
 
 function handleRedisInstallClick(): void {
-  redisInstallRef.value?.open()
+  showRedisInstall.value = true
 }
 // #endregion
 </script>
@@ -48,7 +48,7 @@ function handleRedisInstallClick(): void {
       <me-icon icon="me-icon-redis" :name="t('keyEmpty.redisInstall')" />
     </div>
 
-    <RedisInstall ref="redisInstallRef" />
+    <RedisInstall v-if="showRedisInstall" @update:model-value="showRedisInstall = false" />
   </div>
 </template>
 

@@ -187,6 +187,47 @@ function nodeDir(o: RedisInstallOptions, node: RedisInstallNode): string {
   return o.mode === 'single' ? root : `${root}/${node.name}`
 }
 
+// 生成 docker-compose.yml 内容（按机器节点列表）
+function genComposeYaml(o: RedisInstallOptions, ns: RedisInstallNode[]): string {
+  const lines: string[] = ['services:']
+  for (const n of ns) {
+    lines.push(`  ${n.name}:`)
+    lines.push(`    image: ${finalImage(o)}`)
+    lines.push(`    container_name: ${n.name}`)
+    if (hostNetwork(o.mode)) {
+      lines.push('    network_mode: host')
+    } else {
+      lines.push('    ports:')
+      lines.push(`      - '${n.port}:${n.port}'`)
+    }
+    lines.push('    restart: unless-stopped')
+    if (o.timezone) {
+      lines.push('    environment:')
+      lines.push(`      - TZ=${o.timezone}`)
+    }
+    const vols: string[] = []
+    if (o.mountData) vols.push(`      - ${nodeDir(o, n)}/data:/data`)
+    if (n.role === 'sentinel')
+      vols.push(`      - ${nodeDir(o, n)}/sentinel.conf:/etc/redis/sentinel.conf`)
+    else if (confMounted(o)) vols.push(`      - ${nodeDir(o, n)}/redis.conf:/etc/redis/redis.conf`)
+    if (o.ssl) vols.push(`      - ${certDir(o.mode)}:/etc/redis:ro`)
+    if (vols.length > 0) {
+      lines.push('    volumes:')
+      lines.push(...vols)
+    }
+    if (n.role === 'sentinel')
+      lines.push('    command: redis-server /etc/redis/sentinel.conf --sentinel')
+    else if (confMounted(o)) lines.push('    command: redis-server /etc/redis/redis.conf')
+    else
+      lines.push(
+        `    command: redis-server ${confArgs(o, n)
+          .map(a => (shellQuote(a) === a ? a : JSON.stringify(a)))
+          .join(' ')}`,
+      )
+  }
+  return lines.join('\n') + '\n'
+}
+
 // 端口配置行（SSL 时关闭明文端口，启用 TLS 端口）
 function portLines(ssl: boolean, port: number): string[] {
   return ssl ? ['port 0', `tls-port ${port}`] : [`port ${port}`]
@@ -326,16 +367,16 @@ function dockerRunCmd(o: RedisInstallOptions, node: RedisInstallNode): string {
   return parts.join(' \\\n  ')
 }
 
-// redis-cli 公共参数（认证 + TLS）
-function redisCliPrefix(o: RedisInstallOptions): string {
-  let cli = 'redis-cli'
-  const dir = certDir(o.mode)
-  if (o.ssl) cli += ` --tls --cert ${dir}/redis.crt --key ${dir}/redis.key --cacert ${dir}/ca.crt`
-  return cli
-}
-
-function redisCliAuth(o: RedisInstallOptions): string {
-  return o.password ? ` -a ${shellQuote(o.password)} --no-auth-warning` : ''
+// 通过 docker exec 在容器内执行 redis-cli（目标机器只有 Docker，无宿主机 redis-cli）
+// TLS 证书挂载于容器内 /etc/redis/，故证书路径使用容器内路径
+function dockerExecCli(o: RedisInstallOptions, container: string): string {
+  let cmd = `docker exec ${container} redis-cli`
+  if (o.ssl) {
+    cmd += ' --tls'
+    cmd += ' --cert /etc/redis/redis.crt --key /etc/redis/redis.key --cacert /etc/redis/ca.crt'
+  }
+  if (o.password) cmd += ` -a ${shellQuote(o.password)} --no-auth-warning`
+  return cmd
 }
 
 // ---------------- 证书步骤 ----------------
@@ -447,23 +488,11 @@ export function genRedisInstall(
   const root = hostRoot(o.mode)
   const certs = certDir(o.mode)
 
-  // ===== docker 命令形态 =====
+  // ===== docker 命令形态（纯 docker run，不含环境准备） =====
   const commands: RedisInstallStep[] = []
   for (const [ip, ns] of machines) {
     const blocks: string[] = []
-    for (const n of ns) {
-      // 目录创建：confMounted 需节点目录，mountData 需 data 子目录（mkdir -p 幂等，同时覆盖父目录）
-      if (confMounted(o)) blocks.push(`mkdir -p ${nodeDir(o, n)}`)
-      if (o.mountData) blocks.push(`mkdir -p ${nodeDir(o, n)}/data`)
-      if (n.role !== 'sentinel' && confMounted(o)) {
-        blocks.push(heredoc(`${nodeDir(o, n)}/redis.conf`, redisConf(o, n)))
-      }
-      if (n.role === 'sentinel') {
-        blocks.push(heredoc(`${nodeDir(o, n)}/sentinel.conf`, sentinelConf(o, n, master)))
-      }
-      blocks.push(dockerRunCmd(o, n))
-    }
-    if (o.mountData) blocks.push(`chown -R ${REDIS_UID} ${root}`)
+    for (const n of ns) blocks.push(dockerRunCmd(o, n))
     commands.push({
       title: machineTitle('docker run', ip),
       code: blocks.join('\n\n'),
@@ -474,52 +503,15 @@ export function genRedisInstall(
   // ===== docker compose 形态（按机器一个文件）=====
   const compose: RedisInstallStep[] = []
   for (const [ip, ns] of machines) {
-    const lines: string[] = ['services:']
-    for (const n of ns) {
-      lines.push(`  ${n.name}:`)
-      lines.push(`    image: ${finalImage(o)}`)
-      lines.push(`    container_name: ${n.name}`)
-      if (hostNetwork(o.mode)) {
-        lines.push('    network_mode: host')
-      } else {
-        lines.push('    ports:')
-        lines.push(`      - '${n.port}:${n.port}'`)
-      }
-      lines.push('    restart: unless-stopped')
-      if (o.timezone) {
-        lines.push('    environment:')
-        lines.push(`      - TZ=${o.timezone}`)
-      }
-      const vols: string[] = []
-      if (o.mountData) vols.push(`      - ${nodeDir(o, n)}/data:/data`)
-      if (n.role === 'sentinel')
-        vols.push(`      - ${nodeDir(o, n)}/sentinel.conf:/etc/redis/sentinel.conf`)
-      else if (confMounted(o))
-        vols.push(`      - ${nodeDir(o, n)}/redis.conf:/etc/redis/redis.conf`)
-      if (o.ssl) vols.push(`      - ${certs}:/etc/redis:ro`)
-      if (vols.length > 0) {
-        lines.push('    volumes:')
-        lines.push(...vols)
-      }
-      if (n.role === 'sentinel')
-        lines.push('    command: redis-server /etc/redis/sentinel.conf --sentinel')
-      else if (confMounted(o)) lines.push('    command: redis-server /etc/redis/redis.conf')
-      else
-        lines.push(
-          `    command: redis-server ${confArgs(o, n)
-            .map(a => (shellQuote(a) === a ? a : JSON.stringify(a)))
-            .join(' ')}`,
-        )
-    }
     compose.push({
       title: `${labels.composeFile} (${ip})`,
-      code: lines.join('\n') + '\n',
+      code: genComposeYaml(o, ns),
       lang: 'yaml',
     })
   }
 
-  // ===== 分步指南 =====
-  const guide: RedisInstallStep[] = []
+  // ===== 分步指南（合并为单个脚本） =====
+  const sections: { header: string; code: string }[] = []
   // 1. 环境准备
   for (const [ip, ns] of machines) {
     const dirs: string[] = []
@@ -528,10 +520,9 @@ export function genRedisInstall(
       if (o.mountData) dirs.push(`${nodeDir(o, n)}/data`)
     }
     if (o.ssl) dirs.push(certs)
-    guide.push({
-      title: machineTitle(labels.stepEnv, ip),
+    sections.push({
+      header: multi ? `${labels.stepEnv} — ${ip}` : labels.stepEnv,
       code: `mkdir -p ${dirs.join(' ')}`,
-      lang: 'shell',
     })
   }
   // 2. 写入配置文件
@@ -542,67 +533,68 @@ export function genRedisInstall(
         blocks.push(heredoc(`${nodeDir(o, n)}/sentinel.conf`, sentinelConf(o, n, master)))
       else if (confMounted(o)) blocks.push(heredoc(`${nodeDir(o, n)}/redis.conf`, redisConf(o, n)))
     }
-    // 官方镜像以 redis 用户运行，数据/证书目录需授权（配置文件仅读取，无需授权）
     if (!o.ssl) blocks.push(`chown -R ${REDIS_UID} ${root}`)
     if (blocks.length > 0) {
-      guide.push({
-        title: machineTitle(labels.stepConf, ip),
+      sections.push({
+        header: multi ? `${labels.stepConf} — ${ip}` : labels.stepConf,
         code: blocks.join('\n\n'),
-        lang: 'shell',
       })
     }
   }
   // 3. 证书
   if (o.ssl) {
-    guide.push(certStepOpenssl(o, labels, multi))
+    sections.push({ header: labels.stepCert, code: certStepOpenssl(o, labels, multi).code })
   }
-  // 4. 启动容器
+  // 4. 启动容器：写入 compose 文件 → cd 目录 → 编辑 → 启动
   for (const [ip, ns] of machines) {
-    guide.push({
-      title: machineTitle(labels.stepStart, ip),
-      code: ns.map(n => dockerRunCmd(o, n)).join('\n\n'),
-      lang: 'shell',
-    })
+    const dir = nodeDir(o, ns[0])
+    const code = [
+      heredoc(`${dir}/docker-compose.yml`, genComposeYaml(o, ns)),
+      '',
+      `cd ${dir}`,
+      'vim docker-compose.yml  # Review and adjust if needed',
+      'docker compose up -d',
+    ].join('\n')
+    sections.push({ header: multi ? `${labels.stepStart} — ${ip}` : labels.stepStart, code })
   }
-  // 5. 集群初始化 / 哨兵验证
-  const cli = redisCliPrefix(o)
-  const auth = redisCliAuth(o)
+  // 5. 集群初始化 / 验证（通过 docker exec 在容器内执行 redis-cli）
   if (o.mode === 'cluster') {
-    const blocks: string[] = ['# Wait for all nodes to be ready']
-    for (const n of nodes) blocks.push(`${cli} -h ${n.ip} -p ${n.port}${auth} ping`)
-    blocks.push('')
-    blocks.push('# Initialize cluster')
-    blocks.push(
-      `${cli}${auth} --cluster create ${nodes.map(n => `${n.ip}:${n.port}`).join(' ')} --cluster-replicas ${o.clusterReplicasPerMaster} --cluster-yes`,
+    const cli = dockerExecCli(o, master.name)
+    const clusterLines: string[] = ['# Wait for all nodes to be ready']
+    for (const n of nodes) clusterLines.push(`${cli} -h ${n.ip} -p ${n.port} ping`)
+    clusterLines.push('')
+    clusterLines.push('# Initialize cluster')
+    clusterLines.push(
+      `${cli} --cluster create ${nodes.map(n => `${n.ip}:${n.port}`).join(' ')} --cluster-replicas ${o.clusterReplicasPerMaster} --cluster-yes`,
     )
-    guide.push({ title: labels.stepCluster, code: blocks.join('\n'), lang: 'shell' })
-    guide.push({
-      title: labels.stepVerify,
+    sections.push({ header: labels.stepCluster, code: clusterLines.join('\n') })
+    sections.push({
+      header: labels.stepVerify,
       code: [
-        `${cli} -h ${master.ip} -p ${master.port}${auth} cluster info`,
-        `${cli} -h ${master.ip} -p ${master.port}${auth} cluster nodes`,
+        `${cli} -h ${master.ip} -p ${master.port} cluster info`,
+        `${cli} -h ${master.ip} -p ${master.port} cluster nodes`,
       ].join('\n'),
-      lang: 'shell',
     })
   } else if (o.mode === 'sentinel') {
     const s0 = sentinelNodes[0]
-    guide.push({
-      title: labels.stepVerify,
+    sections.push({
+      header: labels.stepVerify,
       code: [
-        `${cli} -h ${master.ip} -p ${master.port}${auth} ping`,
-        `${cli} -h ${master.ip} -p ${master.port}${auth} info replication`,
+        `${dockerExecCli(o, master.name)} -h ${master.ip} -p ${master.port} ping`,
+        `${dockerExecCli(o, master.name)} -h ${master.ip} -p ${master.port} info replication`,
         `# Sentinel`,
-        `${cli} -h ${s0.ip} -p ${s0.port}${auth} sentinel master mymaster`,
+        `${dockerExecCli(o, s0.name)} -h ${s0.ip} -p ${s0.port} sentinel master mymaster`,
       ].join('\n'),
-      lang: 'shell',
     })
   } else {
-    guide.push({
-      title: labels.stepVerify,
-      code: `${cli} -h ${master.ip} -p ${master.port}${auth} ping`,
-      lang: 'shell',
-    })
+    sections.push({ header: labels.stepVerify, code: `${dockerExecCli(o, master.name)} ping` })
   }
+
+  const GUIDE_SEP = '# =============================================='
+  const guideCode = sections
+    .map(s => `${GUIDE_SEP}\n# ${s.header}\n${GUIDE_SEP}\n${s.code}`)
+    .join('\n\n')
+  const guide: RedisInstallStep[] = [{ title: 'Guide', code: guideCode, lang: 'shell' }]
 
   return { nodes, commands, compose, guide }
 }

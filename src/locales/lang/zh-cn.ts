@@ -415,7 +415,7 @@ export default {
     extraArgs: '附加参数',
     extraArgsTip: '追加到 docker run 的额外参数，如 --memory 2g',
     tabGuide: '分步指南',
-    tabCommands: 'Docker 命令',
+    tabCommands: 'Docker Run',
     tabCompose: 'Docker Compose',
     dockerHub: 'Docker Hub',
     installDoc: '官方安装文档',

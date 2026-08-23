@@ -426,7 +426,7 @@ export default {
     extraArgs: 'Extra Args',
     extraArgsTip: 'Extra arguments appended to docker run, e.g. --memory 2g',
     tabGuide: 'Step Guide',
-    tabCommands: 'Docker Commands',
+    tabCommands: 'Docker Run',
     tabCompose: 'Docker Compose',
     dockerHub: 'Docker Hub',
     installDoc: 'Official Install Doc',

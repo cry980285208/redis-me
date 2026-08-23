@@ -48,7 +48,7 @@ describe('genInstallNodes / genRedisInstall', () => {
   it('单机：1 节点，容器名 redis-端口，目录不再多一层节点目录', () => {
     const out = genRedisInstall(baseOptions(), labels)
     expect(out.nodes).toEqual([{ name: 'redis-6379', ip: '127.0.0.1', port: 6379, role: 'master' }])
-    expect(out.guide.length).toBeGreaterThan(0)
+    expect(out.guide.length).toBe(1)
     expect(out.commands.length).toBe(1)
     expect(out.compose.length).toBe(1)
     // 单机直接落在 /data/redis-single 下
@@ -86,17 +86,13 @@ describe('genInstallNodes / genRedisInstall', () => {
     expect(out.commands[0].code).toContain('--network host')
     // 按机器分组：3 台机器 → 3 个 compose 文件
     expect(out.compose.length).toBe(3)
-    // 集群初始化步骤包含 --cluster create
-    const clusterStep = out.guide.find(s => s.title === labels.stepCluster)
-    expect(clusterStep?.code).toContain('--cluster create')
-    expect(clusterStep?.code).toContain('--cluster-replicas 1')
-    // redis.conf 启用集群与通告地址（总线端口 +10000）
-    expect(clusterStep).toBeTruthy()
-    const confStep = out.guide.find(s => s.title.includes(labels.stepConf))
-    expect(confStep?.code).toContain('cluster-enabled yes')
-    expect(confStep?.code).toContain('cluster-announce-bus-port 17001')
-    // 安装目录：/data 下按模式建目录
-    expect(confStep?.code).toContain('/data/redis-cluster')
+    // 集群初始化 + 配置写入均包含在合并后的指南脚本中
+    const guideCode = out.guide[0].code
+    expect(guideCode).toContain('--cluster create')
+    expect(guideCode).toContain('--cluster-replicas 1')
+    expect(guideCode).toContain('cluster-enabled yes')
+    expect(guideCode).toContain('cluster-announce-bus-port 17001')
+    expect(guideCode).toContain('/data/redis-cluster')
   })
 
   it('哨兵：主从端口递增，哨兵端口段 +20000，quorum 正确', () => {
@@ -112,36 +108,34 @@ describe('genInstallNodes / genRedisInstall', () => {
     )
     const ports = out.nodes.map(n => n.port)
     expect(ports).toEqual([6379, 6380, 6381, 26379, 26380, 26381])
-    const confStep = out.guide.find(s => s.title.includes(labels.stepConf))
-    expect(confStep?.code).toContain('sentinel monitor mymaster 10.0.0.1 6379 2')
-    expect(confStep?.code).toContain('sentinel auth-pass mymaster')
+    const guideCode = out.guide[0].code
+    expect(guideCode).toContain('sentinel monitor mymaster 10.0.0.1 6379 2')
+    expect(guideCode).toContain('sentinel auth-pass mymaster')
   })
 
   it('密码含特殊字符：conf 双引号转义、shell 单引号转义', () => {
     const out = genRedisInstall(baseOptions({ password: 'pa"ss\'word' }), labels)
-    const confStep = out.guide.find(s => s.title.includes(labels.stepConf))
-    expect(confStep?.code).toContain('requirepass "pa\\"ss\'word"')
-    const verify = out.guide.find(s => s.title === labels.stepVerify)
+    const guideCode = out.guide[0].code
+    expect(guideCode).toContain('requirepass "pa\\"ss\'word"')
     // 含单引号时退化为双引号转义形态
-    expect(verify?.code).toContain('-a "pa\\"ss\'word"')
+    expect(guideCode).toContain('-a "pa\\"ss\'word"')
   })
 
   it('TLS：安装指南证书步骤仅包含文件处理，openssl 脚本在证书弹框中', () => {
     const sslOut = genRedisInstall(baseOptions({ ssl: true }), labels)
-    const certStep = sslOut.guide.find(s => s.title === labels.stepCert)
+    const guideCode = sslOut.guide[0].code
     // 安装指南只显示文件处理
-    expect(certStep?.code).toContain('mkdir -p /data/redis-single/cert')
+    expect(guideCode).toContain('mkdir -p /data/redis-single/cert')
     // 不包含 chmod（由末尾 chown -R 统一授权）
-    expect(certStep?.code).not.toContain('chmod')
+    expect(guideCode).not.toContain('chmod')
     // 不包含 openssl 生成命令
-    expect(certStep?.code).not.toContain('openssl genrsa')
+    expect(guideCode).not.toContain('openssl genrsa')
 
     // redis.conf 包含 TLS 配置与协议限制
-    const confStep = sslOut.guide.find(s => s.title.includes(labels.stepConf))
-    expect(confStep?.code).toContain('port 0')
-    expect(confStep?.code).toContain('tls-port 6379')
-    expect(confStep?.code).toContain('tls-cert-file /etc/redis/redis.crt')
-    expect(confStep?.code).toContain('tls-protocols "TLSv1.2 TLSv1.3"')
+    expect(guideCode).toContain('port 0')
+    expect(guideCode).toContain('tls-port 6379')
+    expect(guideCode).toContain('tls-cert-file /etc/redis/redis.crt')
+    expect(guideCode).toContain('tls-protocols "TLSv1.2 TLSv1.3"')
   })
 
   it('genOpensslCertScript：生成完整 openssl 脚本', () => {
@@ -207,16 +201,35 @@ describe('genInstallNodes / genRedisInstall', () => {
     expect(cmd).toContain('--port 6380')
   })
 
-  it('不挂载数据但挂载配置：目录仍创建（供 heredoc 写入）', () => {
+  it('不挂载数据但挂载配置：指南环境准备仍创建目录', () => {
     const out = genRedisInstall(baseOptions({ mountData: false, mountConf: true }), labels)
+    // 分步指南环境准备创建节点目录（供 heredoc 写入），但不创建 data 子目录
+    const guideCode = out.guide[0].code
+    expect(guideCode).toContain('mkdir -p /data/redis-single')
+    expect(guideCode).not.toContain('/data/redis-single/data')
+  })
+
+  it('docker 命令 tab 仅含纯 docker run，不含 mkdir/heredoc/chown', () => {
+    const out = genRedisInstall(baseOptions(), labels)
     const cmd = out.commands[0].code
-    // 节点目录被创建（供配置文件写入），但不创建 data 子目录
-    expect(cmd).toContain('mkdir -p /data/redis-single')
-    expect(cmd).not.toContain('mkdir -p /data/redis-single/data')
-    // 分步指南环境准备同样创建目录
-    const envStep = out.guide.find(s => s.title.includes(labels.stepEnv))
-    expect(envStep?.code).toContain('mkdir -p /data/redis-single')
-    expect(envStep?.code).not.toContain('/data/redis-single/data')
+    expect(cmd).toContain('docker run')
+    expect(cmd).not.toContain('mkdir')
+    expect(cmd).not.toContain('cat >')
+    expect(cmd).not.toContain('chown')
+  })
+
+  it('分步指南启动容器步骤：写入 compose 文件后 cd + vim + docker compose up', () => {
+    const out = genRedisInstall(baseOptions(), labels)
+    const guideCode = out.guide[0].code
+    // 写入 docker-compose.yml（heredoc）
+    expect(guideCode).toContain('docker-compose.yml')
+    expect(guideCode).toContain('services:')
+    // cd 到工作目录，无需 -f 指定文件
+    expect(guideCode).toContain('cd /data/redis-single')
+    expect(guideCode).toContain('vim docker-compose.yml')
+    expect(guideCode).toContain('docker compose up -d')
+    expect(guideCode).not.toContain('docker compose -f')
+    expect(guideCode).not.toContain('docker run')
   })
 
   it('alpine 变体追加镜像后缀', () => {
@@ -226,8 +239,7 @@ describe('genInstallNodes / genRedisInstall', () => {
 
   it('heredoc 定界符与内容冲突时自动换名', () => {
     const out = genRedisInstall(baseOptions({ password: 'EOF' }), labels)
-    const confStep = out.guide.find(s => s.title.includes(labels.stepConf))
     // 内容含 EOF 字样不破坏结构（定界符或内容安全）
-    expect(confStep?.code).toContain('requirepass')
+    expect(out.guide[0].code).toContain('requirepass')
   })
 })

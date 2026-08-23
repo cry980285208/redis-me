@@ -11,7 +11,9 @@ import TlsCertGen from '@/views/ext/TlsCertGen.vue'
 
 // #region 核心状态
 const { t } = useI18n()
-const visible = ref(false)
+const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
+// 组件由父组件 v-if 控制，创建即意味着要展示
+const visible = ref(true)
 const activeTab = ref('guide')
 
 // 表单状态（默认值即推荐配置：host 网络、持久化与配置外置默认开）
@@ -36,11 +38,10 @@ const form = reactive({
 // 证书生成弹框引用
 const certGenRef = ref<InstanceType<typeof TlsCertGen>>()
 
-function open(): void {
-  visible.value = true
-}
-
-defineExpose({ open })
+// 弹框关闭时通知父组件卸载（v-if 销毁 → 下次打开自动全新实例）
+watch(visible, v => {
+  if (!v) emit('update:modelValue', false)
+})
 // #endregion
 
 // #region 生成器入参与产物
@@ -90,16 +91,10 @@ watch(
 // 证书 SAN（传给证书生成弹框）
 const sans = computed(() => genInstallSans(options.value))
 
-// 代码块高度随行数自适应（超出内部滚动）
-function codeH(code: string): string {
-  const px = Math.min(Math.max(code.split('\n').length * 21 + 34, 90), 380)
-  return `${px}px`
-}
-
 const tabs = computed(() => [
   { name: 'guide', label: t('redisInstall.tabGuide'), steps: output.value.guide },
-  { name: 'commands', label: t('redisInstall.tabCommands'), steps: output.value.commands },
   { name: 'compose', label: t('redisInstall.tabCompose'), steps: output.value.compose },
+  { name: 'commands', label: t('redisInstall.tabCommands'), steps: output.value.commands },
 ])
 // #endregion
 
@@ -124,6 +119,8 @@ const timezoneOptions = [
     :title="t('redisInstall.title')"
     icon="me-icon-redis"
     width="85%"
+    :close-on-press-escape="false"
+    :close-on-click-modal="false"
     class="redis-install-dialog">
     <!-- 标题栏外链：官方镜像仓库 / 官方安装文档 -->
     <template #header-extra>
@@ -229,6 +226,7 @@ const timezoneOptions = [
             <el-select
               v-model="form.timezone"
               filterable
+              clearable
               allow-create
               default-first-option
               :placeholder="t('redisInstall.tzPlaceholder')">
@@ -257,18 +255,11 @@ const timezoneOptions = [
       <div class="ri-output">
         <el-tabs v-model="activeTab" class="ri-tabs">
           <el-tab-pane v-for="tab in tabs" :key="tab.name" :label="tab.label" :name="tab.name">
-            <div class="ri-steps" :class="{ 'ri-steps-full': tab.name !== 'guide' }">
-              <div v-for="(step, i) in tab.steps" :key="i" class="ri-step">
-                <div v-if="tab.name === 'guide'" class="ri-step-head">
-                  <span class="ri-step-title">{{ i + 1 }}. {{ step.title }}</span>
-                </div>
-                <me-code
-                  :model-value="step.code"
-                  :mode="step.lang"
-                  copyable
-                  :style="{ height: tab.name === 'guide' ? codeH(step.code) : '100%' }" />
-              </div>
-            </div>
+            <me-code
+              :model-value="tab.steps[0].code"
+              :mode="tab.steps[0].lang"
+              copyable
+              style="height: 100%" />
           </el-tab-pane>
         </el-tabs>
       </div>
@@ -344,38 +335,6 @@ const timezoneOptions = [
 
   :deep(.el-tab-pane) {
     height: 100%;
-    display: flex;
-    flex-direction: column;
-  }
-
-  :deep(.ri-steps-full) {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-
-    .ri-step {
-      flex: 1;
-      min-height: 0;
-      margin-bottom: 0;
-    }
-  }
-}
-
-.ri-steps {
-  .ri-step {
-    margin-bottom: 10px;
-
-    .ri-step-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 4px;
-
-      .ri-step-title {
-        font-weight: bold;
-      }
-    }
   }
 }
 </style>
