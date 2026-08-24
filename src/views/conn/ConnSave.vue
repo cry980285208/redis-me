@@ -201,6 +201,8 @@ const formRef = useTemplateRef('formRef')
 function submit() {
   formRef.value.validate((valid: boolean) => {
     if (!valid) return
+    // db 未填时默认赋值 0
+    if (form.db == null) form.db = 0
     if (mode.value === 'add') {
       form.id = nanoid()
       autoGenName()
@@ -233,6 +235,8 @@ function autoGenName() {
 function testConn() {
   formRef.value.validate(async (valid: boolean) => {
     if (!valid) return
+    // db 未填时默认赋值 0
+    if (form.db == null) form.db = 0
     const target = document.querySelector('.el-dialog.conn-save-dialog') as HTMLElement | null
     const loadingInstance = ElLoading.service({ target: target || undefined, lock: true })
     try {
@@ -247,6 +251,8 @@ function testConn() {
 // 哨兵模式获取 master 名称（与 `meCommands.masters` 返回项一致：string 键值）
 const masters = ref<Record<string, string>[]>([])
 async function autoDiscover(alert: boolean = false) {
+  // db 未填时默认赋值 0
+  if (form.db == null) form.db = 0
   try {
     masters.value = await meCommands.masters(form, false)
     if (!form.sentinelOption.masterName && masters.value.length > 0) {
