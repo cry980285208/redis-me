@@ -231,6 +231,24 @@ function autoGenName() {
   }
 }
 
+/**
+ * 主机输入框粘贴解析：自动提取 host:port
+ * 支持 IPv4/主机名:port、[IPv6]:port 格式；无合法端口时仅填充主机
+ */
+function onHostPaste(e: ClipboardEvent): void {
+  const text = e.clipboardData?.getData('text')?.trim()
+  if (!text) return
+  const lastColon = text.lastIndexOf(':')
+  if (lastColon <= 0) return
+  const hostPart = text.slice(0, lastColon)
+  const portPart = text.slice(lastColon + 1)
+  const port = Number(portPart)
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return
+  e.preventDefault()
+  form.host = hostPart
+  form.port = port
+}
+
 // 测试连接：整弹窗 loading，避免按钮变宽挤动底栏
 function testConn() {
   formRef.value.validate(async (valid: boolean) => {
@@ -420,7 +438,11 @@ function applyAdvanced() {
       <el-row :gutter="24">
         <el-col :span="12">
           <el-form-item :label="t('conn.host')" prop="host">
-            <el-input v-model.trim="form.host" placeholder="127.0.0.1" clearable />
+            <el-input
+              v-model.trim="form.host"
+              placeholder="127.0.0.1"
+              clearable
+              @paste="onHostPaste" />
           </el-form-item>
         </el-col>
         <el-col :span="12">
