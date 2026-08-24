@@ -124,18 +124,20 @@ describe('genInstallNodes / genRedisInstall', () => {
   it('TLS：安装指南证书步骤仅包含文件处理，openssl 脚本在证书弹框中', () => {
     const sslOut = genRedisInstall(baseOptions({ ssl: true }), labels)
     const guideCode = sslOut.guide[0].code
-    // 安装指南只显示文件处理
-    expect(guideCode).toContain('mkdir -p /data/redis-single/cert')
-    // 不包含 chmod（由末尾 chown -R 统一授权）
+    // cert 目录仅在环境准备步骤 mkdir 一次
+    expect((guideCode.match(/mkdir -p [^\n]*\/cert/g) || []).length).toBe(1)
+    expect(guideCode).toContain('/data/redis-single/cert')
     expect(guideCode).not.toContain('chmod')
-    // 不包含 openssl 生成命令
     expect(guideCode).not.toContain('openssl genrsa')
 
-    // redis.conf 包含 TLS 配置与协议限制
     expect(guideCode).toContain('port 0')
     expect(guideCode).toContain('tls-port 6379')
-    expect(guideCode).toContain('tls-cert-file /etc/redis/redis.crt')
+    expect(guideCode).toContain('tls-cert-file /etc/redis/cert/redis.crt')
     expect(guideCode).toContain('tls-protocols "TLSv1.2 TLSv1.3"')
+
+    expect(sslOut.compose[0].code).toContain('/data/redis-single/cert:/etc/redis/cert:ro')
+    expect(sslOut.compose[0].code).toContain('redis.conf:/etc/redis/redis.conf')
+    expect(sslOut.commands[0].code).toContain(':/etc/redis/cert:ro')
   })
 
   it('genOpensslCertScript：生成完整 openssl 脚本', () => {

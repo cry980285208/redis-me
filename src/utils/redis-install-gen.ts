@@ -81,6 +81,8 @@ function certDir(mode: RedisInstallMode): string {
 }
 // 官方镜像以 redis 用户（uid 999）运行，数据/证书目录需授权
 const REDIS_UID = '999:999'
+// 容器内证书挂载点（与 redis.conf 分目录，避免 bind mount 覆盖 /etc/redis）
+const CONTAINER_CERT_DIR = '/etc/redis/cert'
 
 // 各模式默认起始端口：集群惯例 7001 段（7001~7006）；单机/哨兵用经典 6379 段（哨兵组 +20000）
 export function genInstallDefaultPort(mode: RedisInstallMode): number {
@@ -214,7 +216,7 @@ function genComposeYaml(
       vols.push(`      - ${nodeDir(o, n)}/sentinel.conf:/etc/redis/sentinel.conf`)
     else if (confMounted(o, n))
       vols.push(`      - ${nodeDir(o, n)}/redis.conf:/etc/redis/redis.conf`)
-    if (o.ssl) vols.push(`      - ${certDir(o.mode)}:/etc/redis:ro`)
+    if (o.ssl) vols.push(`      - ${certDir(o.mode)}:${CONTAINER_CERT_DIR}:ro`)
     if (vols.length > 0) {
       lines.push('    volumes:')
       lines.push(...vols)
@@ -240,9 +242,9 @@ function portLines(ssl: boolean, port: number): string[] {
 // TLS 证书与协议公共配置行
 function tlsBaseLines(): string[] {
   return [
-    'tls-cert-file /etc/redis/redis.crt',
-    'tls-key-file /etc/redis/redis.key',
-    'tls-ca-cert-file /etc/redis/ca.crt',
+    `tls-cert-file ${CONTAINER_CERT_DIR}/redis.crt`,
+    `tls-key-file ${CONTAINER_CERT_DIR}/redis.key`,
+    `tls-ca-cert-file ${CONTAINER_CERT_DIR}/ca.crt`,
     'tls-protocols "TLSv1.2 TLSv1.3"',
   ]
 }
@@ -349,11 +351,11 @@ function confArgs(
   if (o.ssl) {
     args.push(
       '--tls-cert-file',
-      '/etc/redis/redis.crt',
+      `${CONTAINER_CERT_DIR}/redis.crt`,
       '--tls-key-file',
-      '/etc/redis/redis.key',
+      `${CONTAINER_CERT_DIR}/redis.key`,
       '--tls-ca-cert-file',
-      '/etc/redis/ca.crt',
+      `${CONTAINER_CERT_DIR}/ca.crt`,
     )
     if (o.mode === 'cluster') args.push('--tls-replication', 'yes', '--tls-cluster', 'yes')
     else if (o.mode === 'sentinel' && node.role === 'replica') args.push('--tls-replication', 'yes')
@@ -379,7 +381,7 @@ function dockerRunCmd(
   } else if (confMounted(o, node)) {
     parts.push(`-v ${dir}/redis.conf:/etc/redis/redis.conf`)
   }
-  if (o.ssl) parts.push(`-v ${certDir(o.mode)}:/etc/redis:ro`)
+  if (o.ssl) parts.push(`-v ${certDir(o.mode)}:${CONTAINER_CERT_DIR}:ro`)
   parts.push(finalImage(o))
   if (node.role === 'sentinel') {
     parts.push('redis-server /etc/redis/sentinel.conf --sentinel')
@@ -391,13 +393,12 @@ function dockerRunCmd(
   return parts.join(' \\\n  ')
 }
 
-// 通过 docker exec 在容器内执行 redis-cli（目标机器只有 Docker，无宿主机 redis-cli）
-// TLS 证书挂载于容器内 /etc/redis/，故证书路径使用容器内路径
+// TLS 证书挂载于容器内 CONTAINER_CERT_DIR，与 redis.conf 分目录
 function dockerExecCli(o: RedisInstallOptions, container: string): string {
   let cmd = `docker exec ${container} redis-cli`
   if (o.ssl) {
     cmd += ' --tls'
-    cmd += ' --cert /etc/redis/redis.crt --key /etc/redis/redis.key --cacert /etc/redis/ca.crt'
+    cmd += ` --cert ${CONTAINER_CERT_DIR}/redis.crt --key ${CONTAINER_CERT_DIR}/redis.key --cacert ${CONTAINER_CERT_DIR}/ca.crt`
   }
   if (o.password) cmd += ` -a ${shellQuote(o.password)} --no-auth-warning`
   return cmd
@@ -487,10 +488,7 @@ function certStepOpenssl(
   multi: boolean,
 ): RedisInstallStep {
   const dir = certDir(o.mode)
-  const parts: string[] = [
-    '# 将生成的 ca.crt、redis.crt、redis.key 复制到以下目录',
-    `mkdir -p ${dir}`,
-  ]
+  const parts: string[] = ['# 将生成的 ca.crt、redis.crt、redis.key 复制到以下目录', `# ${dir}`]
   if (multi) parts.push(`# 多机部署：将证书文件分发到每台机器的 ${dir} 目录`)
   parts.push('', `chown -R ${REDIS_UID} ${hostRoot(o.mode)}`)
   return { title: labels.stepCert, code: parts.join('\n'), lang: 'shell' }
