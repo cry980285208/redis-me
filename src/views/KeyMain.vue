@@ -243,9 +243,19 @@ function onScanAction() {
   }
 }
 
-// 搜索历史记录
+// 搜索历史记录（按连接存储：{ connId: string[] }）
 const SEARCH_HISTORY_KEY = 'redis-me:search-history'
-const searchHistory = useStorage<string[]>(SEARCH_HISTORY_KEY, [])
+const allSearchHistory = useStorage<Record<string, string[]>>(SEARCH_HISTORY_KEY, {})
+// 兼容旧版数据：旧版为全局共享数组，新版按连接存储，遇到旧结构直接重置
+if (Array.isArray(allSearchHistory.value)) {
+  allSearchHistory.value = {}
+}
+// 当前连接的搜索历史
+const searchHistory = computed(() => {
+  const connId = share.conn?.id
+  if (!connId) return []
+  return allSearchHistory.value[connId] ?? []
+})
 const showHistory = ref(false)
 let historyHideTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -260,15 +270,29 @@ function addSearchHistory(query: string) {
   if (!query || query === '*' || loadFolder.value) return
   const trimmed = query.trim()
   if (!trimmed) return
-  searchHistory.value = [trimmed, ...searchHistory.value.filter(h => h !== trimmed)].slice(0, 10)
+  const connId = share.conn?.id
+  if (!connId) return
+  const list = allSearchHistory.value[connId] ?? []
+  allSearchHistory.value = {
+    ...allSearchHistory.value,
+    [connId]: [trimmed, ...list.filter(h => h !== trimmed)].slice(0, 10),
+  }
 }
 
 function removeSearchHistory(item: string) {
-  searchHistory.value = searchHistory.value.filter(h => h !== item)
+  const connId = share.conn?.id
+  if (!connId) return
+  const list = allSearchHistory.value[connId] ?? []
+  allSearchHistory.value = {
+    ...allSearchHistory.value,
+    [connId]: list.filter(h => h !== item),
+  }
 }
 
 function clearSearchHistory() {
-  searchHistory.value = []
+  const connId = share.conn?.id
+  if (!connId) return
+  allSearchHistory.value = { ...allSearchHistory.value, [connId]: [] }
 }
 
 function selectHistory(item: string) {
