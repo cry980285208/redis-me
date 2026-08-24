@@ -296,7 +296,12 @@ onBeforeUnmount(() => destroySortables())
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 8px 10px 8px 0;
+    // 锁死行高：默认分组标题随语言在「默认分组」/ Default Group 间切换，
+    // CJK 与西文字体度量不同，不固定会出现整行上下跳
+    height: 36px;
+    padding: 0 10px 0 0;
+    line-height: 22px;
+    white-space: nowrap;
     cursor: pointer;
     border-radius: 4px;
     opacity: 0.8;
