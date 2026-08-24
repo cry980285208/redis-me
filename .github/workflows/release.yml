@@ -1,9 +1,10 @@
 name: Release
-
 on:
   push:
     tags:
       - 'v*.*.*'
+  # 支持手动触发，在feature分支可以手动运行调试，不需要打tag
+  workflow_dispatch:
 
 jobs:
   publish-tauri:
@@ -25,10 +26,10 @@ jobs:
             args: '--target x86_64-pc-windows-msvc'
           - platform: 'windows-2022'
             args: '--target aarch64-pc-windows-msvc'
-
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v6
+
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '24'
@@ -38,14 +39,14 @@ jobs:
       - name: install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          # Those targets are only used on macos runners so it's in an `if` to slightly speed up windows and linux builds.
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
-        # failed to build app: Target aarch64-pc-windows-msvc is not installed (installed targets: i686-pc-windows-msvc, x86_64-pc-windows-gnu, x86_64-pc-windows-msvc). Please run `rustup target add aarch64-pc-windows-msvc`.
-      - name: Install rust target
-        if: ${{ matrix.platform == 'windows-2022' }}
+      # Windows 安装 aarch64 target
+      - name: Install rust target for Windows aarch64
+        if: ${{ matrix.platform == 'windows-2022' && contains(matrix.args, 'aarch64') }}
         run: rustup target add aarch64-pc-windows-msvc
 
+      # Linux arm64 target
       - name: Install rust target (Linux ARM64)
         if: ${{ matrix.platform == 'ubuntu-22.04-arm' }}
         run: rustup target add aarch64-unknown-linux-gnu
@@ -55,8 +56,20 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils
-        # webkitgtk 4.0 is for Tauri v1 - webkitgtk 4.1 is for Tauri v2.
-        # You can remove the one that doesn't apply to your app to speed up the workflow a bit.
+
+      # 生成Windows便携zip
+      - name: Create portable zip (Windows)
+        if: matrix.platform == 'windows-2022'
+        shell: pwsh
+        run: |
+          $arch = if ('${{ matrix.args }}' -match 'aarch64') { 'arm64' } else { 'x64' }
+          # 如果是手动触发没有tag，取版本号从tauri.conf.json
+          $version = ${{ github.ref_type == 'tag' }} ? ('${{ github.ref_name }}' -replace '^v','') : (Get-Content src-tauri/tauri.conf.json | ConvertFrom-Json).package.version
+          $targetArg = '${{ matrix.args }}'.Split(' ')[-1]
+          $exePath = "src-tauri/target/$targetArg/release/RedisME.exe"
+          $zipName = "RedisME_${version}_portable_$arch.zip"
+          Compress-Archive -Path $exePath -DestinationPath $zipName
+          Write-Host "Created portable zip: $zipName"
 
       - uses: tauri-apps/tauri-action@v0
         env:
@@ -64,38 +77,34 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
         with:
-          tagName: v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version.
+          tagName: v__VERSION__
           releaseName: 'v__VERSION__ 🌈'
+          # ✅ 自动适配当前fork仓库，不再硬编码 hepengju/redis-me
           releaseBody: |
-
-
             | OS | x64 | arm64 |
             | --- | --- | --- |
-            | Windows | [Installer](https://github.com/hepengju/redis-me/releases/download/v__VERSION__/RedisME___VERSION___x64-setup.exe) · [Portable](https://github.com/hepengju/redis-me/releases/download/v__VERSION__/RedisME___VERSION___portable_x64.zip) | [Installer](https://github.com/hepengju/redis-me/releases/download/v__VERSION__/RedisME___VERSION___arm64-setup.exe) · [Portable](https://github.com/hepengju/redis-me/releases/download/v__VERSION__/RedisME___VERSION___portable_arm64.zip) |
-            | Mac | [Intel Mac](https://github.com/hepengju/redis-me/releases/download/v__VERSION__/RedisME___VERSION___x64.dmg) | [Apple Silicon](https://github.com/hepengju/redis-me/releases/download/v__VERSION__/RedisME___VERSION___aarch64.dmg) |
-            | Linux | [deb](https://github.com/hepengju/redis-me/releases/download/v__VERSION__/RedisME___VERSION___amd64.deb) · [rpm](https://github.com/hepengju/redis-me/releases/download/v__VERSION__/RedisME-__VERSION__-1.x86_64.rpm) · [AppImage](https://github.com/hepengju/redis-me/releases/download/v__VERSION__/RedisME___VERSION___amd64.AppImage) | [deb](https://github.com/hepengju/redis-me/releases/download/v__VERSION__/RedisME___VERSION___arm64.deb) · [rpm](https://github.com/hepengju/redis-me/releases/download/v__VERSION__/RedisME-__VERSION__-1.aarch64.rpm) · [AppImage](https://github.com/hepengju/redis-me/releases/download/v__VERSION__/RedisME___VERSION___aarch64.AppImage) |
+            | Windows | [Installer](https://github.com/${{ github.repository }}/releases/download/v__VERSION__/RedisME___VERSION___x64-setup.exe) · [Portable](https://github.com/${{ github.repository }}/releases/download/v__VERSION__/RedisME___VERSION___portable_x64.zip) | [Installer](https://github.com/${{ github.repository }}/releases/download/v__VERSION__/RedisME___VERSION___arm64-setup.exe) · [Portable](https://github.com/${{ github.repository }}/releases/download/v__VERSION__/RedisME___VERSION___portable_arm64.zip) |
+            | Mac | [Intel Mac](https://github.com/${{ github.repository }}/releases/download/v__VERSION__/RedisME___VERSION___x64.dmg) | [Apple Silicon](https://github.com/${{ github.repository }}/releases/download/v__VERSION__/RedisME___VERSION___aarch64.dmg) |
+            | Linux | [deb](https://github.com/${{ github.repository }}/releases/download/v__VERSION__/RedisME___VERSION___amd64.deb) · [rpm](https://github.com/${{ github.repository }}/releases/download/v__VERSION__/RedisME-__VERSION__-1.x86_64.rpm) · [AppImage](https://github.com/${{ github.repository }}/releases/download/v__VERSION__/RedisME___VERSION___amd64.AppImage) | [deb](https://github.com/${{ github.repository }}/releases/download/v__VERSION__/RedisME___VERSION___arm64.deb) · [rpm](https://github.com/${{ github.repository }}/releases/download/v__VERSION__/RedisME-__VERSION__-1.aarch64.rpm) · [AppImage](https://github.com/${{ github.repository }}/releases/download/v__VERSION__/RedisME___VERSION___aarch64.AppImage) |
           releaseDraft: true
           prerelease: false
           tauriScript: vp run tauri
           args: ${{ matrix.args }}
+          # 把我们生成的便携zip交给tauri-action一并上传release
+          files: |
+            RedisME_*_portable_*.zip
+        # 只有打tag的时候才创建Release；手动触发只构建产物不上传release
+        if: ${{ github.ref_type == 'tag' }}
 
-      - name: Create portable zip (Windows)
-        if: matrix.platform == 'windows-2022'
-        shell: pwsh
-        run: |
-          $arch = if ('${{ matrix.args }}' -match 'aarch64') { 'arm64' } else { 'x64' }
-          $version = '${{ github.ref_name }}' -replace '^v', ''
-          $targetDir = if ('${{ matrix.args }}' -match '--target') { '${{ matrix.args }}'.Split(' ')[1] } else { '' }
-          $exePath = if ($targetDir) { "src-tauri/target/$targetDir/release/RedisME.exe" } else { "src-tauri/target/release/RedisME.exe" }
-          $zipName = "RedisME_${version}_portable_$arch.zip"
-          Compress-Archive -Path $exePath -DestinationPath $zipName
-          Write-Host "Created: $zipName"
-
-      - name: Upload portable zip to release (Windows)
-        if: matrix.platform == 'windows-2022'
-        uses: softprops/action-gh-release@v3
+      # 【调试用】手动触发模式：把构建产物上传为Artifact，不创建Release
+      - name: Upload build artifacts (manual run debug)
+        if: ${{ github.ref_type != 'tag' }}
+        uses: actions/upload-artifact@v4
         with:
-          files: RedisME_*_portable_*.zip
-          tag_name: ${{ github.ref_name }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: build-artifact-${{ matrix.platform }}-${{ matrix.args }}
+          path: |
+            src-tauri/target/release/*.exe
+            src-tauri/target/release/*.dmg
+            src-tauri/target/release/*.deb
+            src-tauri/target/release/*.AppImage
+            *.zip
