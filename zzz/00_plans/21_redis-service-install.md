@@ -1,9 +1,26 @@
 # 21. Redis 服务安装帮助（Docker 快速搭建）
 
-> **类型**：设计草案 + 讨论清单（未定稿）  
+> **类型**：设计文档（已实施，本节记录与初稿的差异）  
 > **关联**：[`zzz/01_redis-install`](../01_redis-install/)（现有手工 compose 样例，即本功能的模板来源）  
 > **关联组件**：`MeCode.vue`（CodeMirror 输出区）、`MeDialog.vue`、`locales`  
-> **日期**：2026-08-22
+> **日期**：2026-08-22 · **实施**：2026-08-24
+
+---
+
+## 实施结论（与初稿差异）
+
+| 初稿                            | 实际                                                                               |
+| ------------------------------- | ---------------------------------------------------------------------------------- |
+| 工具箱独立入口                  | **空连接页 `KeyEmpty` 底部图标**（未连接时可见，与「先装后连」场景贴合）           |
+| 数据持久化含 `appendonly yes`   | **仅挂载 data volume**，不写 AOF；用户可在生成的 conf 中自行追加                   |
+| 连接摘要卡片                    | **不做**                                                                           |
+| 应用内证书签发（Tauri + rcgen） | **不做**；仅 openssl 脚本弹框（`TlsCertGen.vue`）                                  |
+| Tauri 保存文件                  | **不做**；MeCode 复制即可                                                          |
+| 附加参数输入框                  | **不做**（docker run 扩展与 redis.conf 定制语义易混；用户改 conf 或 compose 即可） |
+| `restart: always`               | **`unless-stopped`**（容器手动 stop 后不会自动拉起，更合适）                       |
+| 单机默认 host 网络              | **单机 bridge 端口映射**；集群/哨兵 host（多端口 + 总线）                          |
+
+代码入口：`src/utils/redis-install-gen.ts`、`src/views/ext/RedisInstall.vue`、`src/views/key/KeyEmpty.vue`。
 
 ---
 
@@ -17,7 +34,7 @@
 
 | 原则      | 说明                                                                                 |
 | --------- | ------------------------------------------------------------------------------------ |
-| 只生成    | RedisME **不执行**任何 docker 命令、不落盘用户环境；产物是纯文本，复制/保存即走      |
+| 只生成    | RedisME **不执行**任何 docker 命令、不落盘用户环境；产物是纯文本，复制即走           |
 | 仅 Docker | 不做裸机编译安装、不做 systemd、不做 K8s；覆盖 `docker run` 与 `docker compose` 两种 |
 | 仅 Linux  | 生成的脚本/网络模式按 Linux 假设（host 网络等）；Windows/macOS 目标机不在支持范围    |
 
@@ -31,11 +48,11 @@
 | 快速模板     | 集群默认 **三主三从**；哨兵默认 **一主二从 + 三哨兵**；节点数可调                                                                                                           |
 | 镜像         | `redis:8`（默认）/ `redis:7` / `valkey:8`（或自定义镜像名）                                                                                                                 |
 | 安装方式输出 | ① 原始 docker 命令（`docker run` 逐条）② docker compose（yaml + 附属 conf）③ **分步指南**：多个步骤合并在一个代码块展示，每步带注释，用户自行逐步复制执行（已定，见 §五.3） |
-| 持久化       | **默认开启**（已定，见 §五.9）：数据目录 `./data-<port>:/data` + `appendonly yes`（写在 conf 内）；可手动关闭                                                               |
-| 配置文件     | **默认外置挂载**（已定，见 §五.16）：每节点生成独立 `redis.conf` 挂载，启动命令仅一行；避免 command 过长，方便用户追加 `rename-command` 等定制配置                          |
-| 端口         | 基准端口 + 自动递增；集群总线端口 = port+10000 需提示放行                                                                                                                   |
-| 密码         | `requirepass`；集群/哨兵自动同步 `masterauth`、哨兵 `auth-pass`（三者必须一致）                                                                                             |
-| SSL          | 可选，**双模式**：① **应用内签发**（用户填必要信息 + **选密钥类型**，后端生成 CA+服务器证书 PEM，已定可行，见 §五.11）② 生成 **openssl 命令**（保留）；均配 `--tls-*` 参数  |
+| 持久化       | **默认开启**：挂载 `/data/redis-{mode}/…/data` volume；**不写 `appendonly yes`**（用户可在 conf 中自行追加）                                                                |
+| 配置文件     | **默认外置挂载**（见 §五.16）：每节点独立 `redis.conf`；哨兵 `sentinel.conf` 必挂载                                                                                         |
+| 端口         | 基准端口 + 自动递增；集群总线端口 = port+10000（产物注释提醒放行，待补）                                                                                                    |
+| 密码         | `requirepass`；集群/哨兵自动同步 `masterauth`、哨兵 `auth-pass`                                                                                                             |
+| SSL          | 可选；**仅 openssl 脚本**（弹框生成，SAN 自动汇总节点 IP）；配 `tls-*` 参数                                                                                                 |
 | announce-ip  | 集群/哨兵必填项；**单输入框支持分号分隔多 IP**（单机=1 个，多机=多个，自动分割去重，已定，见 §五.12）；填宿主机可达 IP（最大踩坑点，见 §五.2）                              |
 | i18n         | 中英双语文案，走 `locales`                                                                                                                                                  |
 
@@ -45,29 +62,28 @@
 
 ### 3.1 入口与界面布局
 
-- 入口：**主界面独立「工具箱」入口**（已定；与连接管理解耦，不在连接页加引导）
-- 布局：左侧表单区（模式、镜像、IP/端口、密码、持久化、SSL 开关），右侧 **CodeMirror 只读输出区**（复用 `MeCode`，与导出/命令预览一致的暗色风格）
-- 输出区顶部 tab 切换：**docker 命令** / **docker compose** / **分步指南**（所有步骤合并一个代码块，注释标注每步）
-- 官方链接（已定 ✅）：页面提供两处入口——[Docker Hub 官方镜像页](https://hub.docker.com/_/redis)、[Redis 官方 Docker 安装手册](https://redis.io/docs/latest/operate/oss_and_stack/install/install-stack/docker/)；按项目外链规范统一 `@click` + `meOpenUrl` 打开（禁止 href）
-- 操作按钮：复制（剪贴板）、保存文件（Tauri save dialog；多文件时按 §五.4 方案处理）
-- 生成后附「连接摘要」：host / port / password / SSL 一览，方便用户装完后回 RedisME 建连接（见 §五.8）
+- 入口：**空连接页 `KeyEmpty` 底部「Redis 安装」图标**（`v-if` 挂载对话框，关闭即销毁）
+- 布局：左侧表单区（模式、镜像、IP/端口、密码、持久化、SSL 开关），右侧 **CodeMirror 只读输出区**（复用 `MeCode`）
+- 输出区顶部 tab 切换：**分步指南** / **docker compose** / **docker 命令**
+- 官方链接：Docker Hub、Redis 官方 Docker 安装手册（`meOpenUrl`）
+- 操作：MeCode **复制**（不做保存文件、不做连接摘要）
 
 ### 3.2 表单字段（三种模式共用 + 差异）
 
-| 字段         | 单机 | 集群 | 哨兵 | 备注                                                                                                                                     |
-| ------------ | ---- | ---- | ---- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| 镜像/版本    | ✅   | ✅   | ✅   | 下拉 + 自定义输入                                                                                                                        |
-| 基础端口     | ✅   | ✅   | ✅   | 集群默认 7001 起；哨兵 redis 7701 / sentinel 27701 规则递增                                                                              |
-| requirepass  | ✅   | ✅   | ✅   | 空则不启用认证                                                                                                                           |
-| announce-ip  | —    | ✅   | ✅   | 单输入框、分号分隔多 IP（多机，见 §五.12）；集群 `--cluster-announce-ip`；哨兵 `--replica-announce-ip` + `sentinel announce-ip`          |
-| 主/从节点数  | —    | ✅   | ✅   | 集群默认 3 主 3 从；哨兵固定一主二从（从数可调）                                                                                         |
-| 哨兵数量     | —    | —    | ✅   | 默认 3                                                                                                                                   |
-| 数据持久化   | ✅   | ✅   | ✅   | 开关；开启后追加 volume + appendonly                                                                                                     |
-| 配置文件挂载 | ✅   | ✅   | ✅   | **默认开启**（已定，见 §五.16）：每节点独立 `redis.conf` 挂载；哨兵 `sentinel.conf` 必挂载（有状态，§六.3）；可关闭退回命令行参数形态    |
-| SSL          | ✅   | ✅   | ✅   | 开启后追加 tls 参数 + 证书生成命令；集群需 `--tls-replication yes --tls-cluster yes`；哨兵需 `tls-replication yes` + sentinel `tls-port` |
-| 网络模式     | ✅   | ✅   | ✅   | 默认 `host`（Linux 场景最省事）；可选 bridge + 端口映射                                                                                  |
-| 时区         | ✅   | ✅   | ✅   | 默认 `TZ=Asia/Shanghai`，可改                                                                                                            |
-| restart 策略 | ✅   | ✅   | ✅   | 默认 `always`                                                                                                                            |
+| 字段         | 单机 | 集群 | 哨兵 | 备注                                                                                                                            |
+| ------------ | ---- | ---- | ---- | ------------------------------------------------------------------------------------------------------------------------------- |
+| 镜像/版本    | ✅   | ✅   | ✅   | 下拉 + 自定义输入                                                                                                               |
+| 基础端口     | ✅   | ✅   | ✅   | 集群默认 7001 起；哨兵 redis 7701 / sentinel 27701 规则递增                                                                     |
+| requirepass  | ✅   | ✅   | ✅   | 空则不启用认证                                                                                                                  |
+| announce-ip  | —    | ✅   | ✅   | 单输入框、分号分隔多 IP（多机，见 §五.12）；集群 `--cluster-announce-ip`；哨兵 `--replica-announce-ip` + `sentinel announce-ip` |
+| 主/从节点数  | —    | ✅   | ✅   | 集群默认 3 主 3 从；哨兵固定一主二从（从数可调）                                                                                |
+| 哨兵数量     | —    | —    | ✅   | 默认 3                                                                                                                          |
+| 数据持久化   | ✅   | ✅   | ✅   | 开关；开启后挂载 data volume（**不含 appendonly**，可自行追加）                                                                 |
+| 配置文件挂载 | ✅   | ✅   | ✅   | 默认开启；哨兵 `sentinel.conf` 必挂载；可关闭退回命令行参数形态                                                                 |
+| SSL          | ✅   | ✅   | ✅   | openssl 脚本弹框 + tls 配置                                                                                                     |
+| 网络模式     | ✅   | ✅   | ✅   | **单机 bridge 端口映射**；集群/哨兵 **host**（内置，不可切换）                                                                  |
+| 时区         | ✅   | ✅   | ✅   | 默认 `TZ=Asia/Shanghai`                                                                                                         |
+| restart 策略 | ✅   | ✅   | ✅   | **`unless-stopped`**                                                                                                            |
 
 ### 3.3 生成逻辑要点（对齐 `01_redis-install` 现有样例）
 
@@ -77,18 +93,8 @@
   redis-cli --cluster create <ip>:7001 ... <ip>:7006 --cluster-replicas 1 --cluster-yes -a <密码>
   ```
   （现有样例缺失此关键一步，是"快速搭建"的核心补全）
-- **哨兵**：对齐 `redis-sentinel` / `redis-sentinel-ssl`；每个哨兵生成**独立** `sentinel.conf`（port / monitor / auth-pass / announce-ip），并提示 `sentinel myid` 需唯一（容器首次启动自动生成，勿复用他人 conf）
-- **SSL 证书（双模式，已定 ✅）**：
-  - **模式 A：应用内签发**（默认）：用户填必要信息（CN / SAN / 有效期 / **密钥类型下拉：RSA 2048 默认 / RSA 4096 / ECDSA P-256**），后端生成自建 CA + 服务器证书，输出 `ca.crt / ca.key / redis.crt / redis.key` 四段 PEM 到输出区（MeCode），复制或保存；可行性与依赖见 §五.11；对无 openssl 环境的用户（尤其 Windows 本地）更友好，与"仅 Linux 目标机"不冲突（签发在客户端，执行在服务器）
-  - **模式 B：openssl 命令生成**（保留，供偏好手动操作的用户）：
-  ```text
-  openssl genrsa -out ca.key 4096
-  openssl req -x509 -new -nodes -key ca.key -sha256 -days 3650 -out ca.crt -subj "/CN=redis-ca"
-  openssl genrsa -out redis.key 2048
-  openssl req -new -key redis.key -out redis.csr -subj "/CN=<announce-ip>"
-  openssl x509 -req -in redis.csr -CA ca.crt -CAkey ca.key -CAcreateserial -days 3650 -sha256 -extfile <SAN 配置> -out redis.crt
-  ```
-  SAN 需包含 announce-ip 与 localhost（`subjectAltName=IP:<ip>,IP:127.0.0.1,DNS:localhost`）
+- **哨兵**：对齐 `redis-sentinel` / `redis-sentinel-ssl`；从节点 **`replicaof <master_ip> <master_port>`**；每个哨兵独立 `sentinel.conf`
+- **SSL 证书**：弹框生成 **openssl 命令脚本**（RSA 4096，SAN 含全部节点 IP + localhost）；分步指南仅提示证书目录与 chown
 
 ### 3.4 输出示例（docker compose tab，集群片段，conf 挂载形态）
 
@@ -98,7 +104,7 @@ services:
     image: redis:8
     container_name: redis8-7001
     command: redis-server /etc/redis/redis.conf
-    restart: always
+    restart: unless-stopped
     network_mode: 'host'
     environment:
       - TZ=Asia/Shanghai
@@ -114,7 +120,6 @@ port 7001
 requirepass <PASS>
 masterauth <PASS>
 cluster-enabled yes
-appendonly yes
 dir /data
 # 如需禁用/改名命令等额外配置，在此自行追加，例如：
 # rename-command FLUSHALL ""
@@ -126,8 +131,7 @@ dir /data
 
 ```text
 选模式 → 填表单（IP/端口/密码/开关）→ 实时生成（表单变化即重渲染输出）
-       → 切换 tab（命令 / compose / 分步指南）→ 复制或保存 → 用户去 Linux 执行
-       → （可选）查看连接摘要，回连接页建连接
+       → 切换 tab（分步指南 / compose / 命令）→ 复制 → 用户去 Linux 执行
 ```
 
 - 表单校验：端口范围、密码特殊字符转义提示、announce-ip 必填（集群/哨兵）
@@ -139,9 +143,9 @@ dir /data
 
 ### 5.1 入口放哪里？（已定 ✅）
 
-**主界面独立「工具箱」入口**，与连接管理解耦；不在新建连接弹窗加引导。
+**空连接页 `KeyEmpty` 底部图标**；未连接时可见，与「先装后连」动线一致。不做工具箱独立入口、不做连接摘要。
 
-### 5.2 announce-ip 引导（已定 ✅：表单校验 + 产物注释双管齐下）
+### 5.2 announce-ip 引导（部分实施）
 
 - 集群/哨兵在 host 网络下必须填宿主机**对外可达** IP，填错则集群 create 成功但客户端连不上槽位重定向失败
 - 表单：集群/哨兵模式下必填校验 + 输入框提示文案；产物（分步指南/命令）头部注释附验证命令（`hostname -I` / `curl ifconfig.me`）与坑点说明；不做自动探测
@@ -178,31 +182,23 @@ dir /data
   - **heredoc**：带引号定界符 `<<'EOF'`，内容零转义（天然安全）
 - 表单侧：密码输入框无限制，但生成时检测到含 `'`/`"`/`$`/空格等字符时在产物头部追加醒目注释提醒人工复核；实现上把转义逻辑收敛到生成器单一函数并配单测
 
-### 5.8 与连接管理的联动（已定 ✅：首版纯展示摘要）
+### 5.8 与连接管理的联动（已定 ✅：不做）
 
-- 生成完成后展示「连接摘要」卡片（host/端口/密码/SSL 开关，集群展示任一节点 + 提示集群连接方式）；"预填新建连接"作 P2
+首版不做连接摘要、不做预填新建连接。
 
-### 5.9 持久化默认值（已定 ✅：默认开启）
+### 5.9 持久化默认值（已定 ✅：volume only）
 
-- 数据持久化**默认开启**：`appendonly yes` + `./data-<port>:/data` volume，重启不丢数据更稳妥；表单保留开关可手动关闭（测试要净环境时）
+- 数据持久化**默认开启**：挂载 `data` volume；**有意不写 `appendonly yes`**（RDB 默认即启用；需 AOF 可在生成的 conf 中加）
 - 哨兵配置目录是**另一回事**：哨兵必须挂载独立配置目录（§六.3），不受数据持久化开关控制
 
-### 5.10 是否在产物中内置 redis.conf 调优项？
+### 5.10 是否在产物中内置 redis.conf 调优项？（已定 ✅：不做）
 
-- 如 `maxmemory`、`maxmemory-policy`、`databases`（集群必须 1 库）等
-- 倾向：首版不做内置调优项，只留"高级参数"透传输入框（conf 挂载形态下追加到 `redis.conf` 尾部，见 §五.16；命令行形态下追加到 `redis-server` 参数），避免膨胀
+- 如 `maxmemory`、`maxmemory-policy`、`databases`（集群必须 1 库）等不在表单内置
+- **不做附加参数输入框**（docker run 扩展 vs redis.conf 定制易混）；用户通过分步指南 conf heredoc 或 `vim docker-compose.yml` 自行追加
 
-### 5.11 证书应用内签发（已定 ✅：做，与 openssl 命令生成并存）
+### 5.11 证书应用内签发（已定 ✅：不做）
 
-依赖可行性结论（已核对 `Cargo.toml` / `Cargo.lock`）：
-
-- 现有依赖 `rustls`（ring）、`russh`（rsa）已具备密钥运算基础，但**缺 X.509/ASN.1 编码能力**，需新增 **`rcgen`**（轻量、基于 ring，与现有依赖树无冲突，是当前 Rust 生态自签证书的标准选择）
-- **密钥类型用户可选**（已定 ✅）：**RSA 2048（默认）/ RSA 4096 / ECDSA P-256**。Redis TLS 基于 OpenSSL，RSA 与 ECDSA 都支持；官方 TLS 文档示例用的就是 `genrsa 2048`，用户习惯也以 RSA 为主，故默认 RSA。RSA 生成不走 ring（ring 不支持 RSA 密钥*生成*），走 **rsa crate**——已随 `russh` 在依赖树中，`rcgen` 开 `rsa`/`pem` feature 即可，增量成本很小
-- 用户填写项：CN、SAN（自动带 announce-ip + `127.0.0.1` + `localhost`，可增删）、有效期天数（默认 3650）；输出四段 PEM + 落盘路径建议（`./certs/`）
-- CA + 服务器证书两级结构（与模式 B 的 openssl 命令对齐，便于后续用同一 CA 续期/加签新节点证书）
-- 私钥以明文文本展示/保存：本地工具、用户主动行为，可接受；应用不做磁盘留存
-- **证书文件如何送达服务器**（需讨论）：签发在客户端、部署在服务器，四个文件需落地目标机。倾向：分步指南中直接生成 `cat > ./certs/redis.crt <<'EOF' ... EOF` 的写文件命令，用户粘贴执行即落地；"保存文件后自行上传"作为备选（见 §五.13）
-- **SSL 集群的组网命令**：`redis-cli --cluster create` 在 TLS 下需追加 `--tls --cert ./certs/redis.crt --key ./certs/redis.key --cacert ./certs/ca.crt`（redis-cli 自身也是 TLS 客户端），生成器不能忘拼这组参数；哨兵同理对齐现有 `redis-sentinel-ssl` 样例（`port 0` + `tls-port` + `tls-replication yes`，monitor 指向主节点 tls 端口）
+首版仅 **openssl 命令脚本**（`TlsCertGen.vue` 弹框）；不做 Tauri / rcgen 应用内签发。
 
 ---
 
@@ -237,7 +233,7 @@ dir /data
 
 - 动机：命令行参数形态在集群+SSL 下可达十余个参数，又长又难改；conf 挂载后启动命令仅 `redis-server /etc/redis/redis.conf` 一行；用户编辑 conf 即可追加 `rename-command`/禁用命令、maxmemory 等定制配置，无需懂 compose 与重启命令拼接
 - 形态：每节点一份 `./conf/redis-<port>.conf`（多机时按机器分组，§五.12）；哨兵维持 `./conf/sentinel-<port>/sentinel.conf`（有状态，§六.3）
-- conf 生成内容：port / tls-*、requirepass / masterauth、cluster-enabled / replicaof、cluster-announce-ip / replica-announce-ip、appendonly、`dir /data`（保证 RDB / AOF / 集群 `nodes.conf` 落挂载目录，容器重建不丢）；末尾附注释掉的 `rename-command` 示例引导用户定制；高级参数透传输入框（§5.10）直接追加到 conf 尾部
+- conf 生成内容：port / tls-_、requirepass / masterauth、**replicaof**（哨兵从）、cluster-_、`dir /data`（**不写 appendonly**；调优项用户改 conf 即可）
 - **docker 命令 tab 例外**：保留命令行参数形态（一条 `docker run` 即跑，不依赖先建文件）；compose / 分步指南 tab 默认 conf 挂载；两种形态差异在 UI 文案说明
 - 与 §5.13 的关系：conf 文件数随节点数增长（每节点一份），heredoc 内联写文件成为主要交付方式
 
@@ -254,29 +250,29 @@ dir /data
 7. **CodeMirror 语言**：shell / yaml 双语言高亮切换（检查现有 `plugins/codemirror.ts` 已加载的 language 包，缺则补）
 8. **换行符**：产物面向 Linux，导出文件时必须 **LF**（对齐仓库换行符规范）
 9. **数据目录权限坑**：官方 `redis` 镜像以 `redis` 用户（uid 999）运行，宿主机新建的 `./data-*` 目录 bind mount 后容器内可能无写权限，导致 RDB/AOF 落盘失败；分步指南需包含 `sudo chown -R 999:999 ./data-*`（或 chmod）步骤
-10. **持久化与集群**：集群每节点独立数据目录（`./data-<port>`）；`appendonly yes` 下首次启动会生成 AOF 目录（8.0 为 multi-part AOF），目录结构勿手工乱动
+10. **持久化与集群**：集群每节点独立 data 目录；`nodes.conf` 落挂载目录；需 AOF 时在 conf 中加 `appendonly yes`
 
 ---
 
-## 七、改动文件清单（预期）
-
-### 后端
-
-1. `Cargo.toml`：新增 `rcgen`（自签证书生成，开 `pem`/`rsa` feature；RSA 走已在依赖树的 rsa crate，ECDSA 走已有 ring）
-2. `src-tauri/src/api.rs`：新增 `tls_gen_cert` Tauri command（入参：CN / SAN 列表 / 有效期天数 / **密钥类型（RSA2048/RSA4096/ECDSA-P256）**；返回 `ca.crt / ca.key / redis.crt / redis.key` 四段 PEM），Specta 类型同步导出
+## 七、改动文件清单（实际）
 
 ### 前端
 
-1. `src/utils/redis-install-gen.ts`：生成器核心（模式 × 选项 → 文本产物），纯函数可单测
-2. `src/views/ext/RedisInstall.vue`（或同级工具页）：表单 + MeCode 输出 + tab 切换
-3. 入口注册（主界面工具区）+ 路由
-4. `locales/{zh,en}`：表单与提示文案
-5. `plugins/codemirror.ts`：如缺 shell/yaml 语言包则补
+1. `src/utils/redis-install-gen.ts` — 生成器核心
+2. `src/utils/redis-install-gen.test.ts` — 单测
+3. `src/views/ext/RedisInstall.vue` — 表单 + MeCode 输出
+4. `src/views/ext/TlsCertGen.vue` — openssl 证书脚本弹框
+5. `src/views/key/KeyEmpty.vue` — 入口
+6. `src/locales/{zh-cn,en}.ts` — 文案
+
+### 后端
+
+无（纯前端生成器）。
 
 ### 测试
 
-- 生成器纯函数单测（`vp test`）：覆盖三种模式 × SSL/持久化开关 × 密码转义边界
-- 手工验收：把产物复制到 Linux 真机跑通（对照 `01_redis-install` 现有样例验证等价性，再验证 `--cluster create` 一步成团）
+- `vp test src/utils/redis-install-gen.test.ts`
+- 手工：Linux 真机对照 `zzz/01_redis-install` 样例
 
 ---
 

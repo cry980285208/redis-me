@@ -29,8 +29,6 @@ export interface RedisInstallOptions {
   mountConf: boolean
   ssl: boolean
   timezone: string
-  // 附加 docker run 参数（仅作用于 docker 命令形态）
-  extraArgs: string
 }
 
 export interface RedisInstallNode {
@@ -176,9 +174,10 @@ function finalImage(o: RedisInstallOptions): string {
   return o.alpine && !o.image.includes('alpine') ? `${o.image}-alpine` : o.image
 }
 
-// 哨兵必须挂载配置文件（monitor 等指令无法用命令行参数表达）
-function confMounted(o: RedisInstallOptions): boolean {
-  return o.mountConf || o.mode === 'sentinel'
+// 哨兵进程必须挂载 sentinel.conf；其余节点跟随 mountConf
+function confMounted(o: RedisInstallOptions, node?: RedisInstallNode): boolean {
+  if (node?.role === 'sentinel') return true
+  return o.mountConf
 }
 
 // 节点宿主机目录：单机直接落在模式目录，集群/哨兵每节点一层（以容器名命名）
@@ -188,7 +187,11 @@ function nodeDir(o: RedisInstallOptions, node: RedisInstallNode): string {
 }
 
 // 生成 docker-compose.yml 内容（按机器节点列表）
-function genComposeYaml(o: RedisInstallOptions, ns: RedisInstallNode[]): string {
+function genComposeYaml(
+  o: RedisInstallOptions,
+  ns: RedisInstallNode[],
+  master: RedisInstallNode,
+): string {
   const lines: string[] = ['services:']
   for (const n of ns) {
     lines.push(`  ${n.name}:`)
@@ -209,7 +212,8 @@ function genComposeYaml(o: RedisInstallOptions, ns: RedisInstallNode[]): string 
     if (o.mountData) vols.push(`      - ${nodeDir(o, n)}/data:/data`)
     if (n.role === 'sentinel')
       vols.push(`      - ${nodeDir(o, n)}/sentinel.conf:/etc/redis/sentinel.conf`)
-    else if (confMounted(o)) vols.push(`      - ${nodeDir(o, n)}/redis.conf:/etc/redis/redis.conf`)
+    else if (confMounted(o, n))
+      vols.push(`      - ${nodeDir(o, n)}/redis.conf:/etc/redis/redis.conf`)
     if (o.ssl) vols.push(`      - ${certDir(o.mode)}:/etc/redis:ro`)
     if (vols.length > 0) {
       lines.push('    volumes:')
@@ -217,10 +221,10 @@ function genComposeYaml(o: RedisInstallOptions, ns: RedisInstallNode[]): string 
     }
     if (n.role === 'sentinel')
       lines.push('    command: redis-server /etc/redis/sentinel.conf --sentinel')
-    else if (confMounted(o)) lines.push('    command: redis-server /etc/redis/redis.conf')
+    else if (confMounted(o, n)) lines.push('    command: redis-server /etc/redis/redis.conf')
     else
       lines.push(
-        `    command: redis-server ${confArgs(o, n)
+        `    command: redis-server ${confArgs(o, n, master)
           .map(a => (shellQuote(a) === a ? a : JSON.stringify(a)))
           .join(' ')}`,
       )
@@ -255,7 +259,11 @@ function groupByMachine(nodes: RedisInstallNode[]): [string, RedisInstallNode[]]
 
 // ---------------- 配置文件内容 ----------------
 
-function redisConf(o: RedisInstallOptions, node: RedisInstallNode): string {
+function redisConf(
+  o: RedisInstallOptions,
+  node: RedisInstallNode,
+  master: RedisInstallNode,
+): string {
   const l: string[] = []
   l.push(...portLines(o.ssl, node.port))
   l.push('bind 0.0.0.0', 'protected-mode no')
@@ -271,7 +279,11 @@ function redisConf(o: RedisInstallOptions, node: RedisInstallNode): string {
     )
   } else if (o.mode === 'sentinel' && node.role === 'replica') {
     if (o.password) l.push(`masterauth ${confQuote(o.password)}`)
-    l.push(`replica-announce-ip ${node.ip}`, `replica-announce-port ${node.port}`)
+    l.push(
+      `replicaof ${master.ip} ${master.port}`,
+      `replica-announce-ip ${node.ip}`,
+      `replica-announce-port ${node.port}`,
+    )
   }
   l.push('dir /data')
   if (o.ssl) {
@@ -306,7 +318,11 @@ function sentinelConf(
 
 // 不挂载配置文件时的命令行参数形态（哨兵不适用）
 // Docker 官方镜像 entrypoint 已默认 --bind 0.0.0.0 --protected-mode no --dir /data，此处仅补充差异参数
-function confArgs(o: RedisInstallOptions, node: RedisInstallNode): string[] {
+function confArgs(
+  o: RedisInstallOptions,
+  node: RedisInstallNode,
+  master: RedisInstallNode,
+): string[] {
   const args: string[] = []
   if (o.ssl) {
     args.push('--port', '0', '--tls-port', `${node.port}`)
@@ -325,6 +341,10 @@ function confArgs(o: RedisInstallOptions, node: RedisInstallNode): string[] {
       '--cluster-announce-bus-port',
       `${node.port + 10000}`,
     )
+  } else if (o.mode === 'sentinel' && node.role === 'replica') {
+    if (o.password) args.push('--masterauth', o.password)
+    args.push('--replicaof', master.ip, `${master.port}`, '--replica-announce-ip', node.ip)
+    if (node.port !== 6379) args.push('--replica-announce-port', `${node.port}`)
   }
   if (o.ssl) {
     args.push(
@@ -336,13 +356,18 @@ function confArgs(o: RedisInstallOptions, node: RedisInstallNode): string[] {
       '/etc/redis/ca.crt',
     )
     if (o.mode === 'cluster') args.push('--tls-replication', 'yes', '--tls-cluster', 'yes')
+    else if (o.mode === 'sentinel' && node.role === 'replica') args.push('--tls-replication', 'yes')
   }
   return args
 }
 
 // ---------------- docker run 形态 ----------------
 
-function dockerRunCmd(o: RedisInstallOptions, node: RedisInstallNode): string {
+function dockerRunCmd(
+  o: RedisInstallOptions,
+  node: RedisInstallNode,
+  master: RedisInstallNode,
+): string {
   const dir = nodeDir(o, node)
   const parts = [`docker run -d --name ${node.name} --restart unless-stopped`]
   if (hostNetwork(o.mode)) parts.push('--network host')
@@ -351,18 +376,17 @@ function dockerRunCmd(o: RedisInstallOptions, node: RedisInstallNode): string {
   if (o.mountData) parts.push(`-v ${dir}/data:/data`)
   if (node.role === 'sentinel') {
     parts.push(`-v ${dir}/sentinel.conf:/etc/redis/sentinel.conf`)
-  } else if (confMounted(o)) {
+  } else if (confMounted(o, node)) {
     parts.push(`-v ${dir}/redis.conf:/etc/redis/redis.conf`)
   }
   if (o.ssl) parts.push(`-v ${certDir(o.mode)}:/etc/redis:ro`)
-  if (o.extraArgs.trim()) parts.push(o.extraArgs.trim())
   parts.push(finalImage(o))
   if (node.role === 'sentinel') {
     parts.push('redis-server /etc/redis/sentinel.conf --sentinel')
-  } else if (confMounted(o)) {
+  } else if (confMounted(o, node)) {
     parts.push('redis-server /etc/redis/redis.conf')
   } else {
-    parts.push(['redis-server', ...confArgs(o, node).map(shellQuote)].join(' '))
+    parts.push(['redis-server', ...confArgs(o, node, master).map(shellQuote)].join(' '))
   }
   return parts.join(' \\\n  ')
 }
@@ -492,7 +516,7 @@ export function genRedisInstall(
   const commands: RedisInstallStep[] = []
   for (const [ip, ns] of machines) {
     const blocks: string[] = []
-    for (const n of ns) blocks.push(dockerRunCmd(o, n))
+    for (const n of ns) blocks.push(dockerRunCmd(o, n, master))
     commands.push({
       title: machineTitle('docker run', ip),
       code: blocks.join('\n\n'),
@@ -505,7 +529,7 @@ export function genRedisInstall(
   for (const [ip, ns] of machines) {
     compose.push({
       title: `${labels.composeFile} (${ip})`,
-      code: genComposeYaml(o, ns),
+      code: genComposeYaml(o, ns, master),
       lang: 'yaml',
     })
   }
@@ -516,7 +540,7 @@ export function genRedisInstall(
   for (const [ip, ns] of machines) {
     const dirs: string[] = []
     for (const n of ns) {
-      if (confMounted(o)) dirs.push(nodeDir(o, n))
+      if (confMounted(o, n)) dirs.push(nodeDir(o, n))
       if (o.mountData) dirs.push(`${nodeDir(o, n)}/data`)
     }
     if (o.ssl) dirs.push(certs)
@@ -531,7 +555,8 @@ export function genRedisInstall(
     for (const n of ns) {
       if (n.role === 'sentinel')
         blocks.push(heredoc(`${nodeDir(o, n)}/sentinel.conf`, sentinelConf(o, n, master)))
-      else if (confMounted(o)) blocks.push(heredoc(`${nodeDir(o, n)}/redis.conf`, redisConf(o, n)))
+      else if (confMounted(o, n))
+        blocks.push(heredoc(`${nodeDir(o, n)}/redis.conf`, redisConf(o, n, master)))
     }
     if (!o.ssl) blocks.push(`chown -R ${REDIS_UID} ${root}`)
     if (blocks.length > 0) {
@@ -549,7 +574,7 @@ export function genRedisInstall(
   for (const [ip, ns] of machines) {
     const dir = nodeDir(o, ns[0])
     const code = [
-      heredoc(`${dir}/docker-compose.yml`, genComposeYaml(o, ns)),
+      heredoc(`${dir}/docker-compose.yml`, genComposeYaml(o, ns, master)),
       '',
       `cd ${dir}`,
       'vim docker-compose.yml  # Review and adjust if needed',

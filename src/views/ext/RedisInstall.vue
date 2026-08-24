@@ -32,7 +32,6 @@ const form = reactive({
   mountConf: true,
   ssl: false,
   timezone: 'Asia/Shanghai',
-  extraArgs: '',
 })
 
 // 证书生成弹框引用
@@ -64,7 +63,6 @@ const options = computed<RedisInstallOptions>(() => ({
   mountConf: form.mountConf,
   ssl: form.ssl,
   timezone: form.timezone,
-  extraArgs: form.extraArgs,
 }))
 
 const labels = computed<RedisInstallLabels>(() => ({
@@ -237,16 +235,6 @@ const timezoneOptions = [
                 </span>
               </el-option>
             </el-select>
-          </el-form-item>
-
-          <el-form-item>
-            <template #label>
-              <me-icon
-                icon="me-icon-info"
-                :name="t('redisInstall.extraArgs')"
-                :info="t('redisInstall.extraArgsTip')" />
-            </template>
-            <el-input v-model="form.extraArgs" placeholder="--memory 2g" />
           </el-form-item>
         </el-form>
       </div>

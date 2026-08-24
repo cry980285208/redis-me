@@ -39,7 +39,6 @@ function baseOptions(partial: Partial<RedisInstallOptions> = {}): RedisInstallOp
     mountConf: true,
     ssl: false,
     timezone: 'Asia/Shanghai',
-    extraArgs: '',
     ...partial,
   }
 }
@@ -111,6 +110,7 @@ describe('genInstallNodes / genRedisInstall', () => {
     const guideCode = out.guide[0].code
     expect(guideCode).toContain('sentinel monitor mymaster 10.0.0.1 6379 2')
     expect(guideCode).toContain('sentinel auth-pass mymaster')
+    expect(guideCode).toContain('replicaof 10.0.0.1 6379')
   })
 
   it('密码含特殊字符：conf 双引号转义、shell 单引号转义', () => {
@@ -241,5 +241,19 @@ describe('genInstallNodes / genRedisInstall', () => {
     const out = genRedisInstall(baseOptions({ password: 'EOF' }), labels)
     // 内容含 EOF 字样不破坏结构（定界符或内容安全）
     expect(out.guide[0].code).toContain('requirepass')
+  })
+
+  it('哨兵从节点未外置配置：docker run 携带 replicaof', () => {
+    const out = genRedisInstall(
+      baseOptions({
+        mode: 'sentinel',
+        ips: ['10.0.0.1', '10.0.0.2'],
+        mountConf: false,
+        password: 'pass',
+      }),
+      labels,
+    )
+    const allCmds = out.commands.map(c => c.code).join('\n')
+    expect(allCmds).toContain('--replicaof 10.0.0.1 6379')
   })
 })

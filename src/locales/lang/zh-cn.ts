@@ -33,12 +33,7 @@ export default {
     writableTip: '切换为可写模式',
   },
 
-  keyEmpty: {
-    tagline: '现代、轻量、跨平台的 Redis 桌面客户端',
-    sourceCode: '源码地址',
-    bugReport: '缺陷反馈',
-    redisInstall: 'Redis 安装',
-  },
+  keyEmpty: { tagline: '现代、轻量、跨平台的 Redis 桌面客户端' },
 
   setting: {
     toDefault: '恢复默认',
@@ -412,8 +407,6 @@ export default {
     genCert: '生成证书',
     timezone: '时区',
     tzPlaceholder: '选择或输入',
-    extraArgs: '附加参数',
-    extraArgsTip: '追加到 docker run 的额外参数，如 --memory 2g',
     tabGuide: '分步指南',
     tabCommands: 'Docker Run',
     tabCompose: 'Docker Compose',

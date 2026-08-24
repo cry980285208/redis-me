@@ -39,12 +39,7 @@ export default {
     writableTip: 'Changed To Writable',
   },
 
-  keyEmpty: {
-    tagline: 'Modern, Lightweight, Cross-Platform',
-    sourceCode: 'Github',
-    bugReport: 'Bug Report',
-    redisInstall: 'Redis Install',
-  },
+  keyEmpty: { tagline: 'Modern, Lightweight, Cross-Platform' },
 
   setting: {
     toDefault: 'Restore Default',
@@ -423,8 +418,6 @@ export default {
     genCert: 'Generate Cert',
     timezone: 'Timezone',
     tzPlaceholder: 'Select or type',
-    extraArgs: 'Extra Args',
-    extraArgsTip: 'Extra arguments appended to docker run, e.g. --memory 2g',
     tabGuide: 'Step Guide',
     tabCommands: 'Docker Run',
     tabCompose: 'Docker Compose',
