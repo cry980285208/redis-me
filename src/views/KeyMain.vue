@@ -46,8 +46,8 @@ import {
   CONN_REFRESH,
   INFO_REFRESH,
   KEY_DELETE,
+  KEY_OPEN_TAB,
   KEY_RENAME,
-  KEY_REFRESH,
   meConfirm,
   meCommands,
   meCopy,
@@ -594,12 +594,10 @@ const showClusterDbLabel = computed(() =>
 
 const keyPrefix = ref('')
 
-// 选中键
+// 选中键：多TAB → 由 RedisValue 的 KEY_OPEN_TAB 监听打开/聚焦键值 TAB
 function chooseKey(redisKey: RedisKey_Deserialize): void {
   keyPrefix.value = redisKey.key + '-copy'
-  share.redisKey = redisKey
-  share.tabName = 'value'
-  bus.emit(KEY_REFRESH)
+  bus.emit(KEY_OPEN_TAB, { connId: share.conn!.id, redisKey })
 }
 
 function chooseFolder(folder: string): void {

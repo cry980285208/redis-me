@@ -54,6 +54,14 @@ export interface AppMainShare {
   exportImportingTip: string
   exportImportingPercentage: number
   capabilities: ServerCapabilities
+  /** 多TAB：已打开的连接 TAB 列表（最多 10） */
+  openConns: UiConn[]
+  /** 多TAB：当前激活连接 TAB 的 conn.id */
+  activeConnId: string | null
+  /** 多TAB：已打开的键值 TAB 列表（最多 10，跨连接持久化） */
+  openKeys: Array<{ id: string; connId: string; db: number; redisKey: RedisKey_Deserialize }>
+  /** 多TAB：当前激活键值 TAB 的 id */
+  activeKeyId: string | null
 }
 
 /** AppMain 注入的更新/下载状态（与 `appProvideKey` 配对） */
@@ -82,6 +90,10 @@ export interface ConnUiInject {
   /** 由 KeyMain 挂载时赋值，左侧键树滚动到指定键（复用新建键定位） */
   scrollKeyToTree: (redisKey: RedisKey_Deserialize) => void
   runConnAction: (action: ConnShortcutAction) => void
+  /** 多TAB：打开/聚焦连接 TAB（含 10 上限校验，首次打开才 connect，切换不重连） */
+  openConnTab: (conn: UiConn) => void
+  /** 多TAB：关闭连接 TAB（disconnect + 移除 + 切到相邻） */
+  closeConnTab: (connId: string) => void
 }
 
 export const connUiProvideKey: InjectionKey<ConnUiInject> = Symbol('redis-me.connUi')

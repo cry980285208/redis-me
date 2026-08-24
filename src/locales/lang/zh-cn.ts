@@ -128,6 +128,7 @@ export default {
     clearConnections: '清空连接',
     clearConnectionsConfirm: '确认清空全部连接？此操作不可恢复！',
     clearConnectionsOk: '已清空全部连接',
+    connTabsMax: '最多打开 10 个连接',
     keyword: '模糊筛选（名称、主机）',
     color: '颜色',
     other: '其他',
@@ -838,6 +839,11 @@ export default {
     },
   },
 
+  connTabs: {
+    add: '新增连接',
+    closeAll: '关闭全部连接',
+  },
+
   redisValue: {
     optional: '可选输入',
     hashKey: '哈希键',
@@ -846,6 +852,8 @@ export default {
     ttlHintReadonly: '键的过期时间',
     ttlForever: '永久',
     deleteKey: '删除键',
+    keyTabsMax: '最多打开 10 个键值',
+    keyTabsCloseAll: '关闭全部键值',
     prettyHint: '默认开启美化，开启后针对hash/list/set/json等进行格式化，关闭后显示原始值toString',
     locationHint: '查看键所在集群节点',
     locationTitle: '集群节点',

@@ -12,7 +12,7 @@ import { meType, toKeyTypeLabel } from '@/utils/redis-display'
 import { sameRedisKey } from '@/utils/redis-key'
 import {
   bus,
-  KEY_REFRESH,
+  KEY_OPEN_TAB,
   meConfirm,
   meCopy,
   meDeleteKey,
@@ -114,11 +114,9 @@ function memoryUsage() {
   refresh()
 }
 
-// 选中键
+// 选中键：多TAB → 由 RedisValue 的 KEY_OPEN_TAB 监听打开/聚焦键值 TAB
 function chooseKey(redisKey: RedisKey_Deserialize) {
-  share.redisKey = redisKey
-  share.tabName = 'value'
-  bus.emit(KEY_REFRESH)
+  bus.emit(KEY_OPEN_TAB, { connId: share.conn!.id, redisKey })
 }
 
 // 删除键

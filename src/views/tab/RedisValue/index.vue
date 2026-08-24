@@ -62,6 +62,7 @@ import {
 import {
   bus,
   KEY_DELETE,
+  KEY_OPEN_TAB,
   KEY_REFRESH,
   meCommands,
   meConfirm,
@@ -1630,6 +1631,138 @@ const textEntries = computed(() => {
 })
 // #endregion
 
+// #region 多TAB：键值 TAB（最多 10）
+// 键值 TAB 数据存储在全局 share 中，确保切换连接（组件销毁重建）时数据不丢失
+const MAX_KEY_TABS = 10
+
+type KeyOpenTabPayload = { connId: string; redisKey: RedisKey_Deserialize }
+
+// 当前连接可见的键值 TAB（根据当前连接 ID 和 DB 过滤）
+const visibleKeys = computed(() => {
+  if (!share.conn?.id) return []
+  return share.openKeys.filter(k => k.connId === share.conn!.id && k.db === share.conn!.db)
+})
+
+// 打开/聚焦一个键值 TAB：同名键去重；已满（10）则提示且不新增。
+function openKeyTab(connId: string, redisKey: RedisKey_Deserialize): void {
+  // 仅处理当前连接的键；跨连接的 KEY_OPEN_TAB 忽略，避免串台
+  if (share.conn?.id !== connId) return
+  const existing = share.openKeys.find(
+    k => k.connId === connId && k.db === share.conn!.db && k.redisKey.key === redisKey.key
+  )
+  if (existing) {
+    existing.redisKey = redisKey // 更新为最新引用（类型/TTL 可能变）
+    share.activeKeyId = existing.id
+    share.redisKey = redisKey
+    share.tabName = 'value'
+    bus.emit(KEY_REFRESH)
+    return
+  }
+  // 检查当前连接（当前 DB）的键值数量是否达到上限，而不是全局数量
+  const currentConnCount = share.openKeys.filter(
+    k => k.connId === connId && k.db === share.conn!.db
+  ).length
+  if (currentConnCount >= MAX_KEY_TABS) {
+    meWarn(t('redisValue.keyTabsMax'))
+    return
+  }
+  share.openKeys.push({
+    id: `kt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    connId: connId,
+    db: share.conn!.db,
+    redisKey,
+  })
+  share.activeKeyId = share.openKeys[share.openKeys.length - 1]!.id
+  share.redisKey = redisKey
+  share.tabName = 'value'
+  bus.emit(KEY_REFRESH)
+}
+
+// 点击 TAB：切换激活并加载该键
+function switchKeyTab(id: string): void {
+  const tab = share.openKeys.find(k => k.id === id)
+  if (!tab) return
+  share.activeKeyId = id
+  share.redisKey = tab.redisKey
+  share.tabName = 'value'
+  bus.emit(KEY_REFRESH)
+}
+
+// 关闭 TAB：移除；若关闭的是激活项，则切到相邻（优先右侧，否则左侧，否则清空）
+function closeKeyTab(name: string | number): void {
+  const id = String(name)
+  const idx = share.openKeys.findIndex(k => k.id === id)
+  if (idx === -1) return
+  share.openKeys.splice(idx, 1)
+  if (share.activeKeyId !== id) return
+  // 从剩余可见的 TAB 中寻找邻居
+  const remaining = share.openKeys.filter(
+    k => share.conn && k.connId === share.conn.id && k.db === share.conn.db
+  )
+  const neighborIdx = remaining.findIndex(k => k.id === id)
+  const neighbor = remaining[neighborIdx] ?? remaining[neighborIdx - 1] ?? null
+  if (neighbor) {
+    share.activeKeyId = neighbor.id
+    share.redisKey = neighbor.redisKey
+    bus.emit(KEY_REFRESH)
+  } else {
+    share.activeKeyId = null
+    share.redisKey = null
+    redisValue.value = null
+  }
+}
+
+// 关闭所有键值 TAB（针对当前连接）
+function closeAllKeyTabs(): void {
+  if (!share.conn) return
+  // 过滤掉当前连接的所有 TAB
+  share.openKeys = share.openKeys.filter(
+    k => !(k.connId === share.conn!.id && k.db === share.conn!.db)
+  )
+  share.activeKeyId = null
+  share.redisKey = null
+  redisValue.value = null
+}
+
+// el-tabs v-model：get 返回当前激活 id；set 由用户点击触发切换
+const activeKeyTabName = computed<{ get: () => string; set: (v: string) => void }>({
+  get: () => share.activeKeyId ?? '',
+  set: (name: string) => switchKeyTab(name),
+})
+
+const onKeyOpenTabBus = (payload: KeyOpenTabPayload) =>
+  openKeyTab(payload.connId, payload.redisKey)
+
+// 切换连接 / 切换 DB 时，自动激活该连接/库的第一个 TAB 或清空（保留所有 TAB 数据）
+watch(
+  [() => share.conn?.id, () => share.conn?.db],
+  () => {
+    if (!share.conn?.id) {
+      share.activeKeyId = null
+      share.redisKey = null
+      redisValue.value = null
+      return
+    }
+    const currentTabs = share.openKeys.filter(
+      k => k.connId === share.conn!.id && k.db === share.conn!.db
+    )
+    if (currentTabs.length > 0) {
+      // 如果当前激活的 TAB 属于新连接，直接保留，否则切换到第一个
+      const stillValid = share.activeKeyId && currentTabs.find(k => k.id === share.activeKeyId)
+      if (!stillValid) {
+        share.activeKeyId = currentTabs[0].id
+        share.redisKey = currentTabs[0].redisKey
+        bus.emit(KEY_REFRESH)
+      }
+    } else {
+      share.activeKeyId = null
+      share.redisKey = null
+      redisValue.value = null
+    }
+  },
+)
+// #endregion
+
 // #region 生命周期
 // KEY_REFRESH=选中键加载值；与 KeyMain F5 刷新键列表无关
 const onKeyRefreshBus = () => {
@@ -1640,11 +1773,13 @@ const onKeyRefreshBus = () => {
 onMounted(() => {
   bus.on(KEY_REFRESH, onKeyRefreshBus)
   bus.on(KEY_DELETE, deleteKey)
+  bus.on(KEY_OPEN_TAB, onKeyOpenTabBus)
 })
 
 onUnmounted(() => {
   bus.off(KEY_REFRESH, onKeyRefreshBus)
   bus.off(KEY_DELETE, deleteKey)
+  bus.off(KEY_OPEN_TAB, onKeyOpenTabBus)
   if (timer) clearInterval(timer)
   if (autoRefreshTimer) clearInterval(autoRefreshTimer)
 })
@@ -1654,6 +1789,30 @@ onUnmounted(() => {
 <template>
   <!-- 扫描进度由搜索框内的进度环展示，避免 loading 遮罩拦截暂停/继续操作 -->
   <div class="redis-value">
+    <!-- 多TAB：键值 TAB 条（最多 10） -->
+    <div v-if="visibleKeys.length" class="key-tab-strip">
+      <el-tabs
+        v-model="activeKeyTabName"
+        type="card"
+        @tab-remove="closeKeyTab">
+        <el-tab-pane
+          v-for="tab in visibleKeys"
+          :key="tab.id"
+          :name="tab.id"
+          closable>
+          <template #label>
+            <span class="key-tab-label" :title="tab.redisKey.key">{{ tab.redisKey.key }}</span>
+          </template>
+        </el-tab-pane>
+      </el-tabs>
+      <span
+        class="close-all-keys-btn"
+        :title="t('redisValue.keyTabsCloseAll')"
+        @click="closeAllKeyTabs">
+        <me-icon icon="el-icon-circle-close" />
+      </span>
+    </div>
+
     <template v-if="share.redisKey && redisValue">
       <!-- 顶栏 -->
       <div class="value-header">
@@ -2385,6 +2544,135 @@ onUnmounted(() => {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+
+  // 多TAB：键值 TAB 条
+  .key-tab-strip {
+    flex-shrink: 0;
+    // padding: 0;  // TabMain 已经提供了 padding，这里不需要额外 padding
+    border-bottom: 1px solid var(--el-border-color);
+    display: flex;
+    align-items: center;
+
+    :deep(.el-tabs) {
+      // 让 tabs 占据剩余空间，将按钮组推到最右侧
+      flex: 1;
+      min-width: 0;
+
+      .el-tabs__header {
+        margin: 0 0 -1px 0;
+      }
+
+      // 滚动容器及溢出箭头高度对齐
+      .el-tabs__nav-wrap {
+        height: 28px;
+      }
+
+      // 溢出时左右切换按钮：实心背景 + 高度/宽度对齐，与 TAB 行齐平
+      .el-tabs__nav-prev,
+      .el-tabs__nav-next {
+        position: absolute;
+        top: 0;
+        height: 28px;
+        width: 22px;
+        line-height: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background-color: var(--el-fill-color-light);
+        border: 1px solid var(--el-border-color);
+        border-radius: 4px;
+        z-index: 2;
+        cursor: pointer;
+        color: var(--el-text-color-regular);
+        transition: background-color 0.2s;
+
+        &:hover {
+          background-color: var(--el-fill-color);
+          color: var(--el-color-primary);
+        }
+
+        .el-icon {
+          font-size: 14px;
+        }
+      }
+      .el-tabs__nav-prev {
+        left: 0;
+        border-right: none;
+      }
+      .el-tabs__nav-next {
+        right: 0;
+        border-left: none;
+      }
+
+      .el-tabs__item {
+        width: auto;
+        max-width: 280px;
+        height: 28px;
+        line-height: 28px;
+        display: flex;
+        align-items: center;
+        overflow: hidden;
+        // 去除默认 padding
+        padding: 0 10px !important;
+        box-sizing: border-box;
+        // 确保没有 margin
+        margin: 0;
+        border: 1px solid var(--el-border-color) !important;
+        border-bottom: none !important;
+        // 激活状态下的样式
+        &.is-active {
+          border-bottom: 2px solid var(--el-color-primary) !important;
+        }
+        
+        // 标签文本区域：超长省略
+        .key-tab-label {
+          flex: 1;
+          min-width: 0;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          margin-right: 6px;
+          font-size: 13px;
+        }
+        
+        // 关闭按钮常显且美观
+        .el-icon-close,
+        .is-icon-close {
+          flex-shrink: 0;
+          opacity: 1 !important;
+          display: inline-flex !important;
+          width: 14px;
+          height: 14px;
+          font-size: 12px;
+          border-radius: 50%;
+          justify-content: center;
+          align-items: center;
+          margin-left: 6px;
+          color: var(--el-text-color-secondary);
+          transition: background-color 0.2s, color 0.2s;
+          
+          &:hover {
+            background-color: var(--el-color-danger-light-9);
+            color: var(--el-color-danger);
+          }
+        }
+      }
+    }
+    
+    .close-all-keys-btn {
+      flex-shrink: 0;
+      margin-left: auto; // 关键：推到最右侧
+      cursor: pointer;
+      font-size: 18px;
+      color: var(--el-text-color-secondary);
+      display: inline-flex;
+      align-items: center;
+
+      &:hover {
+        color: var(--el-color-danger);
+      }
+    }
+  }
 
   // 顶栏：键名 / TTL / 收藏删除更多
   .value-header {

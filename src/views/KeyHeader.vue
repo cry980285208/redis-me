@@ -4,7 +4,6 @@ import { inject, nextTick, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { shareProvideKey, connUiProvideKey } from '@/types/me-interface'
-import { openNewWindow } from '@/utils/app-window'
 import { getConnIcon } from '@/utils/conn'
 import { bus, CONN_REFRESH, meCommands, meOk } from '@/utils/util'
 import AppAbout from '@/views/ext/AppAbout.vue'
@@ -44,7 +43,8 @@ async function handleCommand(command: string): Promise<void> {
     Object.assign(share.capabilities, capabilities)
     bus.emit(CONN_REFRESH)
   } else if ('closeConn' === command) {
-    share.conn = null
+    // 多TAB：关闭当前连接 TAB（替代直接置空 share.conn）
+    if (share.conn) connUi.closeConnTab(share.conn.id)
   } else if ('commandLog' === command) {
     if (!share.conn) {
       meOk(t('keyHeader.commandLogNeedConn'))
@@ -56,8 +56,6 @@ async function handleCommand(command: string): Promise<void> {
     })
   } else if ('setting' === command) {
     openSetting()
-  } else if ('window' === command) {
-    await openNewWindow()
   } else if ('info' === command) {
     aboutRef.value?.open()
     // } else if ('social' === command) {
@@ -72,13 +70,14 @@ async function handleCommand(command: string): Promise<void> {
 <template>
   <div class="key-header">
     <el-select
-      v-model="share.conn"
+      :model-value="share.conn"
       :placeholder="t('keyHeader.connHint')"
       class="conn"
       clearable
       filterable
       :disabled="share.connList.length === 0"
-      value-key="id">
+      value-key="id"
+      @change="(conn: any) => conn && connUi.openConnTab(conn)">
       <el-option v-for="item in share.connList" :label="item.name" :value="item" :key="item.id">
         <div :style="{ color: item?.color }">
           <me-icon :icon="getConnIcon(item)" :name="item.name" />
@@ -108,10 +107,7 @@ async function handleCommand(command: string): Promise<void> {
             </el-dropdown-item>
           </template>
 
-          <el-dropdown-item command="window" :divided="!!share.conn">
-            <me-icon :name="t('keyHeader.newWindow')" icon="me-icon-window" />
-          </el-dropdown-item>
-          <el-dropdown-item command="setting" divided>
+          <el-dropdown-item command="setting" :divided="!!share.conn">
             <me-icon :name="t('keyHeader.setting')" icon="el-icon-setting" />
           </el-dropdown-item>
           <!-- 社交入口暂隐藏；恢复时同步解开 AppOfficial 的 import / ref / 组件挂载 -->
