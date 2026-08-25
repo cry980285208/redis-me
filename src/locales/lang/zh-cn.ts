@@ -420,6 +420,7 @@ export default {
     stepCluster: '初始化集群',
     stepVerify: '验证',
     composeFile: 'compose 文件',
+    reviewCompose: '如需调整请先编辑',
   },
 
   redisCert: {

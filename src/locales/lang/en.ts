@@ -431,6 +431,7 @@ export default {
     stepCluster: 'Initialize Cluster',
     stepVerify: 'Verify',
     composeFile: 'compose file',
+    reviewCompose: 'Review and adjust if needed',
   },
 
   redisCert: {

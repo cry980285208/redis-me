@@ -74,6 +74,7 @@ const labels = computed<RedisInstallLabels>(() => ({
   stepCluster: t('redisInstall.stepCluster'),
   stepVerify: t('redisInstall.stepVerify'),
   composeFile: t('redisInstall.composeFile'),
+  reviewCompose: t('redisInstall.reviewCompose'),
 }))
 
 const output = computed(() => genRedisInstall(options.value, labels.value))

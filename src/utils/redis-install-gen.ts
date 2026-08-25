@@ -48,6 +48,8 @@ export interface RedisInstallLabels {
   stepCluster: string
   stepVerify: string
   composeFile: string
+  // 启动前复核 compose 的注释文案
+  reviewCompose: string
 }
 
 // 证书生成脚本注释文案（i18n）
@@ -568,15 +570,16 @@ export function genRedisInstall(
   if (o.ssl) {
     sections.push({ header: labels.stepCert, code: certStepOpenssl(o, labels, multi).code })
   }
-  // 4. 启动容器：写入 compose 文件 → cd 目录 → 编辑 → 启动
+  // 4. 启动容器：compose 落在模式根目录（/data/redis-{mode}），节点 conf/data 仍在各子目录
   for (const [ip, ns] of machines) {
-    const dir = nodeDir(o, ns[0])
     const code = [
-      heredoc(`${dir}/docker-compose.yml`, genComposeYaml(o, ns, master)),
+      heredoc(`${root}/docker-compose.yml`, genComposeYaml(o, ns, master)),
       '',
-      `cd ${dir}`,
-      'vim docker-compose.yml  # Review and adjust if needed',
+      `cd ${root}`,
+      `# ${labels.reviewCompose}`,
+      '# vim docker-compose.yml',
       'docker compose up -d',
+      '# docker compose logs',
     ].join('\n')
     sections.push({ header: multi ? `${labels.stepStart} — ${ip}` : labels.stepStart, code })
   }

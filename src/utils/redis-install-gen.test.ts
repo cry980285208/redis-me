@@ -21,6 +21,7 @@ const labels: RedisInstallLabels = {
   stepCluster: 'Initialize Cluster',
   stepVerify: 'Verify',
   composeFile: 'compose file',
+  reviewCompose: 'Review and adjust if needed',
 }
 
 function baseOptions(partial: Partial<RedisInstallOptions> = {}): RedisInstallOptions {
@@ -92,6 +93,10 @@ describe('genInstallNodes / genRedisInstall', () => {
     expect(guideCode).toContain('cluster-enabled yes')
     expect(guideCode).toContain('cluster-announce-bus-port 17001')
     expect(guideCode).toContain('/data/redis-cluster')
+    // compose 落在模式根目录，不是某个节点子目录
+    expect(guideCode).toContain('cat > /data/redis-cluster/docker-compose.yml')
+    expect(guideCode).toContain('cd /data/redis-cluster')
+    expect(guideCode).not.toContain('/redis-7001/docker-compose.yml')
   })
 
   it('哨兵：主从端口递增，哨兵端口段 +20000，quorum 正确', () => {
@@ -228,8 +233,10 @@ describe('genInstallNodes / genRedisInstall', () => {
     expect(guideCode).toContain('services:')
     // cd 到工作目录，无需 -f 指定文件
     expect(guideCode).toContain('cd /data/redis-single')
-    expect(guideCode).toContain('vim docker-compose.yml')
+    expect(guideCode).toContain('# Review and adjust if needed')
+    expect(guideCode).toContain('# vim docker-compose.yml')
     expect(guideCode).toContain('docker compose up -d')
+    expect(guideCode).toContain('# docker compose logs')
     expect(guideCode).not.toContain('docker compose -f')
     expect(guideCode).not.toContain('docker run')
   })
