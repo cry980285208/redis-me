@@ -74,16 +74,17 @@ export interface RedisInstallOutput {
   guide: RedisInstallStep[]
 }
 
-// 宿主机目录约定：/data 下按模式建安装目录，节点位于 <root>/<容器名>/{data,*.conf}，证书位于 <root>/cert
+// 宿主机目录约定：/data 下按模式建安装目录
+// 节点：<root>/ 或 <root>/<容器名>/{conf,data}；证书共享：<root>/cert；compose 落在 <root>
 function hostRoot(mode: RedisInstallMode): string {
   return `/data/redis-${mode}`
 }
 function certDir(mode: RedisInstallMode): string {
   return `${hostRoot(mode)}/cert`
 }
-// 官方镜像以 redis 用户（uid 999）运行，数据/证书目录需授权
+// 官方镜像以 redis 用户（uid 999）运行，数据/证书/配置目录需授权
 const REDIS_UID = '999:999'
-// 容器内证书挂载点（与 redis.conf 分目录，避免 bind mount 覆盖 /etc/redis）
+// 容器内证书挂载点（嵌套在 /etc/redis 下，与 conf 目录挂载配合）
 const CONTAINER_CERT_DIR = '/etc/redis/cert'
 
 // 各模式默认起始端口：集群惯例 7001 段（7001~7006）；单机/哨兵用经典 6379 段（哨兵组 +20000）
@@ -189,6 +190,10 @@ function nodeDir(o: RedisInstallOptions, node: RedisInstallNode): string {
   const root = hostRoot(o.mode)
   return o.mode === 'single' ? root : `${root}/${node.name}`
 }
+// 配置目录：挂到容器 /etc/redis，供 conf rewrite 写临时文件
+function confDir(o: RedisInstallOptions, node: RedisInstallNode): string {
+  return `${nodeDir(o, node)}/conf`
+}
 
 // 生成 docker-compose.yml 内容（按机器节点列表）
 function genComposeYaml(
@@ -214,10 +219,8 @@ function genComposeYaml(
     }
     const vols: string[] = []
     if (o.mountData) vols.push(`      - ${nodeDir(o, n)}/data:/data`)
-    if (n.role === 'sentinel')
-      vols.push(`      - ${nodeDir(o, n)}/sentinel.conf:/etc/redis/sentinel.conf`)
-    else if (confMounted(o, n))
-      vols.push(`      - ${nodeDir(o, n)}/redis.conf:/etc/redis/redis.conf`)
+    // conf 目录挂到 /etc/redis（rewrite 需同目录可写）；证书再嵌套挂 /etc/redis/cert
+    if (n.role === 'sentinel' || confMounted(o, n)) vols.push(`      - ${confDir(o, n)}:/etc/redis`)
     if (o.ssl) vols.push(`      - ${certDir(o.mode)}:${CONTAINER_CERT_DIR}:ro`)
     if (vols.length > 0) {
       lines.push('    volumes:')
@@ -378,10 +381,9 @@ function dockerRunCmd(
   else parts.push(`-p ${node.port}:${node.port}`)
   if (o.timezone) parts.push(`-e TZ=${shellQuote(o.timezone)}`)
   if (o.mountData) parts.push(`-v ${dir}/data:/data`)
-  if (node.role === 'sentinel') {
-    parts.push(`-v ${dir}/sentinel.conf:/etc/redis/sentinel.conf`)
-  } else if (confMounted(o, node)) {
-    parts.push(`-v ${dir}/redis.conf:/etc/redis/redis.conf`)
+  // conf 目录挂到 /etc/redis，供 rewrite 写临时文件
+  if (node.role === 'sentinel' || confMounted(o, node)) {
+    parts.push(`-v ${confDir(o, node)}:/etc/redis`)
   }
   if (o.ssl) parts.push(`-v ${certDir(o.mode)}:${CONTAINER_CERT_DIR}:ro`)
   parts.push(finalImage(o))
@@ -540,7 +542,7 @@ export function genRedisInstall(
   for (const [ip, ns] of machines) {
     const dirs: string[] = []
     for (const n of ns) {
-      if (confMounted(o, n)) dirs.push(nodeDir(o, n))
+      if (confMounted(o, n)) dirs.push(confDir(o, n))
       if (o.mountData) dirs.push(`${nodeDir(o, n)}/data`)
     }
     if (o.ssl) dirs.push(certs)
@@ -554,9 +556,9 @@ export function genRedisInstall(
     const blocks: string[] = []
     for (const n of ns) {
       if (n.role === 'sentinel')
-        blocks.push(heredoc(`${nodeDir(o, n)}/sentinel.conf`, sentinelConf(o, n, master)))
+        blocks.push(heredoc(`${confDir(o, n)}/sentinel.conf`, sentinelConf(o, n, master)))
       else if (confMounted(o, n))
-        blocks.push(heredoc(`${nodeDir(o, n)}/redis.conf`, redisConf(o, n, master)))
+        blocks.push(heredoc(`${confDir(o, n)}/redis.conf`, redisConf(o, n, master)))
     }
     if (!o.ssl) blocks.push(`chown -R ${REDIS_UID} ${root}`)
     if (blocks.length > 0) {

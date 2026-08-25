@@ -51,10 +51,14 @@ describe('genInstallNodes / genRedisInstall', () => {
     expect(out.guide.length).toBe(1)
     expect(out.commands.length).toBe(1)
     expect(out.compose.length).toBe(1)
-    // 单机直接落在 /data/redis-single 下
+    // 单机：conf/data/cert 分目录；conf 挂到 /etc/redis 以支持 rewrite
     expect(out.commands[0].code).toContain('/data/redis-single/data')
-    expect(out.commands[0].code).toContain('/data/redis-single/redis.conf')
+    expect(out.commands[0].code).toContain('-v /data/redis-single/conf:/etc/redis')
+    expect(out.commands[0].code).toContain('redis-server /etc/redis/redis.conf')
     expect(out.commands[0].code).not.toContain('redis-single/redis-6379')
+    expect(out.commands[0].code).not.toContain('redis.conf:/etc/redis/redis.conf')
+    expect(out.guide[0].code).toContain('cat > /data/redis-single/conf/redis.conf')
+    expect(out.guide[0].code).toContain('mkdir -p /data/redis-single/conf')
     // 单机用简单端口映射，不用宿主机网络；compose 同步为 ports 映射
     expect(out.commands[0].code).toContain('-p 6379:6379')
     expect(out.commands[0].code).not.toContain('--network host')
@@ -116,6 +120,14 @@ describe('genInstallNodes / genRedisInstall', () => {
     expect(guideCode).toContain('sentinel monitor mymaster 10.0.0.1 6379 2')
     expect(guideCode).toContain('sentinel auth-pass mymaster')
     expect(guideCode).toContain('replicaof 10.0.0.1 6379')
+    // 哨兵挂 conf 目录（可写回），不是单文件挂载
+    expect(out.compose.map(c => c.code).join('\n')).toContain(
+      '/data/redis-sentinel/redis-26379/conf:/etc/redis',
+    )
+    expect(out.compose.map(c => c.code).join('\n')).not.toContain(
+      'sentinel.conf:/etc/redis/sentinel.conf',
+    )
+    expect(guideCode).toContain('cat > /data/redis-sentinel/redis-26379/conf/sentinel.conf')
   })
 
   it('密码含特殊字符：conf 双引号转义、shell 单引号转义', () => {
@@ -141,7 +153,8 @@ describe('genInstallNodes / genRedisInstall', () => {
     expect(guideCode).toContain('tls-protocols "TLSv1.2 TLSv1.3"')
 
     expect(sslOut.compose[0].code).toContain('/data/redis-single/cert:/etc/redis/cert:ro')
-    expect(sslOut.compose[0].code).toContain('redis.conf:/etc/redis/redis.conf')
+    expect(sslOut.compose[0].code).toContain('/data/redis-single/conf:/etc/redis')
+    expect(sslOut.compose[0].code).not.toContain('redis.conf:/etc/redis/redis.conf')
     expect(sslOut.commands[0].code).toContain(':/etc/redis/cert:ro')
   })
 
@@ -208,11 +221,10 @@ describe('genInstallNodes / genRedisInstall', () => {
     expect(cmd).toContain('--port 6380')
   })
 
-  it('不挂载数据但挂载配置：指南环境准备仍创建目录', () => {
+  it('不挂载数据但挂载配置：指南环境准备仍创建 conf 目录', () => {
     const out = genRedisInstall(baseOptions({ mountData: false, mountConf: true }), labels)
-    // 分步指南环境准备创建节点目录（供 heredoc 写入），但不创建 data 子目录
     const guideCode = out.guide[0].code
-    expect(guideCode).toContain('mkdir -p /data/redis-single')
+    expect(guideCode).toContain('mkdir -p /data/redis-single/conf')
     expect(guideCode).not.toContain('/data/redis-single/data')
   })
 
