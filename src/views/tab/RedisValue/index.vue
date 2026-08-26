@@ -1688,6 +1688,14 @@ function switchKeyTab(id: string): void {
   bus.emit(KEY_REFRESH)
 }
 
+// 点击已激活的 TAB：强制刷新当前键值（与切换到其他 TAB 等效）
+function onKeyTabClick(tab: { props: { name: string } }) {
+  const id = tab.props.name
+  if (id === share.activeKeyId) {
+    bus.emit(KEY_REFRESH)
+  }
+}
+
 // 关闭 TAB：移除；若关闭的是激活项，则切到相邻（优先右侧，否则左侧，否则清空）
 function closeKeyTab(name: string | number): void {
   const id = String(name)
@@ -1794,6 +1802,7 @@ onUnmounted(() => {
       <el-tabs
         v-model="activeKeyTabName"
         type="card"
+        @tab-click="onKeyTabClick"
         @tab-remove="closeKeyTab">
         <el-tab-pane
           v-for="tab in visibleKeys"
@@ -2924,6 +2933,10 @@ onUnmounted(() => {
 
         &:last-child {
           margin-bottom: 0;
+        }
+
+        .el-form-item__label {
+          white-space: nowrap;
         }
       }
     }
