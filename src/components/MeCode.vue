@@ -189,6 +189,8 @@ const extensions = computed(() => {
 <style scoped lang="scss">
 .me-code-wrap {
   position: relative;
+  height: 100%;
+  min-height: 0;
 }
 
 /* 右上角复制图标（仅 copyable 时展示） */
