@@ -2,7 +2,7 @@ use crate::client::client_trait::*;
 use crate::implement_pipeline_commands;
 use crate::utils::capabilities::detect_server_capabilities;
 use crate::utils::command_log::LoggingConnection;
-use crate::utils::conn::{get_client_single, set_client_name};
+use crate::utils::conn::{init_single_connection, get_client_single, set_client_name};
 use crate::utils::error::AppError;
 use crate::utils::model::*;
 use crate::utils::ssh_tunnel::SshTunnel;
@@ -604,11 +604,12 @@ impl MeClient for MeSingle {
 // 个性化方法
 impl MeSingle {
     pub fn init(redis_conn: &ConnConfig, command_timeout: Duration) -> AnyResult<Box<dyn MeClient>> {
-        let (client, ssh_tunnel) = get_client_single(redis_conn)?;
+        let (client, ssh_tunnel) = get_client_single(redis_conn, false)?;
         let mut base = MeBase::from(redis_conn);
         base.command_timeout = command_timeout;
         let logger = base.command_logger.clone();
-        let raw_conn = Self::new_raw_conn(&client, redis_conn.db, command_timeout)?;
+        // 阶段 1 短超时验证 + 阶段 2 正式超时；验证通过后复用同一条 TCP（#155）
+        let raw_conn = init_single_connection(&client, redis_conn.db, command_timeout)?;
         let mut conn = LoggingConnection::new(raw_conn, logger, redis_conn.db);
         set_client_name(&mut conn);
 
@@ -624,12 +625,11 @@ impl MeSingle {
         }))
     }
 
+    // 重连/辅助连接：旧连接已失效，只建一条 TCP，直接用正式超时（无需再走阶段 1 短超时）
     fn new_raw_conn(client: &Client, db: u16, command_timeout: Duration) -> AnyResult<Connection> {
         let mut conn = client.get_connection()?;
         conn.set_read_timeout(Some(command_timeout))?;
         conn.set_write_timeout(Some(command_timeout))?;
-
-        // 切换到当前的数据库(切换失败时忽略)
         if db != 0 {
             info!("select {db}");
             let _: () = redis::cmd("select")

@@ -1,7 +1,10 @@
 use crate::client::client_trait::*;
 use crate::utils::capabilities::detect_server_capabilities;
 use crate::utils::command_log::LoggingClusterConnection;
-use crate::utils::conn::{get_client_cluster, get_client_single, set_client_name};
+use crate::utils::conn::{
+    get_client_cluster, get_client_single, init_cluster_connection, init_single_connection,
+    set_client_name,
+};
 use crate::utils::error::AppError;
 use crate::utils::model::*;
 use crate::utils::util::*;
@@ -497,7 +500,8 @@ impl MeClient for MeCluster {
     }
 
     fn subscribe(&self, channel: Option<String>) -> AnyResult<()> {
-        let conn = get_client_single(&self.conf)?.0.get_connection()?;
+        let (client, _) = get_client_single(&self.conf, false)?;
+        let conn = init_single_connection(&client, self.conf.db, self.command_timeout)?;
         let running = self.subscribe_running.clone();
         let app_handle = self.base().get_app_handle()?;
         let logger = self.base().command_logger.clone();
@@ -515,7 +519,8 @@ impl MeClient for MeCluster {
             conf.host = host.to_string();
             conf.port = port.parse::<u16>()?;
         }
-        let conn = get_client_single(&conf)?.0.get_connection()?;
+        let (client, _) = get_client_single(&conf, false)?;
+        let conn = init_single_connection(&client, conf.db, self.command_timeout)?;
         let running = self.monitor_running.clone();
         let app_handle = self.base().get_app_handle()?;
         let logger = self.base().command_logger.clone();
@@ -829,13 +834,14 @@ impl MeClient for MeCluster {
 // 个性化方法
 impl MeCluster {
     pub fn init(redis_conn: &ConnConfig, command_timeout: Duration) -> AnyResult<Box<dyn MeClient>> {
-        let client = get_client_cluster(redis_conn)?;
+        let client = get_client_cluster(redis_conn, false)?;
         let mut base = MeBase::from(redis_conn);
         base.command_timeout = command_timeout;
         let logger = base.command_logger.clone();
         let db = redis_conn.db;
+        // 阶段 1 短超时验证 + 阶段 2 正式超时；验证通过后复用同一条 TCP（#155）
         let mut conn = LoggingClusterConnection::new(
-            Self::new_raw_conn(&client, command_timeout)?,
+            init_cluster_connection(&client, command_timeout)?,
             logger,
             db,
         );
@@ -855,6 +861,7 @@ impl MeCluster {
         }))
     }
 
+    // 重连/辅助连接：旧连接已失效，只建一条 TCP，直接用正式超时（不走 verify 短超时）
     fn new_raw_conn(client: &ClusterClient, command_timeout: Duration) -> AnyResult<ClusterConnection> {
         let conn = client.get_connection()?;
         conn.set_read_timeout(Some(command_timeout))?;
