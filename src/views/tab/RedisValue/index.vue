@@ -1688,10 +1688,15 @@ function switchKeyTab(id: string): void {
   bus.emit(KEY_REFRESH)
 }
 
-// 点击已激活的 TAB：强制刷新当前键值（与切换到其他 TAB 等效）
+// 点击已激活的 TAB：恢复 redisKey 并强制刷新（与切换到其他 TAB 等效）
 function onKeyTabClick(tab: { props: { name: string } }) {
   const id = tab.props.name
   if (id === share.activeKeyId) {
+    const t = share.openKeys.find(k => k.id === id)
+    if (!t) return
+    share.activeKeyId = id
+    share.redisKey = t.redisKey
+    share.tabName = 'value'
     bus.emit(KEY_REFRESH)
   }
 }
