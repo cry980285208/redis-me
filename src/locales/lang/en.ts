@@ -876,6 +876,8 @@ export default {
     outputCsv: 'CSV',
 
     commandHint: 'View Command List',
+    keyHintScanned: 'Scanned key',
+    keyHintFavorite: 'Favorite key',
     commandTitle: 'Commands',
     keywordHint: 'Filter (Command or Summary)',
     group: 'Group',

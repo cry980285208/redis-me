@@ -862,6 +862,8 @@ export default {
     outputJson: 'JSON',
     outputCsv: 'CSV',
     commandHint: '查看命令列表',
+    keyHintScanned: '已扫描键',
+    keyHintFavorite: '收藏键',
     commandTitle: '命令列表',
     keywordHint: '命令或概述模糊筛选',
     group: '分组',
