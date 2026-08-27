@@ -425,17 +425,12 @@ export default {
 
   redisCert: {
     title: 'TLS 证书',
-    scriptTitle: 'Redis TLS 自签证书生成脚本',
+    scriptTitle: 'Redis TLS 自签证书生成脚本（推荐 OpenSSL >= 3.2，默认签发 X.509 v3）',
     scriptOutput: '产出: ca.key ca.crt redis.key redis.crt',
-    step1Title: '第一步：生成 CA 私钥（RSA 4096 位）',
-    step1Desc: 'CA 用于签发服务器证书，是信任链的根',
-    step2Title: '第二步：写入 OpenSSL 配置文件（DN + v3 扩展 + SAN）',
-    step2Desc: 'v3_ca  强制生成 x509v3（兼容 CentOS7 等默认生成 v1 的系统）',
-    step2Note: 'v3_req subjectAltName 应包含所有 Redis 节点的 IP 和主机名',
-    step3Title: '第三步：生成 Redis 服务器私钥',
-    step4Title: '第四步：生成服务器证书签名请求（CSR）',
-    step5Title: '第五步：用 CA 签发服务器证书（携带 SAN）',
-    step6Title: '第六步：验证证书（查看版本、有效期、Subject、SAN）',
+    step1Title: '第一步：生成 CA（ca.key + ca.crt）',
+    step2Title: '第二步：生成服务器私钥与 CSR（含 SAN）',
+    step3Title: '第三步：CA 签发服务器证书',
+    step4Title: '第四步：验证',
   },
 
   commandLog: {

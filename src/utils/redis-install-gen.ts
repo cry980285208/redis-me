@@ -52,19 +52,14 @@ export interface RedisInstallLabels {
   reviewCompose: string
 }
 
-// 证书生成脚本注释文案（i18n）
+// 证书生成脚本注释文案（i18n）；推荐 OpenSSL >= 3.2（默认 X.509 v3）
 export interface RedisCertLabels {
   scriptTitle: string
   scriptOutput: string
   step1Title: string
-  step1Desc: string
   step2Title: string
-  step2Desc: string
-  step2Note: string
   step3Title: string
   step4Title: string
-  step5Title: string
-  step6Title: string
 }
 
 export interface RedisInstallOutput {
@@ -411,10 +406,16 @@ function dockerExecCli(o: RedisInstallOptions, container: string): string {
 
 // ---------------- 证书步骤 ----------------
 
-const CERT_SEP = '# ------------------------------------------------'
+const CERT_LINE_LEN = 64
+const CERT_BANNER_SEP = `# ${'='.repeat(CERT_LINE_LEN)}`
+const CERT_SEP = `# ${'-'.repeat(CERT_LINE_LEN)}`
 
-// openssl 自签证书脚本（固定 RSA 4096；每步带注释说明）
-// 证书弹框与安装指南共用此函数
+/** SAN 列表 → -addext subjectAltName 参数值 */
+function formatSanAddext(sans: string[]): string {
+  return sans.map(s => (/^\d+$|[:.]/.test(s) ? `IP:${s}` : `DNS:${s}`)).join(',')
+}
+
+// openssl 自签证书脚本（RSA 4096；-addext；推荐 OpenSSL >= 3.2）
 export function genOpensslCertScript(p: {
   sans: string[]
   certDays: number
@@ -422,69 +423,48 @@ export function genOpensslCertScript(p: {
   labels: RedisCertLabels
 }): string {
   const cn = p.certCn.trim() || 'redis'
-  const sans = p.sans.map(s => (/^\d+$|[:.]/.test(s) ? `IP:${s}` : `DNS:${s}`)).join(',')
+  const san = formatSanAddext(p.sans)
   const sep = CERT_SEP
   const L = p.labels
   return (
     [
-      '# ================================================',
+      CERT_BANNER_SEP,
       `# ${L.scriptTitle}`,
       `# ${L.scriptOutput}`,
-      '# ================================================',
+      CERT_BANNER_SEP,
       '',
       sep,
       `# ${L.step1Title}`,
-      `# ${L.step1Desc}`,
       sep,
       'openssl genrsa -out ca.key 4096',
+      `openssl req -x509 -new -nodes -sha256 -days ${p.certDays} \\`,
+      '  -key ca.key -out ca.crt \\',
+      '  -subj "/CN=Redis-CA/O=Redis" \\',
+      '  -addext "basicConstraints=critical,CA:true" \\',
+      '  -addext "keyUsage=critical,keyCertSign,cRLSign"',
       '',
       sep,
       `# ${L.step2Title}`,
-      `# ${L.step2Desc}`,
-      `# ${L.step2Note}`,
       sep,
-      heredoc(
-        'openssl.cnf',
-        `[req]
-prompt = no
-distinguished_name = req_distinguished_name
-
-[req_distinguished_name]
-C = CN
-O = Redis
-CN = ${cn}
-
-[v3_ca]
-basicConstraints = critical, CA:true
-keyUsage = critical, keyCertSign, cRLSign
-subjectKeyIdentifier = hash
-authorityKeyIdentifier = keyid:always,issuer
-
-[v3_req]
-subjectAltName = ${sans}
-`,
-      ),
-      `openssl req -x509 -new -nodes -sha256 -key ca.key -days ${p.certDays} -config openssl.cnf -extensions v3_ca -out ca.crt`,
+      'openssl genrsa -out redis.key 4096',
+      `openssl req -new -sha256 -key redis.key -out redis.csr \\`,
+      `  -subj "/CN=${cn}/O=Redis" \\`,
+      `  -addext "subjectAltName=${san}" \\`,
+      '  -addext "keyUsage=digitalSignature,keyEncipherment" \\',
+      '  -addext "extendedKeyUsage=serverAuth,clientAuth"',
       '',
       sep,
       `# ${L.step3Title}`,
       sep,
-      'openssl genrsa -out redis.key 4096',
+      `openssl x509 -req -sha256 -days ${p.certDays} \\`,
+      '  -in redis.csr -CA ca.crt -CAkey ca.key -CAcreateserial \\',
+      '  -out redis.crt -copy_extensions copy',
       '',
       sep,
       `# ${L.step4Title}`,
       sep,
-      `openssl req -new -sha256 -key redis.key -config openssl.cnf -out redis.csr`,
-      '',
-      sep,
-      `# ${L.step5Title}`,
-      sep,
-      `openssl x509 -req -sha256 -in redis.csr -CA ca.crt -CAkey ca.key -CAcreateserial -days ${p.certDays} -extfile openssl.cnf -extensions v3_req -out redis.crt`,
-      '',
-      sep,
-      `# ${L.step6Title}`,
-      sep,
-      "openssl x509 -in redis.crt -text -noout | grep -E 'Version|Not|Subject:|Alternative|IP Address|DNS'",
+      'openssl verify -CAfile ca.crt redis.crt',
+      "openssl x509 -in redis.crt -noout -text | grep -E 'Version|Subject:|Alternative|IP Address|DNS'",
     ].join('\n') + '\n'
   )
 }
@@ -621,7 +601,7 @@ export function genRedisInstall(
     sections.push({ header: labels.stepVerify, code: `${dockerExecCli(o, master.name)} ping` })
   }
 
-  const GUIDE_SEP = '# ================================================'
+  const GUIDE_SEP = CERT_BANNER_SEP
   const guideCode =
     sections.map(s => `${GUIDE_SEP}\n# ${s.header}\n${GUIDE_SEP}\n${s.code}`).join('\n\n') + '\n'
   const guide: RedisInstallStep[] = [{ title: 'Guide', code: guideCode, lang: 'shell' }]

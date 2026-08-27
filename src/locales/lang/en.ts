@@ -436,17 +436,13 @@ export default {
 
   redisCert: {
     title: 'TLS Certificate',
-    scriptTitle: 'Redis TLS Self-Signed Certificate Script',
+    scriptTitle:
+      'Redis TLS Self-Signed Certificate Script (OpenSSL >= 3.2 recommended; X.509 v3 by default)',
     scriptOutput: 'Output: ca.key ca.crt redis.key redis.crt',
-    step1Title: 'Step 1: Generate CA private key (RSA 4096-bit)',
-    step1Desc: 'The CA signs server certificates and is the root of trust',
-    step2Title: 'Step 2: Write OpenSSL configuration file (DN + v3 extensions + SAN)',
-    step2Desc: 'v3_ca forces x509v3 (compatible with CentOS7 etc. that default to v1)',
-    step2Note: 'v3_req subjectAltName should include all Redis node IPs and hostnames',
-    step3Title: 'Step 3: Generate Redis server private key',
-    step4Title: 'Step 4: Generate server Certificate Signing Request (CSR)',
-    step5Title: 'Step 5: Sign server certificate with CA (with SAN)',
-    step6Title: 'Step 6: Verify certificate (Version, Validity, Subject, SAN)',
+    step1Title: 'Step 1: Generate CA (ca.key + ca.crt)',
+    step2Title: 'Step 2: Generate server key and CSR (with SAN)',
+    step3Title: 'Step 3: Sign server certificate with CA',
+    step4Title: 'Step 4: Verify',
   },
 
   commandLog: {

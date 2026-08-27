@@ -27,14 +27,9 @@ const certLabels = computed<RedisCertLabels>(() => ({
   scriptTitle: t('redisCert.scriptTitle'),
   scriptOutput: t('redisCert.scriptOutput'),
   step1Title: t('redisCert.step1Title'),
-  step1Desc: t('redisCert.step1Desc'),
   step2Title: t('redisCert.step2Title'),
-  step2Desc: t('redisCert.step2Desc'),
-  step2Note: t('redisCert.step2Note'),
   step3Title: t('redisCert.step3Title'),
   step4Title: t('redisCert.step4Title'),
-  step5Title: t('redisCert.step5Title'),
-  step6Title: t('redisCert.step6Title'),
 }))
 
 const opensslScript = computed(() =>

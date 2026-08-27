@@ -158,20 +158,15 @@ describe('genInstallNodes / genRedisInstall', () => {
     expect(sslOut.commands[0].code).toContain(':/etc/redis/cert:ro')
   })
 
-  it('genOpensslCertScript：生成完整 openssl 脚本', () => {
+  it('genOpensslCertScript：-addext 四步脚本，无 openssl.cnf', () => {
     const labels: RedisCertLabels = {
-      scriptTitle: 'Redis TLS Self-Signed Certificate Script',
+      scriptTitle:
+        'Redis TLS Self-Signed Certificate Script (OpenSSL >= 3.2 recommended; X.509 v3 by default)',
       scriptOutput: 'Output: ca.key ca.crt redis.key redis.crt',
-      step1Title: 'Step 1: Generate CA private key (RSA 4096-bit)',
-      step1Desc: 'The CA signs server certificates and is the root of trust',
-      step2Title: 'Step 2: Write OpenSSL configuration file',
-      step2Desc:
-        'Config includes DN, v3 extensions and SAN; -extensions v3_ca ensures x509v3 certificates',
-      step2Note: 'Ensure subjectAltName includes all Redis node IPs and hostnames',
-      step3Title: 'Step 3: Generate Redis server private key',
-      step4Title: 'Step 4: Generate server Certificate Signing Request (CSR)',
-      step5Title: 'Step 5: Sign server certificate with CA (with SAN)',
-      step6Title: 'Step 6: Verify certificate (Version, Validity, Subject, SAN)',
+      step1Title: 'Step 1: Generate CA (ca.key + ca.crt)',
+      step2Title: 'Step 2: Generate server key and CSR (with SAN)',
+      step3Title: 'Step 3: Sign server certificate with CA',
+      step4Title: 'Step 4: Verify',
     }
     const script = genOpensslCertScript({
       sans: ['127.0.0.1', 'localhost'],
@@ -181,17 +176,12 @@ describe('genInstallNodes / genRedisInstall', () => {
     })
     expect(script).toContain('openssl genrsa -out ca.key 4096')
     expect(script).toContain('openssl genrsa -out redis.key 4096')
-    expect(script).toContain('subjectAltName = IP:127.0.0.1,DNS:localhost')
+    expect(script).toContain('-addext "subjectAltName=IP:127.0.0.1,DNS:localhost"')
+    expect(script).toContain('-addext "basicConstraints=critical,CA:true"')
+    expect(script).toContain('-copy_extensions copy')
+    expect(script).toContain('openssl verify -CAfile ca.crt redis.crt')
     expect(script).not.toContain('chmod')
-    expect(script).toContain('openssl x509 -in redis.crt -text -noout')
-    expect(script).toContain('openssl.cnf')
-    expect(script).toContain('[req_distinguished_name]')
-    expect(script).toContain('[v3_ca]')
-    expect(script).toContain('[v3_req]')
-    expect(script).toContain('basicConstraints = critical, CA:true')
-    expect(script).toContain('subjectAltName = IP:127.0.0.1,DNS:localhost')
-    expect(script).not.toContain('openssl-san.cnf')
-    expect(script).not.toContain('sed -i')
+    expect(script).not.toContain('openssl.cnf')
     expect(script).not.toContain('MSYS_NO_PATHCONV')
   })
 
