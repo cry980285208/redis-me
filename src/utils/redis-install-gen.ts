@@ -84,7 +84,7 @@ function certDir(mode: RedisInstallMode): string {
 }
 // 官方镜像以 redis 用户（uid 999）运行，数据/证书/配置目录需授权
 const REDIS_UID = '999:999'
-// 容器内证书挂载点（嵌套在 /etc/redis 下，与 conf 目录挂载配合）
+// 容器内证书挂载点（与 /etc/redis/conf 同级）
 const CONTAINER_CERT_DIR = '/etc/redis/cert'
 
 // 各模式默认起始端口：集群惯例 7001 段（7001~7006）；单机/哨兵用经典 6379 段（哨兵组 +20000）
@@ -219,16 +219,17 @@ function genComposeYaml(
     }
     const vols: string[] = []
     if (o.mountData) vols.push(`      - ${nodeDir(o, n)}/data:/data`)
-    // conf 目录挂到 /etc/redis（rewrite 需同目录可写）；证书再嵌套挂 /etc/redis/cert
-    if (n.role === 'sentinel' || confMounted(o, n)) vols.push(`      - ${confDir(o, n)}:/etc/redis`)
+    // conf 目录挂到 /etc/redis/conf（rewrite 需同目录可写）；证书挂 /etc/redis/cert（同级）
+    if (n.role === 'sentinel' || confMounted(o, n))
+      vols.push(`      - ${confDir(o, n)}:/etc/redis/conf`)
     if (o.ssl) vols.push(`      - ${certDir(o.mode)}:${CONTAINER_CERT_DIR}:ro`)
     if (vols.length > 0) {
       lines.push('    volumes:')
       lines.push(...vols)
     }
     if (n.role === 'sentinel')
-      lines.push('    command: redis-server /etc/redis/sentinel.conf --sentinel')
-    else if (confMounted(o, n)) lines.push('    command: redis-server /etc/redis/redis.conf')
+      lines.push('    command: redis-server /etc/redis/conf/sentinel.conf --sentinel')
+    else if (confMounted(o, n)) lines.push('    command: redis-server /etc/redis/conf/redis.conf')
     else
       lines.push(
         `    command: redis-server ${confArgs(o, n, master)
@@ -381,16 +382,16 @@ function dockerRunCmd(
   else parts.push(`-p ${node.port}:${node.port}`)
   if (o.timezone) parts.push(`-e TZ=${shellQuote(o.timezone)}`)
   if (o.mountData) parts.push(`-v ${dir}/data:/data`)
-  // conf 目录挂到 /etc/redis，供 rewrite 写临时文件
+  // conf 目录挂到 /etc/redis/conf，供 rewrite 写临时文件
   if (node.role === 'sentinel' || confMounted(o, node)) {
-    parts.push(`-v ${confDir(o, node)}:/etc/redis`)
+    parts.push(`-v ${confDir(o, node)}:/etc/redis/conf`)
   }
   if (o.ssl) parts.push(`-v ${certDir(o.mode)}:${CONTAINER_CERT_DIR}:ro`)
   parts.push(finalImage(o))
   if (node.role === 'sentinel') {
-    parts.push('redis-server /etc/redis/sentinel.conf --sentinel')
+    parts.push('redis-server /etc/redis/conf/sentinel.conf --sentinel')
   } else if (confMounted(o, node)) {
-    parts.push('redis-server /etc/redis/redis.conf')
+    parts.push('redis-server /etc/redis/conf/redis.conf')
   } else {
     parts.push(['redis-server', ...confArgs(o, node, master).map(shellQuote)].join(' '))
   }
@@ -410,7 +411,7 @@ function dockerExecCli(o: RedisInstallOptions, container: string): string {
 
 // ---------------- 证书步骤 ----------------
 
-const CERT_SEP = '# ----------------------------------------------'
+const CERT_SEP = '# ------------------------------------------------'
 
 // openssl 自签证书脚本（固定 RSA 4096；每步带注释说明）
 // 证书弹框与安装指南共用此函数
@@ -424,26 +425,27 @@ export function genOpensslCertScript(p: {
   const sans = p.sans.map(s => (/^\d+$|[:.]/.test(s) ? `IP:${s}` : `DNS:${s}`)).join(',')
   const sep = CERT_SEP
   const L = p.labels
-  return [
-    '# ============================================',
-    `# ${L.scriptTitle}`,
-    `# ${L.scriptOutput}`,
-    '# ============================================',
-    '',
-    sep,
-    `# ${L.step1Title}`,
-    `# ${L.step1Desc}`,
-    sep,
-    'openssl genrsa -out ca.key 4096',
-    '',
-    sep,
-    `# ${L.step2Title}`,
-    `# ${L.step2Desc}`,
-    `# ${L.step2Note}`,
-    sep,
-    heredoc(
-      'openssl.cnf',
-      `[req]
+  return (
+    [
+      '# ================================================',
+      `# ${L.scriptTitle}`,
+      `# ${L.scriptOutput}`,
+      '# ================================================',
+      '',
+      sep,
+      `# ${L.step1Title}`,
+      `# ${L.step1Desc}`,
+      sep,
+      'openssl genrsa -out ca.key 4096',
+      '',
+      sep,
+      `# ${L.step2Title}`,
+      `# ${L.step2Desc}`,
+      `# ${L.step2Note}`,
+      sep,
+      heredoc(
+        'openssl.cnf',
+        `[req]
 prompt = no
 distinguished_name = req_distinguished_name
 
@@ -461,29 +463,30 @@ authorityKeyIdentifier = keyid:always,issuer
 [v3_req]
 subjectAltName = ${sans}
 `,
-    ),
-    `openssl req -x509 -new -nodes -sha256 -key ca.key -days ${p.certDays} -config openssl.cnf -extensions v3_ca -out ca.crt`,
-    '',
-    sep,
-    `# ${L.step3Title}`,
-    sep,
-    'openssl genrsa -out redis.key 4096',
-    '',
-    sep,
-    `# ${L.step4Title}`,
-    sep,
-    `openssl req -new -sha256 -key redis.key -config openssl.cnf -out redis.csr`,
-    '',
-    sep,
-    `# ${L.step5Title}`,
-    sep,
-    `openssl x509 -req -sha256 -in redis.csr -CA ca.crt -CAkey ca.key -CAcreateserial -days ${p.certDays} -extfile openssl.cnf -extensions v3_req -out redis.crt`,
-    '',
-    sep,
-    `# ${L.step6Title}`,
-    sep,
-    "openssl x509 -in redis.crt -text -noout | grep -E 'Version|Not|Subject:|Alternative|IP Address|DNS'",
-  ].join('\n')
+      ),
+      `openssl req -x509 -new -nodes -sha256 -key ca.key -days ${p.certDays} -config openssl.cnf -extensions v3_ca -out ca.crt`,
+      '',
+      sep,
+      `# ${L.step3Title}`,
+      sep,
+      'openssl genrsa -out redis.key 4096',
+      '',
+      sep,
+      `# ${L.step4Title}`,
+      sep,
+      `openssl req -new -sha256 -key redis.key -config openssl.cnf -out redis.csr`,
+      '',
+      sep,
+      `# ${L.step5Title}`,
+      sep,
+      `openssl x509 -req -sha256 -in redis.csr -CA ca.crt -CAkey ca.key -CAcreateserial -days ${p.certDays} -extfile openssl.cnf -extensions v3_req -out redis.crt`,
+      '',
+      sep,
+      `# ${L.step6Title}`,
+      sep,
+      "openssl x509 -in redis.crt -text -noout | grep -E 'Version|Not|Subject:|Alternative|IP Address|DNS'",
+    ].join('\n') + '\n'
+  )
 }
 
 function certStepOpenssl(
@@ -618,10 +621,9 @@ export function genRedisInstall(
     sections.push({ header: labels.stepVerify, code: `${dockerExecCli(o, master.name)} ping` })
   }
 
-  const GUIDE_SEP = '# =============================================='
-  const guideCode = sections
-    .map(s => `${GUIDE_SEP}\n# ${s.header}\n${GUIDE_SEP}\n${s.code}`)
-    .join('\n\n')
+  const GUIDE_SEP = '# ================================================'
+  const guideCode =
+    sections.map(s => `${GUIDE_SEP}\n# ${s.header}\n${GUIDE_SEP}\n${s.code}`).join('\n\n') + '\n'
   const guide: RedisInstallStep[] = [{ title: 'Guide', code: guideCode, lang: 'shell' }]
 
   return { nodes, commands, compose, guide }
