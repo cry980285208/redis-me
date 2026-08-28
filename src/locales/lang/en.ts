@@ -435,9 +435,9 @@ export default {
   },
 
   redisCert: {
-    title: 'TLS Certificate',
+    title: 'TLS Certificate (For Reference Only)',
     scriptTitle:
-      'Redis TLS Self-Signed Certificate Script (OpenSSL >= 3.2 recommended; X.509 v3 by default)',
+      'Redis TLS (OpenSSL >= 3.2 recommended; X.509 v3 by default)',
     scriptOutput: 'Output: ca.key ca.crt redis.key redis.crt',
     step1Title: 'Step 1: Generate CA (ca.key + ca.crt)',
     step2Title: 'Step 2: Generate server key and CSR (with SAN)',

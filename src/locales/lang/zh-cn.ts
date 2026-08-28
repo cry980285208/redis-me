@@ -424,8 +424,8 @@ export default {
   },
 
   redisCert: {
-    title: 'TLS 证书',
-    scriptTitle: 'Redis TLS 自签证书生成脚本（推荐 OpenSSL >= 3.2，默认签发 X.509 v3）',
+    title: 'TLS 证书【仅供参考】',
+    scriptTitle: 'Redis TLS 自签证书（推荐 OpenSSL >= 3.2，默认签发 X.509 v3）',
     scriptOutput: '产出: ca.key ca.crt redis.key redis.crt',
     step1Title: '第一步：生成 CA（ca.key + ca.crt）',
     step2Title: '第二步：生成服务器私钥与 CSR（含 SAN）',
