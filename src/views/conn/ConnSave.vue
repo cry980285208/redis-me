@@ -7,6 +7,7 @@ import { computed, inject, reactive, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { shareProvideKey, type UiConn } from '@/types/me-interface'
+import { buildRedisUrl } from '@/utils/conn'
 import {
   getConnCommandMap,
   getConnGroup,
@@ -21,7 +22,7 @@ import {
   setConnUiMode,
   type ConnProtocol,
 } from '@/utils/conn'
-import { meCommands, PREDEFINE_COLORS, meRandomString, meOk, meErr, meWarn } from '@/utils/util'
+import { meCommands, PREDEFINE_COLORS, meRandomString, meOk, meErr, meWarn, meCopy } from '@/utils/util'
 const { t } = useI18n()
 // #endregion
 
@@ -37,7 +38,7 @@ const form = reactive({
   id: '',
   name: '',
 
-  host: '127.0.0.1',
+  host: '',
   port: 6379,
   username: '',
   password: '',
@@ -232,22 +233,79 @@ function autoGenName() {
 }
 
 /**
- * 主机输入框粘贴解析：自动提取 host:port
- * 支持 IPv4/主机名:port、[IPv6]:port 格式；无合法端口时仅填充主机
+ * 主机输入框粘贴解析：自动提取连接信息。
+ * 支持完整 URL（redis[s]://[user[:pass]@]host[:port][/db]）、
+ * host:port、[IPv6]:port 格式；无合法端口时仅填充主机。
  */
 function onHostPaste(e: ClipboardEvent): void {
   const text = e.clipboardData?.getData('text')?.trim()
   if (!text) return
-  const lastColon = text.lastIndexOf(':')
-  if (lastColon <= 0) return
-  const hostPart = text.slice(0, lastColon)
-  const portPart = text.slice(lastColon + 1)
+
+  // 完整 URL 解析
+  if (/^rediss?:\/\//i.test(text)) {
+    try {
+      const url = new URL(text)
+      const isSsl = url.protocol === 'rediss:'
+      let host = url.hostname
+      if (host.startsWith('[') && host.endsWith(']')) host = host.slice(1, -1)
+      const port = url.port ? Number(url.port) : isSsl ? 6379 : 6379
+      if (!Number.isInteger(port) || port < 1 || port > 65535) return
+      e.preventDefault()
+      form.host = host
+      form.port = port
+      if (url.username) form.username = decodeURIComponent(url.username)
+      if (url.password) form.password = decodeURIComponent(url.password)
+      form.ssl = isSsl
+      const dbStr = url.pathname.replace(/^\//, '')
+      if (dbStr) {
+        const db = Number(dbStr)
+        if (Number.isInteger(db) && db >= 0) form.db = db
+      }
+      return
+    } catch {
+      return
+    }
+  }
+
+  // 简单 host:port 格式（含 [IPv6]:port）
+  let hostPart = text
+  let portPart = ''
+  if (text.startsWith('[')) {
+    const closeBracket = text.indexOf(']')
+    if (closeBracket === -1) return
+    hostPart = text.slice(1, closeBracket)
+    if (text[closeBracket + 1] === ':') portPart = text.slice(closeBracket + 2)
+    else if (text.length > closeBracket + 1) return
+  } else {
+    const lastColon = text.lastIndexOf(':')
+    if (lastColon <= 0) return
+    hostPart = text.slice(0, lastColon)
+    portPart = text.slice(lastColon + 1)
+  }
+  if (!portPart) {
+    e.preventDefault()
+    form.host = hostPart
+    return
+  }
   const port = Number(portPart)
   if (!Number.isInteger(port) || port < 1 || port > 65535) return
   e.preventDefault()
   form.host = hostPart
   form.port = port
 }
+
+// 根据当前表单生成 Redis URL（便于复制）
+const redisUrl = computed(() =>
+  buildRedisUrl({
+    host: form.host,
+    port: form.port,
+    username: form.username,
+    password: form.password,
+    ssl: form.ssl,
+    db: form.db,
+    protocol: getConnProtocol(form as UiConn),
+  }),
+)
 
 // 测试连接：整弹窗 loading，避免按钮变宽挤动底栏
 function testConn() {
@@ -440,7 +498,7 @@ function applyAdvanced() {
           <el-form-item :label="t('conn.host')" prop="host">
             <el-input
               v-model.trim="form.host"
-              placeholder="127.0.0.1"
+              placeholder="IP or paste redis://URL"
               clearable
               @paste="onHostPaste" />
           </el-form-item>
@@ -784,6 +842,9 @@ function applyAdvanced() {
           </el-checkbox>
         </div>
         <div>
+          <me-button :info="redisUrl" :disabled="!(form.host && form.port)" @click="meCopy(redisUrl)">
+            URL
+          </me-button>
           <el-button @click="visible = false">{{ t('cancel') }}</el-button>
           <el-button type="primary" @click="submit">{{ t('ok') }}</el-button>
         </div>

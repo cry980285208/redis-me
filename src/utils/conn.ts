@@ -163,6 +163,36 @@ export function folderKeyPrefix(folder: string, sep: string): string {
   return folder + (sep || DEFAULT_KEY_SEPARATOR)
 }
 
+/**
+ * 从连接参数构建 Redis URL（redis[s]://[user[:pass]@]host[:port][/db][?protocol=resp3]）。
+ * IPv6 地址自动加方括号；密码中的特殊字符自动编码。
+ */
+export function buildRedisUrl(params: {
+  host: string
+  port: number
+  username?: string
+  password?: string
+  ssl?: boolean
+  db?: number
+  protocol?: string
+}): string {
+  const scheme = params.ssl ? 'rediss' : 'redis'
+  let host = params.host || '127.0.0.1'
+  if (host.includes(':') && !host.startsWith('[')) host = `[${host}]`
+  let url = `${scheme}://`
+  if (params.username) {
+    url += encodeURIComponent(params.username)
+    if (params.password) url += `:${encodeURIComponent(params.password)}`
+    url += '@'
+  } else if (params.password) {
+    url += `:${encodeURIComponent(params.password)}@`
+  }
+  url += `${host}:${params.port}`
+  if (params.db && params.db > 0) url += `/${params.db}`
+  if (params.protocol === 'resp3') url += '?protocol=resp3'
+  return url
+}
+
 export function connMatchesKeyword(conn: UiConn, keyword: string): boolean {
   const key = keyword.trim().toLowerCase()
   if (!key) return true
