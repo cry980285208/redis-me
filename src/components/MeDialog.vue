@@ -22,6 +22,8 @@ withDefaults(defineProps<{ title?: string; icon?: string }>(), { title: '', icon
     <template #header>
       <div class="me-dialog-header">
         <me-icon :name="title" :icon="icon" />
+        <!-- 标题栏右侧扩展区（如外链），默认靠右贴近窗口操作按钮 -->
+        <slot name="header-extra" />
         <div class="me-dialog-actions">
           <me-icon
             :icon="fullscreen ? 'me-icon-window-restore' : 'me-icon-window-maximize'"

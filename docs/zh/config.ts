@@ -1,7 +1,5 @@
 import { defineAdditionalConfig } from 'vitepress'
 
-import { version } from '../../package.json'
-
 export default defineAdditionalConfig({
   lang: 'zh-Hans',
   description: 'RedisME 官方站点',
@@ -10,7 +8,6 @@ export default defineAdditionalConfig({
     sidebar: {
       '/zh/guide/': { base: '/zh/guide/', items: sidebarGuide() },
       '/zh/changelog/': { base: '/zh/changelog/', items: sidebarChangelog() },
-      '/zh/server/': { base: '/zh/server/', items: sidebarServer() },
     },
     footer: {
       message: `友情链接
@@ -47,14 +44,8 @@ export default defineAdditionalConfig({
 function nav() {
   return [
     { text: '主页', link: '/zh/' },
-    { text: '指南', link: '/zh/guide/intro/about', activeMatch: '/zh/guide/' },
-    {
-      text: `v${version}`,
-      items: [
-        { text: '更新日志', link: '/zh/changelog/latest', activeMatch: '/zh/changelog/' },
-        { text: 'Redis安装', link: '/zh/server/single', activeMatch: '/zh/server/' },
-      ],
-    },
+    { text: '使用指南', link: '/zh/guide/intro/about', activeMatch: '/zh/guide/' },
+    { text: '更新日志', link: '/zh/changelog/latest', activeMatch: '/zh/changelog/' },
   ]
 }
 
@@ -103,25 +94,11 @@ function sidebarChangelog() {
       text: '更新日志',
       items: [
         { text: 'latest', link: 'latest' },
+        { text: '4.x', link: '4.x' },
         { text: '3.x', link: '3.x' },
         { text: '2.x', link: '2.x' },
         { text: '1.x', link: '1.x' },
         { text: '0.x', link: '0.x' },
-      ],
-    },
-  ]
-}
-
-function sidebarServer() {
-  return [
-    {
-      text: 'Redis安装',
-      items: [
-        { text: '单机', link: '/single' },
-        { text: '集群', link: '/cluster' },
-        { text: '哨兵', link: '/sentinel' },
-        { text: 'Docker', link: '/docker' },
-        { text: 'SSL', link: '/ssl' },
       ],
     },
   ]

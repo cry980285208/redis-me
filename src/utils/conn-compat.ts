@@ -83,5 +83,8 @@ export function checkConnList(connList: ConnFromStore[]): void {
         pkfile: '', // 私钥文件
         passphrase: '', // 私钥密码
       }
+
+    // db 未填或为 null 时默认赋值 0
+    if (conn.db == null) conn.db = 0
   })
 }

@@ -39,11 +39,7 @@ export default {
     writableTip: 'Changed To Writable',
   },
 
-  keyEmpty: {
-    tagline: 'Modern, Lightweight, Cross-Platform',
-    sourceCode: 'Github',
-    bugReport: 'Bug Report',
-  },
+  keyEmpty: { tagline: 'Modern, Lightweight, Cross-Platform' },
 
   setting: {
     toDefault: 'Restore Default',
@@ -397,6 +393,57 @@ export default {
   },
 
   about: { sourceCode: 'Source Code', officialWebsite: 'Official Website' },
+
+  redisInstall: {
+    title: 'Redis Install',
+    mode: 'Deploy Mode',
+    modeSingle: 'Single',
+    modeCluster: 'Cluster',
+    modeSentinel: 'Sentinel',
+    image: 'Image',
+    alpine: 'Alpine',
+    ips: 'Node IPs',
+    ipsPlaceholder: 'Separate multiple IPs with semicolons, e.g. 192.168.1.10;192.168.1.11',
+    basePort: 'Base Port',
+    port: 'Port',
+    password: 'Password',
+    passwordPlaceholder: 'Empty for no password',
+    clusterMasters: 'Masters',
+    clusterReplicas: 'Repl./Master',
+    sentinelReplicas: 'Replicas',
+    sentinelCount: 'Sentinels',
+    mountData: 'Mount Data',
+    mountConf: 'Volume Conf',
+    ssl: 'TLS',
+    genCert: 'Generate Cert',
+    timezone: 'Timezone',
+    tzPlaceholder: 'Select or type',
+    tabGuide: 'Step Guide',
+    tabCommands: 'Docker Run',
+    tabCompose: 'Docker Compose',
+    dockerHub: 'Docker Hub',
+    installDoc: 'Official Install Doc',
+    machine: 'Machine',
+    stepEnv: 'Prepare Environment',
+    stepConf: 'Write Config Files',
+    stepCert: 'Prepare TLS Certificates',
+    stepStart: 'Start Containers',
+    stepCluster: 'Initialize Cluster',
+    stepVerify: 'Verify',
+    composeFile: 'compose file',
+    reviewCompose: 'Review and adjust if needed',
+  },
+
+  redisCert: {
+    title: 'TLS Certificate (For Reference Only)',
+    scriptTitle:
+      'Redis TLS (OpenSSL >= 3.2 recommended; X.509 v3 by default)',
+    scriptOutput: 'Output: ca.key ca.crt redis.key redis.crt',
+    step1Title: 'Step 1: Generate CA (ca.key + ca.crt)',
+    step2Title: 'Step 2: Generate server key and CSR (with SAN)',
+    step3Title: 'Step 3: Sign server certificate with CA',
+    step4Title: 'Step 4: Verify',
+  },
 
   commandLog: {
     title: 'Command Log',
@@ -825,6 +872,8 @@ export default {
     outputCsv: 'CSV',
 
     commandHint: 'View Command List',
+    keyHintScanned: 'Scanned key',
+    keyHintFavorite: 'Favorite key',
     commandTitle: 'Commands',
     keywordHint: 'Filter (Command or Summary)',
     group: 'Group',

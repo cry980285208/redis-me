@@ -50,16 +50,12 @@ base64 = "0.22"
 chrono = "0.4"
 chrono-tz = "0.10"
 fern = { version = "0.7", features = ["colored"] }
-# cookie 0.18.1（Tauri 间接依赖）与 time >= 0.3.52 不兼容，钉住可用版本
-time = "=0.3.51"
 
 # 目录支持~和环境变量
 shellexpand = "3"
 
 # SSH 隧道支持（使用 russh 支持现代密钥格式）
-russh = { version = "0.62", default-features = false, features = ["flate2", "ring", "rsa"] }
-# russh → pkcs8 0.11-rc 与 pkcs5 0.8.0 稳定版 API 不兼容，勿升到 stable
-# pkcs5 = "=0.8.0-rc.13"
+russh = { version = "0.63", default-features = false, features = ["flate2", "ring", "rsa"] }
 tokio = { version = "1", features = ["full"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"

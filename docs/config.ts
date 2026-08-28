@@ -1,7 +1,5 @@
 import { defineAdditionalConfig } from 'vitepress'
 
-import { version } from '../package.json'
-
 export default defineAdditionalConfig({
   lang: 'en-US',
   description: 'RedisME Official Website',
@@ -10,7 +8,6 @@ export default defineAdditionalConfig({
     sidebar: {
       '/guide/': { base: '/guide/', items: sidebarGuide() },
       '/changelog/': { base: '/changelog/', items: sidebarChangelog() },
-      '/server/': { base: '/server/', items: sidebarServer() },
     },
     footer: {
       message: `Links: 
@@ -29,13 +26,7 @@ function nav() {
   return [
     { text: 'Home', link: '/' },
     { text: 'Guide', link: '/guide/intro/about', activeMatch: '/guide/' },
-    {
-      text: `v${version}`,
-      items: [
-        { text: 'Changelog', link: '/changelog/latest', activeMatch: '/changelog/' },
-        { text: 'Redis Install', link: '/server/single', activeMatch: '/server/' },
-      ],
-    },
+    { text: 'Changelog', link: '/changelog/latest', activeMatch: '/changelog/' },
   ]
 }
 
@@ -84,25 +75,11 @@ function sidebarChangelog() {
       text: 'Changelog',
       items: [
         { text: 'latest', link: 'latest' },
+        { text: '4.x', link: '4.x' },
         { text: '3.x', link: '3.x' },
         { text: '2.x', link: '2.x' },
         { text: '1.x', link: '1.x' },
         { text: '0.x', link: '0.x' },
-      ],
-    },
-  ]
-}
-
-function sidebarServer() {
-  return [
-    {
-      text: 'Redis Install',
-      items: [
-        { text: 'Single', link: '/single' },
-        { text: 'Cluster', link: '/cluster' },
-        { text: 'Sentinel', link: '/sentinel' },
-        { text: 'Docker', link: '/docker' },
-        { text: 'SSL', link: '/ssl' },
       ],
     },
   ]
