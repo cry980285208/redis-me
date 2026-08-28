@@ -277,4 +277,46 @@ describe('genInstallNodes / genRedisInstall', () => {
     const allCmds = out.commands.map(c => c.code).join('\n')
     expect(allCmds).toContain('--replicaof 10.0.0.1 6379')
   })
+
+  it('TLS + 集群：配置含 tls-cluster/tls-replication，集群初始化携带 --tls', () => {
+    const out = genRedisInstall(
+      baseOptions({
+        mode: 'cluster',
+        ssl: true,
+        basePort: genInstallDefaultPort('cluster'),
+        ips: ['10.0.0.1', '10.0.0.2', '10.0.0.3'],
+      }),
+      labels,
+    )
+    const guideCode = out.guide[0].code
+    // redis.conf 含集群 TLS 配置
+    expect(guideCode).toContain('tls-cluster yes')
+    expect(guideCode).toContain('tls-replication yes')
+    expect(guideCode).toContain('tls-port 7001')
+    expect(guideCode).toContain('port 0')
+    // 集群初始化命令携带 --tls 和证书参数
+    expect(guideCode).toContain('--tls')
+    expect(guideCode).toContain('--cert /etc/redis/cert/redis.crt')
+    expect(guideCode).toContain('--key /etc/redis/cert/redis.key')
+    expect(guideCode).toContain('--cacert /etc/redis/cert/ca.crt')
+    expect(guideCode).toContain('--cluster create')
+  })
+
+  it('TLS + 哨兵：配置含 tls-replication，哨兵配置含证书路径', () => {
+    const out = genRedisInstall(
+      baseOptions({
+        mode: 'sentinel',
+        ssl: true,
+        ips: ['10.0.0.1', '10.0.0.2'],
+        password: 'pass',
+      }),
+      labels,
+    )
+    const guideCode = out.guide[0].code
+    expect(guideCode).toContain('tls-replication yes')
+    expect(guideCode).toContain('tls-cert-file /etc/redis/cert/redis.crt')
+    // 哨兵验证步骤携带 --tls
+    expect(guideCode).toContain('--tls')
+    expect(guideCode).toContain('sentinel master mymaster')
+  })
 })
