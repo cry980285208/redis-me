@@ -332,3 +332,11 @@ pub fn set_client_name(conn: &mut dyn ConnectionLike) {
         Err(e) => warn!("client setname 不可用，跳过: {e}"),
     }
 }
+
+/// 极简模式不发 CLIENT SETNAME，避免受限账号 / 弱网首连多一条命令
+pub fn set_client_name_unless_minimal(conn: &mut dyn ConnectionLike, conf: &ConnConfig) {
+    if conf.is_minimal_mode() {
+        return;
+    }
+    set_client_name(conn);
+}

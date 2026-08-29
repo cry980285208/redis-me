@@ -231,7 +231,7 @@ export default {
       'Initial database index<br/>• Standalone: switches while connected are auto-saved<br/>• Cluster: Valkey 9+ required; set at connect only, no switching',
     uiModeMinimal: 'Minimal',
     uiModeTip:
-      'Minimal mode shows only Key-Value and Terminal for ACL users without INFO, CONFIG, etc.',
+      'Minimal mode shows only Key-Value and Terminal. Connect skips INFO probes, for ACL users without INFO or high-latency links',
     sshOption: {
       host: 'Host',
       port: 'Port',
@@ -436,8 +436,7 @@ export default {
 
   redisCert: {
     title: 'TLS Certificate (For Reference Only)',
-    scriptTitle:
-      'Redis TLS (OpenSSL >= 3.2 recommended; X.509 v3 by default)',
+    scriptTitle: 'Redis TLS (OpenSSL >= 3.2 recommended; X.509 v3 by default)',
     scriptOutput: 'Output: ca.key ca.crt redis.key redis.crt',
     step1Title: 'Step 1: Generate CA (ca.key + ca.crt)',
     step2Title: 'Step 2: Generate server key and CSR (with SAN)',

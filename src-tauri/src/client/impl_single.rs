@@ -2,7 +2,9 @@ use crate::client::client_trait::*;
 use crate::implement_pipeline_commands;
 use crate::utils::capabilities::detect_server_capabilities;
 use crate::utils::command_log::LoggingConnection;
-use crate::utils::conn::{init_single_connection, get_client_single, set_client_name};
+use crate::utils::conn::{
+    get_client_single, init_single_connection, set_client_name_unless_minimal,
+};
 use crate::utils::error::AppError;
 use crate::utils::model::*;
 use crate::utils::ssh_tunnel::SshTunnel;
@@ -611,9 +613,13 @@ impl MeSingle {
         // 阶段 1 短超时验证 + 阶段 2 正式超时；验证通过后复用同一条 TCP（#155）
         let raw_conn = init_single_connection(&client, redis_conn.db, command_timeout)?;
         let mut conn = LoggingConnection::new(raw_conn, logger, redis_conn.db);
-        set_client_name(&mut conn);
-
-        detect_server_capabilities(&mut conn, &mut base, false);
+        // 极简模式与测试连接对齐：只保留握手 PING，不探测 INFO / SETNAME
+        if redis_conn.is_minimal_mode() {
+            info!("极简模式：跳过 CLIENT SETNAME / INFO 探测");
+        } else {
+            set_client_name_unless_minimal(&mut conn, redis_conn);
+            detect_server_capabilities(&mut conn, &mut base, false);
+        }
 
         info!("Redis单机连接初始化成功: {}", redis_conn.name);
 
@@ -650,7 +656,7 @@ impl MeSingle {
             self.command_logger.clone(),
             self.db.load(Relaxed),
         );
-        set_client_name(&mut *conn_guard);
+        set_client_name_unless_minimal(&mut *conn_guard, &self.conf);
         self.last_check_time.store(Utc::now().timestamp(), Relaxed);
         info!("Redis单机连接重连成功: {}", self.conf.name);
         Ok(())
@@ -704,7 +710,7 @@ impl MeSingle {
     // 获取一个新的连接（导出/导入等独立线程，不记命令日志）
     fn get_new_conn(&self) -> AnyResult<Connection> {
         let mut conn = Self::new_raw_conn(&self.client, self.db.load(Relaxed), self.command_timeout)?;
-        set_client_name(&mut conn);
+        set_client_name_unless_minimal(&mut conn, &self.conf);
         Ok(conn)
     }
 }

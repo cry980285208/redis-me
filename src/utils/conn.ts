@@ -15,7 +15,7 @@ import type { UiConn } from '@/types/me-interface'
 /** 连接 meta 中存放分组名的字段 */
 export const CONN_META_GROUP = 'group'
 
-/** 连接 meta 中界面模式：normal 全功能，minimal 仅键值与终端 */
+/** 连接 meta 中界面模式：normal 全功能，minimal 仅键值与终端（首连跳过 INFO/SETNAME） */
 export const CONN_META_UI_MODE = 'uiMode'
 
 /** 连接 meta 中命令映射：原命令名（小写）→ 服务端重命名后的命令 */
