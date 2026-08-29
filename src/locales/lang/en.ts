@@ -231,7 +231,7 @@ export default {
       'Initial database index<br/>• Standalone: switches while connected are auto-saved<br/>• Cluster: Valkey 9+ required; set at connect only, no switching',
     uiModeMinimal: 'Minimal',
     uiModeTip:
-      'Minimal mode shows only Key-Value and Terminal. Connect skips INFO probes, for ACL users without INFO or high-latency links',
+      'Minimal mode shows only Key-Value and Terminal for ACL users without INFO, CONFIG, etc.',
     sshOption: {
       host: 'Host',
       port: 'Port',

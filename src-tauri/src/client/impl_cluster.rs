@@ -845,12 +845,8 @@ impl MeCluster {
             logger,
             db,
         );
-        if redis_conn.is_minimal_mode() {
-            info!("极简模式：跳过 CLIENT SETNAME / INFO 探测");
-        } else {
-            set_client_name_unless_minimal(&mut conn, redis_conn);
-            detect_server_capabilities(&mut conn, &mut base, true);
-        }
+        set_client_name_unless_minimal(&mut conn, redis_conn);
+        detect_server_capabilities(&mut conn, &mut base, true);
         let cluster_nodes: String = redis::cmd("cluster").arg("nodes").query(&mut conn)?;
         let node_list = Self::parse_node_list(cluster_nodes)?;
         info!("Redis集群连接初始化成功: {}", redis_conn.name);

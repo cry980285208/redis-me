@@ -239,7 +239,7 @@ export default {
     dbTip:
       '初始化数据库序号<br/>• 单机支持，连接中切换会自动保存<br/>• 集群需 Valkey 9+，仅连接时指定、不可切换',
     uiModeMinimal: '极简',
-    uiModeTip: '极简模式仅展示键值与终端；连接时不探测 INFO，适用于命令受限的 ACL 账号或弱网环境',
+    uiModeTip: '极简模式仅展示键值与终端，适用于 INFO、CONFIG 等命令受限的 ACL 账号',
     readonly: '只读',
     readonlyShort: '只读',
     nameRequired: '请输入主机',

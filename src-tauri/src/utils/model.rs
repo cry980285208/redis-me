@@ -120,7 +120,7 @@ impl ConnConfig {
         self.protocol_version().supports_resp3()
     }
 
-    /// 极简模式（meta.uiMode=minimal）：仅键值与终端，跳过 INFO/SETNAME 等探测
+    /// 极简模式（meta.uiMode=minimal）：仅键值与终端；连接时跳过 CLIENT SETNAME
     pub fn is_minimal_mode(&self) -> bool {
         matches!(
             self.meta.get("uiMode"),
