@@ -22,7 +22,15 @@ import {
   setConnUiMode,
   type ConnProtocol,
 } from '@/utils/conn'
-import { meCommands, PREDEFINE_COLORS, meRandomString, meOk, meErr, meWarn, meCopy } from '@/utils/util'
+import {
+  meCommands,
+  PREDEFINE_COLORS,
+  meRandomString,
+  meOk,
+  meErr,
+  meWarn,
+  meCopy,
+} from '@/utils/util'
 const { t } = useI18n()
 // #endregion
 
@@ -842,7 +850,10 @@ function applyAdvanced() {
           </el-checkbox>
         </div>
         <div>
-          <me-button :info="redisUrl" :disabled="!(form.host && form.port)" @click="meCopy(redisUrl)">
+          <me-button
+            :info="redisUrl"
+            :disabled="!(form.host && form.port)"
+            @click="meCopy(redisUrl)">
             URL
           </me-button>
           <el-button @click="visible = false">{{ t('cancel') }}</el-button>
