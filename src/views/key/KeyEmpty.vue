@@ -122,7 +122,6 @@ function handleRedisInstallClick(): void {
 
       &:hover {
         color: var(--el-color-success);
-        opacity: 0.8;
       }
     }
   }
