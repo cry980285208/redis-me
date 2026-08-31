@@ -3,14 +3,14 @@
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import logoGlowUrl from '@/assets/images/logo-glow.png'
 import { meOpenUrl } from '@/utils/util'
 import RedisInstall from '@/views/ext/RedisInstall.vue'
 // #endregion
 
 // #region 核心状态
 const { t } = useI18n()
-/** Install 弹窗常驻挂载（勿 v-if）：Mac 上卸载会重绘空页 logo-glow 的 filter:blur，偶发露出合成层方框 */
-const redisInstallRef = ref<InstanceType<typeof RedisInstall>>()
+const showRedisInstall = ref(false)
 // #endregion
 
 // #region 面板操作
@@ -27,7 +27,7 @@ function handleBugClick(): void {
 }
 
 function handleRedisInstallClick(): void {
-  redisInstallRef.value?.open()
+  showRedisInstall.value = true
 }
 // #endregion
 </script>
@@ -35,7 +35,8 @@ function handleRedisInstallClick(): void {
 <template>
   <div class="key-empty">
     <div class="logo-wrap" @click="handleLogoClick">
-      <div class="logo-glow" aria-hidden="true" />
+      <!-- 预烘焙光晕图（含 blur）：避免 Mac WKWebView 对 CSS filter:blur 合成层偶发露方框 -->
+      <img class="logo-glow" :src="logoGlowUrl" alt="" aria-hidden="true" draggable="false" />
       <SvgIcon class="logo-icon" name="me-icon-logo-color" />
     </div>
     <div class="tagline">{{ t('keyEmpty.tagline') }}</div>
@@ -46,19 +47,19 @@ function handleRedisInstallClick(): void {
       <me-icon icon="me-icon-redis" name="Install" @click="handleRedisInstallClick" />
     </div>
 
-    <!-- 常驻，见 redisInstallRef 注释；关闭弹窗勿再 v-if 卸载 -->
-    <RedisInstall ref="redisInstallRef" />
+    <RedisInstall v-if="showRedisInstall" @update:model-value="showRedisInstall = false" />
   </div>
 </template>
 
 <style scoped lang="scss">
 .key-empty {
   flex: 1;
+  /* 预烘焙光晕为真实大图，会超出 logo 盒；CSS filter 不占布局溢出，需裁切以免横向滚动条 */
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   align-items: center;
 
-  /* 与文档站 hero 一致的紫/青对角渐变光晕，blur 仅作用于底层，图标保持清晰 */
   .logo-wrap {
     cursor: pointer;
     margin-top: 20vh;
@@ -73,13 +74,15 @@ function handleRedisInstallClick(): void {
   .logo-glow {
     position: absolute;
     z-index: 0;
-    /* 略大于图标区域，光晕向外晕开 */
-    inset: -30px;
-    border-radius: 50%;
-    background: linear-gradient(-45deg, #bd34fe 48%, #47caff 52%);
-    opacity: 0.5;
-    filter: blur(44px);
+    /* Chrome 按原 CSS 截出的 500×500 画布（含 blur 外扩）；opacity 已烘焙进图 */
+    width: 500px;
+    height: 500px;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
     pointer-events: none;
+    -webkit-user-drag: none;
+    user-select: none;
   }
 
   .logo-icon {
@@ -124,6 +127,7 @@ function handleRedisInstallClick(): void {
 
       &:hover {
         color: var(--el-color-success);
+        opacity: 0.8;
       }
     }
   }

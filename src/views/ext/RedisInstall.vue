@@ -11,8 +11,9 @@ import TlsCertGen from '@/views/ext/TlsCertGen.vue'
 
 // #region 核心状态
 const { t } = useI18n()
-// 常驻挂载 + open()（勿配合父级 v-if）：卸载会触发空页光晕 filter 合成层在 Mac 上露方框
-const visible = ref(false)
+const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
+// 组件由父组件 v-if 控制，创建即意味着要展示
+const visible = ref(true)
 const activeTab = ref('guide')
 
 // 表单状态（默认值即推荐配置：host 网络、持久化与配置外置默认开）
@@ -36,11 +37,10 @@ const form = reactive({
 // 证书生成弹框引用
 const certGenRef = ref<InstanceType<typeof TlsCertGen>>()
 
-function open(): void {
-  visible.value = true
-}
-
-defineExpose({ open })
+// 弹框关闭时通知父组件卸载（v-if 销毁 → 下次打开自动全新实例）
+watch(visible, v => {
+  if (!v) emit('update:modelValue', false)
+})
 // #endregion
 
 // #region 生成器入参与产物
