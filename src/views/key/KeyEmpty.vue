@@ -9,7 +9,8 @@ import RedisInstall from '@/views/ext/RedisInstall.vue'
 
 // #region 核心状态
 const { t } = useI18n()
-const showRedisInstall = ref(false)
+/** Install 弹窗常驻挂载（勿 v-if）：Mac 上卸载会重绘空页 logo-glow 的 filter:blur，偶发露出合成层方框 */
+const redisInstallRef = ref<InstanceType<typeof RedisInstall>>()
 // #endregion
 
 // #region 面板操作
@@ -26,7 +27,7 @@ function handleBugClick(): void {
 }
 
 function handleRedisInstallClick(): void {
-  showRedisInstall.value = true
+  redisInstallRef.value?.open()
 }
 // #endregion
 </script>
@@ -45,7 +46,8 @@ function handleRedisInstallClick(): void {
       <me-icon icon="me-icon-redis" name="Install" @click="handleRedisInstallClick" />
     </div>
 
-    <RedisInstall v-if="showRedisInstall" @update:model-value="showRedisInstall = false" />
+    <!-- 常驻，见 redisInstallRef 注释；关闭弹窗勿再 v-if 卸载 -->
+    <RedisInstall ref="redisInstallRef" />
   </div>
 </template>
 
