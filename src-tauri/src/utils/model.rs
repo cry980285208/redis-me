@@ -2,7 +2,8 @@
 
 use crate::api_model;
 use crate::utils::capabilities::ServerCapabilities;
-use crate::utils::conn::{get_client_cluster, get_client_single};
+use crate::utils::conn::{get_client_cluster, get_client_single, init_single_connection};
+use crate::utils::util::CONNECTION_NORMAL_TIMEOUT;
 use crate::utils::error::AppError;
 use crate::utils::util::{
     AnyResult, vec8_to_display_string,
@@ -182,9 +183,9 @@ impl AppSettings {
 impl ConnConfig {
     pub fn test(&self) -> AnyResult<()> {
         if self.cluster {
-            get_client_cluster(self)?;
+            get_client_cluster(self, true)?;
         } else {
-            get_client_single(self)?;
+            get_client_single(self, true)?;
         };
         // 单机模式返回的元组在测试后丢弃，SSH 隧道随之关闭
         // 集群模式不支持 SSH
@@ -194,8 +195,8 @@ impl ConnConfig {
     pub fn masters(&self) -> AnyResult<Vec<HashMap<String, String>>> {
         let mut conf = self.clone();
         conf.sentinel = false;
-        let (client, _) = get_client_single(&conf)?;
-        let mut conn = client.get_connection()?;
+        let (client, _) = get_client_single(&conf, false)?;
+        let mut conn = init_single_connection(&client, conf.db, CONNECTION_NORMAL_TIMEOUT)?;
         let masters: Vec<HashMap<String, String>> =
             redis::cmd("sentinel").arg("masters").query(&mut conn)?;
         Ok(masters)

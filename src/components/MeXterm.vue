@@ -117,6 +117,33 @@ function onKeydown(e: KeyboardEvent): void {
 //  color: var(--el-color-primary);
 //}
 
+/* 提示行：左侧命令完整显示，右侧说明过长时省略 */
+.t-cmd-tips-item {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.t-cmd-tips-content {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.t-cmd-tips-des {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-left: 0 !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
+}
+
+.t-cmd-tips-items {
+  overflow-x: auto;
+}
+
 /* help命令表格默认15px改为5px */
 .t-table,
 .t-table tr,
@@ -132,8 +159,9 @@ function onKeydown(e: KeyboardEvent): void {
   right: 5px !important;
 }
 
-/* padding 和 背景色修改 */
 .t-window {
+  /* 库内 z-index:1 会隔离层叠上下文，导致补全(100)盖不过 help(99)；unset 后同层比较 */
+  /* z-index: unset !important; */
   padding: 5px 5px 5px 20px !important;
   background-color: #efefef !important;
 }
@@ -145,13 +173,16 @@ html.dark {
   }
 }
 
-/* 字体设置 */
+/* 字体设置：终端正文 + 右上角说明 + 补全列表 */
 code,
 .t-window,
 .t-ask-input,
 .t-window p,
 .t-window div,
-.t-crude-font {
+.t-crude-font,
+.t-cmd-help,
+.t-cmd-help-des,
+.t-cmd-tips-items {
   font-family: var(--code-font) !important;
 }
 

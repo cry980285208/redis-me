@@ -9,9 +9,9 @@ mod tests {
     use crate::client::client_trait::MeClient;
     use crate::client::impl_cluster::MeCluster;
     use crate::client::impl_single::MeSingle;
-    use crate::utils::conn::{get_client_cluster, get_client_single};
+    use crate::utils::conn::{get_client_cluster, get_client_single, init_cluster_connection, init_single_connection};
     use crate::utils::model::*;
-    use crate::utils::util::AnyResult;
+    use crate::utils::util::{AnyResult, CONNECTION_NORMAL_TIMEOUT};
     use redis::TlsMode;
     use redis::cluster::{ClusterClient, ClusterPipeline};
     use std::time::Duration;
@@ -157,8 +157,8 @@ mod tests {
     #[test]
     fn test_field_scan_mock() -> AnyResult<()> {
         let conn_single = conf_single();
-        let (client, _) = get_client_single(&conn_single)?;
-        let mut conn = client.get_connection()?;
+        let (client, _) = get_client_single(&conn_single, false)?;
+        let mut conn = init_single_connection(&client, conn_single.db, CONNECTION_NORMAL_TIMEOUT)?;
 
         let mut pipe = redis::pipe();
         pipe.del("field-scan:string").ignore();
@@ -180,8 +180,8 @@ mod tests {
         let _: () = pipe.query(&mut conn)?;
 
         let conn_cluster = conf_cluster();
-        let client = get_client_cluster(&conn_cluster)?;
-        let mut conn = client.get_connection()?;
+        let client = get_client_cluster(&conn_cluster, false)?;
+        let mut conn = init_cluster_connection(&client, CONNECTION_NORMAL_TIMEOUT)?;
 
         let mut pipe = ClusterPipeline::new();
         pipe.del("field-scan:string").ignore();

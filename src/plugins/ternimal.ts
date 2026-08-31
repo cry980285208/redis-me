@@ -2,7 +2,15 @@ import type { App } from 'vue'
 import type { Command, InputTipsSearchHandlerFunc } from 'vue-web-terminal'
 import { createTerminal } from 'vue-web-terminal'
 
+import i18n from '@/locales'
 import type { MeXtermCommandItem } from '@/types/me-interface'
+import {
+  buildTerminalKeyHintTips,
+  isTypingTerminalCommandName,
+  parseTerminalKeyHintContext,
+  terminalHintInput,
+  terminalKeyHints,
+} from '@/utils/terminal-key-hints'
 
 const terminal = createTerminal()
 
@@ -27,23 +35,65 @@ export default function setupTernimal(app: App): void {
  *
  * 替代 vue-web-terminal 默认的简单前缀匹配，实现以下功能：
  * 1. 支持空格分隔的多词匹配（如输入 `config get` 精确匹配子命令）
- * 2. 智能回退逻辑（输入多余参数时不跳回宽泛列表）
+ * 2. 多词子命令按前缀匹配；已进入参数后不再回退成命令列表
  * 3. 多词同时高亮（如 `CONFIG` 和 `GET` 都会高亮）
  * 4. 排序与 vue-web-terminal 默认逻辑保持一致（完全匹配 > 大小写匹配 > 索引位置）
+ * 5. 命令后的键槽用 SCAN/收藏键补全（按光标前的输入判断槽位）
  */
 export const handleInputTipsSearch: InputTipsSearchHandlerFunc = (
   command,
-  _cursorIndex,
+  cursorIndex,
   commandStore,
   callback,
 ) => {
+  const input = terminalHintInput(command, cursorIndex)
+
   const store = commandStore as MeXtermCommandItem[]
+  const keyCtx = parseTerminalKeyHintContext(input)
+  if (keyCtx) {
+    const keys = terminalKeyHints.value
+    if (keys.length > 0) {
+      const origin = store?.find(cmd => cmd.key.toUpperCase() === keyCtx.cmd.toUpperCase())
+      const tips = buildTerminalKeyHintTips(
+        keyCtx,
+        keys,
+        {
+          scanned: i18n.global.t('redisTerminal.keyHintScanned'),
+          favorite: i18n.global.t('redisTerminal.keyHintFavorite'),
+        },
+        origin
+          ? {
+              title: origin.title,
+              group: origin.group,
+              usage: origin.usage,
+              description: origin.description ?? origin.summary,
+            }
+          : undefined,
+      )
+      callback(tips, tips.length > 0)
+      return
+    }
+    callback([], false)
+    return
+  }
+
   if (!store || store.length === 0) {
     callback([], true)
     return
   }
 
-  const inputTrimmed = command.trim()
+  // 已进入参数槽（field / value / numkeys 等）时不要把 HGET/MSET 再当命令补全
+  if (
+    !isTypingTerminalCommandName(
+      input,
+      store.map(cmd => cmd.key),
+    )
+  ) {
+    callback([], false)
+    return
+  }
+
+  const inputTrimmed = input.trim()
 
   if (!inputTrimmed) {
     callback([], true)

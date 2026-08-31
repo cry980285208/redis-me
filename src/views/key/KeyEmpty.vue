@@ -1,12 +1,15 @@
 <script setup lang="ts">
 // #region 导入
+import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { meOpenUrl } from '@/utils/util'
+import RedisInstall from '@/views/ext/RedisInstall.vue'
 // #endregion
 
 // #region 核心状态
 const { t } = useI18n()
+const showRedisInstall = ref(false)
 // #endregion
 
 // #region 面板操作
@@ -21,6 +24,10 @@ function handleGithubClick(): void {
 function handleBugClick(): void {
   meOpenUrl('https://github.com/hepengju/redis-me/issues')
 }
+
+function handleRedisInstallClick(): void {
+  showRedisInstall.value = true
+}
 // #endregion
 </script>
 
@@ -32,10 +39,13 @@ function handleBugClick(): void {
     </div>
     <div class="tagline">{{ t('keyEmpty.tagline') }}</div>
 
-    <div class="github">
-      <me-icon icon="me-icon-github" :name="t('keyEmpty.sourceCode')" @click="handleGithubClick" />
-      <me-icon icon="me-icon-bug" :name="t('keyEmpty.bugReport')" @click="handleBugClick" />
+    <div class="footer-links">
+      <me-icon icon="me-icon-github" name="Github" @click="handleGithubClick" />
+      <me-icon icon="me-icon-bug" name="Issues" @click="handleBugClick" />
+      <me-icon icon="me-icon-redis" name="Install" @click="handleRedisInstallClick" />
     </div>
+
+    <RedisInstall v-if="showRedisInstall" @update:model-value="showRedisInstall = false" />
   </div>
 </template>
 
@@ -84,6 +94,10 @@ function handleBugClick(): void {
 
   .tagline {
     margin-top: 40px;
+    max-width: min(360px, 90%);
+    min-height: 3em;
+    line-height: 1.5;
+    text-align: center;
     font-size: 16px;
     font-weight: bold;
     opacity: 0.5;
@@ -92,22 +106,23 @@ function handleBugClick(): void {
     background-clip: text;
   }
 
-  .github {
+  .footer-links {
     margin-top: 20vh;
-    width: 60%;
     display: flex;
-    justify-content: space-between;
+    justify-content: center;
+    gap: 20px;
 
     font-size: 16px;
     font-weight: bold;
     color: var(--el-color-info);
     opacity: 0.6;
 
-    div {
+    :deep(.icon-main) {
       cursor: pointer;
 
       &:hover {
         color: var(--el-color-success);
+        opacity: 0.8;
       }
     }
   }

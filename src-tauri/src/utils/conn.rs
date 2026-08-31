@@ -4,17 +4,18 @@ use crate::utils::ssh_tunnel::SshTunnel;
 use crate::utils::util::{AnyResult, CONNECTION_CHECK_TIMEOUT, parse_path};
 use anyhow::{Context, bail};
 use log::{info, warn};
-use redis::cluster::{ClusterClient, ClusterConfig};
+use redis::cluster::{ClusterClient, ClusterConfig, ClusterConnection};
 use redis::sentinel::{SentinelClientBuilder, SentinelServerType};
 use redis::{
-    Client, ClientTlsConfig, Commands, ConnectionAddr, ConnectionLike, ProtocolVersion,
-    TlsCertificates, TlsMode,
+    Client, ClientTlsConfig, Commands, Connection, ConnectionAddr, ConnectionLike,
+    ProtocolVersion, TlsCertificates, TlsMode,
 };
 use std::fs;
+use std::time::Duration;
 use url::Url;
 
-// 获取单机连接
-pub fn get_client_single(conf: &ConnConfig) -> AnyResult<(Client, Option<SshTunnel>)> {
+// 获取单机 Client；verify 为 true 时短超时 ping 验证（测试连接），为 false 时仅构建 Client（init 复用 TCP）
+pub fn get_client_single(conf: &ConnConfig, verify: bool) -> AnyResult<(Client, Option<SshTunnel>)> {
     // SSH 隧道不支持哨兵模式
     if conf.ssh && conf.sentinel {
         bail!(AppError::SentinelNotSupported);
@@ -70,23 +71,67 @@ pub fn get_client_single(conf: &ConnConfig) -> AnyResult<(Client, Option<SshTunn
     info!("redis_url: {redis_url_log}");
 
     let certs = get_tls_certs(conf.ssl_option.clone())?;
-    let mut client = if conf.ssl
+    let client = if conf.ssl
         && let Some(tls) = certs
     {
         Client::build_with_tls(url.to_string(), tls)?
     } else {
         Client::open(url.to_string())?
     };
-    // 测试连接是否可以成功，注意超时时间比较短，用户可以快速感知到。此连接使用后丢弃即可
-    let mut conn = client.get_connection_with_timeout(CONNECTION_CHECK_TIMEOUT)?;
-    let _: () = conn.ping()?;
-    info!("Redis单机测试连接成功");
 
-    // 哨兵模式 ==> 沿用上面的逻辑（避免默认超时时间太长，影响用户体验）
-    if conf.sentinel {
-        client = get_client_sentinel(conf)?;
+    // 哨兵模式：在哨兵 Client 上建连，避免直连地址与主节点不一致
+    let client = if conf.sentinel {
+        get_client_sentinel(conf)?
+    } else {
+        client
+    };
+    // verify=true：仅测试连接（ConnConfig::test），短超时 ping 后丢弃，不再 init；verify=false：由 init_*_connection 验证并复用 TCP
+    if verify {
+        let _conn = verify_single_connection(&client)?;
     }
     Ok((client, ssh_tunnel))
+}
+
+/// 阶段 1：短超时建连并 ping，连不上时快速失败（`CONNECTION_CHECK_TIMEOUT`，约 3s）。
+fn verify_single_connection(client: &Client) -> AnyResult<Connection> {
+    let result: AnyResult<Connection> = (|| {
+        let mut conn = client.get_connection_with_timeout(CONNECTION_CHECK_TIMEOUT)?;
+        let _: () = conn.ping()?;
+        Ok(conn)
+    })();
+    match &result {
+        Ok(_) => info!("Redis单机连接验证通过"),
+        Err(e) => warn!("Redis单机连接验证失败: {e}"),
+    }
+    result
+}
+
+/// 阶段 2：将已验证连接切换为正式命令超时（读写超时来自应用设置，可配置）。
+fn apply_single_command_timeout(
+    mut conn: Connection,
+    db: u16,
+    command_timeout: Duration,
+) -> AnyResult<Connection> {
+    conn.set_read_timeout(Some(command_timeout))?;
+    conn.set_write_timeout(Some(command_timeout))?;
+    if db != 0 {
+        info!("select {db}");
+        let _: () = redis::cmd("select")
+            .arg(db)
+            .query(&mut conn)
+            .unwrap_or_else(|_| warn!("select {db} 失败，使用默认数据库0"));
+    }
+    Ok(conn)
+}
+
+/// 正式初始化：阶段 1 验证通过后复用同一条 TCP，再进入阶段 2（避免二次建连导致外网 RST，#155）。
+pub fn init_single_connection(
+    client: &Client,
+    db: u16,
+    command_timeout: Duration,
+) -> AnyResult<Connection> {
+    let conn = verify_single_connection(client)?;
+    apply_single_command_timeout(conn, db, command_timeout)
 }
 
 fn get_client_sentinel(conf: &ConnConfig) -> AnyResult<Client> {
@@ -161,8 +206,8 @@ fn get_client_sentinel(conf: &ConnConfig) -> AnyResult<Client> {
     Ok(client)
 }
 
-// 获取集群连接
-pub fn get_client_cluster(conf: &ConnConfig) -> AnyResult<ClusterClient> {
+// 获取集群 Client；verify 为 true 时短超时 ping 验证（测试连接），为 false 时仅构建 Client（init 复用 TCP）
+pub fn get_client_cluster(conf: &ConnConfig, verify: bool) -> AnyResult<ClusterClient> {
     // SSH 隧道不支持集群模式
     if conf.ssh {
         bail!(AppError::ClusterNotSupported);
@@ -213,11 +258,45 @@ pub fn get_client_cluster(conf: &ConnConfig) -> AnyResult<ClusterClient> {
     }
     builder = builder.database_id(conf.db as i64);
     let client = builder.build()?;
-    let cc = ClusterConfig::new().set_connection_timeout(CONNECTION_CHECK_TIMEOUT);
-    let mut conn = client.get_connection_with_config(cc)?;
-    let _: () = conn.ping()?;
-    info!("测试集群测试连接成功");
+    // verify=true：仅测试连接（ConnConfig::test），短超时 ping 后丢弃，不再 init；verify=false：由 init_*_connection 验证并复用 TCP
+    if verify {
+        let _conn = verify_cluster_connection(&client)?;
+    }
     Ok(client)
+}
+
+/// 阶段 1：短超时建连并 ping（集群入口节点）。
+fn verify_cluster_connection(client: &ClusterClient) -> AnyResult<ClusterConnection> {
+    let result: AnyResult<ClusterConnection> = (|| {
+        let cc = ClusterConfig::new().set_connection_timeout(CONNECTION_CHECK_TIMEOUT);
+        let mut conn = client.get_connection_with_config(cc)?;
+        let _: () = conn.ping()?;
+        Ok(conn)
+    })();
+    match &result {
+        Ok(_) => info!("Redis集群连接验证通过"),
+        Err(e) => warn!("Redis集群连接验证失败: {e}"),
+    }
+    result
+}
+
+/// 阶段 2：将已验证连接切换为正式命令超时。
+fn apply_cluster_command_timeout(
+    conn: ClusterConnection,
+    command_timeout: Duration,
+) -> AnyResult<ClusterConnection> {
+    conn.set_read_timeout(Some(command_timeout))?;
+    conn.set_write_timeout(Some(command_timeout))?;
+    Ok(conn)
+}
+
+/// 正式初始化：阶段 1 验证通过后复用同一条 TCP，再进入阶段 2（#155）。
+pub fn init_cluster_connection(
+    client: &ClusterClient,
+    command_timeout: Duration,
+) -> AnyResult<ClusterConnection> {
+    let conn = verify_cluster_connection(client)?;
+    apply_cluster_command_timeout(conn, command_timeout)
 }
 
 // 获取证书

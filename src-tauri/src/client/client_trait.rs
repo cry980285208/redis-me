@@ -2084,8 +2084,9 @@ pub fn monitor0(
 }
 
 pub fn monitor_stop0(running: Arc<AtomicBool>) -> AnyResult<()> {
-    info!("monitor stop");
-    running.store(false, Relaxed);
+    if running.swap(false, Relaxed) {
+        info!("monitor stop");
+    }
     Ok(())
 }
 

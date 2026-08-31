@@ -2,12 +2,15 @@
 // #region 导入
 import { LanguageSupport, StreamLanguage, syntaxHighlighting } from '@codemirror/language'
 import { properties as propertiesMode } from '@codemirror/legacy-modes/mode/properties'
+import { shell as shellMode } from '@codemirror/legacy-modes/mode/shell'
+import { yaml as yamlMode } from '@codemirror/legacy-modes/mode/yaml'
 import { Prec } from '@codemirror/state'
 import { EditorView, keymap, lineNumbers } from '@codemirror/view'
 import { useDark } from '@vueuse/core'
 import { json5 as cmJson5 } from 'codemirror-json5'
-import { computed, ref } from 'vue'
+import { type HTMLAttributes, computed, ref, useAttrs } from 'vue'
 import CodeMirror from 'vue-codemirror6'
+import { useI18n } from 'vue-i18n'
 
 import {
   meBasicSetup,
@@ -15,12 +18,15 @@ import {
   propertiesEagerParse,
   zhPhrases,
 } from '@/plugins/codemirror'
-import { isZh } from '@/utils/util'
+import { isZh, meCopy } from '@/utils/util'
 // #endregion
 
 // #region 核心状态
 // Java .properties 流式解析：适配 Redis INFO/CONFIG（key:value、# 段注释、续行）
 const propertiesLang = new LanguageSupport(StreamLanguage.define(propertiesMode))
+// shell / yaml 流式解析：Redis 安装帮助产物展示用；conf 复用 properties（行式 key value）
+const shellLang = new LanguageSupport(StreamLanguage.define(shellMode))
+const yamlLang = new LanguageSupport(StreamLanguage.define(yamlMode))
 
 // 在编辑器聚焦时 F11：对 `.cm-editor` 调用 Fullscreen API（再按 F11 或 Esc 退出）
 function toggleCmEditorFullscreen(el: HTMLElement) {
@@ -32,8 +38,8 @@ function toggleCmEditorFullscreen(el: HTMLElement) {
   void el.requestFullscreen().catch(() => {})
 }
 
-// 自动换行默认开启，Mod+B 切换（Mac ⌘ / Win·Linux Ctrl）
-const lineWrap = ref(true)
+// 自动换行默认关闭，Mod+B 切换（Mac ⌘ / Win·Linux Ctrl）
+const lineWrap = ref(false)
 // 行号默认显示，Mod+N 切换
 const showLineNumbers = ref(true)
 
@@ -99,14 +105,32 @@ const meCodePrecKeymap = Prec.highest(
 
 const props = withDefaults(
   defineProps<{
-    /** `json` / `json5` 均使用 JSON5 语法高亮（合法 JSON 也可）；`properties` 为 Redis INFO/CONFIG */
+    /** `json` / `json5` 均使用 JSON5 语法高亮；`properties`/`conf` 为行式配置；`shell` / `yaml` 安装帮助产物 */
     mode?: string
     readOnly?: boolean
     /** 解码失败：danger 描边 */
     error?: boolean
+    /** 右上角内置复制图标（可选展示） */
+    copyable?: boolean
   }>(),
-  { mode: 'json', readOnly: false, error: false },
+  { mode: 'json', readOnly: false, error: false, copyable: false },
 )
+
+// class/style 落到外层包装（撑高度），其余属性（含 modelValue）透给编辑器
+defineOptions({ inheritAttrs: false })
+const attrs = useAttrs()
+// class/style 拆到外层 wrapper，其余透传给 code-mirror
+const wrapClass = computed<HTMLAttributes['class']>(() => attrs.class as HTMLAttributes['class'])
+const wrapStyle = computed<HTMLAttributes['style']>(() => attrs.style as HTMLAttributes['style'])
+const restAttrs = computed(() => {
+  const { class: _c, style: _s, ...rest } = attrs
+  return rest as Record<string, unknown>
+})
+const { t } = useI18n()
+
+function copyCode(): void {
+  meCopy((restAttrs.value.modelValue as string) ?? '')
+}
 
 const rootClass = computed(() => [
   ...(props.readOnly ? ['codemirror-opacity', 'is-disabled'] : []),
@@ -116,7 +140,9 @@ const rootClass = computed(() => [
 const dark = useDark()
 const lang = computed(() => {
   if (props.mode === 'json' || props.mode === 'json5') return cmJson5()
-  if (props.mode === 'properties') return propertiesLang
+  if (props.mode === 'properties' || props.mode === 'conf') return propertiesLang
+  if (props.mode === 'shell') return shellLang
+  if (props.mode === 'yaml') return yamlLang
   return undefined
 })
 const phrases = computed(() => (isZh.value ? zhPhrases : {}))
@@ -135,7 +161,7 @@ const extensions = computed(() => {
     list.push(lineNumbers())
   }
 
-  if (props.mode === 'properties') {
+  if (props.mode === 'properties' || props.mode === 'conf') {
     list.push(syntaxHighlighting(propertiesDarkSyntax), propertiesEagerParse)
   }
   return list
@@ -145,17 +171,42 @@ const extensions = computed(() => {
 
 <template>
   <!-- https://github.com/logue/vue-codemirror6  -->
-  <code-mirror
-    v-bind="$attrs"
-    :dark
-    :lang
-    :phrases
-    :extensions
-    :readonly="props.readOnly"
-    :class="rootClass" />
+  <div class="me-code-wrap" :class="wrapClass" :style="wrapStyle">
+    <code-mirror
+      v-bind="restAttrs"
+      :dark
+      :lang
+      :phrases
+      :extensions
+      :readonly="props.readOnly"
+      :class="rootClass" />
+    <el-tooltip v-if="props.copyable" :content="t('copy')" placement="top">
+      <me-icon class="me-code-copy" icon="el-icon-document-copy" @click="copyCode" />
+    </el-tooltip>
+  </div>
 </template>
 
 <style scoped lang="scss">
+.me-code-wrap {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+}
+
+/* 右上角复制图标（仅 copyable 时展示） */
+.me-code-copy {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  z-index: 4;
+  cursor: pointer;
+  color: var(--el-text-color-secondary);
+
+  &:hover {
+    color: var(--el-color-primary);
+  }
+}
+
 .codemirror-opacity {
   opacity: 0.8;
 }

@@ -13,6 +13,7 @@ import {
   ref,
   shallowRef,
   useTemplateRef,
+  watch,
 } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -41,6 +42,7 @@ import {
   MINIMATCH_SCAN_OPTS,
 } from '@/utils/redis-glob'
 import { redisKeyId, sameRedisKey } from '@/utils/redis-key'
+import { setTerminalKeyHints } from '@/utils/terminal-key-hints'
 import {
   bus,
   CONN_REFRESH,
@@ -391,6 +393,21 @@ const filterPattern = computed(() =>
 let scanBuffer: RedisKey_Deserialize[] = []
 
 const keyList = shallowRef<RedisKey_Deserialize[]>([])
+
+// 同步左侧 SCAN + 收藏键供终端键名补全
+watch(
+  [keyList, currentFavorites],
+  () => {
+    setTerminalKeyHints(
+      keyList.value.map(k => k.key),
+      currentFavorites.value.map(k => k.key),
+    )
+  },
+  { immediate: true },
+)
+onUnmounted(() => {
+  setTerminalKeyHints([])
+})
 
 function flushScanToUi() {
   scanBuffer = sortBy(scanBuffer, ['key'])
