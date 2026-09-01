@@ -3,7 +3,7 @@ use crate::utils::capabilities::detect_server_capabilities;
 use crate::utils::command_log::LoggingClusterConnection;
 use crate::utils::conn::{
     get_client_cluster, get_client_single, init_cluster_connection, init_single_connection,
-    set_client_name,
+    set_client_name_unless_minimal,
 };
 use crate::utils::error::AppError;
 use crate::utils::model::*;
@@ -845,10 +845,8 @@ impl MeCluster {
             logger,
             db,
         );
-        set_client_name(&mut conn);
-
+        set_client_name_unless_minimal(&mut conn, redis_conn);
         detect_server_capabilities(&mut conn, &mut base, true);
-
         let cluster_nodes: String = redis::cmd("cluster").arg("nodes").query(&mut conn)?;
         let node_list = Self::parse_node_list(cluster_nodes)?;
         info!("Redis集群连接初始化成功: {}", redis_conn.name);
@@ -878,7 +876,7 @@ impl MeCluster {
             self.command_logger.clone(),
             self.db.load(Relaxed),
         );
-        set_client_name(&mut *conn_guard);
+        set_client_name_unless_minimal(&mut *conn_guard, &self.conf);
         self.last_check_time.store(Utc::now().timestamp(), Relaxed);
         info!("Redis集群连接重连成功: {}", self.conf.name);
         Ok(())
@@ -934,7 +932,7 @@ impl MeCluster {
     // 获取一个新的连接（导出/导入等独立线程，不记命令日志）
     fn get_new_conn(&self) -> AnyResult<ClusterConnection> {
         let mut conn = Self::new_raw_conn(&self.client, self.command_timeout)?;
-        set_client_name(&mut conn);
+        set_client_name_unless_minimal(&mut conn, &self.conf);
         Ok(conn)
     }
 

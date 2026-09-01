@@ -332,3 +332,12 @@ pub fn set_client_name(conn: &mut dyn ConnectionLike) {
         Err(e) => warn!("client setname 不可用，跳过: {e}"),
     }
 }
+
+/// 极简模式不发 CLIENT SETNAME（仅客户端展示名，不影响能力探测）
+pub fn set_client_name_unless_minimal(conn: &mut dyn ConnectionLike, conf: &ConnConfig) {
+    if conf.is_minimal_mode() {
+        info!("极简模式：跳过 CLIENT SETNAME");
+        return;
+    }
+    set_client_name(conn);
+}

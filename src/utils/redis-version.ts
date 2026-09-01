@@ -26,3 +26,14 @@ export function compareVersionLabel(a: string, b: string): number {
 export function sortVersionsDesc(versions: string[]): string[] {
   return [...versions].sort((a, b) => compareVersionLabel(b, a))
 }
+
+/**
+ * 在已按降序排好的版本列表中，选不超过 current 的最新一项。
+ * 服务版本低于字典最小版本时（如 Redis 5 vs Redis6.2），回退到列表最旧项，避免空值。
+ */
+export function pickVersionAtOrBelow(current: string, versionsDesc: string[]): string {
+  for (const version of versionsDesc) {
+    if (compareVersionLabel(current, version) >= 0) return version
+  }
+  return versionsDesc[versionsDesc.length - 1] ?? ''
+}

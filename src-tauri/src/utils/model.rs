@@ -119,6 +119,14 @@ impl ConnConfig {
     pub fn is_resp3(&self) -> bool {
         self.protocol_version().supports_resp3()
     }
+
+    /// 极简模式（meta.uiMode=minimal）：仅键值与终端；连接时跳过 CLIENT SETNAME
+    pub fn is_minimal_mode(&self) -> bool {
+        matches!(
+            self.meta.get("uiMode"),
+            Some(ConnMetaValue::String(s)) if s == "minimal"
+        )
+    }
 }
 
 api_model!(
@@ -1032,5 +1040,22 @@ mod v8_base64 {
             .decode(base64_string.as_bytes())
             .map_err(|e| Error::custom(format!("Base64 decode error: {}", e)))?;
         Ok(bytes)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn is_minimal_mode_reads_ui_mode() {
+        let mut conf = ConnConfig::default();
+        assert!(!conf.is_minimal_mode());
+        conf.meta
+            .insert("uiMode".into(), ConnMetaValue::String("minimal".into()));
+        assert!(conf.is_minimal_mode());
+        conf.meta
+            .insert("uiMode".into(), ConnMetaValue::String("normal".into()));
+        assert!(!conf.is_minimal_mode());
     }
 }

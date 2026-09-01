@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vite-plus/test'
 
-import { buildRedisUrl } from '@/utils/conn'
+import type { UiConn } from '@/types/me-interface'
+import { buildRedisUrl, isConnMinimalMode } from '@/utils/conn'
 
 describe('buildRedisUrl', () => {
   it('基本单机：redis://host:port', () => {
@@ -32,15 +33,11 @@ describe('buildRedisUrl', () => {
   })
 
   it('db > 0 时追加路径', () => {
-    expect(buildRedisUrl({ host: '127.0.0.1', port: 6379, db: 3 })).toBe(
-      'redis://127.0.0.1:6379/3',
-    )
+    expect(buildRedisUrl({ host: '127.0.0.1', port: 6379, db: 3 })).toBe('redis://127.0.0.1:6379/3')
   })
 
   it('db = 0 时不追加路径', () => {
-    expect(buildRedisUrl({ host: '127.0.0.1', port: 6379, db: 0 })).toBe(
-      'redis://127.0.0.1:6379',
-    )
+    expect(buildRedisUrl({ host: '127.0.0.1', port: 6379, db: 0 })).toBe('redis://127.0.0.1:6379')
   })
 
   it('IPv6 地址自动加方括号', () => {
@@ -71,5 +68,19 @@ describe('buildRedisUrl', () => {
     expect(buildRedisUrl({ host: '127.0.0.1', port: 6379, protocol: 'resp2' })).toBe(
       'redis://127.0.0.1:6379',
     )
+  })
+})
+
+describe('isConnMinimalMode', () => {
+  const conn = (meta: Record<string, unknown> = {}) => ({ meta }) as unknown as UiConn
+
+  it('meta.uiMode=minimal 为真', () => {
+    expect(isConnMinimalMode(conn({ uiMode: 'minimal' }))).toBe(true)
+  })
+
+  it('缺省或其它值不为极简', () => {
+    expect(isConnMinimalMode(null)).toBe(false)
+    expect(isConnMinimalMode(conn())).toBe(false)
+    expect(isConnMinimalMode(conn({ uiMode: 'normal' }))).toBe(false)
   })
 })

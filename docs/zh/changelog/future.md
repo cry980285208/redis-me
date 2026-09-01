@@ -2,14 +2,11 @@
 
 - ZSet支持按分数范围过滤数据
 - 抖音/B站短视频的制作: 每个痛点解决1个小视频
-- Redis单机/集群安装的UI支持, 快捷docker-compose.yaml生成
 - Redis实战相关文章的编写
 - Time Series 的支持
 - RedisSearch 的支持
 - 连接级自动解压：优先 GZIP，可选 LZ4 / ZSTD / Snappy（对标 RedisInsight；即此前「自动解压缩」）
 - 研究下怎么上线Linux的应用商店: deepin, snap, flathub
-- 连接，收藏等持久化到sqlite的DB中
-- get xxx时，终端支持键提示（已有的）
 - Redisson的键空间通知 模块 参考实现
 - 自定义编码也支持自动识别
 
@@ -18,7 +15,6 @@
 - Viewer 解压查看：Gzip / Deflate / Brotli（对标 TinyRDM / Another）
 - 网络代理：HTTP / SOCKS5
 - Unix Socket 支持
-- 解析剪贴板 URL / redis:// 反向解析填表
 - 树形节点的内存占用显示
 - 内存分析：扫描实时显示进度
 - 内存分析可以快速停止
@@ -73,3 +69,7 @@
 - Redis8.8 已发布，更新命令列表、配置文件等 ✅️
 - MeTable表格导出新增的复制原始JSON ✅️
 - 连接高级配置增加通信协议 RESP2/RESP3，默认 RESP2 ✅️
+- get xxx时，终端支持键提示（已有的）✅️
+- Redis单机/集群安装的UI支持, 快捷docker-compose.yaml生成 ✅️
+- 解析剪贴板 URL / redis:// 反向解析填表 ✅️
+- 连接，收藏等持久化到sqlite的DB中 ❌️
