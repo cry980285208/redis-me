@@ -4,7 +4,7 @@
 
 ### ✨ New Features
 
-- Value area: ZSet **member rank** now shown in a table dialog
+- Value area: ZSet member rank now shown in a table dialog
 - Minimal mode skips CLIENT SETNAME on connect
 
 ### 🐞 Bug Fixes
