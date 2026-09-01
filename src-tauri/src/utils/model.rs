@@ -348,6 +348,12 @@ api_model!(FieldScanMeta {
     stream_desc: Option<bool>,
     /// VectorSet 浏览模式：true 随机采样（VRANDMEMBER，无分页）；false 范围查询（VRANGE）；默认 true
     vectorset_sample: Option<bool>,
+    /// ZSet 分数下界；空/缺省则 -inf。任一侧非空即走 ZRANGEBYSCORE
+    #[serde(default)]
+    zset_min_score: Option<String>,
+    /// ZSet 分数上界；空/缺省则 +inf
+    #[serde(default)]
+    zset_max_score: Option<String>,
 });
 
 api_model!(FieldScanParam {
