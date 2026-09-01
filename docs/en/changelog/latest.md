@@ -1,5 +1,17 @@
 # 5.x Changelog
 
+## v5.0.1 (2026-09-01)
+
+### ✨ New Features
+
+- Value area: ZSet **member rank** now shown in a table dialog
+- Minimal mode skips CLIENT SETNAME on connect
+
+### 🐞 Bug Fixes
+
+- Fixed empty-page Logo glow occasionally showing a box on Mac
+- Fixed config page crash on Redis 5 and other older versions
+
 ## [v5.0.0](https://mp.weixin.qq.com/s/qtq9ESg-uYcR0tAyvDaCgA) (2026-08-28)
 
 ### ✨ New Features
