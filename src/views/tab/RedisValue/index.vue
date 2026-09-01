@@ -23,7 +23,6 @@ import type {
   RedisFieldGet_Deserialize,
   RedisFieldValue,
   RedisKey_Deserialize,
-  RedisZsetRankResult,
   ScanCursor,
 } from '@/types/tauri-specta'
 import {
@@ -1276,28 +1275,8 @@ function onFieldRowMoreCommand(command: string, row: ValueTableRow) {
   } else if (command === 'copyAsCommand') {
     void copyFieldAsCommand(row)
   } else if (command === 'showZsetRank') {
-    void showZsetRank(row)
+    showZsetRank(row)
   }
-}
-
-async function showZsetRank(row: ValueTableRow) {
-  const conn = share.conn
-  const rk = share.redisKey
-  if (!conn || !rk) return
-  const member = String(row.value ?? '')
-  const data: RedisZsetRankResult = await meCommands.zsetRank(conn.id, {
-    key: rk,
-    member,
-    valFmt: IPC_WIRE_FORMAT,
-  })
-  const rankText = data.rank !== null ? String(data.rank) : t('redisValue.rankNotFound')
-  const revRankText = data.revRank !== null ? String(data.revRank) : t('redisValue.rankNotFound')
-  meOk(
-    `${t('redisValue.rank')}: ${rankText}<br>${t('redisValue.revRank')}: ${revRankText}`,
-    true,
-    t('redisValue.rankTitle'),
-    { dangerouslyUseHTMLString: true },
-  )
 }
 
 function onFieldSetRefreshed(data: RedisFieldValue) {
@@ -1439,6 +1418,9 @@ function toggleFavorite() {
 const tableInfoRef = useTemplateRef<InstanceType<typeof TableInfo>>('tableInfoRef')
 const valueShortcutRef = useTemplateRef('valueShortcutRef')
 const commandHelpRef = useTemplateRef<InstanceType<typeof CommandHelp>>('commandHelpRef')
+function showZsetRank(row: ValueTableRow) {
+  tableInfoRef.value?.open('zrank', { member: String(row.value ?? '') })
+}
 function openKeyShortDialog() {
   valueShortcutRef.value?.open()
 }
@@ -2362,7 +2344,7 @@ onUnmounted(() => {
     <KeyRename ref="keyRenameRef" />
     <CommandHelp ref="commandHelpRef" />
 
-    <!-- 本域弹窗：OBJECT / ARINFO / VINFO / 自定义编解码 -->
+    <!-- 本域弹窗：OBJECT / ARINFO / VINFO / ZRANK / 自定义编解码 -->
     <TableInfo ref="tableInfoRef" />
     <CustomCodec v-model="customCodecVisible" />
 
