@@ -27,6 +27,6 @@ export const defaultSettings = {
   commandTimeout: 30,
   // STRING 类型值全量加载安全阈值（MB）
   valueByteLimitMB: 1,
-  // STRING 类型值超过安全阈值时的预览字节数（8KB：够看结构，远低于 1MB 安全阈值）
-  valuePreviewBytes: 8192,
+  // STRING 类型值超过安全阈值时的预览字节数（4KB：够看结构，远低于 1MB 安全阈值）
+  valuePreviewBytes: 4096,
 }

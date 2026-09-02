@@ -448,7 +448,7 @@ fn load_string_bytes(
         if let Some(limit) = meta.and_then(|m| m.value_byte_limit) {
             if strlen > limit as usize {
                 // 与 defaultSettings.valuePreviewBytes 一致（前端未传时）
-                let preview = meta.and_then(|m| m.value_preview_bytes).unwrap_or(8192) as usize;
+                let preview = meta.and_then(|m| m.value_preview_bytes).unwrap_or(4096) as usize;
                 let end = preview.saturating_sub(1) as isize;
                 let value: Vec<u8> = conn.getrange(key, 0, end)?;
                 return Ok((value, strlen, true));
