@@ -12,7 +12,7 @@ import JSON5 from 'json5'
 
 import i18n from '@/locales'
 import type { BytesFormat } from '@/types/tauri-specta'
-import { base64ToUtf8Text } from '@/utils/detect-view-format'
+import { base64ToUtf8Text, trimIncompleteUtf8Tail } from '@/utils/detect-view-format'
 import { formatJavaSerDisplay, javaSerBase64ToValue } from '@/utils/javaserial'
 import { formatPhpSerialDisplay, phpSerialBase64ToValue } from '@/utils/phpserial'
 import { formatPickleDisplay, pickleBase64ToValue } from '@/utils/pickle'
@@ -402,6 +402,15 @@ export function base64WireToUtf8Display(base64: string): string {
   if (binary === null) return formatViewDecodeError(decodeErrTitle('Bytes'), base64)
   const bytes = new Uint8Array(binary.length)
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  // GETRANGE 预览切在多字节字符中间：去掉不完整尾部，避免末尾出现 U+FFFD
+  const trimmed = trimIncompleteUtf8Tail(bytes)
+  if (trimmed.length < bytes.length) {
+    try {
+      return new TextDecoder('utf-8', { fatal: true }).decode(trimmed)
+    } catch {
+      // 中间仍有非法序列，走 lossy
+    }
+  }
   return new TextDecoder('utf-8').decode(bytes)
 }
 

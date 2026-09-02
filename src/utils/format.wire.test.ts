@@ -28,6 +28,16 @@ describe('format wire=base64 display-only', () => {
     expect(base64WireToUtf8Display(wire)).toBe(text)
   })
 
+  it('预览截断在汉字中间：UTF8 展示不含替换符', () => {
+    const bytes = new TextEncoder().encode('你好世界')
+    const cut = bytes.subarray(0, 5)
+    let binary = ''
+    for (let i = 0; i < cut.length; i++) binary += String.fromCharCode(cut[i]!)
+    const wire = btoa(binary)
+    expect(base64WireToUtf8Display(wire)).toBe('你')
+    expect(base64WireToUtf8Display(wire)).not.toContain('\uFFFD')
+  })
+
   it('空值', () => {
     expect(meFormatViewValue('', 'utf8')).toBe('')
     expect(meViewToWire('', 'utf8')).toBe('')

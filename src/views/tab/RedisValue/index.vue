@@ -378,7 +378,7 @@ function syncDisplaySnapshot() {
   displayWire.value = wire
 
   if (bytesFormat.value === 'auto' && stringType.value) {
-    const nextDetected = detectViewFormat(wire)
+    const nextDetected = detectViewFormat(wire, { truncated: valueTruncated.value })
     commitDetectedView(nextDetected)
     displayBytesFormat.value = nextDetected
     return
