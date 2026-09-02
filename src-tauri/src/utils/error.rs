@@ -38,6 +38,7 @@ pub enum AppError {
     FieldNotFoundStream { stream_id: String },
     FieldOperationNotSupported { mode: String },
     FieldScanNotSupported { value_type: String },
+    InvalidZsetScoreBound { bound: String },
 
     // 配置相关
     InvalidNodeFormat { node: String },
@@ -52,6 +53,7 @@ pub enum AppError {
     SshKeyFileEmpty,
     SshLoginMethodNotSupported { method: String },
     SshAuthFailed,
+    SshTimeout,
 
     // 文件操作
     FileReadFailed { filename: String, detail: String },

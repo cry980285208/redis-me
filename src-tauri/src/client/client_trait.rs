@@ -379,7 +379,7 @@ pub fn field_scan0(
     let bytes_format = param.bytes_format.as_ref().cloned().unwrap_or_default();
     let include_field_ttl = field_scan_include_field_ttl(&param, httl_supported);
 
-    // String, Json, List, Stream 直接获取；Hash/Set/ZSet 走 exact 或 *SCAN
+    // String, Json, List, Stream 直接获取；Hash/Set/ZSet 走 exact 或 *SCAN（ZSet 有分数范围时走 ZRANGEBYSCORE）
     let (mut value, key_type, mut cc, length, value_truncated) =
         field_scan_0_get(&mut conn, &param, &bytes_format)?;
     if value.is_none() {
@@ -488,6 +488,80 @@ fn resolve_list_scan_range(param: &FieldScanParam, list_len: usize) -> (i64, i64
     });
 
     (min, max)
+}
+
+/// 空串/缺省 → None；非空 trim 后的原文（供 Redis 分数边界）
+fn zset_score_bound_raw(v: &Option<String>) -> Option<&str> {
+    v.as_deref().map(str::trim).filter(|s| !s.is_empty())
+}
+
+/// 任一侧分数非空则走 ZRANGEBYSCORE，否则保持 ZSCAN
+fn zset_score_range_active(param: &FieldScanParam) -> bool {
+    param.meta.as_ref().is_some_and(|m| {
+        zset_score_bound_raw(&m.zset_min_score).is_some()
+            || zset_score_bound_raw(&m.zset_max_score).is_some()
+    })
+}
+
+/// 将用户输入规范为 Redis ZRANGEBYSCORE 边界文本（空 → ±inf）
+fn parse_zset_score_bound(raw: Option<&str>, unbounded: &str) -> AnyResult<String> {
+    let Some(s) = raw else {
+        return Ok(unbounded.to_string());
+    };
+    let lower = s.to_ascii_lowercase();
+    if lower == "-inf" || lower == "-infinity" {
+        return Ok("-inf".into());
+    }
+    if lower == "+inf" || lower == "inf" || lower == "+infinity" || lower == "infinity" {
+        return Ok("+inf".into());
+    }
+    match s.parse::<f64>() {
+        Ok(n) if n.is_finite() => Ok(s.to_string()),
+        _ => bail!(AppError::InvalidZsetScoreBound {
+            bound: s.to_string()
+        }),
+    }
+}
+
+/// ZSet 按分数范围分页：ZRANGEBYSCORE … WITHSCORES LIMIT offset count；多取 1 条作 peek。
+fn field_scan_zset_by_score(
+    conn: &mut MutexGuard<impl Commands>,
+    key: &RedisKey,
+    param: &FieldScanParam,
+    bytes_format: &BytesFormat,
+    cc: &mut ScanCursor,
+) -> AnyResult<Vec<RedisZetItem>> {
+    let count = field_scan_batch_count(param.count);
+    let meta = param.meta.as_ref();
+    let min = parse_zset_score_bound(
+        meta.and_then(|m| zset_score_bound_raw(&m.zset_min_score)),
+        "-inf",
+    )?;
+    let max = parse_zset_score_bound(
+        meta.and_then(|m| zset_score_bound_raw(&m.zset_max_score)),
+        "+inf",
+    )?;
+
+    let fetch = count + 1;
+    let mut values: Vec<(Vec<u8>, f64)> = redis::cmd("ZRANGEBYSCORE")
+        .arg(key)
+        .arg(&min)
+        .arg(&max)
+        .arg("WITHSCORES")
+        .arg("LIMIT")
+        .arg(cc.now_cursor)
+        .arg(fetch)
+        .query(conn)?;
+
+    if values.len() as u64 > count {
+        values.pop();
+        cc.finished = false;
+        cc.now_cursor += count;
+    } else {
+        cc.finished = true;
+    }
+
+    Ok(ui_zset_value(values, bytes_format))
 }
 
 fn field_scan_list_page(
@@ -794,6 +868,18 @@ pub fn field_scan_0_get(
                 let items =
                     field_scan_vectorset_page(&mut conn, key, param, bytes_format, &mut cc)?;
                 Some(serde_json::to_value(items)?)
+            }
+        }
+        // ZSet：精确走 ZSCORE；填了分数范围则 ZRANGEBYSCORE 分页，否则回落 ZSCAN
+        ValueType::ZSet => {
+            if param.exact {
+                None
+            } else if zset_score_range_active(param) {
+                let items =
+                    field_scan_zset_by_score(&mut conn, key, param, bytes_format, &mut cc)?;
+                Some(serde_json::to_value(items)?)
+            } else {
+                None
             }
         }
         ValueType::Stream => {
@@ -3585,5 +3671,86 @@ mod acl_selector_tests {
         assert_eq!(detail.key_patterns, vec!["redis:*"]);
         assert_eq!(detail.command_rules, vec!["-@all".to_string(), "+set".to_string()]);
         assert_eq!(detail.selectors, vec!["-@all +get ~key1".to_string()]);
+    }
+}
+
+#[cfg(test)]
+mod zset_score_range_tests {
+    use super::*;
+
+    fn param_with_scores(min: Option<&str>, max: Option<&str>) -> FieldScanParam {
+        FieldScanParam {
+            key: RedisKey {
+                key: "z".into(),
+                bytes: vec![],
+            },
+            count: 20,
+            cursor: None,
+            pattern: "*".into(),
+            exact: false,
+            meta: Some(FieldScanMeta {
+                max_id: String::new(),
+                min_id: String::new(),
+                value_byte_limit: None,
+                value_preview_bytes: None,
+                force_full_value: None,
+                list_min_index: None,
+                list_max_index: None,
+                list_desc: None,
+                stream_desc: None,
+                vectorset_sample: None,
+                zset_min_score: min.map(str::to_string),
+                zset_max_score: max.map(str::to_string),
+            }),
+            bytes_format: None,
+            include_meta: None,
+            key_type: None,
+            include_field_ttl: None,
+        }
+    }
+
+    #[test]
+    fn inactive_when_both_empty() {
+        assert!(!zset_score_range_active(&param_with_scores(None, None)));
+        assert!(!zset_score_range_active(&param_with_scores(
+            Some("  "),
+            Some("")
+        )));
+        let no_meta = FieldScanParam {
+            meta: None,
+            ..param_with_scores(None, None)
+        };
+        assert!(!zset_score_range_active(&no_meta));
+    }
+
+    #[test]
+    fn active_when_either_side_set() {
+        assert!(zset_score_range_active(&param_with_scores(Some("1"), None)));
+        assert!(zset_score_range_active(&param_with_scores(None, Some("9"))));
+        assert!(zset_score_range_active(&param_with_scores(
+            Some("-inf"),
+            Some("+inf")
+        )));
+    }
+
+    #[test]
+    fn parse_bound_defaults_and_inf() {
+        assert_eq!(parse_zset_score_bound(None, "-inf").unwrap(), "-inf");
+        assert_eq!(parse_zset_score_bound(Some("-inf"), "+inf").unwrap(), "-inf");
+        assert_eq!(parse_zset_score_bound(Some("+INF"), "-inf").unwrap(), "+inf");
+        assert_eq!(parse_zset_score_bound(Some("inf"), "-inf").unwrap(), "+inf");
+        assert_eq!(
+            parse_zset_score_bound(Some("-Infinity"), "+inf").unwrap(),
+            "-inf"
+        );
+        assert_eq!(parse_zset_score_bound(Some("1.5"), "-inf").unwrap(), "1.5");
+        assert_eq!(parse_zset_score_bound(Some("1e2"), "-inf").unwrap(), "1e2");
+    }
+
+    #[test]
+    fn parse_bound_rejects_invalid() {
+        assert!(parse_zset_score_bound(Some("abc"), "-inf").is_err());
+        assert!(parse_zset_score_bound(Some("NaN"), "-inf").is_err());
+        assert!(parse_zset_score_bound(Some("(1.5"), "-inf").is_err());
     }
 }

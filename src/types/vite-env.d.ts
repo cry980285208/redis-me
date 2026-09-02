@@ -29,6 +29,8 @@ declare global {
       customCodecs?: { name: string; command: string }[]
       /** 自定义编解码脚本执行超时（秒） */
       codecExecTimeoutSec?: number
+      /** Redis 建连超时（秒），同步至 Rust */
+      connectTimeout?: number
       /** Redis 命令读写超时（秒），同步至 Rust */
       commandTimeout?: number
       /** STRING 类型值全量加载安全阈值（MB） */

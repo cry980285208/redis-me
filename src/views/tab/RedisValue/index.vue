@@ -209,12 +209,14 @@ const showValueTruncatedAlert = computed(
   () => stringType.value && valueTruncated.value && !valueTruncatedDismissed.value,
 )
 
-// List / Stream 扫描范围与方向
+// List / Stream / ZSet 扫描范围与方向
 const meta = ref({ maxId: '', minId: '' }) // Stream minId / maxId
 const listIndexMin = ref('')
 const listIndexMax = ref('')
 const listDescAsc = ref(true) // true=升序
 const streamDescAsc = ref(true) // true=XRANGE
+const zsetScoreMin = ref('')
+const zsetScoreMax = ref('')
 
 function toggleListSortOrder() {
   listDescAsc.value = !listDescAsc.value
@@ -714,6 +716,8 @@ function resetParam() {
   listIndexMax.value = ''
   listDescAsc.value = true
   streamDescAsc.value = true
+  zsetScoreMin.value = ''
+  zsetScoreMax.value = ''
   vectorsetSample.value = true
 }
 function fieldScanIncludeMeta(): boolean {
@@ -736,6 +740,8 @@ function buildFieldScanParam() {
       listDesc: listType.value ? !listDescAsc.value : null,
       streamDesc: streamType.value ? !streamDescAsc.value : null,
       vectorsetSample: vectorsetType.value ? vectorsetSample.value : null,
+      zsetMinScore: zsetType.value ? zsetScoreMin.value.trim() || null : null,
+      zsetMaxScore: zsetType.value ? zsetScoreMax.value.trim() || null : null,
       valueByteLimit: VALUE_BYTE_LIMIT.value,
       valuePreviewBytes: VALUE_PREVIEW_BYTES.value,
       forceFullValue: forceFullValue.value,
@@ -1832,6 +1838,20 @@ onUnmounted(() => {
                 @keyup.enter="restartFieldScan()"
                 v-model.trim="listIndexMax"
                 :placeholder="t('redisValue.listIndexMax')"
+                clearable />
+            </div>
+
+            <div v-if="zsetType" class="list-range-inputs">
+              <el-input
+                @keyup.enter="restartFieldScan()"
+                v-model.trim="zsetScoreMin"
+                :placeholder="t('redisValue.zsetScoreMin')"
+                clearable />
+              <span class="list-range-sep">-</span>
+              <el-input
+                @keyup.enter="restartFieldScan()"
+                v-model.trim="zsetScoreMax"
+                :placeholder="t('redisValue.zsetScoreMax')"
                 clearable />
             </div>
 

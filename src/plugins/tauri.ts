@@ -57,13 +57,23 @@ if (typeof settings.codecExecTimeoutSec !== 'number' || settings.codecExecTimeou
 }
 if (typeof settings.commandTimeout !== 'number' || settings.commandTimeout <= 0) {
   settings.commandTimeout = 30
+} else {
+  settings.commandTimeout = Math.min(300, Math.max(5, Math.round(settings.commandTimeout)))
+}
+if (typeof settings.connectTimeout !== 'number' || settings.connectTimeout <= 0) {
+  settings.connectTimeout = 10
+} else {
+  settings.connectTimeout = Math.min(300, Math.max(5, Math.round(settings.connectTimeout)))
 }
 
-/** 全局设置同步 Rust AppState（命令超时等） */
+/** 全局设置同步 Rust AppState（建连/命令超时等） */
 async function syncAppSettings(): Promise<void> {
-  await commands.appSettings({ commandTimeoutSecs: settings.commandTimeout })
+  await commands.appSettings({
+    connectionTimeoutSecs: settings.connectTimeout,
+    commandTimeoutSecs: settings.commandTimeout,
+  })
 }
-void syncAppSettings()
+await syncAppSettings()
 const meTauri = reactive({
   // 响应式，自动保存
   connList,
