@@ -1,10 +1,10 @@
 ## Future
 
 - ZSet支持按分数范围过滤数据
-- 抖音/B站短视频的制作: 每个痛点解决1个小视频
-- Redis实战相关文章的编写
 - Time Series 的支持
 - RedisSearch 的支持
+- 抖音/B站短视频的制作: 每个痛点解决1个小视频
+- Redis实战相关文章的编写
 - 连接级自动解压：优先 GZIP，可选 LZ4 / ZSTD / Snappy（对标 RedisInsight；即此前「自动解压缩」）
 - 研究下怎么上线Linux的应用商店: deepin, snap, flathub
 - Redisson的键空间通知 模块 参考实现

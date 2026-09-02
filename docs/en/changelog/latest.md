@@ -1,5 +1,12 @@
 # 5.x Changelog
 
+## v5.0.2 (2026-09-02)
+
+### ✨ New Features
+
+- Settings: new **connection timeout** #157
+- Settings: renamed Command Timeout to I/O Timeout
+
 ## v5.0.1 (2026-09-01)
 
 ### ✨ New Features
