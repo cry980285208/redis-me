@@ -58,6 +58,7 @@ import {
   computeScanProgress,
   MINIMATCH_SCAN_OPTS,
 } from '@/utils/redis-glob'
+import { defaultSettings } from '@/utils/settings-defaults'
 import {
   bus,
   KEY_DELETE,
@@ -197,10 +198,13 @@ const vectorsetBrowseOptions = computed(() => [
 
 // STRING 大值截断预览
 const VALUE_BYTE_LIMIT = computed(
-  () => ((window.meTauri.settings.valueByteLimitMB as number) ?? 1) * 1024 * 1024,
+  () =>
+    ((window.meTauri.settings.valueByteLimitMB as number) ?? defaultSettings.valueByteLimitMB) *
+    1024 *
+    1024,
 )
 const VALUE_PREVIEW_BYTES = computed(
-  () => (window.meTauri.settings.valuePreviewBytes as number) ?? 2000,
+  () => (window.meTauri.settings.valuePreviewBytes as number) ?? defaultSettings.valuePreviewBytes,
 )
 const forceFullValue = ref(false) // 用户确认后 GET 全量
 const valueTruncatedDismissed = ref(false)

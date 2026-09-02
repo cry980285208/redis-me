@@ -83,10 +83,10 @@ function utf8ExpectedLen(lead: number): number {
 }
 
 /**
- * 去掉末尾不完整的 UTF-8 序列（最多 3 字节）。
- * GETRANGE 预览按字节截断时，汉字/emoji 常被切在中间。
+ * 去掉末尾不完整的 UTF-8 序列（最多 3 字节），仅供 Auto 判断。
+ * GETRANGE 预览按字节截断时，汉字/emoji 常被切在中间；展示层仍 lossy 解码，不在此裁掉。
  */
-export function trimIncompleteUtf8Tail(bytes: Uint8Array): Uint8Array {
+function trimIncompleteUtf8Tail(bytes: Uint8Array): Uint8Array {
   const n = bytes.length
   if (n === 0) return bytes
   let i = n - 1
