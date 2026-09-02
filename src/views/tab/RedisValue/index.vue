@@ -2255,11 +2255,14 @@ onUnmounted(() => {
         </div>
 
         <div class="me-flex" style="position: relative">
+          <!-- 底栏贴底：下拉固定向上，避免翻到窗口外 -->
           <el-select
             v-model="bytesFormat"
             class="bytes-format-select me-select-plain"
             :suffix-icon="MeSelectUpDownIcon"
             :disabled="jsonType || streamType"
+            placement="top-end"
+            :fallback-placements="['top', 'top-start']"
             @change="onBytesFormatChange">
             <template #header>
               <div
