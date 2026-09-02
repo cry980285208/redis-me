@@ -6,6 +6,7 @@
 
 - Settings: new **connection timeout** #157
 - Settings: renamed Command Timeout to I/O Timeout
+- Value area: ZSet filter by score range
 
 ## v5.0.1 (2026-09-01)
 
