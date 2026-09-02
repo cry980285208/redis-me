@@ -36,15 +36,25 @@ impl client::Handler for ClientHandler {
 }
 
 impl SshTunnel {
-    /// 启动 SSH 隧道，返回本地监听端口
-    pub fn start(ssh_option: &SshOption, target_host: &str, target_port: u16) -> AnyResult<Self> {
-        info!("SSH 隧道 {}:{}", ssh_option.host, ssh_option.port);
+    /// 启动 SSH 隧道，返回本地监听端口。connect_timeout 覆盖 TCP 建连 + 认证。
+    pub fn start(
+        ssh_option: &SshOption,
+        target_host: &str,
+        target_port: u16,
+        connect_timeout: Duration,
+    ) -> AnyResult<Self> {
+        info!(
+            "SSH 隧道 {}:{}，超时 {}s",
+            ssh_option.host,
+            ssh_option.port,
+            connect_timeout.as_secs()
+        );
 
         let runtime = Runtime::new()?;
 
         // 首先进行 SSH 认证测试，确保认证可以通过
         runtime.block_on(async {
-            let session = Self::connect_and_auth(ssh_option).await?;
+            let session = Self::connect_and_auth(ssh_option, connect_timeout).await?;
             drop(session); // 关闭测试连接
             info!("SSH 认证测试通过");
             Ok::<_, anyhow::Error>(())
@@ -72,6 +82,7 @@ impl SshTunnel {
                 target_host,
                 target_port,
                 local_port,
+                connect_timeout,
             )
             .await
             {
@@ -92,6 +103,7 @@ impl SshTunnel {
         target_host: String,
         target_port: u16,
         local_port: u16,
+        connect_timeout: Duration,
     ) -> AnyResult<()> {
         let listener = TcpListener::bind(format!("127.0.0.1:{}", local_port)).await?;
 
@@ -111,8 +123,14 @@ impl SshTunnel {
                     let tport = target_port;
 
                     tokio::spawn(async move {
-                        if let Err(e) =
-                            Self::handle_connection(&mut local_stream, &opt, &host, tport).await
+                        if let Err(e) = Self::handle_connection(
+                            &mut local_stream,
+                            &opt,
+                            &host,
+                            tport,
+                            connect_timeout,
+                        )
+                        .await
                         {
                             warn!("SSH 隧道连接失败: {}", e);
                         }
@@ -135,16 +153,27 @@ impl SshTunnel {
         ssh_option: &SshOption,
         target_host: &str,
         target_port: u16,
+        connect_timeout: Duration,
     ) -> AnyResult<()> {
         info!("SSH 隧道新连接，目标: {}:{}", target_host, target_port);
 
-        let session = Self::connect_and_auth(ssh_option).await?;
+        let session = Self::connect_and_auth(ssh_option, connect_timeout).await?;
 
         info!("SSH 认证完成，准备打开 TCP 转发通道");
 
-        let channel = session
-            .channel_open_direct_tcpip(target_host, target_port as u32, "127.0.0.1", 0)
-            .await?;
+        let channel = match timeout(
+            connect_timeout,
+            session.channel_open_direct_tcpip(target_host, target_port as u32, "127.0.0.1", 0),
+        )
+        .await
+        {
+            Ok(Ok(ch)) => ch,
+            Ok(Err(e)) => return Err(e.into()),
+            Err(_) => {
+                info!("SSH 转发通道打开超时（{}s）", connect_timeout.as_secs());
+                anyhow::bail!(AppError::SshTimeout);
+            }
+        };
 
         let mut ssh_stream = channel.into_stream();
 
@@ -163,19 +192,30 @@ impl SshTunnel {
         Ok(())
     }
 
-    /// 连接 SSH 服务器并完成认证
-    async fn connect_and_auth(ssh_option: &SshOption) -> AnyResult<client::Handle<ClientHandler>> {
-        let ssh_config = Arc::new(client::Config::default());
-        let handler = ClientHandler;
-        let mut session = client::connect(
-            ssh_config,
-            format!("{}:{}", ssh_option.host, ssh_option.port),
-            handler,
-        )
-        .await?;
-
-        Self::authenticate(&mut session, ssh_option).await?;
-        Ok(session)
+    /// 连接 SSH 服务器并完成认证（TCP + 认证共用建连超时）
+    async fn connect_and_auth(
+        ssh_option: &SshOption,
+        connect_timeout: Duration,
+    ) -> AnyResult<client::Handle<ClientHandler>> {
+        let fut = async {
+            let ssh_config = Arc::new(client::Config::default());
+            let handler = ClientHandler;
+            let mut session = client::connect(
+                ssh_config,
+                format!("{}:{}", ssh_option.host, ssh_option.port),
+                handler,
+            )
+            .await?;
+            Self::authenticate(&mut session, ssh_option).await?;
+            Ok(session)
+        };
+        match timeout(connect_timeout, fut).await {
+            Ok(result) => result,
+            Err(_) => {
+                info!("SSH 连接超时（{}s）", connect_timeout.as_secs());
+                anyhow::bail!(AppError::SshTimeout);
+            }
+        }
     }
 
     async fn authenticate(
@@ -191,11 +231,9 @@ impl SshTunnel {
         match ssh_option.login_type.as_str() {
             "pwd" | "" => {
                 info!("开始 SSH 密码认证，用户: {}", username);
-                let result = timeout(
-                    Duration::from_secs(10),
-                    session.authenticate_password(username, &ssh_option.password),
-                )
-                .await;
+                let result = session
+                    .authenticate_password(username, &ssh_option.password)
+                    .await;
                 Self::check_auth_result(result, username)?;
             }
             "pkfile" => {
@@ -214,11 +252,7 @@ impl SshTunnel {
                 let key_pair = PrivateKeyWithHashAlg::new(Arc::new(key_pair), None);
 
                 info!("开始 SSH 公钥认证，用户: {}", username);
-                let result = timeout(
-                    Duration::from_secs(10),
-                    session.authenticate_publickey(username, key_pair),
-                )
-                .await;
+                let result = session.authenticate_publickey(username, key_pair).await;
                 Self::check_auth_result(result, username)?;
             }
             other => {
@@ -233,28 +267,21 @@ impl SshTunnel {
     }
 
     /// 检查认证结果
-    fn check_auth_result(
-        result: Result<Result<AuthResult, russh::Error>, tokio::time::error::Elapsed>,
-        username: &str,
-    ) -> AnyResult<()> {
+    fn check_auth_result(result: Result<AuthResult, russh::Error>, username: &str) -> AnyResult<()> {
         match result {
-            Ok(Ok(AuthResult::Success)) => Ok(()),
-            Ok(Ok(AuthResult::Failure {
+            Ok(AuthResult::Success) => Ok(()),
+            Ok(AuthResult::Failure {
                 remaining_methods,
                 partial_success,
-            })) => {
+            }) => {
                 info!(
                     "SSH 认证失败，用户: {}, 剩余方法: {:?}, 部分成功: {}",
                     username, remaining_methods, partial_success
                 );
                 anyhow::bail!(AppError::SshAuthFailed);
             }
-            Ok(Err(e)) => {
+            Err(e) => {
                 info!("SSH 认证异常，用户: {}, 错误: {}", username, e);
-                anyhow::bail!(AppError::SshAuthFailed);
-            }
-            Err(_) => {
-                info!("SSH 认证超时，用户: {}", username);
                 anyhow::bail!(AppError::SshAuthFailed);
             }
         }

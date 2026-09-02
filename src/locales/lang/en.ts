@@ -74,9 +74,12 @@ export default {
       'Redis SCAN COUNT hint; also the auto-load cumulative threshold. Too large slows each round; too small adds round-trips. Range {min}–{max}',
     fieldScanCountTip:
       'HSCAN/SSCAN/ZSCAN COUNT per request; also the cumulative threshold for frontend auto-load. Range {min}~{max}',
-    commandTimeout: 'Cmd Timeout',
+    connectTimeout: 'Conn Timeout',
+    connectTimeoutTip:
+      'Max wait to establish a Redis connection (SSH handshake, TCP, PING); takes effect after reconnect. Range {min}–{max} s',
+    commandTimeout: 'I/O Timeout',
     commandTimeoutTip:
-      'Max wait for one Redis command on an open connection; takes effect after reconnect. Range {min}–{max} s',
+      'Max wait for one Redis read/write after the connection is open; takes effect after reconnect. Range {min}–{max} s',
     scriptTimeout: 'Script Timeout',
     scriptTimeoutTip: 'Max runtime for custom codec scripts. Range {min}–{max} s',
     valueByteLimitMB: 'Safe Limit',
@@ -1217,6 +1220,7 @@ Once an operation prevents Redis from keeping the space-saving encoding, special
     ssh_key_file_empty: 'SSH private key file path is empty',
     ssh_login_method_not_supported: 'Unsupported SSH login method: {method}',
     ssh_auth_failed: 'SSH authentication failed',
+    ssh_timeout: 'SSH connection timed out',
     file_read_failed: 'File read failed: {filename} ({detail})',
     file_write_failed: 'File write failed: {filename} ({detail})',
   },

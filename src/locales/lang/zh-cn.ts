@@ -69,8 +69,12 @@ export default {
       'Redis SCAN 的 COUNT（提示值），同时作为自动续扫累积条数阈值；过大单次更慢、过小往返更多。范围 {min}–{max} 个',
     fieldScanCountTip:
       'HSCAN/SSCAN/ZSCAN 每次 COUNT；同时作为前端自动续扫的累积条数阈值。范围 {min}~{max} 个',
-    commandTimeout: '命令超时',
-    commandTimeoutTip: '单次 Redis 命令读写的最长等待时间；修改后需重连生效。范围 {min}–{max} 秒',
+    connectTimeout: '连接超时',
+    connectTimeoutTip:
+      '建立 Redis 连接（含 SSH 握手、TCP、PING）的最长等待时间；修改后需重连生效。范围 {min}–{max} 秒',
+    commandTimeout: '读写超时',
+    commandTimeoutTip:
+      '已连接后，单次 Redis 读写的最长等待时间；修改后需重连生效。范围 {min}–{max} 秒',
     scriptTimeout: '脚本超时',
     scriptTimeoutTip: '自定义编解码脚本的最长执行时间。范围 {min}–{max} 秒',
     valueByteLimitMB: '安全阈值',
@@ -1199,6 +1203,7 @@ export default {
     ssh_key_file_empty: 'SSH 私钥文件路径为空',
     ssh_login_method_not_supported: '不支持的 SSH 登录方式: {method}',
     ssh_auth_failed: 'SSH 认证失败',
+    ssh_timeout: 'SSH 连接超时',
     file_read_failed: '文件读取失败: {filename} ({detail})',
     file_write_failed: '文件写入失败: {filename} ({detail})',
   },

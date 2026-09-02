@@ -127,6 +127,7 @@ export type AclUserDetail = {
 };
 
 export type AppSettings = {
+	connectionTimeoutSecs?: number,
 	commandTimeoutSecs: number,
 };
 

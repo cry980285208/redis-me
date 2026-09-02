@@ -53,6 +53,7 @@ pub enum AppError {
     SshKeyFileEmpty,
     SshLoginMethodNotSupported { method: String },
     SshAuthFailed,
+    SshTimeout,
 
     // 文件操作
     FileReadFailed { filename: String, detail: String },

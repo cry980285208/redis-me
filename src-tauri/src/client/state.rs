@@ -7,6 +7,7 @@ use crate::utils::util::AnyResult;
 use log::{debug, info};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock};
+use std::time::Duration;
 use tauri::{AppHandle, Manager, State};
 
 #[derive(Default)]
@@ -17,8 +18,15 @@ pub struct AppState {
     // 缓存连接客户端
     pub clients: RwLock<HashMap<String, Arc<Box<dyn MeClient>>>>,
 
-    /// 全局设置（命令超时等），由前端 app_settings 同步
+    /// 全局设置（建连/命令超时等），由前端 app_settings 同步
     pub app_settings: RwLock<AppSettings>,
+}
+
+/// 读取当前全局建连超时、命令超时
+pub fn app_timeouts(app: &AppHandle) -> (Duration, Duration) {
+    let state: State<AppState> = app.state();
+    let s = state.app_settings.read().unwrap();
+    (s.connection_timeout(), s.command_timeout())
 }
 
 pub trait ClientAccess {
@@ -45,7 +53,8 @@ impl ClientAccess for AppHandle {
         let state: State<AppState> = self.state();
         *state.app_settings.write().unwrap() = app_settings.normalized();
         debug!(
-            "同步应用设置: command_timeout_secs={}",
+            "同步应用设置: connection_timeout_secs={}, command_timeout_secs={}",
+            state.app_settings.read().unwrap().connection_timeout_secs,
             state.app_settings.read().unwrap().command_timeout_secs
         );
         Ok(())
@@ -71,12 +80,12 @@ impl ClientAccess for AppHandle {
             .get(id)
             .ok_or(AppError::ConnectionNotFound { id: id.into() })?;
 
-        let command_timeout = state.app_settings.read().unwrap().command_timeout();
+        let (connect_timeout, command_timeout) = app_timeouts(self);
         let mut clients = state.clients.write().unwrap();
         let client = Arc::new(if conn.cluster {
-            MeCluster::init(conn, command_timeout)?
+            MeCluster::init(conn, connect_timeout, command_timeout)?
         } else {
-            MeSingle::init(conn, command_timeout)?
+            MeSingle::init(conn, connect_timeout, command_timeout)?
         });
 
         client

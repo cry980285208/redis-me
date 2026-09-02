@@ -3,10 +3,9 @@
 use crate::api_model;
 use crate::utils::capabilities::ServerCapabilities;
 use crate::utils::conn::{get_client_cluster, get_client_single, init_single_connection};
-use crate::utils::util::CONNECTION_NORMAL_TIMEOUT;
 use crate::utils::error::AppError;
 use crate::utils::util::{
-    AnyResult, vec8_to_display_string,
+    AnyResult, CONNECTION_CONNECT_TIMEOUT, CONNECTION_NORMAL_TIMEOUT, vec8_to_display_string,
 };
 use chrono::Utc;
 use redis::{ProtocolVersion, RedisWrite, ToRedisArgs, ToSingleRedisArg};
@@ -161,9 +160,15 @@ api_model!(
     }
 );
 
-// 全局应用设置：由前端 settings 同步，新连接/重连时快照 command_timeout
+fn default_connection_timeout_secs() -> u64 {
+    CONNECTION_CONNECT_TIMEOUT.as_secs()
+}
+
+// 全局应用设置：由前端 settings 同步，新连接/重连时快照 connection_timeout / command_timeout
 api_model!(
     AppSettings {
+        #[serde(default = "default_connection_timeout_secs")]
+        connection_timeout_secs: u64,
         command_timeout_secs: u64,
     }
 );
@@ -171,7 +176,8 @@ api_model!(
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
-            command_timeout_secs: crate::utils::util::CONNECTION_NORMAL_TIMEOUT.as_secs(),
+            connection_timeout_secs: CONNECTION_CONNECT_TIMEOUT.as_secs(),
+            command_timeout_secs: CONNECTION_NORMAL_TIMEOUT.as_secs(),
         }
     }
 }
@@ -179,8 +185,13 @@ impl Default for AppSettings {
 impl AppSettings {
     pub fn normalized(self) -> Self {
         Self {
+            connection_timeout_secs: self.connection_timeout_secs.clamp(5, 300),
             command_timeout_secs: self.command_timeout_secs.clamp(5, 300),
         }
+    }
+
+    pub fn connection_timeout(&self) -> Duration {
+        Duration::from_secs(self.connection_timeout_secs)
     }
 
     pub fn command_timeout(&self) -> Duration {
@@ -189,22 +200,23 @@ impl AppSettings {
 }
 
 impl ConnConfig {
-    pub fn test(&self) -> AnyResult<()> {
+    pub fn test(&self, connect_timeout: Duration) -> AnyResult<()> {
         if self.cluster {
-            get_client_cluster(self, true)?;
+            get_client_cluster(self, Some(connect_timeout))?;
         } else {
-            get_client_single(self, true)?;
+            get_client_single(self, connect_timeout, true)?;
         };
         // 单机模式返回的元组在测试后丢弃，SSH 隧道随之关闭
         // 集群模式不支持 SSH
         Ok(())
     }
 
-    pub fn masters(&self) -> AnyResult<Vec<HashMap<String, String>>> {
+    pub fn masters(&self, connect_timeout: Duration, command_timeout: Duration) -> AnyResult<Vec<HashMap<String, String>>> {
         let mut conf = self.clone();
         conf.sentinel = false;
-        let (client, _) = get_client_single(&conf, false)?;
-        let mut conn = init_single_connection(&client, conf.db, CONNECTION_NORMAL_TIMEOUT)?;
+        let (client, _) = get_client_single(&conf, connect_timeout, false)?;
+        let mut conn =
+            init_single_connection(&client, conf.db, connect_timeout, command_timeout)?;
         let masters: Vec<HashMap<String, String>> =
             redis::cmd("sentinel").arg("masters").query(&mut conn)?;
         Ok(masters)
@@ -223,6 +235,8 @@ pub struct MeBase {
     pub last_check_time: Arc<AtomicI64>,
     /// 已建立连接上的单次命令读写超时（init 时从 AppSettings 快照）
     pub command_timeout: Duration,
+    /// 建连超时（TCP+握手+PING；init 时从 AppSettings 快照，重连复用）
+    pub connection_timeout: Duration,
     /// 本连接命令执行日志（环形缓冲）
     pub command_logger: Arc<crate::utils::command_log::CommandLogger>,
     /// 用于后台线程 emit 事件到前端
@@ -242,7 +256,8 @@ impl From<&ConnConfig> for MeBase {
             export_import_running: Arc::new(AtomicBool::new(false)),
             last_check_time: Arc::new(AtomicI64::new(Utc::now().timestamp())),
 
-            command_timeout: crate::utils::util::CONNECTION_NORMAL_TIMEOUT,
+            command_timeout: CONNECTION_NORMAL_TIMEOUT,
+            connection_timeout: CONNECTION_CONNECT_TIMEOUT,
             command_logger: Arc::new(crate::utils::command_log::CommandLogger::new(
                 conf.id.clone(),
                 conf.name.clone(),

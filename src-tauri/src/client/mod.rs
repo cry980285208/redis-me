@@ -11,10 +11,14 @@ mod tests {
     use crate::client::impl_single::MeSingle;
     use crate::utils::conn::{get_client_cluster, get_client_single, init_cluster_connection, init_single_connection};
     use crate::utils::model::*;
-    use crate::utils::util::{AnyResult, CONNECTION_NORMAL_TIMEOUT};
+    use crate::utils::util::{AnyResult, CONNECTION_CONNECT_TIMEOUT, CONNECTION_NORMAL_TIMEOUT};
     use redis::TlsMode;
     use redis::cluster::{ClusterClient, ClusterPipeline};
     use std::time::Duration;
+
+    fn default_connect_timeout() -> Duration {
+        AppSettings::default().connection_timeout()
+    }
 
     fn default_command_timeout() -> Duration {
         AppSettings::default().command_timeout()
@@ -61,13 +65,13 @@ mod tests {
     #[allow(unused)]
     fn client_single() -> Box<dyn MeClient> {
         let conf = conf_single();
-        MeSingle::init(&conf, default_command_timeout()).unwrap()
+        MeSingle::init(&conf, default_connect_timeout(), default_command_timeout()).unwrap()
     }
 
     #[allow(unused)]
     fn client_cluster() -> Box<dyn MeClient> {
         let conf = conf_cluster();
-        MeCluster::init(&conf, default_command_timeout()).unwrap()
+        MeCluster::init(&conf, default_connect_timeout(), default_command_timeout()).unwrap()
     }
 
     #[allow(unused)]
@@ -79,7 +83,7 @@ mod tests {
         //conf.ssl_option.cert= r"C:\Users\he_pe\redis\redis.crt".into();
         conf.ssl_option.key = r"~/redis/redis.key".into();
         conf.ssl_option.cert = r"~\redis\redis.crt".into();
-        MeSingle::init(&conf, default_command_timeout()).unwrap()
+        MeSingle::init(&conf, default_connect_timeout(), default_command_timeout()).unwrap()
     }
 
     #[allow(unused)]
@@ -101,7 +105,7 @@ mod tests {
         conf.ssh_option.pkfile = "~/.ssh/id_rsa".into();
         conf.ssh_option.pkfile = "~/.ssh/id_ed25519".into();
         conf.ssh_option.passphrase = "".into();
-        MeSingle::init(&conf, default_command_timeout()).unwrap()
+        MeSingle::init(&conf, default_connect_timeout(), default_command_timeout()).unwrap()
     }
 
     #[test]
@@ -157,8 +161,13 @@ mod tests {
     #[test]
     fn test_field_scan_mock() -> AnyResult<()> {
         let conn_single = conf_single();
-        let (client, _) = get_client_single(&conn_single, false)?;
-        let mut conn = init_single_connection(&client, conn_single.db, CONNECTION_NORMAL_TIMEOUT)?;
+        let (client, _) = get_client_single(&conn_single, CONNECTION_CONNECT_TIMEOUT, false)?;
+        let mut conn = init_single_connection(
+            &client,
+            conn_single.db,
+            CONNECTION_CONNECT_TIMEOUT,
+            CONNECTION_NORMAL_TIMEOUT,
+        )?;
 
         let mut pipe = redis::pipe();
         pipe.del("field-scan:string").ignore();
@@ -180,8 +189,8 @@ mod tests {
         let _: () = pipe.query(&mut conn)?;
 
         let conn_cluster = conf_cluster();
-        let client = get_client_cluster(&conn_cluster, false)?;
-        let mut conn = init_cluster_connection(&client, CONNECTION_NORMAL_TIMEOUT)?;
+        let client = get_client_cluster(&conn_cluster, None)?;
+        let mut conn = init_cluster_connection(&client, CONNECTION_CONNECT_TIMEOUT, CONNECTION_NORMAL_TIMEOUT)?;
 
         let mut pipe = ClusterPipeline::new();
         pipe.del("field-scan:string").ignore();

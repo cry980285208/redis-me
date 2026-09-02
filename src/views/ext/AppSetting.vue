@@ -129,6 +129,7 @@ const moreDefaultSettings = {
   fieldShow: defaultSettings.fieldShow,
   fieldShowView: defaultSettings.fieldShowView,
   commandTimeout: defaultSettings.commandTimeout,
+  connectTimeout: defaultSettings.connectTimeout,
   codecExecTimeoutSec: defaultSettings.codecExecTimeoutSec,
   valueByteLimitMB: defaultSettings.valueByteLimitMB,
   valuePreviewBytes: defaultSettings.valuePreviewBytes,
@@ -139,6 +140,7 @@ const MORE_SETTING_LIMITS = {
   keyScanCount: { min: 10, max: 50000 },
   fieldScanCount: { min: 10, max: 1000 },
   commandTimeout: { min: 5, max: 300 },
+  connectTimeout: { min: 5, max: 300 },
   codecExecTimeoutSec: { min: 1, max: 120 },
   keyHeight: { min: 16, max: 28 },
   valueByteLimitMB: { min: 1, max: 5 },
@@ -406,8 +408,27 @@ async function resetWindowSize() {
           </el-form-item>
         </el-row>
 
-        <!-- 安全阈值、预览字节 -->
+        <!-- 连接超时、安全阈值 -->
         <el-row class="me-flex">
+          <el-form-item>
+            <template #label>
+              <me-icon
+                :name="t('setting.connectTimeout')"
+                icon="el-icon-question-filled"
+                :info="t('setting.connectTimeoutTip', MORE_SETTING_LIMITS.connectTimeout)"
+                :icon-left="false"
+                placement="top" />
+            </template>
+            <el-input-number
+              v-model="settings.connectTimeout"
+              :min="MORE_SETTING_LIMITS.connectTimeout.min"
+              :max="MORE_SETTING_LIMITS.connectTimeout.max"
+              :controls="false"
+              style="width: 100px"
+              align="left">
+              <template #suffix>{{ t('setting.secUnit') }}</template>
+            </el-input-number>
+          </el-form-item>
           <el-form-item>
             <template #label>
               <me-icon
@@ -428,6 +449,7 @@ async function resetWindowSize() {
               <template #suffix>M</template>
             </el-input-number>
           </el-form-item>
+          <!-- 预览字节：暂不展示
           <el-form-item>
             <template #label>
               <me-icon
@@ -447,6 +469,7 @@ async function resetWindowSize() {
               <template #suffix>B</template>
             </el-input-number>
           </el-form-item>
+          -->
         </el-row>
 
         <!-- 超时 -->
