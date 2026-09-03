@@ -244,8 +244,8 @@ function clickNew(): void {
 
 <template>
   <div class="redis-conn">
-    <!-- 空态也保留完整顶栏（新增 / 分组 / 导入导出 / 筛选），避免只能靠快捷键的误解 -->
-    <div class="me-flex header">
+    <!-- 空态保留完整顶栏；进入连接 loading 时隐藏，避免和全屏转圈叠在一起 -->
+    <div v-if="!share.loading" class="me-flex header">
       <div class="me-flex">
         <el-button icon="el-icon-plus" type="primary" @click="connUi.openConnSave('add')">{{
           t('conn.add')
