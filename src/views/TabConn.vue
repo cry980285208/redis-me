@@ -235,20 +235,17 @@ function clickNew(): void {
 
 <template>
   <div class="redis-conn">
-    <!-- 空态也保留顶栏「新增连接」，位置与有连接时一致 -->
+    <!-- 空态也保留完整顶栏（新增 / 分组 / 导入导出 / 筛选），避免只能靠快捷键的误解 -->
     <div class="me-flex header">
       <div class="me-flex">
         <el-button icon="el-icon-plus" type="primary" @click="connUi.openConnSave('add')">{{
           t('conn.add')
         }}</el-button>
-        <el-button
-          v-if="!connListEmpty && connShowGroup"
-          icon="el-icon-folder-add"
-          @click="addFolder">
+        <el-button v-if="connShowGroup" icon="el-icon-folder-add" @click="addFolder">
           {{ t('conn.newFolder') }}
         </el-button>
       </div>
-      <div v-if="!connListEmpty && !share.loading" class="me-flex">
+      <div class="me-flex">
         <me-icon icon="me-icon-new" class="icon-new" @click="clickNew" v-if="app.update?.version" />
         <el-dropdown placement="bottom-start" @command="handleCommand" style="margin-right: 10px">
           <el-button>...</el-button>

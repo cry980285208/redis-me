@@ -11,6 +11,8 @@
 ### 🐞 Bug Fixes
 
 - Fixed AnotherRDM `.ano` import failing on 1.7.2+ grouped exports; the old connection-array format still works #160
+- Keep the connection toolbar visible when the list is empty (import etc.), so it is not mistaken for shortcut-only #160
+- Empty-state shortcut list: clicking F11 toggles app fullscreen
 
 ## v5.0.1 (2026-09-01)
 

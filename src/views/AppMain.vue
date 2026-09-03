@@ -238,6 +238,7 @@ const connUi = reactive({
     else if (action === 'setting') connUi.openSetting()
     else if (action === 'shortcuts') connUi.openShortcuts()
     else if (action === 'newWindow') void openNewWindow()
+    else if (action === 'fullscreen') void toggleAppFullscreen()
   },
 })
 
