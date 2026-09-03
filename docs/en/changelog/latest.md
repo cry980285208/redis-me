@@ -8,6 +8,10 @@
 - Settings: renamed Command Timeout to I/O Timeout
 - Value area: ZSet filter by score range
 
+### 🐞 Bug Fixes
+
+- Fixed AnotherRDM `.ano` import failing on 1.7.2+ grouped exports; the old connection-array format still works #160
+
 ## v5.0.1 (2026-09-01)
 
 ### ✨ New Features

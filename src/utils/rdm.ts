@@ -8,6 +8,7 @@ import { nanoid } from 'nanoid'
 import { parse as parseYaml } from 'yaml'
 
 import type { UiConn } from '@/types/me-interface'
+import { setConnGroup } from '@/utils/conn'
 import { meJsonParse } from '@/utils/util'
 
 // #region 错误与来源标识
@@ -180,7 +181,8 @@ export function parseRedisMeConnections(content: string): UiConn[] {
 // #region Another Redis Desktop Manager（.ano）
 
 /**
- * Another Redis Desktop Manager 导出连接（`.ano` 为 Base64 包裹的 JSON 数组元素）。
+ * Another Redis Desktop Manager 导出连接（`.ano` 为 Base64 包裹的 UTF-8 JSON）。
+ * 旧版顶层是连接数组；1.7.2+ 为 `{ connections, groups }`（`storage.exportConnectionsBundle`）。
  * 参考源码：`AnotherRedisDesktopManager` 的 `storage.js`、`NewConnectionDialog.vue`、`redisClient.js`。
  */
 interface AnotherRdmSslOptionsJson {
@@ -242,9 +244,17 @@ interface AnotherRdmAnoConnectionJson {
   connectionReadOnly?: unknown
   /** 原始：侧边栏标记色（`ConnectionWrapper.setColor`）。→ RedisME：`UiConn.color` */
   color?: unknown
+  /** 原始：所属分组 id（1.7.2+）。→ RedisME：经 groups 表解析为 `meta.group`；空组不导入 */
+  groupId?: unknown
   sshOptions?: unknown
   sslOptions?: unknown
   sentinelOptions?: unknown
+}
+
+/** Another 分组项：`id` + `name`；缺一则忽略（对齐 `importConnectionsBundle` 的 `group.id && group.name`） */
+interface AnotherRdmGroupJson {
+  id?: unknown
+  name?: unknown
 }
 
 function anotherSslEnabled(ssl: AnotherRdmSslOptionsJson | undefined): boolean {
@@ -252,7 +262,63 @@ function anotherSslEnabled(ssl: AnotherRdmSslOptionsJson | undefined): boolean {
   return !!(asStr(ssl.key) || asStr(ssl.cert) || asStr(ssl.ca))
 }
 
-function anotherItemToUiConn(raw: unknown): UiConn {
+/** 分组 id → 名称；无连接的空分组不会出现在结果里，故不必单独登记 */
+function anotherGroupsById(groups: unknown): Map<string, string> {
+  const map = new Map<string, string>()
+  if (!Array.isArray(groups)) return map
+  for (const item of groups) {
+    const g = asRecord(item) as AnotherRdmGroupJson | undefined
+    if (!g) continue
+    const id = asStr(g.id).trim()
+    const name = asStr(g.name).trim()
+    if (!id || !name || map.has(id)) continue
+    map.set(id, name)
+  }
+  return map
+}
+
+/**
+ * 旧版：顶层连接数组。新版：`{ connections, groups }`（对齐 Another `importConnectionsBundle`）。
+ * 旧文件即使偶带 `groupId` 也无 groups 表，一律当未分组。
+ */
+function unwrapAnotherAnoJson(parsed: unknown): {
+  connections: unknown[]
+  groupsById: Map<string, string>
+} {
+  if (Array.isArray(parsed)) {
+    return { connections: parsed, groupsById: new Map() }
+  }
+  const o = asRecord(parsed)
+  if (o && Array.isArray(o.connections)) {
+    return { connections: o.connections, groupsById: anotherGroupsById(o.groups) }
+  }
+  throw new ConnImportParseError('conn.importConnErr')
+}
+
+function anotherGroupOrderIndex(raw: unknown, order: Map<string, number>): number {
+  const o = asRecord(raw)
+  if (!o) return order.size
+  const gid = asStr(o.groupId).trim()
+  if (!gid || !order.has(gid)) return order.size
+  return order.get(gid)!
+}
+
+/** 按 groups 数组顺序聚拢同组连接，未分组垫底，便于 mergeConnGroupsFromList 按首次出现登记 */
+function sortAnotherItemsByGroup(items: unknown[], groupsById: Map<string, string>): unknown[] {
+  if (groupsById.size === 0) return items
+  const order = new Map<string, number>()
+  let i = 0
+  for (const id of groupsById.keys()) order.set(id, i++)
+  return items
+    .map((item, idx) => ({ item, idx }))
+    .sort((a, b) => {
+      const d = anotherGroupOrderIndex(a.item, order) - anotherGroupOrderIndex(b.item, order)
+      return d !== 0 ? d : a.idx - b.idx
+    })
+    .map(x => x.item)
+}
+
+function anotherItemToUiConn(raw: unknown, groupsById: Map<string, string>): UiConn {
   if (!raw || typeof raw !== 'object') {
     throw new ConnImportParseError('conn.importFormatErr')
   }
@@ -278,7 +344,7 @@ function anotherItemToUiConn(raw: unknown): UiConn {
   const masterName = sentOpt ? asStr(sentOpt.masterName).trim() : ''
   const sentinelOn = !!masterName
 
-  return emptyConn({
+  const conn = emptyConn({
     id,
     name,
     host,
@@ -320,9 +386,14 @@ function anotherItemToUiConn(raw: unknown): UiConn {
           passphrase: '',
         },
   })
+
+  const gid = asStr(o.groupId).trim()
+  const gname = gid ? groupsById.get(gid) : undefined
+  if (gname) setConnGroup(conn, gname)
+  return conn
 }
 
-/** Another RDM `.ano`：整文件 Base64(UTF-8 JSON 数组) */
+/** Another RDM `.ano`：Base64(UTF-8 JSON)；兼容旧版数组与 1.7.2+ `{connections, groups}` */
 export function parseAnotherRdmFromAno(content: string): UiConn[] {
   let jsonText: string
   try {
@@ -331,16 +402,20 @@ export function parseAnotherRdmFromAno(content: string): UiConn[] {
     throw new ConnImportParseError('conn.importAnoDecodeErr')
   }
 
-  let arr: unknown
+  let parsed: unknown
   try {
-    arr = JSON.parse(jsonText)
+    parsed = JSON.parse(jsonText)
   } catch {
     throw new ConnImportParseError('conn.importJsonErr')
   }
-  if (!Array.isArray(arr) || arr.length === 0) {
+
+  const { connections, groupsById } = unwrapAnotherAnoJson(parsed)
+  if (connections.length === 0) {
     throw new ConnImportParseError('conn.importConnErr')
   }
-  return arr.map(a => anotherItemToUiConn(a))
+  return sortAnotherItemsByGroup(connections, groupsById).map(a =>
+    anotherItemToUiConn(a, groupsById),
+  )
 }
 
 // #endregion
