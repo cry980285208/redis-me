@@ -1,5 +1,20 @@
 # 5.x Changelog
 
+## v5.0.3 (2026-09-03)
+
+### ✨ New Features
+
+- Connection: keep the toolbar visible when the list is empty (import etc.) #160
+- Connection: empty named groups stay visible even with no connections
+- Value area: preview hint no longer expands the main pane into a scrollbar
+- Value area: data codec dropdown placement improved
+
+### 🐞 Bug Fixes
+
+- Fixed Auto sometimes misdetecting truncated large string previews as Hex; default preview is now 4KB
+- Fixed AnotherRDM 1.7.2+ grouped `.ano` import failing #160
+- Fixed the fullscreen row in the empty-state shortcut list not responding to clicks
+
 ## v5.0.2 (2026-09-02)
 
 ### ✨ New Features
@@ -7,13 +22,6 @@
 - Settings: new **connection timeout** #157
 - Settings: renamed Command Timeout to I/O Timeout
 - Value area: ZSet filter by score range
-- Connection: empty named groups stay visible even with no connections
-
-### 🐞 Bug Fixes
-
-- Fixed AnotherRDM `.ano` import failing on 1.7.2+ grouped exports; the old connection-array format still works #160
-- Keep the connection toolbar visible when the list is empty (import etc.), so it is not mistaken for shortcut-only #160
-- Empty-state shortcut list: clicking F11 toggles app fullscreen
 
 ## v5.0.1 (2026-09-01)
 
