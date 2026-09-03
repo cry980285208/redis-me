@@ -7,6 +7,7 @@
 - Settings: new **connection timeout** #157
 - Settings: renamed Command Timeout to I/O Timeout
 - Value area: ZSet filter by score range
+- Connection: empty named groups stay visible even with no connections
 
 ### 🐞 Bug Fixes
 

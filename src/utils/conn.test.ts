@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vite-plus/test'
 
 import type { UiConn } from '@/types/me-interface'
-import { buildRedisUrl, isConnMinimalMode } from '@/utils/conn'
+import { buildConnGroupSections, buildRedisUrl, isConnMinimalMode } from '@/utils/conn'
 
 describe('buildRedisUrl', () => {
   it('基本单机：redis://host:port', () => {
@@ -82,5 +82,17 @@ describe('isConnMinimalMode', () => {
     expect(isConnMinimalMode(null)).toBe(false)
     expect(isConnMinimalMode(conn())).toBe(false)
     expect(isConnMinimalMode(conn({ uiMode: 'normal' }))).toBe(false)
+  })
+})
+
+describe('buildConnGroupSections', () => {
+  it('无连接时仍保留已登记的有名空分组', () => {
+    const sections = buildConnGroupSections([], ['生产', '开发'], '')
+    expect(sections.map(s => s.key)).toEqual(['生产', '开发'])
+    expect(sections.every(s => s.conns.length === 0)).toBe(true)
+  })
+
+  it('无连接且未登记分组时不出现默认分组', () => {
+    expect(buildConnGroupSections([], [], '')).toEqual([])
   })
 })

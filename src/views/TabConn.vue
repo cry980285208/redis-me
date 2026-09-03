@@ -80,6 +80,15 @@ const flatTableRef = useTemplateRef<InstanceType<typeof ConnTable>>('flatTableRe
 
 const connListEmpty = computed(() => share.connList.length === 0)
 
+const hasNamedConnGroups = computed(() => connGroups.value.some(g => !!normalizeGroupName(g)))
+
+/** 无连接时：分组模式且已有空 folder 则仍显示分组树，避免「新建分组」看起来没生效 */
+const showConnEmpty = computed(() => {
+  if (share.loading) return true
+  if (connListEmpty.value && connShowGroup.value && hasNamedConnGroups.value) return false
+  return connListEmpty.value
+})
+
 function onEmptyAction(action: string): void {
   connUi.runConnAction(action as ConnShortcutAction)
 }
@@ -277,10 +286,7 @@ function clickNew(): void {
       </div>
     </div>
 
-    <ConnEmpty
-      v-if="connListEmpty || share.loading"
-      class="conn-empty-wrap"
-      @action="onEmptyAction" />
+    <ConnEmpty v-if="showConnEmpty" class="conn-empty-wrap" @action="onEmptyAction" />
 
     <template v-else>
       <ConnTable
