@@ -521,11 +521,14 @@ onUnmounted(() => window.removeEventListener('keydown', onEscapeKey, true))
             @click="refreshField" />
           <!-- Auto 识别结果：下拉右侧；Vector Set 向量非 wire 不展示编码 -->
           <div v-if="!vectorsetType" class="field-set-enc me-flex">
+            <!-- 底栏贴底：下拉固定向上，避免翻到窗口外 -->
             <el-select
               v-model="fieldViewFmt"
               class="field-set-enc-select me-select-plain"
               :suffix-icon="MeSelectUpDownIcon"
               :disabled="editorLoading"
+              placement="top-start"
+              :fallback-placements="['top', 'top-end']"
               @change="onFieldViewFmtChange">
               <el-option
                 v-for="item in fieldViewOptionList"

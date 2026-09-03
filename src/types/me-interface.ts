@@ -67,8 +67,14 @@ export const shareProvideKey: InjectionKey<AppMainShare> = Symbol('redis-me.shar
 /** 与 `AppMain` 中 `provide(appProvideKey, app)` 配对，子组件使用 `inject(appProvideKey)!` */
 export const appProvideKey: InjectionKey<AppMainInject> = Symbol('redis-me.app')
 
-/** ConnEmpty / 全局快捷键：新增连接、导入、设置等（由 AppMain provide） */
-export type ConnShortcutAction = 'add' | 'import' | 'newWindow' | 'setting' | 'shortcuts'
+/** ConnEmpty / 全局快捷键：新增连接、导入、全屏、设置等（由 AppMain provide） */
+export type ConnShortcutAction =
+  | 'add'
+  | 'import'
+  | 'newWindow'
+  | 'setting'
+  | 'shortcuts'
+  | 'fullscreen'
 
 export interface ConnUiInject {
   openConnSave: (mode: 'add' | 'edit', conn?: UiConn) => void

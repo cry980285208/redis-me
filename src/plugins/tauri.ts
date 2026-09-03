@@ -65,6 +65,10 @@ if (typeof settings.connectTimeout !== 'number' || settings.connectTimeout <= 0)
 } else {
   settings.connectTimeout = Math.min(300, Math.max(5, Math.round(settings.connectTimeout)))
 }
+// 预览字节设置项暂未开放，旧默认 1000 视为未自定义
+if (settings.valuePreviewBytes === 1000) {
+  settings.valuePreviewBytes = defaultSettings.valuePreviewBytes
+}
 
 /** 全局设置同步 Rust AppState（建连/命令超时等） */
 async function syncAppSettings(): Promise<void> {

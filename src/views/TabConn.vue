@@ -80,6 +80,15 @@ const flatTableRef = useTemplateRef<InstanceType<typeof ConnTable>>('flatTableRe
 
 const connListEmpty = computed(() => share.connList.length === 0)
 
+const hasNamedConnGroups = computed(() => connGroups.value.some(g => !!normalizeGroupName(g)))
+
+/** 无连接时：分组模式且已有空 folder 则仍显示分组树，避免「新建分组」看起来没生效 */
+const showConnEmpty = computed(() => {
+  if (share.loading) return true
+  if (connListEmpty.value && connShowGroup.value && hasNamedConnGroups.value) return false
+  return connListEmpty.value
+})
+
 function onEmptyAction(action: string): void {
   connUi.runConnAction(action as ConnShortcutAction)
 }
@@ -235,20 +244,17 @@ function clickNew(): void {
 
 <template>
   <div class="redis-conn">
-    <!-- 空态也保留顶栏「新增连接」，位置与有连接时一致 -->
-    <div class="me-flex header">
+    <!-- 空态保留完整顶栏；进入连接 loading 时隐藏，避免和全屏转圈叠在一起 -->
+    <div v-if="!share.loading" class="me-flex header">
       <div class="me-flex">
         <el-button icon="el-icon-plus" type="primary" @click="connUi.openConnSave('add')">{{
           t('conn.add')
         }}</el-button>
-        <el-button
-          v-if="!connListEmpty && connShowGroup"
-          icon="el-icon-folder-add"
-          @click="addFolder">
+        <el-button v-if="connShowGroup" icon="el-icon-folder-add" @click="addFolder">
           {{ t('conn.newFolder') }}
         </el-button>
       </div>
-      <div v-if="!connListEmpty && !share.loading" class="me-flex">
+      <div class="me-flex">
         <me-icon icon="me-icon-new" class="icon-new" @click="clickNew" v-if="app.update?.version" />
         <el-dropdown placement="bottom-start" @command="handleCommand" style="margin-right: 10px">
           <el-button>...</el-button>
@@ -280,10 +286,7 @@ function clickNew(): void {
       </div>
     </div>
 
-    <ConnEmpty
-      v-if="connListEmpty || share.loading"
-      class="conn-empty-wrap"
-      @action="onEmptyAction" />
+    <ConnEmpty v-if="showConnEmpty" class="conn-empty-wrap" @action="onEmptyAction" />
 
     <template v-else>
       <ConnTable

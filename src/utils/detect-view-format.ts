@@ -58,15 +58,49 @@ function base64ToBytes(base64: string): Uint8Array | null {
   }
 }
 
-/** base64 wire → UTF-8 文本；无效序列返回 null */
-export function base64ToUtf8Text(base64: string): string | null {
-  const bytes = base64ToBytes(base64)
-  if (!bytes) return null
+function bytesToUtf8Text(bytes: Uint8Array): string | null {
   try {
     return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
   } catch {
     return null
   }
+}
+
+/** base64 wire → UTF-8 文本；无效序列返回 null */
+export function base64ToUtf8Text(base64: string): string | null {
+  const bytes = base64ToBytes(base64)
+  if (!bytes) return null
+  return bytesToUtf8Text(bytes)
+}
+
+/** UTF-8 首字节期望的序列长度；非法首字节返回 0 */
+function utf8ExpectedLen(lead: number): number {
+  if (lead < 0x80) return 1
+  if ((lead & 0xe0) === 0xc0) return 2
+  if ((lead & 0xf0) === 0xe0) return 3
+  if ((lead & 0xf8) === 0xf0) return 4
+  return 0
+}
+
+/**
+ * 去掉末尾不完整的 UTF-8 序列（最多 3 字节），仅供 Auto 判断。
+ * GETRANGE 预览按字节截断时，汉字/emoji 常被切在中间；展示层仍 lossy 解码，不在此裁掉。
+ */
+function trimIncompleteUtf8Tail(bytes: Uint8Array): Uint8Array {
+  const n = bytes.length
+  if (n === 0) return bytes
+  let i = n - 1
+  let cont = 0
+  while (i >= 0 && (bytes[i]! & 0xc0) === 0x80) {
+    cont++
+    if (cont > 3) return bytes
+    i--
+  }
+  if (i < 0) return bytes
+  const expected = utf8ExpectedLen(bytes[i]!)
+  const actual = n - i
+  if (expected > 0 && actual < expected) return bytes.subarray(0, i)
+  return bytes
 }
 
 function isDisplayableUtf8(text: string): boolean {
@@ -148,11 +182,19 @@ function looksLikeStrJson(utf8: string): boolean {
   }
 }
 
+export type DetectViewFormatOptions = {
+  /** GETRANGE 预览：允许去掉不完整 UTF-8 尾部后再判，避免误判 Hex */
+  truncated?: boolean
+}
+
 /**
  * 从 base64 wire 识别展示格式。
  * 空值 → utf8；大 value 跳过 MsgPack/StrJson 试解。
  */
-export function detectViewFormat(base64: string): DetectedViewFormat {
+export function detectViewFormat(
+  base64: string,
+  opts?: DetectViewFormatOptions,
+): DetectedViewFormat {
   if (!base64) return 'utf8'
 
   const bytes = base64ToBytes(base64)
@@ -165,7 +207,12 @@ export function detectViewFormat(base64: string): DetectedViewFormat {
   if (allowTry && looksLikePhpSerial(base64, bytes)) return 'phpserial'
   if (allowTry && looksLikeMsgpack(bytes)) return 'msgpack'
 
-  const utf8 = base64ToUtf8Text(base64)
+  let utf8 = bytesToUtf8Text(bytes)
+  // 预览截断可能切在多字节字符中间，严格解码会失败并落到 Hex
+  if (utf8 === null && opts?.truncated) {
+    const trimmed = trimIncompleteUtf8Tail(bytes)
+    if (trimmed.length < bytes.length) utf8 = bytesToUtf8Text(trimmed)
+  }
   if (utf8 !== null) {
     if (allowTry && looksLikeStrJson(utf8)) return 'strjson'
     if (isDisplayableUtf8(utf8)) return 'utf8'
