@@ -98,4 +98,27 @@ describe('detectViewFormat', () => {
     expect(detectViewFormat(utf8ToBase64('hello'))).toBe('utf8')
     expect(detectViewFormat(utf8ToBase64('a'))).toBe('utf8')
   })
+
+  it('预览截断在汉字中间 → utf8（未标 truncated 仍为 hex）', () => {
+    const bytes = new TextEncoder().encode('你好世界')
+    const cut = bytes.subarray(0, 5) // 「你」3 字节 + 「好」被切 2 字节
+    expect(detectViewFormat(bytesToBase64(cut))).toBe('hex')
+    expect(detectViewFormat(bytesToBase64(cut), { truncated: true })).toBe('utf8')
+  })
+
+  it('预览截断在 emoji 中间 → utf8', () => {
+    const bytes = new TextEncoder().encode('hi👋')
+    const cut = bytes.subarray(0, 4) // hi + emoji 前 2 字节
+    expect(detectViewFormat(bytesToBase64(cut), { truncated: true })).toBe('utf8')
+  })
+
+  it('预览截断且字符完整 → utf8', () => {
+    expect(detectViewFormat(utf8ToBase64('你好'), { truncated: true })).toBe('utf8')
+  })
+
+  it('预览截断的非法 UTF-8 仍为 hex', () => {
+    expect(
+      detectViewFormat(bytesToBase64(new Uint8Array([0xff, 0xfe, 0xfd])), { truncated: true }),
+    ).toBe('hex')
+  })
 })

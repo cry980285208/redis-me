@@ -1,4 +1,4 @@
-use crate::client::state::ClientAccess;
+use crate::client::state::{ClientAccess, app_timeouts};
 use crate::utils::app_store;
 use crate::utils::capabilities::ServerCapabilities;
 use crate::utils::model::*;
@@ -79,15 +79,17 @@ fn shell_escape(s: &str) -> String {
 // 测试连接
 #[command]
 #[specta]
-pub fn test_conn(conf: ConnConfig) -> ApiResult<()> {
-    to_api_result(conf.test())
+pub fn test_conn(app_handle: AppHandle, conf: ConnConfig) -> ApiResult<()> {
+    let (connect_timeout, _) = app_timeouts(&app_handle);
+    to_api_result(conf.test(connect_timeout))
 }
 
 // 哨兵模式获取主节点列表
 #[command]
 #[specta]
-pub fn masters(conf: ConnConfig) -> ApiResult<Vec<HashMap<String, String>>> {
-    to_api_result(conf.masters())
+pub fn masters(app_handle: AppHandle, conf: ConnConfig) -> ApiResult<Vec<HashMap<String, String>>> {
+    let (connect_timeout, command_timeout) = app_timeouts(&app_handle);
+    to_api_result(conf.masters(connect_timeout, command_timeout))
 }
 
 // 连接信息发送到后端
@@ -97,7 +99,7 @@ pub fn conn_list(app_handle: AppHandle, conn_list: Vec<ConnConfig>) -> ApiResult
     to_api_result(app_handle.conn_list(conn_list))
 }
 
-// 全局应用设置同步到后端（命令超时等）
+// 全局应用设置同步到后端（建连/命令超时等）
 #[command]
 #[specta]
 pub fn app_settings(app_handle: AppHandle, app_settings: AppSettings) -> ApiResult<()> {

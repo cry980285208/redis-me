@@ -127,6 +127,7 @@ export type AclUserDetail = {
 };
 
 export type AppSettings = {
+	connectionTimeoutSecs?: number,
 	commandTimeoutSecs: number,
 };
 
@@ -186,6 +187,10 @@ export type FieldScanMeta = {
 	streamDesc: boolean | null,
 	/**  VectorSet 浏览模式：true 随机采样（VRANDMEMBER，无分页）；false 范围查询（VRANGE）；默认 true */
 	vectorsetSample: boolean | null,
+	/**  ZSet 分数下界；空/缺省则 -inf。任一侧非空即走 ZRANGEBYSCORE */
+	zsetMinScore?: string | null,
+	/**  ZSet 分数上界；空/缺省则 +inf */
+	zsetMaxScore?: string | null,
 };
 
 export type FieldScanParam = FieldScanParam_Serialize | FieldScanParam_Deserialize;

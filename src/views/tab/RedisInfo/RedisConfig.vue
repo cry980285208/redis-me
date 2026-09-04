@@ -8,7 +8,7 @@ import MeWebsite from '@/components/MeWebsite.vue'
 import { configTip as tips, redisConfDict, valkeyConfDict } from '@/locales/config'
 import { shareProvideKey } from '@/types/me-interface'
 import type { TableExportMatrix } from '@/utils/export'
-import { compareVersionLabel, sortVersionsDesc } from '@/utils/redis-version'
+import { pickVersionAtOrBelow, sortVersionsDesc } from '@/utils/redis-version'
 import { meCopy, meCommands, meOk } from '@/utils/util'
 import NodeList from '@/views/ext/NodeList.vue'
 // #endregion
@@ -50,7 +50,8 @@ const rules = computed(() => ({
 // Json格式的默认配置
 const confDict = computed(() => (share.capabilities.isValkey ? valkeyConfDict : redisConfDict))
 const dictVersionList = sortVersionsDesc(Object.keys(confDict.value))
-const dictVersion = ref(getDefaultVersion())
+// 默认值字典从 Redis6.2 / Valkey7.2 起；更旧服务回退到最旧字典做对比
+const dictVersion = ref(pickVersionAtOrBelow(serverType.value + props.initVersion, dictVersionList))
 const dictRaw = computed(
   () => confDict.value[dictVersion.value] as Record<string, string | undefined>,
 )
@@ -144,17 +145,6 @@ watchEffect(async () => {
 function handleCommand(command: string) {
   configVersion.value = command
   nextTick(() => (dialog.raw = true))
-}
-
-function getDefaultVersion() {
-  // 选不超过当前服务版本的最新默认值字典（数值比较，避免 8.10 / 8.2 字典序误判）
-  const current = serverType.value + props.initVersion
-  for (const version of dictVersionList) {
-    if (compareVersionLabel(current, version) >= 0) {
-      return version
-    }
-  }
-  return configVersionList.value[0] ?? ''
 }
 // #endregion
 

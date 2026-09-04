@@ -310,6 +310,7 @@ const connUi = reactive({
     else if (action === 'setting') connUi.openSetting()
     else if (action === 'shortcuts') connUi.openShortcuts()
     else if (action === 'newWindow') void openNewWindow()
+    else if (action === 'fullscreen') void toggleAppFullscreen()
   },
   // 多TAB：打开/关闭连接 TAB（绑定到本组件作用域内的实现）
   openConnTab(conn: UiConn): void {

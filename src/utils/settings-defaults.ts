@@ -21,10 +21,12 @@ export const defaultSettings = {
   // 自定义 Codec（STRING 值编解码，见 zzz/plans/05_custom-formatter.md）
   customCodecs: [] as { name: string; command: string }[],
   codecExecTimeoutSec: 5,
+  // Redis 建连超时（秒，TCP+握手+PING），同步至 Rust AppSettings
+  connectTimeout: 10,
   // Redis 命令读写超时（秒），同步至 Rust AppSettings
   commandTimeout: 30,
   // STRING 类型值全量加载安全阈值（MB）
   valueByteLimitMB: 1,
-  // STRING 类型值超过安全阈值时的预览字节数
-  valuePreviewBytes: 1000,
+  // STRING 类型值超过安全阈值时的预览字节数（4KB：够看结构，远低于 1MB 安全阈值）
+  valuePreviewBytes: 4096,
 }

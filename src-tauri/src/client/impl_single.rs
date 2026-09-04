@@ -2,7 +2,9 @@ use crate::client::client_trait::*;
 use crate::implement_pipeline_commands;
 use crate::utils::capabilities::detect_server_capabilities;
 use crate::utils::command_log::LoggingConnection;
-use crate::utils::conn::{init_single_connection, get_client_single, set_client_name};
+use crate::utils::conn::{
+    get_client_single, init_single_connection, set_client_name_unless_minimal,
+};
 use crate::utils::error::AppError;
 use crate::utils::model::*;
 use crate::utils::ssh_tunnel::SshTunnel;
@@ -376,7 +378,7 @@ impl MeClient for MeSingle {
     }
 
     fn subscribe(&self, channel: Option<String>) -> AnyResult<()> {
-        let conn = self.client.get_connection()?;
+        let conn = self.client.get_connection_with_timeout(self.connection_timeout)?;
         let running = self.subscribe_running.clone();
         let app_handle = self.base().get_app_handle()?;
         let logger = self.base().command_logger.clone();
@@ -388,7 +390,7 @@ impl MeClient for MeSingle {
     }
 
     fn monitor(&self, _node: &str) -> AnyResult<()> {
-        let conn = self.client.get_connection()?;
+        let conn = self.client.get_connection_with_timeout(self.connection_timeout)?;
         let running = self.monitor_running.clone();
         let app_handle = self.base().get_app_handle()?;
         let logger = self.base().command_logger.clone();
@@ -603,16 +605,21 @@ impl MeClient for MeSingle {
 
 // 个性化方法
 impl MeSingle {
-    pub fn init(redis_conn: &ConnConfig, command_timeout: Duration) -> AnyResult<Box<dyn MeClient>> {
-        let (client, ssh_tunnel) = get_client_single(redis_conn, false)?;
+    pub fn init(
+        redis_conn: &ConnConfig,
+        connect_timeout: Duration,
+        command_timeout: Duration,
+    ) -> AnyResult<Box<dyn MeClient>> {
+        let (client, ssh_tunnel) = get_client_single(redis_conn, connect_timeout, false)?;
         let mut base = MeBase::from(redis_conn);
+        base.connection_timeout = connect_timeout;
         base.command_timeout = command_timeout;
         let logger = base.command_logger.clone();
-        // 阶段 1 短超时验证 + 阶段 2 正式超时；验证通过后复用同一条 TCP（#155）
-        let raw_conn = init_single_connection(&client, redis_conn.db, command_timeout)?;
+        // 阶段 1 建连验证 + 阶段 2 正式命令超时；验证通过后复用同一条 TCP（#155）
+        let raw_conn =
+            init_single_connection(&client, redis_conn.db, connect_timeout, command_timeout)?;
         let mut conn = LoggingConnection::new(raw_conn, logger, redis_conn.db);
-        set_client_name(&mut conn);
-
+        set_client_name_unless_minimal(&mut conn, redis_conn);
         detect_server_capabilities(&mut conn, &mut base, false);
 
         info!("Redis单机连接初始化成功: {}", redis_conn.name);
@@ -625,9 +632,14 @@ impl MeSingle {
         }))
     }
 
-    // 重连/辅助连接：旧连接已失效，只建一条 TCP，直接用正式超时（无需再走阶段 1 短超时）
-    fn new_raw_conn(client: &Client, db: u16, command_timeout: Duration) -> AnyResult<Connection> {
-        let mut conn = client.get_connection()?;
+    // 重连/辅助连接：旧连接已失效，按建连超时建一条 TCP，再切正式命令超时
+    fn new_raw_conn(
+        client: &Client,
+        db: u16,
+        connect_timeout: Duration,
+        command_timeout: Duration,
+    ) -> AnyResult<Connection> {
+        let mut conn = client.get_connection_with_timeout(connect_timeout)?;
         conn.set_read_timeout(Some(command_timeout))?;
         conn.set_write_timeout(Some(command_timeout))?;
         if db != 0 {
@@ -642,15 +654,19 @@ impl MeSingle {
 
     // 重新连接
     fn reconnect(&self) -> AnyResult<()> {
-        let raw_conn =
-            Self::new_raw_conn(&self.client, self.db.load(Relaxed), self.command_timeout)?;
+        let raw_conn = Self::new_raw_conn(
+            &self.client,
+            self.db.load(Relaxed),
+            self.connection_timeout,
+            self.command_timeout,
+        )?;
         let mut conn_guard = self.conn.lock();
         *conn_guard = LoggingConnection::new(
             raw_conn,
             self.command_logger.clone(),
             self.db.load(Relaxed),
         );
-        set_client_name(&mut *conn_guard);
+        set_client_name_unless_minimal(&mut *conn_guard, &self.conf);
         self.last_check_time.store(Utc::now().timestamp(), Relaxed);
         info!("Redis单机连接重连成功: {}", self.conf.name);
         Ok(())
@@ -703,8 +719,13 @@ impl MeSingle {
 
     // 获取一个新的连接（导出/导入等独立线程，不记命令日志）
     fn get_new_conn(&self) -> AnyResult<Connection> {
-        let mut conn = Self::new_raw_conn(&self.client, self.db.load(Relaxed), self.command_timeout)?;
-        set_client_name(&mut conn);
+        let mut conn = Self::new_raw_conn(
+            &self.client,
+            self.db.load(Relaxed),
+            self.connection_timeout,
+            self.command_timeout,
+        )?;
+        set_client_name_unless_minimal(&mut conn, &self.conf);
         Ok(conn)
     }
 }

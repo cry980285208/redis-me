@@ -294,12 +294,7 @@ describe('genInstallNodes / genRedisInstall', () => {
 
   it('TLS + 哨兵：配置含 tls-replication，哨兵配置含证书路径', () => {
     const out = genRedisInstall(
-      baseOptions({
-        mode: 'sentinel',
-        ssl: true,
-        ips: ['10.0.0.1', '10.0.0.2'],
-        password: 'pass',
-      }),
+      baseOptions({ mode: 'sentinel', ssl: true, ips: ['10.0.0.1', '10.0.0.2'], password: 'pass' }),
       labels,
     )
     const guideCode = out.guide[0].code

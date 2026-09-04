@@ -110,7 +110,7 @@ export function isAppFullscreenHotkeyBlocked(
 /** 连接页/设置页全局快捷键列表；ConnEmpty、Setting → MeShortcut */
 export function getConnGlobalShortcuts(t: ComposerTranslation): ShortcutItem[] {
   return [
-    { label: t('setting.appFullscreen'), keys: ['F11'] },
+    { id: 'fullscreen', label: t('setting.appFullscreen'), keys: ['F11'] },
     { id: 'add', label: t('conn.add'), keys: ['mod', 'shift', 'N'] },
     { id: 'import', label: t('conn.import'), keys: ['mod', 'shift', 'O'] },
     { id: 'newWindow', label: t('conn.emptyNewWindow'), keys: ['mod', 'shift', 'W'] },

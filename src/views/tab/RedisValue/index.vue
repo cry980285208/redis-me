@@ -23,7 +23,6 @@ import type {
   RedisFieldGet_Deserialize,
   RedisFieldValue,
   RedisKey_Deserialize,
-  RedisZsetRankResult,
   ScanCursor,
 } from '@/types/tauri-specta'
 import {
@@ -59,6 +58,7 @@ import {
   computeScanProgress,
   MINIMATCH_SCAN_OPTS,
 } from '@/utils/redis-glob'
+import { defaultSettings } from '@/utils/settings-defaults'
 import {
   bus,
   KEY_DELETE,
@@ -199,10 +199,13 @@ const vectorsetBrowseOptions = computed(() => [
 
 // STRING 大值截断预览
 const VALUE_BYTE_LIMIT = computed(
-  () => ((window.meTauri.settings.valueByteLimitMB as number) ?? 1) * 1024 * 1024,
+  () =>
+    ((window.meTauri.settings.valueByteLimitMB as number) ?? defaultSettings.valueByteLimitMB) *
+    1024 *
+    1024,
 )
 const VALUE_PREVIEW_BYTES = computed(
-  () => (window.meTauri.settings.valuePreviewBytes as number) ?? 2000,
+  () => (window.meTauri.settings.valuePreviewBytes as number) ?? defaultSettings.valuePreviewBytes,
 )
 const forceFullValue = ref(false) // 用户确认后 GET 全量
 const valueTruncatedDismissed = ref(false)
@@ -211,12 +214,14 @@ const showValueTruncatedAlert = computed(
   () => stringType.value && valueTruncated.value && !valueTruncatedDismissed.value,
 )
 
-// List / Stream 扫描范围与方向
+// List / Stream / ZSet 扫描范围与方向
 const meta = ref({ maxId: '', minId: '' }) // Stream minId / maxId
 const listIndexMin = ref('')
 const listIndexMax = ref('')
 const listDescAsc = ref(true) // true=升序
 const streamDescAsc = ref(true) // true=XRANGE
+const zsetScoreMin = ref('')
+const zsetScoreMax = ref('')
 
 function toggleListSortOrder() {
   listDescAsc.value = !listDescAsc.value
@@ -378,7 +383,7 @@ function syncDisplaySnapshot() {
   displayWire.value = wire
 
   if (bytesFormat.value === 'auto' && stringType.value) {
-    const nextDetected = detectViewFormat(wire)
+    const nextDetected = detectViewFormat(wire, { truncated: valueTruncated.value })
     commitDetectedView(nextDetected)
     displayBytesFormat.value = nextDetected
     return
@@ -716,6 +721,8 @@ function resetParam() {
   listIndexMax.value = ''
   listDescAsc.value = true
   streamDescAsc.value = true
+  zsetScoreMin.value = ''
+  zsetScoreMax.value = ''
   vectorsetSample.value = true
 }
 function fieldScanIncludeMeta(): boolean {
@@ -738,6 +745,8 @@ function buildFieldScanParam() {
       listDesc: listType.value ? !listDescAsc.value : null,
       streamDesc: streamType.value ? !streamDescAsc.value : null,
       vectorsetSample: vectorsetType.value ? vectorsetSample.value : null,
+      zsetMinScore: zsetType.value ? zsetScoreMin.value.trim() || null : null,
+      zsetMaxScore: zsetType.value ? zsetScoreMax.value.trim() || null : null,
       valueByteLimit: VALUE_BYTE_LIMIT.value,
       valuePreviewBytes: VALUE_PREVIEW_BYTES.value,
       forceFullValue: forceFullValue.value,
@@ -1277,28 +1286,8 @@ function onFieldRowMoreCommand(command: string, row: ValueTableRow) {
   } else if (command === 'copyAsCommand') {
     void copyFieldAsCommand(row)
   } else if (command === 'showZsetRank') {
-    void showZsetRank(row)
+    showZsetRank(row)
   }
-}
-
-async function showZsetRank(row: ValueTableRow) {
-  const conn = share.conn
-  const rk = share.redisKey
-  if (!conn || !rk) return
-  const member = String(row.value ?? '')
-  const data: RedisZsetRankResult = await meCommands.zsetRank(conn.id, {
-    key: rk,
-    member,
-    valFmt: IPC_WIRE_FORMAT,
-  })
-  const rankText = data.rank !== null ? String(data.rank) : t('redisValue.rankNotFound')
-  const revRankText = data.revRank !== null ? String(data.revRank) : t('redisValue.rankNotFound')
-  meOk(
-    `${t('redisValue.rank')}: ${rankText}<br>${t('redisValue.revRank')}: ${revRankText}`,
-    true,
-    t('redisValue.rankTitle'),
-    { dangerouslyUseHTMLString: true },
-  )
 }
 
 function onFieldSetRefreshed(data: RedisFieldValue) {
@@ -1440,6 +1429,9 @@ function toggleFavorite() {
 const tableInfoRef = useTemplateRef<InstanceType<typeof TableInfo>>('tableInfoRef')
 const valueShortcutRef = useTemplateRef('valueShortcutRef')
 const commandHelpRef = useTemplateRef<InstanceType<typeof CommandHelp>>('commandHelpRef')
+function showZsetRank(row: ValueTableRow) {
+  tableInfoRef.value?.open('zrank', { member: String(row.value ?? '') })
+}
 function openKeyShortDialog() {
   valueShortcutRef.value?.open()
 }
@@ -1952,11 +1944,7 @@ onUnmounted(() => {
           :error="viewDecodeFailed" />
 
         <!-- 表格显示 -->
-        <div
-          class="me-flex"
-          style="flex-direction: column; height: 100%"
-          v-else
-          @click="onFieldPanelOutsideClick">
+        <div class="me-flex value-table-pane" v-else @click="onFieldPanelOutsideClick">
           <div class="me-flex table-toolbar">
             <el-input
               v-model="fieldKeyword"
@@ -2023,6 +2011,20 @@ onUnmounted(() => {
                 @keyup.enter="restartFieldScan()"
                 v-model.trim="listIndexMax"
                 :placeholder="t('redisValue.listIndexMax')"
+                clearable />
+            </div>
+
+            <div v-if="zsetType" class="list-range-inputs">
+              <el-input
+                @keyup.enter="restartFieldScan()"
+                v-model.trim="zsetScoreMin"
+                :placeholder="t('redisValue.zsetScoreMin')"
+                clearable />
+              <span class="list-range-sep">-</span>
+              <el-input
+                @keyup.enter="restartFieldScan()"
+                v-model.trim="zsetScoreMax"
+                :placeholder="t('redisValue.zsetScoreMax')"
                 clearable />
             </div>
 
@@ -2426,11 +2428,14 @@ onUnmounted(() => {
         </div>
 
         <div class="me-flex" style="position: relative">
+          <!-- 底栏贴底：下拉固定向上，避免翻到窗口外 -->
           <el-select
             v-model="bytesFormat"
             class="bytes-format-select me-select-plain"
             :suffix-icon="MeSelectUpDownIcon"
             :disabled="jsonType || streamType"
+            placement="top-end"
+            :fallback-placements="['top', 'top-start']"
             @change="onBytesFormatChange">
             <template #header>
               <div
@@ -2535,7 +2540,7 @@ onUnmounted(() => {
     <KeyRename ref="keyRenameRef" />
     <CommandHelp ref="commandHelpRef" />
 
-    <!-- 本域弹窗：OBJECT / ARINFO / VINFO / 自定义编解码 -->
+    <!-- 本域弹窗：OBJECT / ARINFO / VINFO / ZRANK / 自定义编解码 -->
     <TableInfo ref="tableInfoRef" />
     <CustomCodec v-model="customCodecVisible" />
 
@@ -2749,15 +2754,31 @@ onUnmounted(() => {
     }
   }
 
-  // 主区：JSON / 表格
+  // 主区：纵向 flex。预览提示占自然高度，编辑器/表格吃剩余空间，避免 height:100% 把整块顶出视口跟着滚
   .value-main {
     margin: 10px 0 5px 0;
     position: relative;
-    flex-grow: 1;
+    flex: 1;
+    min-height: 0;
     overflow: hidden;
+    display: flex;
+    flex-direction: column;
+
+    :deep(.me-code-wrap) {
+      flex: 1;
+      min-height: 0;
+      height: auto;
+    }
+
+    .value-table-pane {
+      flex: 1;
+      min-height: 0;
+      flex-direction: column;
+    }
 
     // STRING 大值截断提示
     .value-truncated-alert {
+      flex-shrink: 0;
       margin-bottom: 8px;
 
       .value-truncated-desc {
