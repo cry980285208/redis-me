@@ -8,6 +8,7 @@ use crate::utils::util::{
     AnyResult, CONNECTION_CONNECT_TIMEOUT, CONNECTION_NORMAL_TIMEOUT, vec8_to_display_string,
 };
 use chrono::Utc;
+use parking_lot::RwLock;
 use redis::{ProtocolVersion, RedisWrite, ToRedisArgs, ToSingleRedisArg};
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -15,7 +16,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU16};
 use std::time::Duration;
-use parking_lot::RwLock;
 use tauri::AppHandle;
 
 /// 终端输出格式，对应 redis-cli `--raw` / `--csv` / `--json`；默认 TTY
@@ -165,13 +165,11 @@ fn default_connection_timeout_secs() -> u64 {
 }
 
 // 全局应用设置：由前端 settings 同步，新连接/重连时快照 connection_timeout / command_timeout
-api_model!(
-    AppSettings {
-        #[serde(default = "default_connection_timeout_secs")]
-        connection_timeout_secs: u64,
-        command_timeout_secs: u64,
-    }
-);
+api_model!(AppSettings {
+    #[serde(default = "default_connection_timeout_secs")]
+    connection_timeout_secs: u64,
+    command_timeout_secs: u64,
+});
 
 impl Default for AppSettings {
     fn default() -> Self {
@@ -202,21 +200,23 @@ impl AppSettings {
 impl ConnConfig {
     pub fn test(&self, connect_timeout: Duration) -> AnyResult<()> {
         if self.cluster {
-            get_client_cluster(self, Some(connect_timeout))?;
+            get_client_cluster(self, connect_timeout, true)?;
         } else {
-            get_client_single(self, connect_timeout, true)?;
+            get_client_single(self, connect_timeout, true, None)?;
         };
-        // 单机模式返回的元组在测试后丢弃，SSH 隧道随之关闭
-        // 集群模式不支持 SSH
         Ok(())
     }
 
-    pub fn masters(&self, connect_timeout: Duration, command_timeout: Duration) -> AnyResult<Vec<HashMap<String, String>>> {
+    pub fn masters(
+        &self,
+        connect_timeout: Duration,
+        command_timeout: Duration,
+    ) -> AnyResult<Vec<HashMap<String, String>>> {
         let mut conf = self.clone();
         conf.sentinel = false;
-        let (client, _) = get_client_single(&conf, connect_timeout, false)?;
+        let (client, _) = get_client_single(&conf, connect_timeout, false, None)?;
         let mut conn =
-            init_single_connection(&client, conf.db, connect_timeout, command_timeout)?;
+            init_single_connection(&client, conf.db, connect_timeout, command_timeout, &conf)?;
         let masters: Vec<HashMap<String, String>> =
             redis::cmd("sentinel").arg("masters").query(&mut conn)?;
         Ok(masters)
@@ -279,8 +279,6 @@ impl MeBase {
             .into()
         })
     }
-
-
 }
 
 // 数据库信息
@@ -419,6 +417,9 @@ api_model!(
 ScanCursor {
     ready_nodes: Vec<String>,
     now_node: String,
+    /// SCAN 游标 IPC 用字符串，避免 JS Number 超过 2^53 丢精度导致续扫卡死
+    #[serde(with = "u64_as_string")]
+    #[specta(type = String)]
     now_cursor: u64,
     stream_cursor: String,
     finished: bool,
@@ -764,6 +765,15 @@ api_model!(RedisPop {
     val_fmt: Option<BytesFormat>,
 });
 
+// 仅更新 Hash 字段过期：HEXPIRE / HPERSIST，不改字段值
+api_model!(RedisFieldTtl {
+    key: RedisKey,
+    field_key: String,
+    field_ttl: i64, // >0 秒；-1 永久（HPERSIST）
+    /// 字段名编码，与 field_set 的 val_fmt 一致
+    val_fmt: Option<BytesFormat>,
+});
+
 api_model!(RedisFieldGet {
     key: RedisKey,
     field_index: isize,
@@ -887,18 +897,22 @@ api_model!(RedisSlowLog {
     client_name: String
 });
 
-// 内存分析参数
+// 内存分析：一轮 SCAN + MEMORY USAGE，循环/暂停由前端控制（与键列表 SCAN 同构）
 api_model!(RedisMemoryParam {
     #[serde(rename = "match")]
     pattern: Option<String>, // 匹配模式
 
-    size_limit: u64,   // 大小限制, 推荐: 100kb 即102400
-    count_limit: u64,  // 数量限制, 推荐: 1000
-    scan_count: u64,   // 每次扫描, 推荐: 1000
-    scan_total: u64,   // 扫描数量限制, 推荐: 10000
-    sleep_millis: u64, // 扫描间隔, 推荐: 1000
+    size_limit: u64,  // 只收 >= 此字节的键
+    scan_count: u64,  // SCAN COUNT
+    cursor: Option<ScanCursor>,
+    need_key_type: Option<bool>,
+});
 
-    need_key_type: Option<bool>, // 是否需要返回键类型
+api_model!(RedisMemoryResult {
+    key_list: Vec<RedisKeySize>,
+    cursor: ScanCursor,
+    /// 本轮 SCAN 拿到的键数（过滤 size_limit 之前，供进度估算）
+    scanned: u64,
 });
 
 // 内存分析结果
@@ -1036,6 +1050,21 @@ api_model!(
         timestamp_last_updated: u64,
     }
 );
+
+/// u64 ↔ 十进制字符串（SCAN 游标会超过 JS 安全整数）
+mod u64_as_string {
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(v: &u64, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&v.to_string())
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<u64, D::Error> {
+        String::deserialize(d)?
+            .parse()
+            .map_err(serde::de::Error::custom)
+    }
+}
 
 //~~~~~ 自定义Vec<u8>序列化为Base64字符串
 mod v8_base64 {

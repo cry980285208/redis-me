@@ -24,7 +24,19 @@ export default {
   deleteOk: '删除成功',
   actionOk: '操作成功',
 
-  timeUnit: { width: '80', second: '秒', minute: '分', hour: '小时', day: '天' },
+  timeUnit: { second: '秒', minute: '分', hour: '时', day: '天' },
+
+  meTtl: {
+    duration: '时长',
+    at: '时刻',
+    modeWidth: '74',
+    unitWidth: '60',
+    previewAt: '过期时刻：{time} ({offset})',
+    previewRemain: '剩余：{text}',
+    forever: '永久',
+    past: '过期时刻必须晚于当前时间',
+    pickAt: '选择过期时刻',
+  },
 
   appMain: {
     readonly: '只读',
@@ -207,7 +219,6 @@ export default {
     autoDiscoverOk: '查询到{count}个主节点',
 
     ssh: 'SSH 隧道',
-    sshModeTip: 'SSH 隧道暂不支持集群/哨兵模式',
     loginType: '登录',
     sshOption: {
       host: '主机',
@@ -252,7 +263,7 @@ export default {
     testOk: '测试连接成功',
     downloading: '下载中...',
 
-    sshTip: `通过SSH隧道连接Redis服务器，适用于以下场景<br/>• Redis服务器在内网，无法直接访问<br/>• 需要通过跳板机/堡垒机访问Redis<br/>• 需要加密传输通道保障安全<br/><b>注意：</b>SSH隧道目前仅支持单机模式`,
+    sshTip: `通过SSH隧道连接Redis服务器，适用于以下场景<br/>• Redis服务器在内网，无法直接访问<br/>• 需要通过跳板机/堡垒机访问Redis<br/>• 需要加密传输通道保障安全<br/>• 支持单机、集群、哨兵`,
     sslTip:
       'Redis服务器开启了TLS/SSL端口时使用<br/>• 需要在Redis配置中设置 tls-port 而非 port<br/>• 可能需要提供客户端证书和私钥<br/>• 用于加密传输通道，防止数据被窃听',
     readonlyTip:
@@ -352,6 +363,7 @@ export default {
     javaSerialReadonly: 'JdkSerial 目前仅支持查看，不支持保存写回',
     pickleReadonly: 'Pickle 目前仅支持查看，不支持保存写回',
     phpSerialReadonly: 'PhpSerial 目前仅支持查看，不支持保存写回',
+    gzipReadonly: '已解压 Gzip，目前仅支持查看，不支持保存写回',
     saveNoChange: '内容未修改，无需保存',
     saveDecodeFailed: '解码失败，无法保存',
   },
@@ -464,7 +476,7 @@ export default {
     ttlValidator: '只允许-1(永久) 或 正整数',
     jsonValidator: '值必须为有效的JSON格式',
     hashHint: '(哈希键：值)',
-    hashHintTtl: '(哈希键：值：过期秒)',
+    hashHintTtl: '(哈希键：值：TTL)',
     zsetHint: '(值：分数)',
     streamHint: '(字段：值)',
     arrayHint: '(索引：值)',
@@ -499,7 +511,7 @@ export default {
     hashKey: '哈希键',
     streamId: 'ID (*表示服务器自动生成)',
     streamIdRequired: '请输入ID',
-    fieldTtl: '超时秒数',
+    fieldTtl: 'TTL',
   },
 
   fieldSet: {
@@ -512,7 +524,9 @@ export default {
     element: '元素',
     vector: '向量',
     attrs: '属性',
-    fieldTtl: '字段过期 (秒)',
+    fieldTtl: '字段过期',
+    saveTtl: '保存过期',
+    saveTtlOk: '字段过期已更新',
     index: '索引',
     score: '分数',
     value: '值',
@@ -576,12 +590,7 @@ export default {
     confirm: '确认导入',
   },
 
-  keyMemory: {
-    title: '目录内存分析',
-    match: '键名表达式',
-    info: '总数：{total}，大小：{size}',
-    limit: '（数据量达到扫描限制：${limit}）',
-  },
+  keyMemory: { title: '目录内存分析', match: '键名表达式', info: '总数：{total}，大小：{size}' },
 
   keyList: { renameKey: '重命名键' },
 
@@ -767,12 +776,10 @@ export default {
   redisMemory: {
     hint: `
     <b>原理：scan / memory usage / pipeline / type</b> <br/>
-说明：使用scan方法扫描所有master节点，寻找匹配 {matchParam} 的键。每次扫描{scanCount}个键，然后pipeline批量发送memory usage命令获取占用内存大小，将>={sizeLimitKb}Kb的键记录下来。
-如果扫描键的总数已经到达{scanTotal}个（小于等于0表示扫描所有 或 结果数量已经满足{countLimit}个则返回，否则睡眠{sleepMillis}ms 再使用游标继续扫描。<br/>
-备注：memory usage 命令报告键及其值存储在内存中所需的字节数。报告的用量是一个键及其值所需的数据和管理开销的总内存分配量。
+说明：使用 scan 扫描所有 master 节点，寻找匹配 {matchParam} 的键。每轮扫描 {scanCount} 个键，再 pipeline 批量 MEMORY USAGE，将 >= {sizeLimitKb}Kb 的键记入表格。可随时暂停、继续或停止；轮间睡眠 {sleepMillis}ms。<br/>
+备注：MEMORY USAGE 报告键及其值存储所需的字节数，含数据与管理开销。
     `,
     total: '合计',
-    longTimeHint: '确定开始内存分析吗？耗时可能较长，请耐心等待！',
     batchDeleteHint: '确定批量删除【{count}】个键吗？',
     scanConfig: '扫描配置',
 
@@ -780,13 +787,11 @@ export default {
     matchParam: '匹配参数',
     scanEach: '每次扫描',
     sleepMillis: '每次睡眠',
-    scanTotal: '扫描总数',
-    sizeLimit: '大小限制',
-    countLimit: '数量限制',
     unit: '个',
     batchDelete: '批量删除',
     keyword: '键模糊筛选',
-    startScan: '开启分析',
+    startScan: '开始',
+    stopScan: '停止',
     type: '类型',
     key: '键',
     size: '大小',
@@ -900,9 +905,12 @@ export default {
     optional: '可选输入',
     hashKey: '哈希键',
     streamId: 'ID',
-    ttlHint: '点击修改键的过期时间',
-    ttlHintReadonly: '键的过期时间',
     ttlForever: '永久',
+    ttlExpired: '键已过期',
+    ttlFieldExpired: '字段已过期',
+    ttlExpireAt: '过期时刻：{time} ({offset})',
+    ttlUtc: 'UTC：{time}',
+    ttlSeconds: 'TTL：{n} {unit}',
     deleteKey: '删除键',
     keyTabsMax: '最多打开 10 个键值',
     keyTabsCloseAll: '关闭全部键值',
@@ -1165,7 +1173,7 @@ export default {
     quick01: '永久',
     quick02: '10秒',
     quick03: '1分',
-    quick04: '1小时',
+    quick04: '1时',
     quick05: '1天',
     ttlOk: '设置TTL成功',
     ttlOkBatch: '批量设置TTL成功',
@@ -1190,9 +1198,10 @@ export default {
   errors: {
     connection_not_found: '连接 {id} 不存在',
     connection_lock_timeout: '获取连接超时，请稍后重试',
-    sentinel_not_supported: 'SSH 隧道暂不支持哨兵模式',
-    cluster_not_supported: 'SSH 隧道暂不支持集群模式',
     cluster_db_switch_not_supported: '集群模式不支持切换 DB，请在连接配置中修改初始库后重连',
+    tls_not_enabled: '服务端未开启 TLS，请取消勾选 SSL',
+    ssl_required: '服务端已开启 TLS，请勾选 SSL',
+    sentinel_master_not_found: '哨兵未找到主节点 "{name}"',
     key_not_found: '"{key}" 键不存在',
     key_node_not_found: '未找到键 "{key}" 所在的节点',
     key_already_exists: '键 "{key}" 已存在',
@@ -1201,6 +1210,7 @@ export default {
     field_not_found: '哈希键 "{hash_key}" 不存在',
     field_not_found_stream: 'Stream ID "{stream_id}" 不存在',
     field_operation_not_supported: '不支持的操作模式: {mode}',
+    httl_not_supported: '当前 Redis/Valkey 版本不支持 Hash 字段过期（需 >= 7.4）',
     field_scan_not_supported: '字段扫描不支持类型: {value_type}',
     invalid_zset_score_bound: '无效的 ZSet 分数: {bound}',
     invalid_node_format: '无效的节点格式: {node}',

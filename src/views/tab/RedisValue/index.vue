@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // #region 导入
-import { minimatch } from 'minimatch'
+import { useNow } from '@vueuse/core'
 import {
   computed,
   inject,
@@ -26,8 +26,9 @@ import type {
   ScanCursor,
 } from '@/types/tauri-specta'
 import {
-  detectViewFormat,
+  detectViewFormatAuto,
   detectedViewLabel,
+  type DetectedViewAuto,
   type DetectedViewFormat,
 } from '@/utils/detect-view-format'
 import type { TableExportMatrix } from '@/utils/export'
@@ -55,10 +56,11 @@ import { toKeyTypeLabel } from '@/utils/redis-display'
 import {
   buildScanPattern,
   buildLocalFilterPattern,
+  compileRedisGlobFilter,
   computeScanProgress,
-  MINIMATCH_SCAN_OPTS,
 } from '@/utils/redis-glob'
 import { defaultSettings } from '@/utils/settings-defaults'
+import { meTtlFromAt, meTtlToAt } from '@/utils/ttl'
 import {
   bus,
   KEY_DELETE,
@@ -85,14 +87,18 @@ import KeyRename from '@/views/key/KeyRename.vue'
 
 import CustomCodec from './CustomCodec.vue'
 import FieldSet from './FieldSet.vue'
+import FieldTtlHint from './FieldTtlHint.vue'
 import {
   KEY_TYPE_TO_GROUP,
   fieldValueRows,
+  formatTtlExpireTooltip,
+  formatFieldTtlCell,
   isAppErrorCode,
   isStringLikeType,
   listRowRedisIndex,
   mergeFieldScanPage,
   parseListIndexInput,
+  pinFieldExpireAt,
   shouldFieldScanAuto,
   streamIdToDate,
   supportsFieldRowRefresh,
@@ -126,6 +132,7 @@ const canEdit = computed(() => !share.readonly)
 const redisValue = ref<FieldScanViewState | null>(null)
 const cursor = ref<ScanCursor | null>(null) // list/hash/set/zset/stream 分页游标
 const loading = ref(false)
+const isSavingValue = ref(false) // STRING/JSON 保存中，底栏保存钮转圈
 const isPretty = ref(true)
 
 // 键类型派生
@@ -139,8 +146,13 @@ const vectorsetType = computed(() => 'vectorset' === redisValue.value?.type)
 const setType = computed(() => 'set' === redisValue.value?.type)
 const zsetType = computed(() => 'zset' === redisValue.value?.type)
 
-// Hash 字段 TTL（HTTL）
-const scanHashFieldTtl = ref(false)
+// Hash 字段 TTL（HTTL）：与 settings.hashFieldTtl 同步，换键/刷新不重置
+const scanHashFieldTtl = computed({
+  get: () => !!meTauri.settings.hashFieldTtl,
+  set: v => {
+    meTauri.settings.hashFieldTtl = v
+  },
+})
 const showHashFieldTtlOption = computed(() => hashType.value && share.capabilities.httlSupported)
 
 // 表格工具栏：关键词（Hash/Set/ZSet 兼扫描+本地过滤；List/Stream 仅本地过滤）
@@ -281,11 +293,18 @@ watchEffect(() => {
 const bytesFormat = ref<ViewBytesFormat>('auto')
 const pendingAutoDetect = ref(false) // KEY_REFRESH 置位，开跑时领到局部变量
 const detectedView = ref<DetectedViewFormat>('utf8')
+const detectedGzip = ref(false) // Auto 剥过一层 Gzip → 只读，标签为 Gzip · 内层
+const detectedInnerWire = ref('') // 剥壳后的 base64；无壳为空串
 const effectiveViewFormat = computed<ViewBytesFormat>(() =>
   bytesFormat.value === 'auto' ? detectedView.value : bytesFormat.value,
 )
+const gzipReadonly = computed(
+  () => bytesFormat.value === 'auto' && stringType.value && detectedGzip.value,
+)
 const detectedViewText = computed(() =>
-  bytesFormat.value === 'auto' && stringType.value ? detectedViewLabel(detectedView.value) : '',
+  bytesFormat.value === 'auto' && stringType.value
+    ? detectedViewLabel(detectedView.value, detectedGzip.value)
+    : '',
 )
 const formatOptions = computed(() => {
   // Auto / string-only 项仅 STRING 可用；顺序由 VIEW_FORMAT_OPTIONS 固定
@@ -310,6 +329,12 @@ function commitBytesFormat(next: ViewBytesFormat) {
 function commitDetectedView(next: DetectedViewFormat) {
   if (detectedView.value !== next) detectedView.value = next
 }
+function commitDetectedAuto(next: DetectedViewAuto) {
+  commitDetectedView(next.view)
+  if (detectedGzip.value !== next.gzip) detectedGzip.value = next.gzip
+  const inner = next.gzip ? next.wire : ''
+  if (detectedInnerWire.value !== inner) detectedInnerWire.value = inner
+}
 
 // 展示层快照（STRING 编辑器 / 表格单元格共用）
 const displayWire = ref('') // 权威 base64
@@ -317,12 +342,16 @@ const displayBytesFormat = ref<ViewBytesFormat>('utf8') // Auto 时=探测结果
 const resolvedWireView = ref('') // custom 异步 decode 文本
 const customCodecFailed = ref(false)
 const customCodecVisible = ref(false)
+/** Auto 剥壳后用内层展示；手动选编码仍看原始 wire */
+const viewSourceWire = computed(() =>
+  bytesFormat.value === 'auto' && detectedGzip.value ? detectedInnerWire.value : displayWire.value,
+)
 
 const viewDecodeFailed = computed(() => {
   if (!stringType.value) return false
   const fmt = displayBytesFormat.value
   if (fmt === 'utf8' || fmt === 'hex' || fmt === 'binary' || fmt === 'base64') return false
-  const wire = displayWire.value
+  const wire = viewSourceWire.value
   if (!wire) return false
   if (isCustomView(fmt)) return customCodecFailed.value
   return isViewDecodeError(meFormatViewValue(wire, fmt))
@@ -338,18 +367,25 @@ const showSave = computed(
 const editorReadOnly = computed(
   () =>
     !canEdit.value ||
+    gzipReadonly.value ||
     isReadonlyView(effectiveViewFormat.value) ||
     viewDecodeFailed.value ||
     (valueTruncated.value && !forceFullValue.value),
 )
 const saveDisabled = computed(
-  () => viewDecodeFailed.value || !valueDirty.value || isReadonlyView(effectiveViewFormat.value),
+  () =>
+    viewDecodeFailed.value ||
+    !valueDirty.value ||
+    gzipReadonly.value ||
+    isReadonlyView(effectiveViewFormat.value) ||
+    isSavingValue.value,
 )
 const saveTip = computed(() => {
+  if (gzipReadonly.value) return t('util.gzipReadonly')
   if (isReadonlyView(effectiveViewFormat.value)) return readonlyViewTip(effectiveViewFormat.value)
   if (viewDecodeFailed.value) return t('util.saveDecodeFailed')
   if (!valueDirty.value) return t('util.saveNoChange')
-  return t('save')
+  return ''
 })
 
 // 同步快照 / 切换编码 / custom 解码
@@ -363,7 +399,7 @@ function syncDisplaySnapshot() {
   if (!rv || rv.value === null || rv.value === undefined) {
     displayWire.value = ''
     if (bytesFormat.value === 'auto' && stringType.value) {
-      commitDetectedView('utf8')
+      commitDetectedAuto({ view: 'utf8', gzip: false, wire: '' })
       displayBytesFormat.value = 'utf8'
     } else if (stringType.value) {
       // STRING：下拉即展示格式（勿经 viewFmtForField，避免 JdkSerial 被降成 utf8）
@@ -383,9 +419,9 @@ function syncDisplaySnapshot() {
   displayWire.value = wire
 
   if (bytesFormat.value === 'auto' && stringType.value) {
-    const nextDetected = detectViewFormat(wire, { truncated: valueTruncated.value })
-    commitDetectedView(nextDetected)
-    displayBytesFormat.value = nextDetected
+    const nextDetected = detectViewFormatAuto(wire, { truncated: valueTruncated.value })
+    commitDetectedAuto(nextDetected)
+    displayBytesFormat.value = nextDetected.view
     return
   }
 
@@ -523,7 +559,7 @@ const showValue = computed(() => {
   if (obj === null || obj === undefined || !rv) return ''
 
   if (stringType.value) {
-    const str = stringWireDisplayText(displayWire.value)
+    const str = stringWireDisplayText(viewSourceWire.value)
     return isPretty.value ? meFormatDisplayValue(str, true) : str
   }
 
@@ -597,30 +633,28 @@ const filterDataList = computed(() => {
   })
 })
 
-// Hash/Set/ZSet：本地 minimatch（未 Enter 时不依赖服务端 MATCH）
+// Hash/Set/ZSet：本地 Redis glob（未 Enter 时不依赖服务端 MATCH）
 const filterFieldPattern = computed(() =>
   buildLocalFilterPattern(fieldKeyword.value, fieldExact.value, fieldMatch.value),
 )
+const filterFieldMatch = computed(() => compileRedisGlobFilter(filterFieldPattern.value))
 const filterFieldList = computed(() => {
-  if (!filterFieldPattern.value) return dataList.value
-  const pattern = filterFieldPattern.value
+  const matchFn = filterFieldMatch.value
+  if (!matchFn) return dataList.value
   // Vector Set：按元素名（row.value）本地过滤（向量浮点无检索意义；相似度走 VSIM）
   if (vectorsetType.value) {
     return dataList.value.filter(
-      row =>
-        row.value != null &&
-        row.value !== '' &&
-        minimatch(formatTableCell(row.value), pattern, MINIMATCH_SCAN_OPTS),
+      row => row.value != null && row.value !== '' && matchFn(formatTableCell(row.value)),
     )
   }
   return dataList.value.filter(row => {
     if (row.key != null && row.key !== '') {
-      if (minimatch(formatTableCell(row.key), pattern, MINIMATCH_SCAN_OPTS)) return true
+      if (matchFn(formatTableCell(row.key))) return true
     }
     if (row.value != null && row.value !== '') {
-      if (minimatch(formatTableCell(row.value), pattern, MINIMATCH_SCAN_OPTS)) return true
+      if (matchFn(formatTableCell(row.value))) return true
     }
-    if (row.score != null && minimatch(String(row.score), pattern, MINIMATCH_SCAN_OPTS)) {
+    if (row.score != null && matchFn(String(row.score))) {
       return true
     }
     return false
@@ -653,39 +687,61 @@ const tableDefaultSort = computed(
 // #endregion
 
 // #region TTL
-// 倒计时
-let timer: ReturnType<typeof setInterval> | null = null
+// 过期时刻钉死为唯一数据源；展示/写回用计算属性从墙上时钟推导，不再每秒改 rv.ttl
+const expireAtMs = ref<number | null>(null)
+const {
+  now,
+  pause: pauseTtlClock,
+  resume: resumeTtlClock,
+} = useNow({ interval: 1000, controls: true })
 
-async function setTimer(seconds: number) {
+function applyTtl(seconds: number) {
   const rv = redisValue.value
   if (!rv) return
   rv.ttl = seconds
-  if (timer !== null) clearInterval(timer)
-  timer = null
-  if (rv.ttl > 0) {
-    timer = setInterval(() => {
-      const cur = redisValue.value
-      if (cur && cur.ttl > 0) cur.ttl--
-    }, 1000)
-  }
+  expireAtMs.value = seconds > 0 ? meTtlToAt(seconds).getTime() : null
 }
 
-// 顶栏展示 / 弹窗
+const ttlRemain = computed(() => {
+  const exp = expireAtMs.value
+  if (exp == null) return redisValue.value?.ttl ?? -1
+  return meTtlFromAt(exp, now.value.getTime())
+})
+
+watch(
+  expireAtMs,
+  exp => {
+    if (exp != null && meTtlFromAt(exp) > 0) resumeTtlClock()
+    else pauseTtlClock()
+  },
+  { immediate: true },
+)
+watch(ttlRemain, n => {
+  if (expireAtMs.value != null && n <= 0) pauseTtlClock()
+})
+
 const ttlSetRef = useTemplateRef('ttlSetRef')
 function updateTTL() {
-  if (!canEdit.value) return
-  const rv = redisValue.value
-  if (!rv) return
-  ttlSetRef.value?.open({ ttl: rv.ttl })
+  if (!canEdit.value || ttlExpired.value) return
+  if (!redisValue.value) return
+  const at = expireAtMs.value != null ? new Date(expireAtMs.value) : undefined
+  ttlSetRef.value?.open({ ttl: ttlRemain.value, at })
 }
-const ttlDisplayText = computed(() => {
-  const rv = redisValue.value
-  if (!rv) return ''
-  return rv.ttl === -1 ? t('redisValue.ttlForever') : meHumanSeconds(rv.ttl)
+const ttlExpired = computed(() => {
+  const n = ttlRemain.value
+  return n !== -1 && n <= 0
 })
-const ttlIconHint = computed(() =>
-  canEdit.value ? t('redisValue.ttlHint') : t('redisValue.ttlHintReadonly'),
-)
+const ttlDisplayText = computed(() => {
+  if (!redisValue.value) return ''
+  const n = ttlRemain.value
+  if (n === -1) return t('redisValue.ttlForever')
+  if (n <= 0) return '00:00:00'
+  return meHumanSeconds(n)
+})
+const ttlIconHint = computed(() => {
+  if (!redisValue.value) return ''
+  return formatTtlExpireTooltip(ttlRemain.value, expireAtMs.value)
+})
 // #endregion
 
 // #region 键刷新（fieldScan）
@@ -716,7 +772,6 @@ function manualRefreshKey() {
 function resetParam() {
   fieldKeyword.value = ''
   fieldExact.value = false
-  scanHashFieldTtl.value = false
   listIndexMin.value = ''
   listIndexMax.value = ''
   listDescAsc.value = true
@@ -922,7 +977,7 @@ async function refreshKey(
 
     showMore.value = !cursor.value?.finished
     const rvDone = redisValue.value
-    if (rvDone) await setTimer(rvDone.ttl)
+    if (rvDone) applyTtl(rvDone.ttl)
   } catch (e) {
     // 整键刷新且键已不存在：清掉过期快照；续扫失败保留已加载页；其它错误也保留旧值
     if (!useCursor && isAppErrorCode(e, 'key_not_found')) {
@@ -943,10 +998,7 @@ function clearValueAfterKeyGone() {
   redisValue.value = null
   cursor.value = null
   showMore.value = false
-  if (timer !== null) {
-    clearInterval(timer)
-    timer = null
-  }
+  expireAtMs.value = null
 }
 
 // 自动刷新：仅当前组件状态，不持久化；配置入口为底栏刷新图标 hover 菜单
@@ -1023,10 +1075,8 @@ function pageRowIndexFromEvent(event: MouseEvent): number {
 }
 
 // 展示与参数
-function formatFieldTtl(ttl: number | undefined): string {
-  if (ttl === undefined || ttl === null) return '-'
-  if (ttl === -1) return t('redisValue.ttlForever')
-  return String(meHumanSeconds(ttl))
+function formatFieldTtl(ttl: number | undefined, expireAtMs?: number | null): string {
+  return formatFieldTtlCell(ttl, expireAtMs)
 }
 function fieldRowDisplayValue(row: ValueTableRow): string {
   if (streamType.value) return JSON.stringify(row.value)
@@ -1075,7 +1125,7 @@ function exportValueTableRows(data: unknown[]): TableExportMatrix {
   }
   if (showHashFieldTtlOption.value && scanHashFieldTtl.value) {
     headers.push(t('redisValue.ttl'))
-    cells.push(row => formatFieldTtl(row.ttl))
+    cells.push(row => formatFieldTtl(row.ttl, row.expireAtMs))
   }
   return {
     headers,
@@ -1122,6 +1172,8 @@ async function openFieldPanel(row: ValueTableRow, index: number, readonly: boole
     fieldKey: vectorsetType.value ? String(row.value ?? '') : row.key || '',
     fieldScore: row.score || 0,
     fieldTtl: row.ttl ?? -1,
+    fieldExpireAt:
+      row.expireAtMs != null && (row.ttl ?? 0) > 0 ? new Date(row.expireAtMs) : undefined,
     srcFieldValue: rowValWire,
     wireFieldKey: vectorsetType.value ? String(row.value ?? '') : row.key || '',
     keyWireFmt: IPC_WIRE_FORMAT,
@@ -1175,11 +1227,14 @@ function applyFieldGetResult(rv: FieldScanViewState, data: RedisFieldValue, row:
     const rows = fieldValueRows(rv.value) as ValueTableRow[]
     const idx = rows.findIndex(r => r.key === (row.key || fieldEditKey.value))
     if (idx >= 0) {
-      rows[idx] = {
+      const next: ValueTableRow = {
         key: data.fieldKey,
         value: data.fieldValue,
         ttl: scanHashFieldTtl.value ? data.fieldTtl : (rows[idx].ttl ?? row.ttl),
       }
+      if (scanHashFieldTtl.value) pinFieldExpireAt(next)
+      else next.expireAtMs = rows[idx].expireAtMs ?? row.expireAtMs
+      rows[idx] = next
     }
   } else if (listType.value || arrayType.value) {
     const rows = fieldValueRows(rv.value) as ValueTableRow[]
@@ -1297,6 +1352,21 @@ function onFieldSetRefreshed(data: RedisFieldValue) {
   applyFieldGetResult(rv, data, row)
 }
 
+function onFieldTtlSaved(ttl: number) {
+  // 只改过期：刷表格行，不关面板、不回写编辑器（避免冲掉未保存的值）
+  const rv = redisValue.value
+  const row = fieldSetRow.value
+  if (!rv || !row || !hashType.value) return
+  const rows = fieldValueRows(rv.value) as ValueTableRow[]
+  const idx = rows.findIndex(r => r.key === (row.key || fieldEditKey.value))
+  if (idx < 0) return
+  const next: ValueTableRow = { ...rows[idx], ttl }
+  if (scanHashFieldTtl.value) pinFieldExpireAt(next)
+  else next.expireAtMs = null
+  rows[idx] = next
+  fieldSetRow.value = next
+}
+
 // 字段保存成功 / 删除
 async function onFieldSetSuccess() {
   // 优先 field_get 刷单行；不支持或失败回退整表
@@ -1369,6 +1439,7 @@ async function showLocation() {
 // 删除 / 重命名 / 复制
 function deleteKey(_payload?: RedisKey_Deserialize) {
   redisValue.value = null
+  expireAtMs.value = null
 }
 function delKey() {
   meDeleteKey(share.conn!.id, share.redisKey!)
@@ -1470,46 +1541,52 @@ async function onKeyMoreCommand(command: string) {
 // #region 保存整键（STRING / JSON）
 async function setValue() {
   const rv = redisValue.value
-  if (!rv || rv.newValue === null) return
-  if (isReadonlyView(effectiveViewFormat.value)) return
+  if (!rv || rv.newValue === null || isSavingValue.value) return
+  if (gzipReadonly.value || isReadonlyView(effectiveViewFormat.value)) return
   let value = rv.newValue
 
+  isSavingValue.value = true
+  await nextTick() // 先亮保存钮 loading，再同步编码
   try {
-    if (jsonType.value) {
-      if (value === '') {
-        meErr(t('fieldAdd.jsonValidator'))
+    try {
+      if (jsonType.value) {
+        if (value === '') {
+          meErr(t('fieldAdd.jsonValidator'))
+          return
+        }
+        value = meJsonNormal(value)
+      } else if (stringType.value && needsJsonNormalize(effectiveViewFormat.value)) {
+        value = value === '' ? '' : meJsonNormal(value)
+      }
+      if (stringType.value && isCustomView(effectiveViewFormat.value)) {
+        value = await meViewToWireAsync(value, effectiveViewFormat.value)
+      } else if (stringType.value) {
+        value = meViewToWire(value, effectiveViewFormat.value)
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      if (stringType.value && isCustomView(effectiveViewFormat.value)) {
+        setCustomCodecError(msg)
+        rv.newValue = null
+        valueEditorRemountKey.value++
         return
       }
-      value = meJsonNormal(value)
-    } else if (stringType.value && needsJsonNormalize(effectiveViewFormat.value)) {
-      value = value === '' ? '' : meJsonNormal(value)
-    }
-    if (stringType.value && isCustomView(effectiveViewFormat.value)) {
-      value = await meViewToWireAsync(value, effectiveViewFormat.value)
-    } else if (stringType.value) {
-      value = meViewToWire(value, effectiveViewFormat.value)
-    }
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    if (stringType.value && isCustomView(effectiveViewFormat.value)) {
-      setCustomCodecError(msg)
-      rv.newValue = null
-      valueEditorRemountKey.value++
+      meErr(msg)
       return
     }
-    meErr(msg)
-    return
-  }
 
-  await meCommands.set(share.conn!.id, {
-    key: share.redisKey!,
-    value,
-    ttl: rv.ttl,
-    keyType: rv.type,
-    inputFormat: jsonType.value ? 'utf8' : IPC_WIRE_FORMAT, // JSON=utf8；STRING=base64 wire
-  })
-  meOk(t('saveOk'))
-  await refreshKey()
+    await meCommands.set(share.conn!.id, {
+      key: share.redisKey!,
+      value,
+      ttl: expireAtMs.value == null ? rv.ttl : ttlRemain.value > 0 ? ttlRemain.value : -1,
+      keyType: rv.type,
+      inputFormat: jsonType.value ? 'utf8' : IPC_WIRE_FORMAT, // JSON=utf8；STRING=base64 wire
+    })
+    meOk(t('saveOk'))
+    await refreshKey()
+  } finally {
+    isSavingValue.value = false
+  }
 }
 // #endregion
 
@@ -1786,6 +1863,7 @@ onUnmounted(() => {
   bus.off(KEY_DELETE, deleteKey)
   bus.off(KEY_OPEN_TAB, onKeyOpenTabBus)
   if (timer) clearInterval(timer)
+  expireAtMs.value = null
   if (autoRefreshTimer) clearInterval(autoRefreshTimer)
 })
 // #endregion
@@ -1836,14 +1914,19 @@ onUnmounted(() => {
             </template>
             <template #suffix>
               <span class="ttl-suffix-separator">|</span>
-              <me-icon
-                icon="el-icon-timer"
-                class="suffix-ttl icon-btn"
-                icon-left
-                :name="ttlDisplayText"
-                :info="ttlIconHint"
+              <el-tooltip
+                :content="ttlIconHint"
                 placement="top"
-                @click.stop="updateTTL" />
+                raw-content
+                :show-after="300"
+                :disabled="!ttlIconHint">
+                <span
+                  class="suffix-ttl"
+                  :class="{ 'icon-btn': !ttlExpired, 'is-expired': ttlExpired }"
+                  @click.stop="updateTTL">
+                  <me-icon icon="el-icon-timer" icon-left :name="ttlDisplayText" />
+                </span>
+              </el-tooltip>
             </template>
           </el-input>
         </div>
@@ -1955,25 +2038,12 @@ onUnmounted(() => {
               @keyup.enter="onFieldSearch">
               <template #suffix>
                 <div class="keyword-suffix">
-                  <el-tooltip
+                  <me-scan-control
                     v-if="showScanControl"
-                    :content="scanToggleTip"
-                    placement="bottom"
-                    :show-after="1000">
-                    <div class="scan-control" @click.stop="onFieldScanAction">
-                      <el-progress
-                        type="circle"
-                        :percentage="scanProgress"
-                        :width="22"
-                        :stroke-width="2"
-                        :show-text="false"
-                        color="var(--el-color-danger)"
-                        class="scan-ring" />
-                      <me-icon
-                        :icon="loading ? 'el-icon-video-pause' : 'el-icon-video-play'"
-                        class="scan-icon" />
-                    </div>
-                  </el-tooltip>
+                    :percentage="scanProgress"
+                    :loading="loading"
+                    :tip="scanToggleTip"
+                    @click="onFieldScanAction" />
                   <el-tooltip
                     v-if="showFieldExactCheckbox"
                     :content="fieldExactSearchTip"
@@ -2230,11 +2300,20 @@ onUnmounted(() => {
               <!-- TTL -->
               <el-table-column
                 :label="t('redisValue.ttl')"
-                width="140"
+                width="180"
                 prop="ttl"
                 v-if="showHashFieldTtlOption && scanHashFieldTtl">
                 <template #default="scope">
-                  {{ formatFieldTtl(scope.row.ttl) }}
+                  <el-tooltip
+                    placement="top"
+                    :persistent="false"
+                    :show-after="300"
+                    :disabled="scope.row.ttl == null || scope.row.ttl < 0">
+                    <template #content>
+                      <FieldTtlHint :ttl="scope.row.ttl" :expire-at-ms="scope.row.expireAtMs" />
+                    </template>
+                    <span>{{ formatFieldTtl(scope.row.ttl, scope.row.expireAtMs) }}</span>
+                  </el-tooltip>
                 </template>
               </el-table-column>
 
@@ -2349,6 +2428,7 @@ onUnmounted(() => {
               :hash-field-ttl-enabled="scanHashFieldTtl"
               @success="onFieldSetSuccess"
               @refreshed="onFieldSetRefreshed"
+              @ttl-saved="onFieldTtlSaved"
               @closed="fieldSetInit"
               class="field-set" />
           </div>
@@ -2494,10 +2574,16 @@ onUnmounted(() => {
           </div>
 
           <!-- 连接只读：隐藏；禁用时 tooltip 说明原因 -->
-          <el-tooltip v-if="showSave" :content="saveTip" placement="top" :show-after="300">
+          <el-tooltip
+            v-if="showSave"
+            :content="saveTip"
+            placement="top"
+            :show-after="300"
+            :disabled="!saveTip">
             <span style="margin-left: 10px; display: inline-flex">
               <me-button
                 :disabled="saveDisabled"
+                :loading="isSavingValue"
                 type="primary"
                 icon="me-icon-save"
                 @click="setValue" />
@@ -2535,7 +2621,7 @@ onUnmounted(() => {
       :description="share.redisKey ? t('redisValue.keyGone') : t('redisValue.noKeySelected')" />
 
     <!-- 共享弹窗（KeyMain / Terminal 也用）：TTL / 字段新增 / 重命名 / 命令帮助 -->
-    <TTLSet ref="ttlSetRef" @success="setTimer" />
+    <TTLSet ref="ttlSetRef" @success="applyTtl" />
     <FieldAdd ref="fieldAddRef" @success="refreshKey" />
     <KeyRename ref="keyRenameRef" />
     <CommandHelp ref="commandHelpRef" />
@@ -2723,12 +2809,21 @@ onUnmounted(() => {
     }
 
     .suffix-ttl {
+      display: inline-flex;
       cursor: pointer;
       font-size: 13px;
       color: var(--el-text-color-secondary);
 
       &:hover {
         color: var(--el-color-primary);
+      }
+
+      &.is-expired {
+        cursor: default;
+
+        &:hover {
+          color: var(--el-text-color-secondary);
+        }
       }
     }
 
@@ -2848,37 +2943,6 @@ onUnmounted(() => {
             &.is-checked .el-checkbox__inner {
               background-color: var(--el-color-primary);
               border-color: var(--el-color-primary);
-            }
-          }
-        }
-
-        .scan-control {
-          position: relative;
-          width: 24px;
-          height: 24px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          cursor: pointer;
-          flex-shrink: 0;
-
-          .scan-ring {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            line-height: 1;
-          }
-
-          .scan-icon {
-            position: relative;
-            z-index: 1;
-            font-size: 16px;
-
-            :deep(.icon),
-            :deep(svg) {
-              width: 16px;
-              height: 16px;
             }
           }
         }

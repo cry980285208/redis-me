@@ -1,5 +1,49 @@
 # 5.x Changelog
 
+## [v5.2.0](https://mp.weixin.qq.com/s/oMVi3OsBLD-yaMfBbpxesA) (2026-09-10)
+
+### ✨ New Features
+
+- Connection: **SSH tunnel** fully rewritten; works in all modes (standalone, cluster, sentinel)
+- TTL: set by duration or **expire-at time**; hover shows local and UTC
+- Value area: Hash field TTL
+  - Column shows expire-at; hover countdown of remaining time
+  - HTTL toggle is remembered; switching keys / refresh no longer resets it
+  - Field expiry can be saved independently; TTL can be changed even with a read-only codec
+- Info page: memory usage shown as a percentage of system memory
+- Redis Install helper: TLS switch moved up; sentinel/TLS default ports and output directories adjusted
+- Other details
+  - Website: Redis Docker install and TLS certificate generation pages
+  - Close button on the field edit panel
+  - STRING/JSON save button shows loading
+  - Copy connection keeps the original group
+
+### 🐞 Bug Fixes
+
+- Fixed Auto sometimes misdetecting already-loaded large values (partial trial-decode replaced with full decode)
+- Fixed hanging when the SSL checkbox doesn't match the server; **mismatch now prompts immediately and precisely**
+- Fixed sentinel TLS connect hanging, and client certificates being dropped when certificate verification is skipped
+- Fixed cluster and sentinel both being checkable when creating a new connection
+
+## v5.1.1 (2026-09-05)
+
+### 🐞 Bug Fixes
+
+- Fixed SCAN search hanging when the cursor exceeds the JS safe integer range #163
+
+## [v5.1.0](https://mp.weixin.qq.com/s/1IS91XFgCn4nBvs6M06V7g) (2026-09-05)
+
+### ✨ New Features
+
+- Connection: TLS compatible with **X.509 v1** certificates (CentOS 7 and other old OpenSSL self-signed certs)
+- Codec: Auto supports **Gzip read-only unwrap**
+- Memory: scan shows **live progress**, with pause/resume and stop
+- Connection: added a drag-hint icon after the host in grouped view #162
+
+### 🐞 Bug Fixes
+
+- Fixed local key/field filtering missing keys with slashes (aligned with Redis MATCH semantics)
+
 ## v5.0.3 (2026-09-03)
 
 ### ✨ New Features
@@ -11,7 +55,7 @@
 
 ### 🐞 Bug Fixes
 
-- Fixed Auto sometimes misdetecting truncated large string previews as Hex; default preview is now 4KB
+- Fixed **Auto sometimes misdetecting truncated large string previews as Hex**; default preview is now 4KB
 - Fixed AnotherRDM 1.7.2+ grouped `.ano` import failing #160
 - Fixed the fullscreen row in the empty-state shortcut list not responding to clicks
 
@@ -19,9 +63,9 @@
 
 ### ✨ New Features
 
-- Settings: new **connection timeout** #157
+- Value area: **ZSet filter by score range**
+- Settings: new configurable **connection timeout** #157
 - Settings: renamed Command Timeout to I/O Timeout
-- Value area: ZSet filter by score range
 
 ## v5.0.1 (2026-09-01)
 

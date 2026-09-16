@@ -1,14 +1,14 @@
+use crate::api_commands;
 use crate::client::state::{ClientAccess, app_timeouts};
 use crate::utils::app_store;
 use crate::utils::capabilities::ServerCapabilities;
 use crate::utils::model::*;
 use crate::utils::util::*;
-use crate::{api_commands};
 use specta::specta;
 use std::collections::HashMap;
-use tauri::utils::platform::current_exe;
 #[cfg(target_os = "macos")]
 use tauri::Manager;
+use tauri::utils::platform::current_exe;
 use tauri::{AppHandle, command};
 
 // 默认示例
@@ -43,7 +43,8 @@ pub fn restart_after_update(app: AppHandle) -> ApiResult<()> {
     #[cfg(target_os = "macos")]
     {
         let exe = tauri::process::current_binary(&app.env()).map_err(|e| e.to_string())?;
-        let app_bundle = macos_app_bundle_path(&exe).ok_or_else(|| "无法定位应用 bundle".to_string())?;
+        let app_bundle =
+            macos_app_bundle_path(&exe).ok_or_else(|| "无法定位应用 bundle".to_string())?;
         let bundle = shell_escape(&app_bundle.to_string_lossy());
         std::process::Command::new("sh")
             .args(["-c", &format!("sleep 0.8; open {bundle}")])
@@ -110,7 +111,9 @@ pub fn app_settings(app_handle: AppHandle, app_settings: AppSettings) -> ApiResu
 #[command]
 #[specta]
 pub fn connect(app_handle: AppHandle, id: &str) -> ApiResult<ServerCapabilities> {
-    let client = app_handle.connect(app_handle.clone(), id).map_err(|e| e.to_string())?;
+    let client = app_handle
+        .connect(app_handle.clone(), id)
+        .map_err(|e| e.to_string())?;
     let capabilities = client.base().capabilities.clone();
     Ok(capabilities)
 }
@@ -142,6 +145,7 @@ api_commands!(
     copy(param: RedisCopyParam) -> RedisKey;                      // 复制键
     field_add(param: RedisFieldAdd) -> RedisKey;                  // 新增字段
     field_set(param: RedisFieldSet) -> ();                        // 编辑字段
+    field_ttl(param: RedisFieldTtl) -> ();                        // Hash 字段过期（HEXPIRE/HPERSIST）
     field_get(param: RedisFieldGet) -> RedisFieldValue;           // 读取单条字段
     hash_keys(param: RedisHashKeys) -> Vec<String>;               // Hash 全量字段名（HKEYS）
     hash_values(param: RedisHashKeys) -> Vec<String>;             // Hash 全量字段值（HVALS）
@@ -160,7 +164,7 @@ api_commands!(
     config_get(pattern: &str, node: Option<String>) -> HashMap<String, String>; // 获取配置
     config_set(key: &str, value: &str, node: Option<String>) -> ();             // 设置配置
     slow_log(count: Option<u64>, node: Option<String>) -> Vec<RedisSlowLog>;    // 慢日志
-    memory_usage(param: RedisMemoryParam) -> Vec<RedisKeySize>;                 // 内存分析
+    memory_usage(param: RedisMemoryParam) -> RedisMemoryResult;                 // 内存分析（一轮）
     client_list(node: Option<String>, client_type: Option<String>) -> Vec<RedisClientInfo>; // 客户端列表
     publish(channel: &str, message: &str, msg_fmt: Option<BytesFormat>) -> (); // 发布消息
     subscribe_stop() -> ();                         // 订阅消息停止

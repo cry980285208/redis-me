@@ -72,6 +72,8 @@ pub trait MeClient: Send + Sync {
 
     fn field_set(&self, param: RedisFieldSet) -> AnyResult<()>;
 
+    fn field_ttl(&self, param: RedisFieldTtl) -> AnyResult<()>;
+
     fn field_get(&self, param: RedisFieldGet) -> AnyResult<RedisFieldValue>;
 
     fn hash_keys(&self, param: RedisHashKeys) -> AnyResult<Vec<String>>;
@@ -109,7 +111,35 @@ pub trait MeClient: Send + Sync {
 
     fn slow_log(&self, count: Option<u64>, node: Option<String>) -> AnyResult<Vec<RedisSlowLog>>;
 
-    fn memory_usage(&self, param: RedisMemoryParam) -> AnyResult<Vec<RedisKeySize>>;
+    /// 对一批键 pipeline MEMORY USAGE（及可选 TYPE），只保留 >= size_limit 的。
+    fn memory_usage_keys(
+        &self,
+        keys: &[RedisKey],
+        size_limit: u64,
+        need_key_type: bool,
+    ) -> AnyResult<Vec<RedisKeySize>>;
+
+    /// 一轮：复用 `scan()` 游标（含集群主节点），再测这批键的内存。
+    fn memory_usage(&self, param: RedisMemoryParam) -> AnyResult<RedisMemoryResult> {
+        let scan = self.scan(ScanParam {
+            pattern: param.pattern.clone().unwrap_or_else(|| "*".into()),
+            scan_type: None,
+            cursor: param.cursor.clone(),
+            exact: false,
+            count: param.scan_count,
+        })?;
+        let scanned = scan.key_list.len() as u64;
+        let key_list = self.memory_usage_keys(
+            &scan.key_list,
+            param.size_limit,
+            param.need_key_type.unwrap_or(false),
+        )?;
+        Ok(RedisMemoryResult {
+            key_list,
+            cursor: scan.cursor,
+            scanned,
+        })
+    }
 
     fn client_list(
         &self,
@@ -302,8 +332,7 @@ pub fn field_scan_0_exact(
                 if let Ok(ttl_values) =
                     conn.httl::<_, _, Vec<IntegerReplyOrNoOp>>(key, &[&field_bytes])
                 {
-                    if let (Some(item), Some(ttl_reply)) = (items.first_mut(), ttl_values.first())
-                    {
+                    if let (Some(item), Some(ttl_reply)) = (items.first_mut(), ttl_values.first()) {
                         item.ttl = match ttl_reply {
                             IntegerReplyOrNoOp::IntegerReply(ttl) => Some(*ttl as i64),
                             IntegerReplyOrNoOp::NotExists => Some(-2),
@@ -318,10 +347,7 @@ pub fn field_scan_0_exact(
         ValueType::Set => {
             let exists: bool = conn.sismember(key, member)?;
             let set = if exists {
-                ui_set_value(
-                    HashSet::from([member.as_bytes().to_vec()]),
-                    bytes_format,
-                )
+                ui_set_value(HashSet::from([member.as_bytes().to_vec()]), bytes_format)
             } else {
                 Vec::new()
             };
@@ -330,9 +356,7 @@ pub fn field_scan_0_exact(
         ValueType::ZSet => {
             let score: Option<f64> = conn.zscore(key, member)?;
             let zset = score
-                .map(|score| {
-                    ui_zset_value(vec![(member.as_bytes().to_vec(), score)], bytes_format)
-                })
+                .map(|score| ui_zset_value(vec![(member.as_bytes().to_vec(), score)], bytes_format))
                 .unwrap_or_default();
             serde_json::to_value(zset)?
         }
@@ -352,15 +376,16 @@ pub fn field_scan_0_exact(
         // Vector Set：VISMEMBER 检查存在，返回元素+向量+属性（与扫描格式一致）
         ValueType::VectorSet => {
             let elem = member.as_bytes().to_vec();
-            let exists: bool = redis::cmd("VISMEMBER")
-                .arg(key)
-                .arg(&elem)
-                .query(conn)?;
+            let exists: bool = redis::cmd("VISMEMBER").arg(key).arg(&elem).query(conn)?;
             let items: Vec<RedisVectorSetItem> = if exists {
                 let name = format_bytes(&elem, bytes_format);
                 let vector = vemb_json_or_dash(conn, key, &elem);
                 let attrs = vgetattr_opt(conn, key, &elem).unwrap_or_default();
-                vec![RedisVectorSetItem { name, vector, attrs }]
+                vec![RedisVectorSetItem {
+                    name,
+                    vector,
+                    attrs,
+                }]
             } else {
                 Vec::new()
             };
@@ -629,11 +654,7 @@ fn resolve_array_scan_bounds(param: &FieldScanParam) -> Option<(u64, u64)> {
         Some(v) if v >= 0 => (v as u64).min(ARRAY_INDEX_MAX),
         _ => ARRAY_INDEX_MAX,
     };
-    if min > max {
-        None
-    } else {
-        Some((min, max))
-    }
+    if min > max { None } else { Some((min, max)) }
 }
 
 /// Array ARSCAN 分页：只返回已填充槽；`now_cursor` 存下一页起始索引（非 HSCAN cursor）。
@@ -782,8 +803,7 @@ fn field_scan_vectorset_page(
             pipe.cmd("VEMB").arg(key).arg(name_bytes.as_slice());
         }
         let packed = pipe.get_packed_pipeline();
-        let vemb_results: Vec<redis::Value> =
-            conn.req_packed_commands(&packed, 0, names.len())?;
+        let vemb_results: Vec<redis::Value> = conn.req_packed_commands(&packed, 0, names.len())?;
 
         // 3. Pipeline VGETATTR 批量获取属性
         let mut pipe = redis::pipe();
@@ -817,7 +837,13 @@ pub fn field_scan_0_get(
     mut conn: &mut MutexGuard<impl Commands>,
     param: &FieldScanParam,
     bytes_format: &BytesFormat,
-) -> AnyResult<(Option<serde_json::Value>, ValueType, ScanCursor, usize, bool)> {
+) -> AnyResult<(
+    Option<serde_json::Value>,
+    ValueType,
+    ScanCursor,
+    usize,
+    bool,
+)> {
     let key = &param.key;
 
     let key_type = resolve_field_scan_key_type(&mut conn, key, param)?;
@@ -876,8 +902,7 @@ pub fn field_scan_0_get(
             if param.exact {
                 None
             } else if zset_score_range_active(param) {
-                let items =
-                    field_scan_zset_by_score(&mut conn, key, param, bytes_format, &mut cc)?;
+                let items = field_scan_zset_by_score(&mut conn, key, param, bytes_format, &mut cc)?;
                 Some(serde_json::to_value(items)?)
             } else {
                 None
@@ -1168,10 +1193,7 @@ pub fn del0(mut conn: MutexGuard<impl Commands>, key: RedisKey) -> AnyResult<()>
     Ok(())
 }
 
-pub fn copy0(
-    mut conn: MutexGuard<impl Commands>,
-    param: RedisCopyParam,
-) -> AnyResult<RedisKey> {
+pub fn copy0(mut conn: MutexGuard<impl Commands>, param: RedisCopyParam) -> AnyResult<RedisKey> {
     let dest = &param.destination;
     if conn.exists(dest)? {
         bail!(AppError::KeyAlreadyExists {
@@ -1358,7 +1380,8 @@ pub fn field_set0(
             // HSET 会清除字段级 TTL；UI 开启时用用户输入，未开启则写前 HTTL、写后 HEXPIRE 补回
             let key_bytes = parse_bytes(&param.field_key, &val_fmt)?;
             let value_bytes = parse_bytes(&param.field_value, &val_fmt)?;
-            let include_field_ttl = resolve_include_field_ttl(param.include_field_ttl, httl_supported);
+            let include_field_ttl =
+                resolve_include_field_ttl(param.include_field_ttl, httl_supported);
             let preserve_ttl = if httl_supported && !include_field_ttl {
                 hash_field_ttl_to_preserve(&mut conn, &key, &key_bytes, httl_supported)?
             } else {
@@ -1421,6 +1444,36 @@ pub fn field_set0(
     Ok(())
 }
 
+/// Hash 字段过期：不改字段值。>0 → HEXPIRE；否则 HPERSIST。
+pub fn field_ttl0(
+    mut conn: MutexGuard<impl Commands>,
+    param: RedisFieldTtl,
+    httl_supported: bool,
+) -> AnyResult<()> {
+    if !httl_supported {
+        bail!(AppError::HttlNotSupported);
+    }
+    let key: RedisKey = param.key;
+    let key_type: ValueType = conn.key_type(&key)?;
+    if key_type != ValueType::Hash {
+        handle_other_value_type(&key_type, &key)?;
+        return Ok(());
+    }
+    let val_fmt = param.val_fmt.as_ref().cloned().unwrap_or_default();
+    let field_bytes = parse_bytes(&param.field_key, &val_fmt)?;
+    let replies: Vec<IntegerReplyOrNoOp> = if param.field_ttl > 0 {
+        conn.hexpire(&key, param.field_ttl, ExpireOption::NONE, &field_bytes)?
+    } else {
+        conn.hpersist(&key, &field_bytes)?
+    };
+    if matches!(replies.first(), Some(IntegerReplyOrNoOp::NotExists)) {
+        bail!(AppError::FieldNotFound {
+            hash_key: param.field_key,
+        });
+    }
+    Ok(())
+}
+
 /// 单条字段读取：Hash→HGET+HTTL，List→LINDEX，ZSet→ZSCORE；Set/Stream 等不支持
 pub fn field_get0(
     mut conn: MutexGuard<impl Commands>,
@@ -1439,7 +1492,8 @@ pub fn field_get0(
                 hash_key: param.field_key.clone(),
             })?;
             let mut field_ttl = -1i64;
-            let include_field_ttl = resolve_include_field_ttl(param.include_field_ttl, httl_supported);
+            let include_field_ttl =
+                resolve_include_field_ttl(param.include_field_ttl, httl_supported);
             if include_field_ttl {
                 if let Ok(ttl_values) =
                     conn.httl::<_, _, Vec<IntegerReplyOrNoOp>>(&key, &[&field_bytes])
@@ -1573,10 +1627,7 @@ pub fn hash_values0(
 }
 
 /// List/Set/ZSet 通用弹出：LPOP/RPOP/SPOP/ZPOPMIN/ZPOPMAX
-pub fn field_pop0(
-    mut conn: MutexGuard<impl Commands>,
-    param: RedisPop,
-) -> AnyResult<String> {
+pub fn field_pop0(mut conn: MutexGuard<impl Commands>, param: RedisPop) -> AnyResult<String> {
     let key = param.key;
     let key_type: ValueType = conn.key_type(&key)?;
     let cmd = param.mode.to_uppercase();
@@ -1587,9 +1638,7 @@ pub fn field_pop0(
         "LPOP" | "RPOP" => ValueType::List,
         "SPOP" => ValueType::Set,
         "ZPOPMIN" | "ZPOPMAX" => ValueType::ZSet,
-        other => bail!(AppError::FieldOperationNotSupported {
-            mode: other.into()
-        }),
+        other => bail!(AppError::FieldOperationNotSupported { mode: other.into() }),
     };
     if key_type != expected {
         handle_other_value_type(&key_type, &key)?;
@@ -1600,7 +1649,9 @@ pub fn field_pop0(
     match cmd.as_str() {
         "LPOP" | "RPOP" | "SPOP" => {
             let value: Option<Vec<u8>> = redis::cmd(&cmd).arg(&key).query(&mut conn)?;
-            Ok(value.map(|v| format_bytes(&v, &val_fmt)).unwrap_or_default())
+            Ok(value
+                .map(|v| format_bytes(&v, &val_fmt))
+                .unwrap_or_default())
         }
         "ZPOPMIN" | "ZPOPMAX" => {
             let value: Option<Vec<(Vec<u8>, f64)>> = redis::cmd(&cmd).arg(&key).query(&mut conn)?;
@@ -2819,19 +2870,19 @@ pub fn get_field_as_command0(
             let value_bytes = value.ok_or_else(|| AppError::FieldNotFound {
                 hash_key: param.field_index.to_string(),
             })?;
-            format_rpush_command(key_bytes, std::slice::from_ref(&value_bytes)).ok_or_else(|| {
-                AppError::Internal {
+            format_rpush_command(key_bytes, std::slice::from_ref(&value_bytes)).ok_or_else(
+                || AppError::Internal {
                     message: "empty list element".into(),
-                }
-            })?
+                },
+            )?
         }
         ValueType::Set => {
             let member_bytes = parse_bytes(&param.field_value, &val_fmt)?;
-            format_sadd_command(key_bytes, std::slice::from_ref(&member_bytes)).ok_or_else(|| {
-                AppError::Internal {
+            format_sadd_command(key_bytes, std::slice::from_ref(&member_bytes)).ok_or_else(
+                || AppError::Internal {
                     message: "empty set member".into(),
-                }
-            })?
+                },
+            )?
         }
         ValueType::ZSet => {
             let member_bytes = parse_bytes(&param.field_value, &val_fmt)?;
@@ -2857,9 +2908,11 @@ pub fn get_field_as_command0(
                 .arg(&param.stream_id)
                 .query(&mut conn)?;
             let entries = parse_xrange_ordered(raw)?;
-            let (id, fields) = entries.first().ok_or_else(|| AppError::FieldNotFoundStream {
-                stream_id: param.stream_id.clone(),
-            })?;
+            let (id, fields) = entries
+                .first()
+                .ok_or_else(|| AppError::FieldNotFoundStream {
+                    stream_id: param.stream_id.clone(),
+                })?;
             format_xadd_command(key_bytes, id, fields)
         }
         // Array：单槽 ARSET；见 is_array_type 升级注释
@@ -2877,9 +2930,11 @@ pub fn get_field_as_command0(
         // Vector Set：VEMB + 可选 VGETATTR → VADD … [SETATTR]（向量可能为近似值）
         ValueType::VectorSet => {
             let elem = parse_bytes(&param.field_key, &val_fmt)?;
-            let nums: Vec<f64> = conn.vemb(&key, &elem).map_err(|_| AppError::FieldNotFound {
-                hash_key: param.field_key.clone(),
-            })?;
+            let nums: Vec<f64> = conn
+                .vemb(&key, &elem)
+                .map_err(|_| AppError::FieldNotFound {
+                    hash_key: param.field_key.clone(),
+                })?;
             if nums.is_empty() {
                 bail!(AppError::FieldNotFound {
                     hash_key: param.field_key.clone(),
@@ -3172,23 +3227,13 @@ pub(crate) fn acl_build_rules(param: &AclSetuserParam) -> AnyResult<Vec<Rule>> {
     if param.command_rules.is_empty() {
         rules.push(Rule::NoCommands);
     } else {
-        rules.extend(
-            param
-                .command_rules
-                .iter()
-                .map(|x| acl_rule_from_text(x)),
-        );
+        rules.extend(param.command_rules.iter().map(|x| acl_rule_from_text(x)));
     }
 
     if param.key_patterns.is_empty() {
         rules.push(Rule::AllKeys);
     } else {
-        rules.extend(
-            param
-                .key_patterns
-                .iter()
-                .map(|x| acl_key_rule_from_text(x)),
-        );
+        rules.extend(param.key_patterns.iter().map(|x| acl_key_rule_from_text(x)));
     }
 
     if param.channel_patterns.is_empty() {
@@ -3454,10 +3499,7 @@ pub fn acl_cat0(
     Ok(list)
 }
 
-pub fn acl_genpass0(
-    mut conn: MutexGuard<impl Commands>,
-    bits: Option<i64>,
-) -> AnyResult<String> {
+pub fn acl_genpass0(mut conn: MutexGuard<impl Commands>, bits: Option<i64>) -> AnyResult<String> {
     if let Some(v) = bits {
         Ok(conn.acl_genpass_bits(v as isize)?)
     } else {
@@ -3530,10 +3572,7 @@ pub fn acl_log0(
     count: Option<u64>,
 ) -> AnyResult<Vec<AclLogEntry>> {
     let count = count.unwrap_or(10) as isize;
-    let value: Value = redis::cmd("ACL")
-        .arg("LOG")
-        .arg(count)
-        .query(&mut *conn)?;
+    let value: Value = redis::cmd("ACL").arg("LOG").arg(count).query(&mut *conn)?;
 
     match value {
         Value::Array(entries) => entries.into_iter().map(parse_acl_log_entry).collect(),
@@ -3549,11 +3588,11 @@ pub fn acl_dryrun0(
 ) -> AnyResult<String> {
     // 解析命令字符串为命令名和参数
     let (cmd_name, cmd_args) = parse_command(&command)?;
-    
+
     if cmd_name.is_empty() {
         return Err(anyhow::anyhow!("Command cannot be empty"));
     }
-    
+
     // 使用 redis-rs 内置的 acl_dryrun 方法
     let cmd_args: Vec<String> = cmd_args
         .iter()
@@ -3646,9 +3685,7 @@ mod acl_selector_tests {
         };
         let rules = acl_build_rules(&param).expect("build acl rules");
         assert!(
-            rules
-                .iter()
-                .any(|r| matches!(r, Rule::Selector(_))),
+            rules.iter().any(|r| matches!(r, Rule::Selector(_))),
             "expected Rule::Selector in built rules"
         );
     }
@@ -3670,7 +3707,10 @@ mod acl_selector_tests {
         assert_eq!(detail.username, "bob");
         assert_eq!(detail.password_hashes, vec!["abc123".to_string()]);
         assert_eq!(detail.key_patterns, vec!["redis:*"]);
-        assert_eq!(detail.command_rules, vec!["-@all".to_string(), "+set".to_string()]);
+        assert_eq!(
+            detail.command_rules,
+            vec!["-@all".to_string(), "+set".to_string()]
+        );
         assert_eq!(detail.selectors, vec!["-@all +get ~key1".to_string()]);
     }
 }
@@ -3737,8 +3777,14 @@ mod zset_score_range_tests {
     #[test]
     fn parse_bound_defaults_and_inf() {
         assert_eq!(parse_zset_score_bound(None, "-inf").unwrap(), "-inf");
-        assert_eq!(parse_zset_score_bound(Some("-inf"), "+inf").unwrap(), "-inf");
-        assert_eq!(parse_zset_score_bound(Some("+INF"), "-inf").unwrap(), "+inf");
+        assert_eq!(
+            parse_zset_score_bound(Some("-inf"), "+inf").unwrap(),
+            "-inf"
+        );
+        assert_eq!(
+            parse_zset_score_bound(Some("+INF"), "-inf").unwrap(),
+            "+inf"
+        );
         assert_eq!(parse_zset_score_bound(Some("inf"), "-inf").unwrap(), "+inf");
         assert_eq!(
             parse_zset_score_bound(Some("-Infinity"), "+inf").unwrap(),

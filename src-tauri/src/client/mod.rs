@@ -9,7 +9,9 @@ mod tests {
     use crate::client::client_trait::MeClient;
     use crate::client::impl_cluster::MeCluster;
     use crate::client::impl_single::MeSingle;
-    use crate::utils::conn::{get_client_cluster, get_client_single, init_cluster_connection, init_single_connection};
+    use crate::utils::conn::{
+        get_client_cluster, get_client_single, init_cluster_connection, init_single_connection,
+    };
     use crate::utils::model::*;
     use crate::utils::util::{AnyResult, CONNECTION_CONNECT_TIMEOUT, CONNECTION_NORMAL_TIMEOUT};
     use redis::TlsMode;
@@ -161,12 +163,13 @@ mod tests {
     #[test]
     fn test_field_scan_mock() -> AnyResult<()> {
         let conn_single = conf_single();
-        let (client, _) = get_client_single(&conn_single, CONNECTION_CONNECT_TIMEOUT, false)?;
+        let (client, _) = get_client_single(&conn_single, CONNECTION_CONNECT_TIMEOUT, false, None)?;
         let mut conn = init_single_connection(
             &client,
             conn_single.db,
             CONNECTION_CONNECT_TIMEOUT,
             CONNECTION_NORMAL_TIMEOUT,
+            &conn_single,
         )?;
 
         let mut pipe = redis::pipe();
@@ -189,8 +192,13 @@ mod tests {
         let _: () = pipe.query(&mut conn)?;
 
         let conn_cluster = conf_cluster();
-        let client = get_client_cluster(&conn_cluster, None)?;
-        let mut conn = init_cluster_connection(&client, CONNECTION_CONNECT_TIMEOUT, CONNECTION_NORMAL_TIMEOUT)?;
+        let client = get_client_cluster(&conn_cluster, CONNECTION_CONNECT_TIMEOUT, false)?;
+        let mut conn = init_cluster_connection(
+            &client,
+            CONNECTION_CONNECT_TIMEOUT,
+            CONNECTION_NORMAL_TIMEOUT,
+            &conn_cluster,
+        )?;
 
         let mut pipe = ClusterPipeline::new();
         pipe.del("field-scan:string").ignore();
@@ -363,18 +371,23 @@ mod tests {
 
     #[test]
     fn test_memory_usage() {
-        let result = client()
-            .memory_usage(RedisMemoryParam {
-                pattern: None,
-                size_limit: 1,
-                count_limit: 100,
-                scan_count: 1000,
-                scan_total: 10000,
-                sleep_millis: 0,
-                need_key_type: Some(true),
-            })
-            .unwrap();
-        println!("{result:#?}");
+        let mut cursor = None;
+        loop {
+            let result = client()
+                .memory_usage(RedisMemoryParam {
+                    pattern: None,
+                    size_limit: 1,
+                    scan_count: 1000,
+                    cursor,
+                    need_key_type: Some(true),
+                })
+                .unwrap();
+            println!("{result:#?}");
+            if result.cursor.finished {
+                break;
+            }
+            cursor = Some(result.cursor);
+        }
     }
 
     // https://github.com/redis-rs/redis-rs/issues/1814
@@ -423,9 +436,7 @@ mod tests {
 
     #[test]
     fn test_publish() {
-        let result = client()
-            .publish("channel", "message", None)
-            .unwrap();
+        let result = client().publish("channel", "message", None).unwrap();
         println!("{result:?}");
     }
 

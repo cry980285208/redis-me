@@ -229,15 +229,35 @@ impl MeClient for MeCluster {
     }
 
     fn field_add(&self, param: RedisFieldAdd) -> AnyResult<RedisKey> {
-        field_add0(self.get_conn()?, param, self.base().capabilities.httl_supported)
+        field_add0(
+            self.get_conn()?,
+            param,
+            self.base().capabilities.httl_supported,
+        )
     }
 
     fn field_set(&self, param: RedisFieldSet) -> AnyResult<()> {
-        field_set0(self.get_conn()?, param, self.base().capabilities.httl_supported)
+        field_set0(
+            self.get_conn()?,
+            param,
+            self.base().capabilities.httl_supported,
+        )
+    }
+
+    fn field_ttl(&self, param: RedisFieldTtl) -> AnyResult<()> {
+        field_ttl0(
+            self.get_conn()?,
+            param,
+            self.base().capabilities.httl_supported,
+        )
     }
 
     fn field_get(&self, param: RedisFieldGet) -> AnyResult<RedisFieldValue> {
-        field_get0(self.get_conn()?, param, self.base().capabilities.httl_supported)
+        field_get0(
+            self.get_conn()?,
+            param,
+            self.base().capabilities.httl_supported,
+        )
     }
 
     fn hash_keys(&self, param: RedisHashKeys) -> AnyResult<Vec<String>> {
@@ -380,82 +400,41 @@ impl MeClient for MeCluster {
         Ok(logs)
     }
 
-    fn memory_usage(&self, param: RedisMemoryParam) -> AnyResult<Vec<RedisKeySize>> {
+    fn memory_usage_keys(
+        &self,
+        keys: &[RedisKey],
+        size_limit: u64,
+        need_key_type: bool,
+    ) -> AnyResult<Vec<RedisKeySize>> {
+        if keys.is_empty() {
+            return Ok(vec![]);
+        }
         let mut conn = self.get_conn()?;
-        let mut keys: Vec<(Vec<u8>, u64, String)> = vec![];
-
-        // 遍历集群节点: 仅扫描主节点
-        let nodes: Vec<String> = self.get_node_list_master();
-
-        let mut scan_times = 0;
-        'outer: for node in nodes {
-            let (route, _) = self.get_node_route(Some(node.clone()))?;
-            let mut cursor = 0;
-            'inner: loop {
-                let mut cmd = redis::cmd("scan");
-                cmd.arg(cursor)
-                    .arg("match")
-                    .arg(param.pattern.clone().unwrap_or("*".into()))
-                    .arg("count")
-                    .arg(param.scan_count);
-
-                let value = conn.route_command(&cmd, route.clone())?;
-                let (next_cursor, new_keys): (u64, Vec<Vec<u8>>) =
-                    FromRedisValue::from_redis_value(value)?;
-                cursor = next_cursor;
-
-                // 计算键大小
-                if !new_keys.is_empty() {
-                    let mut pipe = ClusterPipeline::with_capacity(new_keys.len());
-                    for key in new_keys.iter() {
-                        pipe.cmd("memory").arg("usage").arg(key);
-                    }
-                    // 此处用Option接收,避免键被删除或过期
-                    let sizes: Vec<Option<u64>> =
-                        conn.cluster_pipe_query(&pipe, new_keys.len())?;
-                    for (index, size) in sizes.into_iter().enumerate() {
-                        if let Some(size) = size
-                            && size >= param.size_limit
-                        {
-                            keys.push((new_keys[index].clone(), size, "unknown".into()));
-                        }
-                    }
-                }
-
-                scan_times += 1;
-
-                if param.count_limit > 0 && keys.len() >= param.count_limit as usize {
-                    info!("扫描结果>={}个, 返回", param.count_limit);
-                    break 'outer;
-                }
-
-                if param.scan_total > 0 && scan_times * param.scan_count >= param.scan_total {
-                    info!("已扫描键>={}个, 返回", param.scan_total);
-                    break 'outer;
-                }
-
-                thread::sleep(Duration::from_millis(param.sleep_millis));
-
-                if cursor == 0 {
-                    break 'inner;
-                }
+        let mut pipe = ClusterPipeline::with_capacity(keys.len());
+        for key in keys {
+            pipe.cmd("memory").arg("usage").arg(key.to_bytes());
+        }
+        // Option：键可能已删除或过期
+        let sizes: Vec<Option<u64>> = conn.cluster_pipe_query(&pipe, keys.len())?;
+        let mut out: Vec<(Vec<u8>, u64, String)> = vec![];
+        for (index, size) in sizes.into_iter().enumerate() {
+            if let Some(size) = size
+                && size >= size_limit
+            {
+                out.push((keys[index].to_bytes().to_vec(), size, "unknown".into()));
             }
         }
-
-        // 计算键类型
-        if param.need_key_type.unwrap_or(false) && !keys.is_empty() {
-            let mut pipe = ClusterPipeline::with_capacity(keys.len());
-            for key in keys.iter() {
+        if need_key_type && !out.is_empty() {
+            let mut pipe = ClusterPipeline::with_capacity(out.len());
+            for key in out.iter() {
                 pipe.cmd("type").arg(&key.0);
             }
-            let types: Vec<Option<String>> = conn.cluster_pipe_query(&pipe, keys.len())?;
+            let types: Vec<Option<String>> = conn.cluster_pipe_query(&pipe, out.len())?;
             for (index, key_type) in types.into_iter().enumerate() {
-                keys[index].2 = key_type.unwrap_or("deleted".into());
+                out[index].2 = key_type.unwrap_or("deleted".into());
             }
         }
-
-        // 映射为返回值
-        Ok(tuple_to_key_size(keys))
+        Ok(tuple_to_key_size(out))
     }
 
     fn client_list(
@@ -500,12 +479,19 @@ impl MeClient for MeCluster {
     }
 
     fn subscribe(&self, channel: Option<String>) -> AnyResult<()> {
-        let (client, _) = get_client_single(&self.conf, self.connection_timeout, false)?;
+        let (client, _) = get_client_single(
+            &self.conf,
+            self.connection_timeout,
+            false,
+            // 复用集群 Client 上的 SSH 会话，不要再 SshDialer::connect
+            self.client.dialer(),
+        )?;
         let conn = init_single_connection(
             &client,
             self.conf.db,
             self.connection_timeout,
             self.command_timeout,
+            &self.conf,
         )?;
         // 订阅长连接：建连后去掉读写超时，否则空闲超过读写超时会断流
         conn.set_read_timeout(None)?;
@@ -527,12 +513,15 @@ impl MeClient for MeCluster {
             conf.host = host.to_string();
             conf.port = port.parse::<u16>()?;
         }
-        let (client, _) = get_client_single(&conf, self.connection_timeout, false)?;
+        let (client, _) =
+            // 复用集群上的 SSH 会话
+            get_client_single(&conf, self.connection_timeout, false, self.client.dialer())?;
         let conn = init_single_connection(
             &client,
             conf.db,
             self.connection_timeout,
             self.command_timeout,
+            &conf,
         )?;
         conn.set_read_timeout(None)?;
         conn.set_write_timeout(None)?;
@@ -631,7 +620,9 @@ impl MeClient for MeCluster {
         let id = self.id.clone();
         let app_handle = self.base().get_app_handle()?;
         export_import_check_running(running.clone())?;
-        thread::spawn(move || import_csv_0_thread(&mut logging_conn, param, running, app_handle, id));
+        thread::spawn(move || {
+            import_csv_0_thread(&mut logging_conn, param, running, app_handle, id)
+        });
         Ok(())
     }
 
@@ -644,7 +635,9 @@ impl MeClient for MeCluster {
         let id = self.id.clone();
         let app_handle = self.base().get_app_handle()?;
         export_import_check_running(running.clone())?;
-        thread::spawn(move || import_cmd_0_thread(&mut logging_conn, file, running, app_handle, id));
+        thread::spawn(move || {
+            import_cmd_0_thread(&mut logging_conn, file, running, app_handle, id)
+        });
         Ok(())
     }
 
@@ -853,7 +846,7 @@ impl MeCluster {
         connect_timeout: Duration,
         command_timeout: Duration,
     ) -> AnyResult<Box<dyn MeClient>> {
-        let client = get_client_cluster(redis_conn, None)?;
+        let client = get_client_cluster(redis_conn, connect_timeout, false)?;
         let mut base = MeBase::from(redis_conn);
         base.connection_timeout = connect_timeout;
         base.command_timeout = command_timeout;
@@ -861,7 +854,7 @@ impl MeCluster {
         let db = redis_conn.db;
         // 阶段 1 建连验证 + 阶段 2 正式命令超时；验证通过后复用同一条 TCP（#155）
         let mut conn = LoggingClusterConnection::new(
-            init_cluster_connection(&client, connect_timeout, command_timeout)?,
+            init_cluster_connection(&client, connect_timeout, command_timeout, redis_conn)?,
             logger,
             db,
         );
@@ -896,7 +889,8 @@ impl MeCluster {
 
     // 重新连接
     fn reconnect(&self) -> AnyResult<()> {
-        let raw_conn = Self::new_raw_conn(&self.client, self.connection_timeout, self.command_timeout)?;
+        let raw_conn =
+            Self::new_raw_conn(&self.client, self.connection_timeout, self.command_timeout)?;
         let mut conn_guard = self.conn.lock();
         *conn_guard = LoggingClusterConnection::new(
             raw_conn,
@@ -958,7 +952,8 @@ impl MeCluster {
 
     // 获取一个新的连接（导出/导入等独立线程，不记命令日志）
     fn get_new_conn(&self) -> AnyResult<ClusterConnection> {
-        let mut conn = Self::new_raw_conn(&self.client, self.connection_timeout, self.command_timeout)?;
+        let mut conn =
+            Self::new_raw_conn(&self.client, self.connection_timeout, self.command_timeout)?;
         set_client_name_unless_minimal(&mut conn, &self.conf);
         Ok(conn)
     }

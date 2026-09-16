@@ -25,11 +25,22 @@ export default {
   actionOk: 'Success',
 
   timeUnit: {
-    width: '120',
     second: 'Second | Seconds',
     minute: 'Minute | Minutes',
     hour: 'Hour | Hours',
     day: 'Day | Days',
+  },
+
+  meTtl: {
+    duration: 'Duration',
+    at: 'Expire at',
+    modeWidth: '110',
+    unitWidth: '100',
+    previewAt: 'Expires at: {time} ({offset})',
+    previewRemain: 'Remaining: {text}',
+    forever: 'Forever',
+    past: 'Expire time must be in the future',
+    pickAt: 'Pick expire time',
   },
 
   appMain: {
@@ -213,7 +224,6 @@ export default {
     autoDiscoverOk: 'Discover {count} Master | Discover {count} Masters',
 
     ssh: 'SSH Tunnel',
-    sshModeTip: 'SSH tunnel does not support cluster/sentinel mode now',
     loginType: 'Login',
     nameHint: '[Optional] Automatically generated',
     advancedTitle: 'Advanced',
@@ -262,7 +272,7 @@ export default {
     downloading: 'Downloading',
 
     sshTip:
-      'Connect to Redis server via SSH tunnel, applicable to the following scenarios<br/>• Redis server is on intranet and cannot be accessed directly<br/>• Need to access Redis through jump server/bastion host<br/>• Need encrypted transmission channel for security<br/><b>Note:</b> SSH tunnel currently only supports standalone mode',
+      'Connect to Redis server via SSH tunnel, applicable to the following scenarios<br/>• Redis server is on intranet and cannot be accessed directly<br/>• Need to access Redis through jump server/bastion host<br/>• Need encrypted transmission channel for security<br/>• Works with standalone, cluster, and sentinel',
     sslTip:
       'Used when Redis server has TLS/SSL port enabled<br/>• Need to set tls-port instead of port in Redis configuration<br/>• May need to provide client certificate and private key<br/>• Used to encrypt transmission channel and prevent data theft',
     readonlyTip:
@@ -362,6 +372,7 @@ export default {
     javaSerialReadonly: 'JdkSerial is view-only; saving back is not supported',
     pickleReadonly: 'Pickle is view-only; saving back is not supported',
     phpSerialReadonly: 'PhpSerial is view-only; saving back is not supported',
+    gzipReadonly: 'Gzip-decompressed view is read-only; saving back is not supported',
     saveNoChange: 'No changes to save',
     saveDecodeFailed: 'Decode failed; cannot save',
   },
@@ -473,7 +484,7 @@ export default {
     ttlValidator: '-1 (Forever) or positive integer',
     jsonValidator: 'Value must be in a valid JSON format',
     hashHint: '(HashKey: HashValue)',
-    hashHintTtl: '(HashKey: HashValue: TTL Seconds)',
+    hashHintTtl: '(HashKey: HashValue: TTL)',
     zsetHint: '(Value: Score)',
     streamHint: '(Field: Value)',
     arrayHint: '(Index: Value)',
@@ -522,7 +533,9 @@ export default {
     element: 'Element',
     vector: 'Vector',
     attrs: 'Attributes',
-    fieldTtl: 'Field TTL (Second)',
+    fieldTtl: 'Field TTL',
+    saveTtl: 'Save TTL',
+    saveTtlOk: 'Field TTL updated',
     index: 'Index',
     score: 'Score',
     value: 'Value',
@@ -591,7 +604,6 @@ export default {
     title: 'Folder Memory Usage',
     match: 'Key match expression',
     info: 'Total: {total}，Size: {size}',
-    limit: '(Data has reached limit：${limit})',
   },
 
   keyList: { renameKey: 'Rename Key' },
@@ -777,13 +789,11 @@ export default {
 
   redisMemory: {
     hint: `
-    <b>Remark：scan / memory usage / pipeline / type</b> <br/>
-    Description: Use the scan method to scan all master nodes, searching for keys that match {matchParam}. Each scan processes {scanCount} keys, then uses the pipeline to batch send the memory usage command to obtain the memory size occupied, and records keys that are >= {sizeLimitKb}Kb. If the total number of scanned keys reaches {scanTotal} (a value less than or equal to 0 means scanning all) or the result count meets {countLimit}, the process returns. Otherwise, it sleeps for {sleepMillis}ms and continues scanning using the cursor.<br/> 
-    Note: The memory usage command reports the number of bytes required for a key and its value to be stored in memory. The reported usage is the total memory allocation for a key and its value, including data and administrative overhead.
+    <b>Remark: scan / memory usage / pipeline / type</b> <br/>
+    Description: SCAN all master nodes for keys matching {matchParam}. Each round scans {scanCount} keys, then pipelines MEMORY USAGE and records keys >= {sizeLimitKb}Kb. Pause, resume, or stop at any time; sleep {sleepMillis}ms between rounds.<br/>
+    Note: MEMORY USAGE reports bytes needed to store a key and its value, including administrative overhead.
     `,
     total: 'Total',
-    longTimeHint:
-      'Are you sure to start memory analysis? It may take a long time, please be patient!',
     batchDeleteHint: 'Batch Delete 1 Key? | Batch Delete {count} Keys?',
     scanConfig: 'Scan Config',
 
@@ -791,13 +801,11 @@ export default {
     matchParam: 'Match Param',
     scanEach: 'Scan Each',
     sleepMillis: 'Sleep Millis',
-    scanTotal: 'Scan Total',
-    sizeLimit: 'Size Limit',
-    countLimit: 'Count Limit',
     unit: '-',
     batchDelete: 'Batch Delete',
     keyword: 'Key Filter',
-    startScan: 'Start Scan',
+    startScan: 'Start',
+    stopScan: 'Stop',
     type: 'Type',
     key: 'Key',
     size: 'Size',
@@ -913,9 +921,12 @@ export default {
     optional: 'Optional',
     hashKey: 'HashKey',
     streamId: 'ID',
-    ttlHint: 'Click to modify the key expiration time',
-    ttlHintReadonly: 'Key expiration time',
     ttlForever: 'Forever',
+    ttlExpired: 'Key expired',
+    ttlFieldExpired: 'Field expired',
+    ttlExpireAt: 'Expires at: {time} ({offset})',
+    ttlUtc: 'UTC: {time}',
+    ttlSeconds: 'TTL: {n} {unit}',
     deleteKey: 'Delete',
     keyTabsMax: 'Up to 10 key tabs',
     keyTabsCloseAll: 'Close All Keys',
@@ -1206,10 +1217,11 @@ Once an operation prevents Redis from keeping the space-saving encoding, special
   errors: {
     connection_not_found: 'Connection {id} not found',
     connection_lock_timeout: 'Connection lock timeout, please try again later',
-    sentinel_not_supported: 'SSH tunnel does not support sentinel mode',
-    cluster_not_supported: 'SSH tunnel does not support cluster mode',
     cluster_db_switch_not_supported:
       'Cluster mode does not support switching DB; change the initial DB in connection settings and reconnect',
+    tls_not_enabled: 'The server does not have TLS enabled; please uncheck SSL',
+    ssl_required: 'The server has TLS enabled; please check SSL',
+    sentinel_master_not_found: 'Sentinel did not find master "{name}"',
     key_not_found: '"{key}" not found',
     key_node_not_found: 'Node not found for key "{key}"',
     key_already_exists: 'Key "{key}" already exists',
@@ -1218,6 +1230,8 @@ Once an operation prevents Redis from keeping the space-saving encoding, special
     field_not_found: 'Hash key "{hash_key}" not found',
     field_not_found_stream: 'Stream ID "{stream_id}" not found',
     field_operation_not_supported: 'Unsupported operation mode: {mode}',
+    httl_not_supported:
+      'This Redis/Valkey version does not support hash field TTL (requires >= 7.4)',
     field_scan_not_supported: 'Field scan does not support type: {value_type}',
     invalid_zset_score_bound: 'Invalid ZSet score: {bound}',
     invalid_node_format: 'Invalid node format: {node}',

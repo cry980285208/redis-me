@@ -7,7 +7,6 @@ use crate::utils::conn::{
 };
 use crate::utils::error::AppError;
 use crate::utils::model::*;
-use crate::utils::ssh_tunnel::SshTunnel;
 use crate::utils::util::*;
 use anyhow::bail;
 use chrono::Utc;
@@ -24,9 +23,6 @@ pub struct MeSingle {
     base: MeBase,
     client: Client,
     conn: Mutex<LoggingConnection>,
-    // SSH 隧道，在 Drop 时自动关闭
-    #[allow(dead_code)]
-    ssh_tunnel: Option<SshTunnel>,
 }
 
 impl Deref for MeSingle {
@@ -168,15 +164,35 @@ impl MeClient for MeSingle {
     }
 
     fn field_add(&self, param: RedisFieldAdd) -> AnyResult<RedisKey> {
-        field_add0(self.get_conn()?, param, self.base().capabilities.httl_supported)
+        field_add0(
+            self.get_conn()?,
+            param,
+            self.base().capabilities.httl_supported,
+        )
     }
 
     fn field_set(&self, param: RedisFieldSet) -> AnyResult<()> {
-        field_set0(self.get_conn()?, param, self.base().capabilities.httl_supported)
+        field_set0(
+            self.get_conn()?,
+            param,
+            self.base().capabilities.httl_supported,
+        )
+    }
+
+    fn field_ttl(&self, param: RedisFieldTtl) -> AnyResult<()> {
+        field_ttl0(
+            self.get_conn()?,
+            param,
+            self.base().capabilities.httl_supported,
+        )
     }
 
     fn field_get(&self, param: RedisFieldGet) -> AnyResult<RedisFieldValue> {
-        field_get0(self.get_conn()?, param, self.base().capabilities.httl_supported)
+        field_get0(
+            self.get_conn()?,
+            param,
+            self.base().capabilities.httl_supported,
+        )
     }
 
     fn hash_keys(&self, param: RedisHashKeys) -> AnyResult<Vec<String>> {
@@ -239,7 +255,12 @@ impl MeClient for MeSingle {
 
         let mut conn = self.get_conn()?;
         let value = redis::cmd(cmd.as_str()).arg(&args).query(&mut conn)?;
-        Ok(redis_value_to_cli_display(value, param.output_mode, &cmd, &args))
+        Ok(redis_value_to_cli_display(
+            value,
+            param.output_mode,
+            &cmd,
+            &args,
+        ))
     }
 
     fn config_get(
@@ -249,10 +270,8 @@ impl MeClient for MeSingle {
     ) -> AnyResult<HashMap<String, String>> {
         let cmd = resolve_command_name(&self.conf, "config");
         let mut conn = self.get_conn()?;
-        let result: HashMap<String, String> = redis::cmd(&cmd)
-            .arg("get")
-            .arg(pattern)
-            .query(&mut conn)?;
+        let result: HashMap<String, String> =
+            redis::cmd(&cmd).arg("get").arg(pattern).query(&mut conn)?;
         Ok(result)
     }
 
@@ -281,72 +300,40 @@ impl MeClient for MeSingle {
         Ok(logs)
     }
 
-    fn memory_usage(&self, param: RedisMemoryParam) -> AnyResult<Vec<RedisKeySize>> {
+    fn memory_usage_keys(
+        &self,
+        keys: &[RedisKey],
+        size_limit: u64,
+        need_key_type: bool,
+    ) -> AnyResult<Vec<RedisKeySize>> {
+        if keys.is_empty() {
+            return Ok(vec![]);
+        }
         let mut conn = self.get_conn()?;
-        let mut keys: Vec<(Vec<u8>, u64, String)> = vec![];
-
-        let mut scan_times = 0;
-        let mut cursor = 0;
-        loop {
-            let mut cmd = redis::cmd("scan");
-            cmd.arg(cursor)
-                .arg("match")
-                .arg(param.pattern.clone().unwrap_or("*".into()))
-                .arg("count")
-                .arg(param.scan_count);
-            let (next_cursor, new_keys): (u64, Vec<Vec<u8>>) = cmd.query(&mut conn)?;
-            cursor = next_cursor;
-
-            // 计算键大小
-            if !new_keys.is_empty() {
-                let mut pipe = Pipeline::with_capacity(new_keys.len());
-                for key in new_keys.iter() {
-                    pipe.cmd("memory").arg("usage").arg(key);
-                }
-
-                let sizes: Vec<Option<u64>> = pipe.query(&mut conn)?;
-                for (index, size) in sizes.into_iter().enumerate() {
-                    if let Some(size) = size
-                        && size >= param.size_limit
-                    {
-                        keys.push((new_keys[index].clone(), size, "unknown".into()));
-                    }
-                }
-            }
-
-            scan_times += 1;
-
-            if param.count_limit > 0 && keys.len() >= param.count_limit as usize {
-                info!("扫描结果>={}个, 返回", param.count_limit);
-                break;
-            }
-
-            if param.scan_total > 0 && scan_times * param.scan_count >= param.scan_total {
-                info!("已扫描键>={}个, 返回", param.scan_total);
-                break;
-            }
-
-            thread::sleep(Duration::from_millis(param.sleep_millis));
-
-            if cursor == 0 {
-                break;
+        let mut pipe = Pipeline::with_capacity(keys.len());
+        for key in keys {
+            pipe.cmd("memory").arg("usage").arg(key.to_bytes());
+        }
+        let sizes: Vec<Option<u64>> = pipe.query(&mut conn)?;
+        let mut out: Vec<(Vec<u8>, u64, String)> = vec![];
+        for (index, size) in sizes.into_iter().enumerate() {
+            if let Some(size) = size
+                && size >= size_limit
+            {
+                out.push((keys[index].to_bytes().to_vec(), size, "unknown".into()));
             }
         }
-
-        // 计算键类型
-        if param.need_key_type.unwrap_or(false) && !keys.is_empty() {
-            let mut pipe = Pipeline::with_capacity(keys.len());
-            for key in keys.iter() {
+        if need_key_type && !out.is_empty() {
+            let mut pipe = Pipeline::with_capacity(out.len());
+            for key in out.iter() {
                 pipe.cmd("type").arg(&key.0);
             }
             let types: Vec<Option<String>> = pipe.query(&mut conn)?;
             for (index, key_type) in types.into_iter().enumerate() {
-                keys[index].2 = key_type.unwrap_or("deleted".into());
+                out[index].2 = key_type.unwrap_or("deleted".into());
             }
         }
-
-        // 映射为返回值
-        Ok(tuple_to_key_size(keys))
+        Ok(tuple_to_key_size(out))
     }
 
     fn client_list(
@@ -378,7 +365,9 @@ impl MeClient for MeSingle {
     }
 
     fn subscribe(&self, channel: Option<String>) -> AnyResult<()> {
-        let conn = self.client.get_connection_with_timeout(self.connection_timeout)?;
+        let conn = self
+            .client
+            .get_connection_with_timeout(self.connection_timeout)?;
         let running = self.subscribe_running.clone();
         let app_handle = self.base().get_app_handle()?;
         let logger = self.base().command_logger.clone();
@@ -390,7 +379,9 @@ impl MeClient for MeSingle {
     }
 
     fn monitor(&self, _node: &str) -> AnyResult<()> {
-        let conn = self.client.get_connection_with_timeout(self.connection_timeout)?;
+        let conn = self
+            .client
+            .get_connection_with_timeout(self.connection_timeout)?;
         let running = self.monitor_running.clone();
         let app_handle = self.base().get_app_handle()?;
         let logger = self.base().command_logger.clone();
@@ -486,7 +477,9 @@ impl MeClient for MeSingle {
         let id = self.id.clone();
         let app_handle = self.base().get_app_handle()?;
         export_import_check_running(running.clone())?;
-        thread::spawn(move || import_csv_0_thread(&mut logging_conn, param, running, app_handle, id));
+        thread::spawn(move || {
+            import_csv_0_thread(&mut logging_conn, param, running, app_handle, id)
+        });
         Ok(())
     }
 
@@ -499,7 +492,9 @@ impl MeClient for MeSingle {
         let id = self.id.clone();
         let app_handle = self.base().get_app_handle()?;
         export_import_check_running(running.clone())?;
-        thread::spawn(move || import_cmd_0_thread(&mut logging_conn, file, running, app_handle, id));
+        thread::spawn(move || {
+            import_cmd_0_thread(&mut logging_conn, file, running, app_handle, id)
+        });
         Ok(())
     }
 
@@ -557,7 +552,9 @@ impl MeClient for MeSingle {
 
     fn acl_setuser(&self, param: AclSetuserParam) -> AnyResult<()> {
         let rules = acl_build_rules(&param)?;
-        let _: () = self.get_conn()?.acl_setuser_rules(&param.username, &rules)?;
+        let _: () = self
+            .get_conn()?
+            .acl_setuser_rules(&param.username, &rules)?;
         Ok(())
     }
 
@@ -610,14 +607,19 @@ impl MeSingle {
         connect_timeout: Duration,
         command_timeout: Duration,
     ) -> AnyResult<Box<dyn MeClient>> {
-        let (client, ssh_tunnel) = get_client_single(redis_conn, connect_timeout, false)?;
+        let (client, _) = get_client_single(redis_conn, connect_timeout, false, None)?;
         let mut base = MeBase::from(redis_conn);
         base.connection_timeout = connect_timeout;
         base.command_timeout = command_timeout;
         let logger = base.command_logger.clone();
         // 阶段 1 建连验证 + 阶段 2 正式命令超时；验证通过后复用同一条 TCP（#155）
-        let raw_conn =
-            init_single_connection(&client, redis_conn.db, connect_timeout, command_timeout)?;
+        let raw_conn = init_single_connection(
+            &client,
+            redis_conn.db,
+            connect_timeout,
+            command_timeout,
+            redis_conn,
+        )?;
         let mut conn = LoggingConnection::new(raw_conn, logger, redis_conn.db);
         set_client_name_unless_minimal(&mut conn, redis_conn);
         detect_server_capabilities(&mut conn, &mut base, false);
@@ -628,7 +630,6 @@ impl MeSingle {
             base,
             client,
             conn: Mutex::new(conn),
-            ssh_tunnel,
         }))
     }
 
@@ -661,11 +662,8 @@ impl MeSingle {
             self.command_timeout,
         )?;
         let mut conn_guard = self.conn.lock();
-        *conn_guard = LoggingConnection::new(
-            raw_conn,
-            self.command_logger.clone(),
-            self.db.load(Relaxed),
-        );
+        *conn_guard =
+            LoggingConnection::new(raw_conn, self.command_logger.clone(), self.db.load(Relaxed));
         set_client_name_unless_minimal(&mut *conn_guard, &self.conf);
         self.last_check_time.store(Utc::now().timestamp(), Relaxed);
         info!("Redis单机连接重连成功: {}", self.conf.name);
