@@ -25,25 +25,6 @@ pub fn publish0(
     Ok(())
 }
 
-/// 将订阅框内容拆成多个 `PSUBSCRIBE` 模式（空白分隔，与 RedisInsight 一致）；无有效模式时等价于 `*`。
-fn psubscribe_patterns(channel: Option<String>) -> Vec<String> {
-    let Some(raw) = channel.filter(|c| !c.is_empty()) else {
-        return vec!["*".into()];
-    };
-    let mut parts: Vec<String> = raw
-        .split_whitespace()
-        .map(str::to_string)
-        .filter(|p| !p.is_empty())
-        .collect();
-    if parts.is_empty() {
-        vec!["*".into()]
-    } else {
-        // 添加停止订阅频道, 用于停止订阅时发送消息避免阻塞
-        parts.push(REDIS_ME_SUBSCRIBE_STOP_CHANNEL.into());
-        parts
-    }
-}
-
 /// 在后台线程里订阅频道，消息通过事件推到前端。
 pub fn subscribe0(
     mut conn: Connection,
@@ -140,4 +121,25 @@ pub fn monitor_stop0(running: Arc<AtomicBool>) -> AnyResult<()> {
         info!("monitor stop");
     }
     Ok(())
+}
+
+// ------------------------------ 仅本文件使用 ------------------------------
+
+/// 将订阅框内容拆成多个 `PSUBSCRIBE` 模式（空白分隔，与 RedisInsight 一致）；无有效模式时等价于 `*`。
+fn psubscribe_patterns(channel: Option<String>) -> Vec<String> {
+    let Some(raw) = channel.filter(|c| !c.is_empty()) else {
+        return vec!["*".into()];
+    };
+    let mut parts: Vec<String> = raw
+        .split_whitespace()
+        .map(str::to_string)
+        .filter(|p| !p.is_empty())
+        .collect();
+    if parts.is_empty() {
+        vec!["*".into()]
+    } else {
+        // 添加停止订阅频道, 用于停止订阅时发送消息避免阻塞
+        parts.push(REDIS_ME_SUBSCRIBE_STOP_CHANNEL.into());
+        parts
+    }
 }

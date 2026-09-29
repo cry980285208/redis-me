@@ -87,7 +87,7 @@ pub fn ui_key_type(key_type: ValueType) -> String {
 }
 
 /// `TYPE` 等返回的原始类型名（含模块名如 ReJSON-RL / TSDB-TYPE）统一为与 `ui_key_type` 一致的展示名
-pub fn ui_key_type_str(key_type: &str) -> String {
+fn ui_key_type_str(key_type: &str) -> String {
     if key_type == REDIS_JSON_TYPE_NAME {
         ME_JSON_TYPE_NAME.to_string()
     } else if key_type == REDIS_TIMESERIES_TYPE_NAME {
@@ -339,7 +339,7 @@ pub fn ui_stream_value(reply: StreamRangeReply) -> Vec<RedisStreamItem> {
         .collect()
 }
 
-pub fn ui_stream_id(stream_id: HashMap<String, Value>) -> HashMap<String, String> {
+fn ui_stream_id(stream_id: HashMap<String, Value>) -> HashMap<String, String> {
     stream_id
         .into_iter()
         .map(|(k, v)| (k, redis_value_to_string(v, "\n")))
@@ -661,7 +661,7 @@ fn slow_log_from_map(map: Vec<(Value, Value)>, node: &str) -> AnyResult<RedisSlo
 }
 
 // 时间戳 (秒) 转字符串
-pub fn timestamp_to_string(timestamp: i64) -> String {
+fn timestamp_to_string(timestamp: i64) -> String {
     let datetime = DateTime::from_timestamp(timestamp, 0)
         .unwrap()
         .with_timezone(&chrono_tz::Asia::Shanghai);

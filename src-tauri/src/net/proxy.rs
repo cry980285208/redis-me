@@ -107,7 +107,7 @@ fn strip_brackets(host: &str) -> &str {
         .unwrap_or(host)
 }
 
-pub(crate) fn format_connect_authority(host: &str, port: u16) -> String {
+fn format_connect_authority(host: &str, port: u16) -> String {
     let h = strip_brackets(host);
     if h.contains(':') {
         format!("[{h}]:{port}")
@@ -278,7 +278,7 @@ fn read_http_headers<S: Read>(stream: &mut S) -> io::Result<Vec<u8>> {
     }
 }
 
-pub(crate) fn parse_http_status(headers: &[u8]) -> Option<u16> {
+fn parse_http_status(headers: &[u8]) -> Option<u16> {
     let text = std::str::from_utf8(headers).ok()?;
     let line = text.lines().next()?;
     let mut parts = line.split_whitespace();

@@ -21,23 +21,6 @@ api_model!(
     }
 );
 
-/// 从 INFO 输出中解析服务器版本
-/// 返回 (版本号, 是否为 Valkey)
-pub fn parse_server_version(info: &str) -> (String, bool) {
-    let mut valkey_version = None;
-    let mut redis_version = None;
-    for line in info.lines() {
-        if let Some(v) = line.strip_prefix("valkey_version:") {
-            valkey_version = Some(v.trim().to_string());
-        } else if let Some(v) = line.strip_prefix("redis_version:") {
-            redis_version = Some(v.trim().to_string());
-        }
-    }
-    let is_valkey = valkey_version.is_some();
-    let version = valkey_version.or(redis_version).unwrap_or_default();
-    (version, is_valkey)
-}
-
 /// 检测服务器能力：优先通过 INFO SERVER 解析版本号，失败时 fallback 到 HTTL 命令探测
 pub fn detect_server_capabilities(
     conn: &mut impl ConnectionLike,
@@ -59,8 +42,27 @@ pub fn detect_server_capabilities(
     log::info!("服务能力: {:?}", base.capabilities);
 }
 
+// ------------------------------ 仅本文件使用 ------------------------------
+
+/// 从 INFO 输出中解析服务器版本
+/// 返回 (版本号, 是否为 Valkey)
+fn parse_server_version(info: &str) -> (String, bool) {
+    let mut valkey_version = None;
+    let mut redis_version = None;
+    for line in info.lines() {
+        if let Some(v) = line.strip_prefix("valkey_version:") {
+            valkey_version = Some(v.trim().to_string());
+        } else if let Some(v) = line.strip_prefix("redis_version:") {
+            redis_version = Some(v.trim().to_string());
+        }
+    }
+    let is_valkey = valkey_version.is_some();
+    let version = valkey_version.or(redis_version).unwrap_or_default();
+    (version, is_valkey)
+}
+
 /// 根据版本号检测服务能力
-pub fn detect_capabilities(version: &str, is_valkey: bool, is_cluster: bool) -> ServerCapabilities {
+fn detect_capabilities(version: &str, is_valkey: bool, is_cluster: bool) -> ServerCapabilities {
     let mut parts = version.split('.');
     let major = parts
         .next()
@@ -91,7 +93,7 @@ pub fn detect_capabilities(version: &str, is_valkey: bool, is_cluster: bool) -> 
 
 /// 通过实际执行 HTTL 命令探测服务器是否支持字段级 TTL
 /// 用于 INFO 命令不可用（如 ACL 限制）时的 fallback 探测
-pub fn detect_httl_by_command(conn: &mut impl ConnectionLike) -> bool {
+fn detect_httl_by_command(conn: &mut impl ConnectionLike) -> bool {
     let result: redis::RedisResult<Vec<i64>> = redis::cmd("HTTL")
         .arg("nonexistent_key_for_probe")
         .arg("FIELDS")

@@ -74,6 +74,8 @@ pub fn v_sim0(
     }
 }
 
+// ------------------------------ 仅本文件使用 ------------------------------
+
 /// 组装并执行 VSIM；with_attribs 控制是否附带 WITHATTRIBS
 fn vsim_query(
     conn: &mut impl Commands,

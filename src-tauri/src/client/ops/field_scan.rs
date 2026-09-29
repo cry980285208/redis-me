@@ -8,21 +8,6 @@ use redis::vector_sets::{EmbeddingInput, VectorAddInput};
 use redis::{Cmd, Commands, FromRedisValue, IntegerReplyOrNoOp, Value, ValueType};
 use std::collections::HashSet;
 
-/** fieldScan 单次 HSCAN/SSCAN/ZSCAN/LRANGE 的 COUNT，来自 settings.fieldScanCount */
-pub fn field_scan_batch_count(count: u64) -> u64 {
-    if count == 0 { 20 } else { count }
-}
-
-/// 是否在结果里带 TTL 和内存。参数缺省时带上。
-fn field_scan_include_meta(param: &FieldScanParam) -> bool {
-    param.include_meta.unwrap_or(true)
-}
-
-/// 这一页要不要查 Hash 字段的剩余过期时间。服务端不支持时直接跳过。
-fn field_scan_include_field_ttl(param: &FieldScanParam, httl_supported: bool) -> bool {
-    resolve_include_field_ttl(param.include_field_ttl, httl_supported)
-}
-
 /// 是否执行 HTTL/HEXPIRE：须同时满足服务端能力与调用方 opt（默认 false）
 pub fn resolve_include_field_ttl(opt: Option<bool>, httl_supported: bool) -> bool {
     httl_supported && opt.unwrap_or(false)
@@ -43,6 +28,199 @@ pub fn hash_field_ttl_to_preserve(
         Some(IntegerReplyOrNoOp::IntegerReply(ttl)) if *ttl > 0 => Some(*ttl as i64),
         _ => None,
     })
+}
+
+/// 字段扫描入口：精确查询或按类型翻页，最后组装成一页结果。
+pub fn field_scan0(
+    mut conn: MutexGuard<impl Commands>,
+    param: FieldScanParam,
+    httl_supported: bool,
+) -> AnyResult<FieldScanResult> {
+    let bytes_format = param.bytes_format.as_ref().cloned().unwrap_or_default();
+    let include_field_ttl = field_scan_include_field_ttl(&param, httl_supported);
+
+    // String, Json, List, Stream 直接获取；Hash/Set/ZSet 走 exact 或 *SCAN（ZSet 有分数范围时走 ZRANGEBYSCORE）
+    let (mut value, key_type, mut cc, length, value_truncated) =
+        field_scan_0_get(&mut conn, &param, &bytes_format)?;
+    if value.is_none() {
+        if let Some((exact_value, exact_cc)) = field_scan_0_exact(
+            &mut conn,
+            &param.key,
+            &key_type,
+            &param,
+            &bytes_format,
+            include_field_ttl,
+        )? {
+            value = Some(exact_value);
+            cc = exact_cc;
+        } else {
+            // 每次 API 只执行一轮 HSCAN/SSCAN/ZSCAN，循环由前端控制；COUNT 用 fieldScanCount，非键扫描 batch
+            let batch_count = field_scan_batch_count(param.count);
+            let cmd = field_scan_1_cmd(
+                &key_type,
+                &param.key,
+                cc.now_cursor,
+                &param.pattern,
+                batch_count,
+            )?;
+            let (next_cursor, new_value): (u64, Value) = cmd.query(&mut conn)?;
+            let mut scan_value = FieldScanValue::default();
+            field_scan_2_value(
+                &mut conn,
+                &key_type,
+                &mut scan_value,
+                new_value,
+                &param.key,
+                &bytes_format,
+                include_field_ttl,
+            )?;
+            cc.now_cursor = next_cursor;
+            if next_cursor == 0 {
+                cc.finished = true;
+            }
+            value = Some(field_scan_3_json(&key_type, &scan_value)?);
+        }
+    }
+
+    let include_meta = field_scan_include_meta(&param);
+    field_scan_4_return(
+        conn,
+        param.key,
+        key_type,
+        value.unwrap_or_default(),
+        cc,
+        length,
+        value_truncated,
+        include_meta,
+    )
+}
+
+/// Array 索引上界：Redis `arrayParseIndex` 拒绝 UINT64_MAX（仅 ARSEEK 例外），故用 MAX-1。
+pub const ARRAY_INDEX_MAX: u64 = u64::MAX - 1;
+
+/// Vector Set：VADD VALUES（redis-rs）；upsert 返回 false 仍算成功
+pub fn vadd_values(
+    conn: &mut impl Commands,
+    key: &RedisKey,
+    vector: &[f64],
+    element: &[u8],
+) -> AnyResult<()> {
+    let _: bool = conn.vadd(
+        key,
+        VectorAddInput::Values(EmbeddingInput::Float64(vector)),
+        element,
+    )?;
+    Ok(())
+}
+
+/// Vector Set：VEMB → JSON 展示串；失败返回 "-"（不拖死整页）
+pub fn vemb_json_or_dash(conn: &mut impl Commands, key: &RedisKey, element: &[u8]) -> String {
+    conn.vemb::<_, _, Vec<f64>>(key, element)
+        .ok()
+        .and_then(|nums| serde_json::to_string(&nums).ok())
+        .unwrap_or_else(|| "-".into())
+}
+
+/// Vector Set：VGETATTR；无属性 / 失败 → None（不拖死整页）
+pub fn vgetattr_opt(conn: &mut impl Commands, key: &RedisKey, element: &[u8]) -> Option<String> {
+    conn.vgetattr::<_, _, Option<String>>(key, element)
+        .ok()
+        .flatten()
+        .filter(|s: &String| !s.is_empty())
+}
+
+/// Vector Set：VSETATTR；空串删除属性（官方约定）
+pub fn vsetattr_json_or_clear(
+    conn: &mut impl Commands,
+    key: &RedisKey,
+    element: &[u8],
+    attrs: &str,
+) -> AnyResult<()> {
+    let payload = attrs.trim();
+    let _: bool = redis::cmd("VSETATTR")
+        .arg(key)
+        .arg(element)
+        .arg(payload)
+        .query(conn)?;
+    Ok(())
+}
+
+/// `ZRANK` / `ZREVRANK`：成员的排名和分数。
+pub fn zset_rank0(
+    mut conn: MutexGuard<impl Commands>,
+    param: RedisZsetRank,
+) -> AnyResult<RedisZsetRankResult> {
+    let key: RedisKey = param.key;
+    let val_fmt = param.val_fmt.as_ref().cloned().unwrap_or_default();
+    let member_bytes = parse_bytes(&param.member, &val_fmt)?;
+    let rank: Option<u64> = conn.zrank(&key, &member_bytes)?;
+    let rev_rank: Option<u64> = conn.zrevrank(&key, &member_bytes)?;
+    Ok(RedisZsetRankResult { rank, rev_rank })
+}
+
+/// ZSet Top/Bottom 范围查询：ZRANGE/ZREVRANGE ... WITHSCORES
+pub fn zset_range0(
+    mut conn: MutexGuard<impl Commands>,
+    param: RedisZsetRange,
+) -> AnyResult<Vec<RedisZsetRangeItem>> {
+    let key: RedisKey = param.key;
+    let val_fmt = param.val_fmt.as_ref().cloned().unwrap_or_default();
+    let cmd_name = if param.reverse { "ZREVRANGE" } else { "ZRANGE" };
+    let end = (param.count as isize).saturating_sub(1);
+    let values: Vec<(Vec<u8>, f64)> = redis::cmd(cmd_name)
+        .arg(&key)
+        .arg(0)
+        .arg(end)
+        .arg("WITHSCORES")
+        .query(&mut conn)?;
+    Ok(values
+        .into_iter()
+        .map(|(v, s)| RedisZsetRangeItem {
+            value: format_bytes(&v, &val_fmt),
+            score: s,
+        })
+        .collect())
+}
+
+/// 当前操作不支持这个键类型时返回对应错误。调用方在匹配失败后调用，正常类型不会走到这里。
+pub fn handle_other_value_type(
+    value_type: &ValueType,
+    key: &RedisKey,
+) -> AnyResult<serde_json::Value> {
+    match value_type {
+        ValueType::Unknown(other) => {
+            if "none" == other {
+                bail!(AppError::KeyNotFound {
+                    key: vec8_to_display_string(key.to_bytes())
+                })
+            } else {
+                bail!(AppError::KeyTypeUnknown {
+                    value_type: other.into()
+                })
+            }
+        }
+        //ValueType::Stream => bail!("Unsupported Type: Stream"),
+        _ => bail!(AppError::KeyTypeUnsupported {
+            value_type: format!("{:?}", value_type)
+        }),
+    }
+}
+
+// ------------------------------ 仅本文件使用 ------------------------------
+
+/** fieldScan 单次 HSCAN/SSCAN/ZSCAN/LRANGE 的 COUNT，来自 settings.fieldScanCount */
+fn field_scan_batch_count(count: u64) -> u64 {
+    if count == 0 { 20 } else { count }
+}
+
+/// 是否在结果里带 TTL 和内存。参数缺省时带上。
+fn field_scan_include_meta(param: &FieldScanParam) -> bool {
+    param.include_meta.unwrap_or(true)
+}
+
+/// 这一页要不要查 Hash 字段的剩余过期时间。服务端不支持时直接跳过。
+fn field_scan_include_field_ttl(param: &FieldScanParam, httl_supported: bool) -> bool {
+    resolve_include_field_ttl(param.include_field_ttl, httl_supported)
 }
 
 /// 需要元数据时总是向服务器查 TYPE。否则用参数里已有的类型，没有再查。
@@ -67,7 +245,7 @@ fn resolve_field_scan_key_type(
 /// 均应按 `member.as_bytes()`（或索引明文）定位；**禁止** `parse_bytes(member, bytes_format)`，
 /// 否则会把 `"dune"` 误当 base64 解码成乱码，VISMEMBER/HGET 等永远 miss。
 /// 命中后再用 `format_bytes(..., bytes_format)` 写回行内 wire。
-pub fn field_scan_0_exact(
+fn field_scan_0_exact(
     conn: &mut impl Commands,
     key: &RedisKey,
     key_type: &ValueType,
@@ -156,71 +334,6 @@ pub fn field_scan_0_exact(
         _ => return Ok(None),
     };
     Ok(Some((json, cc)))
-}
-
-/// 字段扫描入口：精确查询或按类型翻页，最后组装成一页结果。
-pub fn field_scan0(
-    mut conn: MutexGuard<impl Commands>,
-    param: FieldScanParam,
-    httl_supported: bool,
-) -> AnyResult<FieldScanResult> {
-    let bytes_format = param.bytes_format.as_ref().cloned().unwrap_or_default();
-    let include_field_ttl = field_scan_include_field_ttl(&param, httl_supported);
-
-    // String, Json, List, Stream 直接获取；Hash/Set/ZSet 走 exact 或 *SCAN（ZSet 有分数范围时走 ZRANGEBYSCORE）
-    let (mut value, key_type, mut cc, length, value_truncated) =
-        field_scan_0_get(&mut conn, &param, &bytes_format)?;
-    if value.is_none() {
-        if let Some((exact_value, exact_cc)) = field_scan_0_exact(
-            &mut conn,
-            &param.key,
-            &key_type,
-            &param,
-            &bytes_format,
-            include_field_ttl,
-        )? {
-            value = Some(exact_value);
-            cc = exact_cc;
-        } else {
-            // 每次 API 只执行一轮 HSCAN/SSCAN/ZSCAN，循环由前端控制；COUNT 用 fieldScanCount，非键扫描 batch
-            let batch_count = field_scan_batch_count(param.count);
-            let cmd = field_scan_1_cmd(
-                &key_type,
-                &param.key,
-                cc.now_cursor,
-                &param.pattern,
-                batch_count,
-            )?;
-            let (next_cursor, new_value): (u64, Value) = cmd.query(&mut conn)?;
-            let mut scan_value = FieldScanValue::default();
-            field_scan_2_value(
-                &mut conn,
-                &key_type,
-                &mut scan_value,
-                new_value,
-                &param.key,
-                &bytes_format,
-                include_field_ttl,
-            )?;
-            cc.now_cursor = next_cursor;
-            if next_cursor == 0 {
-                cc.finished = true;
-            }
-            value = Some(field_scan_3_json(&key_type, &scan_value)?);
-        }
-    }
-
-    let include_meta = field_scan_include_meta(&param);
-    field_scan_4_return(
-        conn,
-        param.key,
-        key_type,
-        value.unwrap_or_default(),
-        cc,
-        length,
-        value_truncated,
-        include_meta,
-    )
 }
 
 /// STRING 按阈值决定 GET 全量或 GETRANGE 预览；返回 (bytes, strlen, truncated)
@@ -414,9 +527,6 @@ fn field_scan_list_page(
     Ok(items)
 }
 
-/// Array 索引上界：Redis `arrayParseIndex` 拒绝 UINT64_MAX（仅 ARSEEK 例外），故用 MAX-1。
-pub const ARRAY_INDEX_MAX: u64 = u64::MAX - 1;
-
 /// Array 扫描区间：复用 FieldScanMeta.list_min/max_index（与 List 工具栏同一套输入）；负值按 0 / MAX 处理。
 fn resolve_array_scan_bounds(param: &FieldScanParam) -> Option<(u64, u64)> {
     let meta = param.meta.as_ref();
@@ -470,53 +580,6 @@ fn field_scan_array_page(
         cc.finished = true;
     }
     Ok(items)
-}
-
-/// Vector Set：VADD VALUES（redis-rs）；upsert 返回 false 仍算成功
-pub fn vadd_values(
-    conn: &mut impl Commands,
-    key: &RedisKey,
-    vector: &[f64],
-    element: &[u8],
-) -> AnyResult<()> {
-    let _: bool = conn.vadd(
-        key,
-        VectorAddInput::Values(EmbeddingInput::Float64(vector)),
-        element,
-    )?;
-    Ok(())
-}
-
-/// Vector Set：VEMB → JSON 展示串；失败返回 "-"（不拖死整页）
-pub fn vemb_json_or_dash(conn: &mut impl Commands, key: &RedisKey, element: &[u8]) -> String {
-    conn.vemb::<_, _, Vec<f64>>(key, element)
-        .ok()
-        .and_then(|nums| serde_json::to_string(&nums).ok())
-        .unwrap_or_else(|| "-".into())
-}
-
-/// Vector Set：VGETATTR；无属性 / 失败 → None（不拖死整页）
-pub fn vgetattr_opt(conn: &mut impl Commands, key: &RedisKey, element: &[u8]) -> Option<String> {
-    conn.vgetattr::<_, _, Option<String>>(key, element)
-        .ok()
-        .flatten()
-        .filter(|s: &String| !s.is_empty())
-}
-
-/// Vector Set：VSETATTR；空串删除属性（官方约定）
-pub fn vsetattr_json_or_clear(
-    conn: &mut impl Commands,
-    key: &RedisKey,
-    element: &[u8],
-    attrs: &str,
-) -> AnyResult<()> {
-    let payload = attrs.trim();
-    let _: bool = redis::cmd("VSETATTR")
-        .arg(key)
-        .arg(element)
-        .arg(payload)
-        .query(conn)?;
-    Ok(())
 }
 
 /// Vector Set 分页浏览，返回元素名+向量+属性。
@@ -684,7 +747,7 @@ fn field_scan_timeseries_page(
 }
 
 /// 按键类型取一页字段。Hash/Set/ZSet 的 SCAN 命令留给下一步；List、Array、VectorSet、TimeSeries 在这里翻页。
-pub fn field_scan_0_get(
+fn field_scan_0_get(
     mut conn: &mut MutexGuard<impl Commands>,
     param: &FieldScanParam,
     bytes_format: &BytesFormat,
@@ -831,7 +894,7 @@ pub fn field_scan_0_get(
 }
 
 /// 组装 HSCAN / SSCAN / ZSCAN。`pattern` 为空或 `*` 时不加 MATCH。
-pub fn field_scan_1_cmd(
+fn field_scan_1_cmd(
     key_type: &ValueType,
     key: &RedisKey,
     cursor: u64,
@@ -857,7 +920,7 @@ pub fn field_scan_1_cmd(
 }
 
 /// 把 SCAN 回复写入 `FieldScanValue`，并返回本页条数。
-pub fn field_scan_2_value(
+fn field_scan_2_value(
     conn: &mut impl Commands,
     key_type: &ValueType,
     scan_value: &mut FieldScanValue,
@@ -910,7 +973,7 @@ pub fn field_scan_2_value(
 }
 
 /// 把一页字段序列化成返回给前端的 JSON。
-pub fn field_scan_3_json(
+fn field_scan_3_json(
     key_type: &ValueType,
     scan_value: &FieldScanValue,
 ) -> AnyResult<serde_json::value::Value> {
@@ -958,7 +1021,7 @@ fn resolve_field_scan_length(
 /// 组装 fieldScan 的一页结果。`include_meta` 时再查 TTL 和 `MEMORY USAGE`。
 // 连接、键、游标和是否带元数据都要分开传，不值得再包一层结构体。
 #[allow(clippy::too_many_arguments)]
-pub fn field_scan_4_return(
+fn field_scan_4_return(
     mut conn: MutexGuard<impl Commands>,
     key: RedisKey,
     key_type: ValueType,
@@ -1006,67 +1069,6 @@ pub fn field_scan_4_return(
         logical_length,
         vector_dim,
     })
-}
-
-/// `ZRANK` / `ZREVRANK`：成员的排名和分数。
-pub fn zset_rank0(
-    mut conn: MutexGuard<impl Commands>,
-    param: RedisZsetRank,
-) -> AnyResult<RedisZsetRankResult> {
-    let key: RedisKey = param.key;
-    let val_fmt = param.val_fmt.as_ref().cloned().unwrap_or_default();
-    let member_bytes = parse_bytes(&param.member, &val_fmt)?;
-    let rank: Option<u64> = conn.zrank(&key, &member_bytes)?;
-    let rev_rank: Option<u64> = conn.zrevrank(&key, &member_bytes)?;
-    Ok(RedisZsetRankResult { rank, rev_rank })
-}
-
-/// ZSet Top/Bottom 范围查询：ZRANGE/ZREVRANGE ... WITHSCORES
-pub fn zset_range0(
-    mut conn: MutexGuard<impl Commands>,
-    param: RedisZsetRange,
-) -> AnyResult<Vec<RedisZsetRangeItem>> {
-    let key: RedisKey = param.key;
-    let val_fmt = param.val_fmt.as_ref().cloned().unwrap_or_default();
-    let cmd_name = if param.reverse { "ZREVRANGE" } else { "ZRANGE" };
-    let end = (param.count as isize).saturating_sub(1);
-    let values: Vec<(Vec<u8>, f64)> = redis::cmd(cmd_name)
-        .arg(&key)
-        .arg(0)
-        .arg(end)
-        .arg("WITHSCORES")
-        .query(&mut conn)?;
-    Ok(values
-        .into_iter()
-        .map(|(v, s)| RedisZsetRangeItem {
-            value: format_bytes(&v, &val_fmt),
-            score: s,
-        })
-        .collect())
-}
-
-/// 当前操作不支持这个键类型时返回对应错误。调用方在匹配失败后调用，正常类型不会走到这里。
-pub fn handle_other_value_type(
-    value_type: &ValueType,
-    key: &RedisKey,
-) -> AnyResult<serde_json::Value> {
-    match value_type {
-        ValueType::Unknown(other) => {
-            if "none" == other {
-                bail!(AppError::KeyNotFound {
-                    key: vec8_to_display_string(key.to_bytes())
-                })
-            } else {
-                bail!(AppError::KeyTypeUnknown {
-                    value_type: other.into()
-                })
-            }
-        }
-        //ValueType::Stream => bail!("Unsupported Type: Stream"),
-        _ => bail!(AppError::KeyTypeUnsupported {
-            value_type: format!("{:?}", value_type)
-        }),
-    }
 }
 
 #[cfg(test)]

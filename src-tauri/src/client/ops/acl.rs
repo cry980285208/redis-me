@@ -6,8 +6,176 @@ use redis::acl::Rule;
 use redis::{Commands, FromRedisValue, Value};
 use std::collections::HashSet;
 
+/// 按界面上的用户参数组装 `ACL SETUSER`。
+pub fn build_acl_setuser_cmd(param: &AclSetuserParam) -> AnyResult<redis::Cmd> {
+    let rules = acl_build_rules(param)?;
+    let mut cmd = redis::cmd("ACL");
+    cmd.arg("SETUSER").arg(&param.username);
+    for rule in &rules {
+        cmd.arg(acl_rule_to_setuser_arg(rule));
+    }
+    Ok(cmd)
+}
+
+/// 把界面参数转成 redis-rs 的 `Rule` 列表，选择器规则保留在最后。
+pub fn acl_build_rules(param: &AclSetuserParam) -> AnyResult<Vec<Rule>> {
+    let mut rules = vec![Rule::Reset];
+    rules.push(if param.enabled { Rule::On } else { Rule::Off });
+
+    // 密码保持规则：
+    // - 新密码由前端转换为 hash 回传（若无变更会回传原 hashes）
+    // - 全部为空时显式 nopass，避免 reset 后无密码且无法登录
+    if param.password_hashes.is_empty() {
+        rules.push(Rule::NoPass);
+    } else {
+        rules.extend(
+            param
+                .password_hashes
+                .iter()
+                .cloned()
+                .map(Rule::AddHashedPass),
+        );
+    }
+
+    // 命令规则未配置时，默认拒绝所有命令（reset 已含 -@all，这里显式写入增强可读性）
+    if param.command_rules.is_empty() {
+        rules.push(Rule::NoCommands);
+    } else {
+        rules.extend(param.command_rules.iter().map(|x| acl_rule_from_text(x)));
+    }
+
+    if param.key_patterns.is_empty() {
+        rules.push(Rule::AllKeys);
+    } else {
+        rules.extend(param.key_patterns.iter().map(|x| acl_key_rule_from_text(x)));
+    }
+
+    if param.channel_patterns.is_empty() {
+        rules.push(Rule::ResetChannels);
+    } else {
+        rules.extend(
+            param
+                .channel_patterns
+                .iter()
+                .map(|x| acl_channel_rule_from_text(x)),
+        );
+    }
+
+    // 编辑保存时回写 selectors（与表单 selectors 字段一致）
+    for selector in &param.selectors {
+        let text = selector.trim();
+        if text.is_empty() {
+            continue;
+        }
+        rules.push(acl_selector_from_text(text)?);
+    }
+    Ok(rules)
+}
+
+/// `ACL LIST`：返回全部用户的规则详情，按用户名排序。
+pub fn acl_list_users0(mut conn: MutexGuard<impl Commands>) -> AnyResult<Vec<AclUserDetail>> {
+    let lines: Vec<String> = conn.acl_list()?;
+    let mut users = Vec::with_capacity(lines.len());
+    for line in lines {
+        let line = line.trim();
+        if line.is_empty() || !line.starts_with("user ") {
+            continue;
+        }
+        users.push(parse_acl_list_line(line)?);
+    }
+    users.sort_by(|a, b| a.username.cmp(&b.username));
+    Ok(users)
+}
+
+/// `ACL GETUSER`：读取单个用户，含选择器。
+pub fn acl_getuser0(
+    mut conn: MutexGuard<impl Commands>,
+    username: &str,
+) -> AnyResult<AclUserDetail> {
+    let raw: Value = redis::cmd("ACL")
+        .arg("GETUSER")
+        .arg(username)
+        .query(&mut *conn)?;
+    let info: Option<redis::acl::AclInfo> = FromRedisValue::from_redis_value(raw.clone())?;
+    let info = info.ok_or_else(|| anyhow::anyhow!("ACL user not found: {username}"))?;
+    let selectors = parse_acl_selectors_from_getuser(&raw)?;
+
+    Ok(acl_user_detail_from_info(username, info, selectors))
+}
+
+/// `ACL USERS`：只返回用户名。
+pub fn acl_users0(mut conn: MutexGuard<impl Commands>) -> AnyResult<Vec<String>> {
+    Ok(conn.acl_users()?)
+}
+
+/// `ACL WHOAMI`：当前连接的用户名。
+pub fn acl_whoami0(mut conn: MutexGuard<impl Commands>) -> AnyResult<String> {
+    Ok(conn.acl_whoami()?)
+}
+
+/// `ACL CAT`：命令分类；传入分类名时返回该分类下的命令。
+pub fn acl_cat0(
+    mut conn: MutexGuard<impl Commands>,
+    category: Option<String>,
+) -> AnyResult<Vec<String>> {
+    let set: HashSet<String> = match category.filter(|x| !x.is_empty()) {
+        Some(cat) => conn.acl_cat_categoryname(cat)?,
+        None => conn.acl_cat()?,
+    };
+    let mut list: Vec<String> = set.into_iter().collect();
+    list.sort();
+    Ok(list)
+}
+
+/// `ACL GENPASS`：生成随机密码，`bits` 为空时用服务端默认位数。
+pub fn acl_genpass0(mut conn: MutexGuard<impl Commands>, bits: Option<i64>) -> AnyResult<String> {
+    if let Some(v) = bits {
+        Ok(conn.acl_genpass_bits(v as isize)?)
+    } else {
+        Ok(conn.acl_genpass()?)
+    }
+}
+
+/// ACL LOG: 获取 ACL 安全日志
+pub fn acl_log0(
+    mut conn: MutexGuard<impl Commands>,
+    count: Option<u64>,
+) -> AnyResult<Vec<AclLogEntry>> {
+    let count = count.unwrap_or(10) as isize;
+    let value: Value = redis::cmd("ACL").arg("LOG").arg(count).query(&mut *conn)?;
+
+    match value {
+        Value::Array(entries) => entries.into_iter().map(parse_acl_log_entry).collect(),
+        _ => bail!("ACL LOG response should be an array"),
+    }
+}
+
+/// ACL DRYRUN: 模拟执行命令，检查用户权限
+pub fn acl_dryrun0(
+    mut conn: MutexGuard<impl Commands>,
+    username: String,
+    command: String,
+) -> AnyResult<String> {
+    // 解析命令字符串为命令名和参数
+    let (cmd_name, cmd_args) = parse_command(&command)?;
+
+    if cmd_name.is_empty() {
+        return Err(anyhow::anyhow!("Command cannot be empty"));
+    }
+
+    // 使用 redis-rs 内置的 acl_dryrun 方法
+    let cmd_args: Vec<String> = cmd_args
+        .iter()
+        .map(|b| String::from_utf8_lossy(b).into_owned())
+        .collect();
+    let result: String = conn.acl_dryrun(&username, &cmd_name, &cmd_args)?;
+    Ok(result)
+}
+
+// ------------------------------ 仅本文件使用 ------------------------------
+
 /// 把一条 ACL 规则格式化成 `ACL LIST` 里看到的文本。
-pub fn acl_rule_to_string(rule: Rule) -> String {
+fn acl_rule_to_string(rule: Rule) -> String {
     match rule {
         Rule::On => "on".into(),
         Rule::Off => "off".into(),
@@ -40,7 +208,7 @@ pub fn acl_rule_to_string(rule: Rule) -> String {
 }
 
 /// ACL SETUSER 单条规则参数（集群广播 route_command 用）
-pub fn acl_rule_to_setuser_arg(rule: &Rule) -> String {
+fn acl_rule_to_setuser_arg(rule: &Rule) -> String {
     match rule {
         Rule::NoPass => "nopass".into(),
         Rule::Reset => "reset".into(),
@@ -51,16 +219,6 @@ pub fn acl_rule_to_setuser_arg(rule: &Rule) -> String {
     }
 }
 
-/// 按界面上的用户参数组装 `ACL SETUSER`。
-pub fn build_acl_setuser_cmd(param: &AclSetuserParam) -> AnyResult<redis::Cmd> {
-    let rules = acl_build_rules(param)?;
-    let mut cmd = redis::cmd("ACL");
-    cmd.arg("SETUSER").arg(&param.username);
-    for rule in &rules {
-        cmd.arg(acl_rule_to_setuser_arg(rule));
-    }
-    Ok(cmd)
-}
 /// `ACL SETUSER` 用的规则文本。频道 `*` 写成 `allchannels`，和 `ACL LIST` 的 `&*` 不一样。
 fn acl_rule_to_setuser_text(rule: &Rule) -> String {
     match rule {
@@ -245,63 +403,8 @@ fn acl_channel_rule_from_text(text: &str) -> Rule {
     }
 }
 
-/// 把界面参数转成 redis-rs 的 `Rule` 列表，选择器规则保留在最后。
-pub fn acl_build_rules(param: &AclSetuserParam) -> AnyResult<Vec<Rule>> {
-    let mut rules = vec![Rule::Reset];
-    rules.push(if param.enabled { Rule::On } else { Rule::Off });
-
-    // 密码保持规则：
-    // - 新密码由前端转换为 hash 回传（若无变更会回传原 hashes）
-    // - 全部为空时显式 nopass，避免 reset 后无密码且无法登录
-    if param.password_hashes.is_empty() {
-        rules.push(Rule::NoPass);
-    } else {
-        rules.extend(
-            param
-                .password_hashes
-                .iter()
-                .cloned()
-                .map(Rule::AddHashedPass),
-        );
-    }
-
-    // 命令规则未配置时，默认拒绝所有命令（reset 已含 -@all，这里显式写入增强可读性）
-    if param.command_rules.is_empty() {
-        rules.push(Rule::NoCommands);
-    } else {
-        rules.extend(param.command_rules.iter().map(|x| acl_rule_from_text(x)));
-    }
-
-    if param.key_patterns.is_empty() {
-        rules.push(Rule::AllKeys);
-    } else {
-        rules.extend(param.key_patterns.iter().map(|x| acl_key_rule_from_text(x)));
-    }
-
-    if param.channel_patterns.is_empty() {
-        rules.push(Rule::ResetChannels);
-    } else {
-        rules.extend(
-            param
-                .channel_patterns
-                .iter()
-                .map(|x| acl_channel_rule_from_text(x)),
-        );
-    }
-
-    // 编辑保存时回写 selectors（与表单 selectors 字段一致）
-    for selector in &param.selectors {
-        let text = selector.trim();
-        if text.is_empty() {
-            continue;
-        }
-        rules.push(acl_selector_from_text(text)?);
-    }
-    Ok(rules)
-}
-
 /// 把 `ACL GETUSER` 的解析结果收成界面用的用户详情。
-pub fn acl_user_detail_from_info(
+fn acl_user_detail_from_info(
     username: &str,
     info: redis::acl::AclInfo,
     selectors: Vec<String>,
@@ -434,7 +537,7 @@ fn is_acl_list_channel_rule(token: &str) -> bool {
 }
 
 /// 解析 ACL LIST 单行 `user <name> <rules...>` 为 AclUserDetail
-pub fn parse_acl_list_line(line: &str) -> AnyResult<AclUserDetail> {
+fn parse_acl_list_line(line: &str) -> AnyResult<AclUserDetail> {
     let line = line.trim();
     let rest = line
         .strip_prefix("user ")
@@ -498,70 +601,6 @@ pub fn parse_acl_list_line(line: &str) -> AnyResult<AclUserDetail> {
     })
 }
 
-/// `ACL LIST`：返回全部用户的规则详情，按用户名排序。
-pub fn acl_list_users0(mut conn: MutexGuard<impl Commands>) -> AnyResult<Vec<AclUserDetail>> {
-    let lines: Vec<String> = conn.acl_list()?;
-    let mut users = Vec::with_capacity(lines.len());
-    for line in lines {
-        let line = line.trim();
-        if line.is_empty() || !line.starts_with("user ") {
-            continue;
-        }
-        users.push(parse_acl_list_line(line)?);
-    }
-    users.sort_by(|a, b| a.username.cmp(&b.username));
-    Ok(users)
-}
-
-/// `ACL GETUSER`：读取单个用户，含选择器。
-pub fn acl_getuser0(
-    mut conn: MutexGuard<impl Commands>,
-    username: &str,
-) -> AnyResult<AclUserDetail> {
-    let raw: Value = redis::cmd("ACL")
-        .arg("GETUSER")
-        .arg(username)
-        .query(&mut *conn)?;
-    let info: Option<redis::acl::AclInfo> = FromRedisValue::from_redis_value(raw.clone())?;
-    let info = info.ok_or_else(|| anyhow::anyhow!("ACL user not found: {username}"))?;
-    let selectors = parse_acl_selectors_from_getuser(&raw)?;
-
-    Ok(acl_user_detail_from_info(username, info, selectors))
-}
-
-/// `ACL USERS`：只返回用户名。
-pub fn acl_users0(mut conn: MutexGuard<impl Commands>) -> AnyResult<Vec<String>> {
-    Ok(conn.acl_users()?)
-}
-
-/// `ACL WHOAMI`：当前连接的用户名。
-pub fn acl_whoami0(mut conn: MutexGuard<impl Commands>) -> AnyResult<String> {
-    Ok(conn.acl_whoami()?)
-}
-
-/// `ACL CAT`：命令分类；传入分类名时返回该分类下的命令。
-pub fn acl_cat0(
-    mut conn: MutexGuard<impl Commands>,
-    category: Option<String>,
-) -> AnyResult<Vec<String>> {
-    let set: HashSet<String> = match category.filter(|x| !x.is_empty()) {
-        Some(cat) => conn.acl_cat_categoryname(cat)?,
-        None => conn.acl_cat()?,
-    };
-    let mut list: Vec<String> = set.into_iter().collect();
-    list.sort();
-    Ok(list)
-}
-
-/// `ACL GENPASS`：生成随机密码，`bits` 为空时用服务端默认位数。
-pub fn acl_genpass0(mut conn: MutexGuard<impl Commands>, bits: Option<i64>) -> AnyResult<String> {
-    if let Some(v) = bits {
-        Ok(conn.acl_genpass_bits(v as isize)?)
-    } else {
-        Ok(conn.acl_genpass()?)
-    }
-}
-
 /// ACL LOG 单条：Redis 返回扁平 key/value 数组
 fn parse_acl_log_entry(value: Value) -> AnyResult<AclLogEntry> {
     let pairs = match value {
@@ -620,42 +659,6 @@ fn acl_log_value_to_string(value: Value) -> String {
         Value::Int(i) => i.to_string(),
         other => redis_value_to_string(other, " "),
     }
-}
-
-/// ACL LOG: 获取 ACL 安全日志
-pub fn acl_log0(
-    mut conn: MutexGuard<impl Commands>,
-    count: Option<u64>,
-) -> AnyResult<Vec<AclLogEntry>> {
-    let count = count.unwrap_or(10) as isize;
-    let value: Value = redis::cmd("ACL").arg("LOG").arg(count).query(&mut *conn)?;
-
-    match value {
-        Value::Array(entries) => entries.into_iter().map(parse_acl_log_entry).collect(),
-        _ => bail!("ACL LOG response should be an array"),
-    }
-}
-
-/// ACL DRYRUN: 模拟执行命令，检查用户权限
-pub fn acl_dryrun0(
-    mut conn: MutexGuard<impl Commands>,
-    username: String,
-    command: String,
-) -> AnyResult<String> {
-    // 解析命令字符串为命令名和参数
-    let (cmd_name, cmd_args) = parse_command(&command)?;
-
-    if cmd_name.is_empty() {
-        return Err(anyhow::anyhow!("Command cannot be empty"));
-    }
-
-    // 使用 redis-rs 内置的 acl_dryrun 方法
-    let cmd_args: Vec<String> = cmd_args
-        .iter()
-        .map(|b| String::from_utf8_lossy(b).into_owned())
-        .collect();
-    let result: String = conn.acl_dryrun(&username, &cmd_name, &cmd_args)?;
-    Ok(result)
 }
 
 #[cfg(test)]

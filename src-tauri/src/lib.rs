@@ -106,7 +106,7 @@ fn tauri_specta_commands() -> Commands<tauri::Wry> {
 }
 
 /// 生成前端 TS 绑定路径（相对 `src-tauri` 的 `CARGO_MANIFEST_DIR`）。
-pub fn tauri_specta_typescript_path() -> PathBuf {
+fn tauri_specta_typescript_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../src/types/tauri-specta.ts")
 }
 

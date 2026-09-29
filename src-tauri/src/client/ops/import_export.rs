@@ -78,6 +78,42 @@ pub fn export_cmd_0_thread(
     running.store(false, Relaxed);
 }
 
+/// 后台从 DUMP CSV 恢复键。
+pub fn import_csv_0_thread(
+    conn: &mut impl Commands,
+    param: RedisImportCsv,
+    running: Arc<AtomicBool>,
+    app_handle: AppHandle,
+    id: String,
+) {
+    info!("import csv file: {}", param.file);
+    let result = import_keys(conn, param, running.clone(), app_handle, id);
+    match result {
+        Ok(_) => info!("import csv file ok"),
+        Err(e) => warn!("import csv file err: {e}"),
+    }
+    running.store(false, Relaxed);
+}
+
+/// 后台逐行执行命令文件。
+pub fn import_cmd_0_thread(
+    conn: &mut impl Commands,
+    file: String,
+    running: Arc<AtomicBool>,
+    app_handle: AppHandle,
+    id: String,
+) {
+    info!("import cmd file: {}", file);
+    let result = import_cmds(conn, file, running.clone(), app_handle, id);
+    match result {
+        Ok(_) => info!("import cmd file ok"),
+        Err(e) => warn!("import cmd file err: {e}"),
+    }
+    running.store(false, Relaxed);
+}
+
+// ------------------------------ 仅本文件使用 ------------------------------
+
 /// 逐键写成命令。单个键失败记入错误数，不中断整次导出。
 fn export_keys_as_command(
     mut conn: impl Commands,
@@ -223,23 +259,6 @@ fn export_key(
     Ok(())
 }
 
-/// 后台从 DUMP CSV 恢复键。
-pub fn import_csv_0_thread(
-    conn: &mut impl Commands,
-    param: RedisImportCsv,
-    running: Arc<AtomicBool>,
-    app_handle: AppHandle,
-    id: String,
-) {
-    info!("import csv file: {}", param.file);
-    let result = import_keys(conn, param, running.clone(), app_handle, id);
-    match result {
-        Ok(_) => info!("import csv file ok"),
-        Err(e) => warn!("import csv file err: {e}"),
-    }
-    running.store(false, Relaxed);
-}
-
 /// 读 CSV。冲突和 TTL 按参数处理，坏行记入错误数。
 fn import_keys(
     conn: &mut impl Commands,
@@ -351,23 +370,6 @@ fn import_restore_ttl(part_ttl: &str, ttl: i64, handle_ttl: &str) -> i64 {
 
     // 注意: 导出时TTL命令返回的单位是秒, restore的ttl参数是毫秒
     if ttl <= 0 { 0 } else { ttl * 1000 }
-}
-
-/// 后台逐行执行命令文件。
-pub fn import_cmd_0_thread(
-    conn: &mut impl Commands,
-    file: String,
-    running: Arc<AtomicBool>,
-    app_handle: AppHandle,
-    id: String,
-) {
-    info!("import cmd file: {}", file);
-    let result = import_cmds(conn, file, running.clone(), app_handle, id);
-    match result {
-        Ok(_) => info!("import cmd file ok"),
-        Err(e) => warn!("import cmd file err: {e}"),
-    }
-    running.store(false, Relaxed);
 }
 
 /// 读命令文件。空行跳过，单行失败记入错误数，不中断后面的行。

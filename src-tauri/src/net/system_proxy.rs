@@ -86,7 +86,7 @@ fn env_nonempty(names: &[&str]) -> Option<String> {
 }
 
 /// `http://` / `https://` / `socks5://` / `socks5h://`，或无 scheme 的 `host:port`。
-pub(crate) fn parse_proxy_url(raw: &str) -> Option<DetectedProxy> {
+fn parse_proxy_url(raw: &str) -> Option<DetectedProxy> {
     let raw = raw.trim();
     if raw.is_empty() {
         return None;
@@ -146,7 +146,7 @@ fn detect_windows_static() -> Option<DetectedProxy> {
 /// `https=` 仍是 HTTP CONNECT 代理（不是 TLS-to-proxy）。
 /// 生产路径只在 Windows 调用；测试在各平台都编进来。
 #[cfg(any(test, windows))]
-pub(crate) fn parse_windows_proxy_server(s: &str) -> Option<DetectedProxy> {
+fn parse_windows_proxy_server(s: &str) -> Option<DetectedProxy> {
     let s = s.trim();
     if s.is_empty() {
         return None;
@@ -176,7 +176,7 @@ pub(crate) fn parse_windows_proxy_server(s: &str) -> Option<DetectedProxy> {
 
 /// Windows `ProxyServer` 与 macOS `scutil --proxy` 共用。Linux 生产构建不检测静态代理。
 #[cfg(any(test, windows, target_os = "macos"))]
-pub(crate) fn parse_host_port(s: &str, proxy_type: &str) -> Option<DetectedProxy> {
+fn parse_host_port(s: &str, proxy_type: &str) -> Option<DetectedProxy> {
     let s = s.trim();
     if s.is_empty() {
         return None;
@@ -226,7 +226,7 @@ fn detect_macos_static() -> Option<DetectedProxy> {
 
 /// 解析 `scutil --proxy`。PAC-only（仅 AutoConfig）返回 None。
 #[cfg(any(test, target_os = "macos"))]
-pub(crate) fn parse_scutil_proxy(output: &str) -> Option<DetectedProxy> {
+fn parse_scutil_proxy(output: &str) -> Option<DetectedProxy> {
     let mut map = std::collections::HashMap::new();
     for line in output.lines() {
         let line = line.trim();

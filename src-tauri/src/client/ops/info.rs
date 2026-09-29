@@ -70,70 +70,6 @@ pub fn ts_info0(
     parse_ts_info_items(raw)
 }
 
-/// TS.INFO 嵌套值展平：label 对 `k=v`；规则等多元素用 `,`；多组用 `; `
-fn format_ts_info_value(value: Value) -> String {
-    match value {
-        Value::Array(items)
-            if !items.is_empty() && items.iter().all(|x| matches!(x, Value::Array(_))) =>
-        {
-            items
-                .into_iter()
-                .map(|item| match item {
-                    Value::Array(pair) if pair.len() == 2 => {
-                        format!(
-                            "{}={}",
-                            redis_value_to_string(pair[0].clone(), ""),
-                            redis_value_to_string(pair[1].clone(), "")
-                        )
-                    }
-                    Value::Array(parts) => parts
-                        .into_iter()
-                        .map(|p| redis_value_to_string(p, ""))
-                        .collect::<Vec<_>>()
-                        .join(","),
-                    other => redis_value_to_string(other, ""),
-                })
-                .collect::<Vec<_>>()
-                .join("; ")
-        }
-        Value::Array(items) => items
-            .into_iter()
-            .map(|x| redis_value_to_string(x, ""))
-            .collect::<Vec<_>>()
-            .join(", "),
-        other => redis_value_to_string(other, ", "),
-    }
-}
-
-/// `TS.INFO` 的扁平键值或 Map。嵌套的 labels、rules 先展平成可读字符串。
-fn parse_ts_info_items(raw: Value) -> AnyResult<Vec<RedisArInfoItem>> {
-    match raw {
-        Value::Nil => Ok(Vec::new()),
-        Value::Map(map) => Ok(map
-            .into_iter()
-            .map(|(k, v)| RedisArInfoItem {
-                field: redis_value_to_string(k, ""),
-                value: format_ts_info_value(v),
-            })
-            .collect()),
-        Value::Array(arr) => {
-            let mut items = Vec::with_capacity(arr.len() / 2);
-            let mut i = 0;
-            while i + 1 < arr.len() {
-                items.push(RedisArInfoItem {
-                    field: redis_value_to_string(arr[i].clone(), ""),
-                    value: format_ts_info_value(arr[i + 1].clone()),
-                });
-                i += 2;
-            }
-            Ok(items)
-        }
-        other => bail!(AppError::Internal {
-            message: format!("unexpected TS.INFO reply: {:?}", other)
-        }),
-    }
-}
-
 /// ARINFO / VINFO 等扁平键值回复 → 保序 field/value 行
 pub fn parse_info_kv_items(raw: Value, cmd: &str) -> AnyResult<Vec<RedisArInfoItem>> {
     match raw {
@@ -244,6 +180,72 @@ pub fn flush_db0(mut conn: MutexGuard<impl Commands>) -> AnyResult<()> {
 pub fn flush_all0(mut conn: MutexGuard<impl Commands>) -> AnyResult<()> {
     let _: () = conn.flushall()?;
     Ok(())
+}
+
+// ------------------------------ 仅本文件使用 ------------------------------
+
+/// TS.INFO 嵌套值展平：label 对 `k=v`；规则等多元素用 `,`；多组用 `; `
+fn format_ts_info_value(value: Value) -> String {
+    match value {
+        Value::Array(items)
+            if !items.is_empty() && items.iter().all(|x| matches!(x, Value::Array(_))) =>
+        {
+            items
+                .into_iter()
+                .map(|item| match item {
+                    Value::Array(pair) if pair.len() == 2 => {
+                        format!(
+                            "{}={}",
+                            redis_value_to_string(pair[0].clone(), ""),
+                            redis_value_to_string(pair[1].clone(), "")
+                        )
+                    }
+                    Value::Array(parts) => parts
+                        .into_iter()
+                        .map(|p| redis_value_to_string(p, ""))
+                        .collect::<Vec<_>>()
+                        .join(","),
+                    other => redis_value_to_string(other, ""),
+                })
+                .collect::<Vec<_>>()
+                .join("; ")
+        }
+        Value::Array(items) => items
+            .into_iter()
+            .map(|x| redis_value_to_string(x, ""))
+            .collect::<Vec<_>>()
+            .join(", "),
+        other => redis_value_to_string(other, ", "),
+    }
+}
+
+/// `TS.INFO` 的扁平键值或 Map。嵌套的 labels、rules 先展平成可读字符串。
+fn parse_ts_info_items(raw: Value) -> AnyResult<Vec<RedisArInfoItem>> {
+    match raw {
+        Value::Nil => Ok(Vec::new()),
+        Value::Map(map) => Ok(map
+            .into_iter()
+            .map(|(k, v)| RedisArInfoItem {
+                field: redis_value_to_string(k, ""),
+                value: format_ts_info_value(v),
+            })
+            .collect()),
+        Value::Array(arr) => {
+            let mut items = Vec::with_capacity(arr.len() / 2);
+            let mut i = 0;
+            while i + 1 < arr.len() {
+                items.push(RedisArInfoItem {
+                    field: redis_value_to_string(arr[i].clone(), ""),
+                    value: format_ts_info_value(arr[i + 1].clone()),
+                });
+                i += 2;
+            }
+            Ok(items)
+        }
+        other => bail!(AppError::Internal {
+            message: format!("unexpected TS.INFO reply: {:?}", other)
+        }),
+    }
 }
 
 #[cfg(test)]
