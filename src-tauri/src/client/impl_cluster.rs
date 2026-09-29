@@ -1069,3 +1069,32 @@ impl MeCluster {
         Ok(nodes)
     }
 }
+
+#[cfg(test)]
+mod parse_node_list_tests {
+    use super::*;
+
+    #[test]
+    fn masters_keep_slots_and_replicas_point_at_master() {
+        let raw = "\
+e82b 10.0.0.3:7003@17003 master - 0 1 3 connected 10923-16383
+0891 10.0.0.2:7002@17002 master - 0 1 2 connected 5461-10922
+993b 10.0.0.1:7001@17001 master - 0 1 1 connected 0-5460
+01b6 10.0.0.4:7004@17004,replica.local myself,slave 0891 0 0 2 connected
+junk
+";
+        let nodes = MeCluster::parse_node_list(raw.into()).unwrap();
+        let node = |addr: &str| nodes.iter().find(|n| n.node == addr).unwrap();
+
+        assert_eq!(nodes.len(), 4);
+        assert_eq!(node("10.0.0.1:7001").slots.as_deref(), Some("0-5460"));
+        assert_eq!(node("10.0.0.2:7002").slots.as_deref(), Some("5461-10922"));
+        assert_eq!(node("10.0.0.3:7003").slots.as_deref(), Some("10923-16383"));
+        assert!(node("10.0.0.1:7001").flags.contains("master"));
+
+        let replica = node("10.0.0.4:7004");
+        assert!(replica.slots.is_none());
+        assert_eq!(replica.slave_of_node.as_deref(), Some("10.0.0.2:7002"));
+        assert!(replica.flags.contains("slave"));
+    }
+}

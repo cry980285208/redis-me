@@ -3993,6 +3993,34 @@ mod acl_selector_tests {
         );
         assert_eq!(detail.selectors, vec!["-@all +get ~key1".to_string()]);
     }
+
+    fn cmd_args(cmd: &redis::Cmd) -> Vec<String> {
+        cmd.args_iter()
+            .map(|arg| match arg {
+                redis::Arg::Simple(bytes) => String::from_utf8(bytes.to_vec()).unwrap(),
+                redis::Arg::Cursor => "CURSOR".into(),
+                _ => unreachable!("command args are plain bytes"),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn setuser_keeps_selector_after_other_rules() {
+        let param = AclSetuserParam {
+            username: "u1".into(),
+            enabled: true,
+            password_hashes: vec![],
+            command_rules: vec!["+@read".into()],
+            key_patterns: vec!["*".into()],
+            channel_patterns: vec!["*".into()],
+            selectors: vec!["-@all +set ~key2".into()],
+        };
+        let args = cmd_args(&build_acl_setuser_cmd(&param).expect("setuser"));
+        let pos = |needle: &str| args.iter().position(|arg| arg == needle).unwrap();
+        assert!(pos("SETUSER") < pos("+@read"));
+        assert!(pos("+@read") < pos("allkeys"));
+        assert!(pos("allkeys") < pos("(-@all +set ~key2)"));
+    }
 }
 
 #[cfg(test)]
@@ -4122,5 +4150,133 @@ mod zset_score_range_tests {
         assert!(parse_zset_score_bound(Some("abc"), "-inf").is_err());
         assert!(parse_zset_score_bound(Some("NaN"), "-inf").is_err());
         assert!(parse_zset_score_bound(Some("(1.5"), "-inf").is_err());
+    }
+}
+
+#[cfg(test)]
+mod scan_cmd_tests {
+    use super::*;
+
+    fn cmd_args(cmd: &Cmd) -> Vec<String> {
+        cmd.args_iter()
+            .map(|arg| match arg {
+                redis::Arg::Simple(bytes) => String::from_utf8(bytes.to_vec()).unwrap(),
+                redis::Arg::Cursor => "CURSOR".into(),
+                _ => unreachable!("command args are plain bytes"),
+            })
+            .collect()
+    }
+
+    fn scan_type_arg(scan_type: Option<&str>) -> Option<String> {
+        let args = cmd_args(&scan_1_cmd(0, "*", 10, scan_type.map(str::to_string)));
+        args.windows(2)
+            .find(|pair| pair[0].eq_ignore_ascii_case("type"))
+            .map(|pair| pair[1].clone())
+    }
+
+    #[test]
+    fn maps_module_type_and_skips_empty() {
+        assert_eq!(
+            scan_type_arg(Some(ME_TIMESERIES_TYPE_NAME)).as_deref(),
+            Some(REDIS_TIMESERIES_TYPE_NAME)
+        );
+        assert_eq!(
+            scan_type_arg(Some(ME_JSON_TYPE_NAME)).as_deref(),
+            Some(REDIS_JSON_TYPE_NAME)
+        );
+        assert_eq!(scan_type_arg(None), None);
+        assert_eq!(scan_type_arg(Some("")), None);
+    }
+}
+
+#[cfg(test)]
+mod list_scan_range_tests {
+    use super::*;
+
+    fn list_param(min: Option<i64>, max: Option<i64>, desc: Option<bool>) -> FieldScanParam {
+        FieldScanParam {
+            key: RedisKey {
+                key: "l".into(),
+                bytes: vec![],
+            },
+            count: 2,
+            cursor: None,
+            pattern: "*".into(),
+            exact: false,
+            meta: Some(FieldScanMeta {
+                max_id: String::new(),
+                min_id: String::new(),
+                value_byte_limit: None,
+                value_preview_bytes: None,
+                force_full_value: None,
+                list_min_index: min,
+                list_max_index: max,
+                list_desc: desc,
+                stream_desc: None,
+                vectorset_sample: None,
+                zset_min_score: None,
+                zset_max_score: None,
+                ts_min: None,
+                ts_max: None,
+                ts_min_value: None,
+                ts_max_value: None,
+                ts_desc: None,
+            }),
+            bytes_format: None,
+            include_meta: None,
+            key_type: None,
+            include_field_ttl: None,
+        }
+    }
+
+    #[test]
+    fn clips_negative_indexes_and_keeps_positive() {
+        assert_eq!(
+            resolve_list_scan_range(&list_param(None, None, None), 5),
+            (0, 4)
+        );
+        assert_eq!(
+            resolve_list_scan_range(&list_param(Some(-1), Some(-2), None), 5),
+            (4, 3)
+        );
+        assert_eq!(
+            resolve_list_scan_range(&list_param(Some(-100), Some(2), None), 5),
+            (0, 2)
+        );
+        assert_eq!(
+            resolve_list_scan_range(&list_param(Some(1), Some(3), None), 5),
+            (1, 3)
+        );
+        let mut no_meta = list_param(None, None, None);
+        no_meta.meta = None;
+        assert_eq!(resolve_list_scan_range(&no_meta, 5), (0, 4));
+    }
+
+    #[test]
+    fn desc_is_a_flag_and_does_not_swap_bounds() {
+        let desc = list_param(Some(0), Some(4), Some(true));
+        assert!(list_scan_desc(&desc));
+        assert_eq!(resolve_list_scan_range(&desc, 5), (0, 4));
+        assert!(!list_scan_desc(&list_param(None, None, None)));
+        assert!(!list_scan_desc(&list_param(None, None, Some(false))));
+    }
+}
+
+#[cfg(test)]
+mod import_restore_ttl_tests {
+    use super::*;
+
+    #[test]
+    fn permanent_expired_and_ignore() {
+        // ignore 以及其它未知策略：RESTORE ttl 0，键永久
+        assert_eq!(import_restore_ttl("60", 30, "ignore"), 0);
+        assert_eq!(import_restore_ttl("60", 30, ""), 0);
+        // 自定义秒数换成毫秒
+        assert_eq!(import_restore_ttl("60", 30, "custom"), 30_000);
+        // 已过期、无 TTL、解析失败都落成 0
+        assert_eq!(import_restore_ttl("-2", 0, "parse"), 0);
+        assert_eq!(import_restore_ttl("0", -1, "custom"), 0);
+        assert_eq!(import_restore_ttl("nope", 99, "parse"), 0);
+        assert_eq!(import_restore_ttl("15", 0, "parse"), 15_000);
     }
 }

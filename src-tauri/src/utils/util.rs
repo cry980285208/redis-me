@@ -1153,4 +1153,20 @@ mod tests {
             println!("Parsed: {:?}", parse_path(path))
         }
     }
+
+    #[test]
+    fn parse_client_info_fills_missing_fields() {
+        let line = "id=10 addr=127.0.0.1:6380 flags=N db=15 cmd=get user=default resp=3";
+        let info = parse_client_info(line).unwrap();
+        assert_eq!(info.id, 10);
+        assert_eq!(info.addr, "127.0.0.1:6380");
+        assert_eq!(info.flags, "N");
+        assert_eq!(info.db, 15);
+        assert_eq!(info.cmd, "get");
+        assert_eq!(info.user, "default");
+        assert_eq!(info.resp, 3);
+        assert_eq!(info.name, "");
+        assert_eq!(info.age, 0);
+        assert_eq!(info.fd, 0);
+    }
 }
