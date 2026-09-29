@@ -1,4 +1,4 @@
-//! 单机往返。没配单机就跳过；配了却连不上或断言失败则失败。
+//! 集群往返。没有集群配置就跳过。
 
 #![allow(dead_code)]
 
@@ -10,13 +10,13 @@ mod roundtrip;
 use redis_me_lib::client::client_trait::MeClient;
 
 fn client() -> Option<Box<dyn MeClient>> {
-    match redis::single_client() {
+    match redis::cluster_client() {
         Ok(None) => {
-            eprintln!("skip: no redis single config");
+            eprintln!("skip: no redis cluster config");
             None
         }
         Ok(Some(client)) => Some(client),
-        Err(err) => panic!("redis configured but not usable: {err}"),
+        Err(err) => panic!("redis cluster configured but not usable: {err}"),
     }
 }
 
@@ -42,4 +42,10 @@ fn hash_list_set_zset_stream_pages() {
 fn optional_modules_when_present() {
     let Some(client) = client() else { return };
     roundtrip::optional_modules_when_present(client.as_ref());
+}
+
+#[test]
+fn slot_and_cross_slot_rename() {
+    let Some(client) = client() else { return };
+    roundtrip::cluster_slot_and_rename(client.as_ref());
 }
