@@ -33,6 +33,9 @@ snapcraft-creds.txt
 RedisME_*.AppImage
 .tmp-appimage/
 
+# 本机 Redis 集成测试配置（含密码，勿提交）
+src-tauri/redis-test.local.toml
+
 # Python seed scripts
 **/__pycache__/
 *.pyc

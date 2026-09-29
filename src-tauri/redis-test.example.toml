@@ -1,0 +1,7 @@
+# 复制为 redis-test.local.toml 后按本机修改。没有的段不要写，测试会跳过。
+[single]
+url = "redis://127.0.0.1:6379/15"
+
+[cluster]
+nodes = ["127.0.0.1:7001"]
+password = ""

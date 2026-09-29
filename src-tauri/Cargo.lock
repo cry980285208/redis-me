@@ -4017,6 +4017,7 @@ dependencies = [
  "tauri-plugin-window-state",
  "tauri-specta",
  "tokio",
+ "toml 0.8.2",
  "url",
  "winreg 0.56.0",
  "x509-parser",
