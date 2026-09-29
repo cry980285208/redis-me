@@ -8,7 +8,7 @@ mod redis;
 use std::fs;
 use std::sync::{Mutex, MutexGuard};
 
-use redis::{Endpoint, resolve, toml_text_from};
+use redis::{Endpoint, parse_live_conns, resolve, toml_text_from};
 
 static ENV_LOCK: Mutex<()> = Mutex::new(());
 
@@ -171,4 +171,43 @@ fn process_env_is_what_load_reads() {
     let single = profile.single.unwrap();
     assert_eq!(single.host, "9.9.9.9");
     assert_eq!(single.db, 4);
+}
+
+#[test]
+fn extended_section_is_optional_and_does_not_merge() {
+    let text = r#"
+[ssl]
+url = "rediss://10.0.0.2:6380/15"
+resp3 = true
+
+[proxy_http]
+url = "redis://10.0.0.3:6379/0"
+host = "127.0.0.1"
+port = 7890
+
+[cluster_ssh]
+nodes = ["10.0.0.4:7001"]
+password = "redis-secret"
+host = "10.0.0.9"
+username = "root"
+ssh_password = "ssh-secret"
+"#;
+    let cases = parse_live_conns(text).unwrap();
+    assert!(cases.iter().all(|c| c.name != "ssh_pwd"));
+    let ssl = cases.iter().find(|c| c.name == "ssl").unwrap();
+    assert!(ssl.ssl && ssl.resp3);
+    assert_eq!(ssl.endpoint.host, "10.0.0.2");
+    assert_eq!(ssl.endpoint.port, 6380);
+    assert_eq!(ssl.endpoint.db, 15);
+    let proxy = cases.iter().find(|c| c.name == "proxy_http").unwrap();
+    assert_eq!(proxy.proxy_type, "http");
+    assert_eq!(proxy.proxy_host, "127.0.0.1");
+    assert_eq!(proxy.proxy_port, 7890);
+    assert_eq!(proxy.endpoint.host, "10.0.0.3");
+    let cluster = cases.iter().find(|c| c.name == "cluster_ssh").unwrap();
+    assert!(cluster.cluster && cluster.ssh);
+    assert_eq!(cluster.endpoint.password, "redis-secret");
+    assert_eq!(cluster.ssh_password, "ssh-secret");
+    assert_eq!(cluster.login_type, "pwd");
+    assert!(parse_live_conns("[ssl_mtls]\nurl = \"rediss://127.0.0.1:6380/0\"\n").is_err());
 }
