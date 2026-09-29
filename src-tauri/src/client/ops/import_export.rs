@@ -1,7 +1,7 @@
 use crate::client::ops::as_cmd::key_as_command_lines;
 use crate::utils::error::AppError;
 use crate::utils::model::*;
-use crate::utils::redis_cli_format::format_expire_command;
+use crate::cli::format::format_expire_command;
 use crate::utils::util::*;
 use Ordering::Relaxed;
 use anyhow::bail;

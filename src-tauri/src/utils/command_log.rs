@@ -8,7 +8,7 @@
 //! - 写入后通过 `command-log` 事件推增量；打开面板时 `command_logs(limit)` 拉一次快照。
 
 use crate::utils::model::{CommandLogEntry, CommandLogEvent};
-use crate::utils::redis_cli_format::format_quoted;
+use crate::cli::format::format_quoted;
 use crate::utils::util::EVENT_COMMAND_LOG;
 use chrono::Local;
 use log::debug;

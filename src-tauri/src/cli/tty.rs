@@ -5,7 +5,7 @@
 //! - `Json`：`cliFormatReplyJson`（`--json`）
 
 use crate::utils::model::CliOutputMode;
-use crate::utils::redis_cli_format::format_quoted;
+use crate::cli::format::format_quoted;
 use redis::Value;
 
 #[derive(Copy, Clone, PartialEq)]

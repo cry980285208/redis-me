@@ -4,7 +4,5 @@ pub mod command_log;
 pub mod error;
 pub mod macros;
 pub mod model;
-pub mod redis_cli_format;
-pub mod redis_cli_tty;
 pub mod setup;
 pub mod util;
