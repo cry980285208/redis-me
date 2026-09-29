@@ -4,7 +4,7 @@
 
 use crate::utils::error::AppError;
 use crate::utils::model::{ConnConfig, ProxyOption};
-use crate::utils::system_proxy::{DetectOutcome, DetectedProxy, detect_system_proxy};
+use crate::net::system_proxy::{DetectOutcome, DetectedProxy, detect_system_proxy};
 use crate::utils::util::AnyResult;
 use anyhow::bail;
 use base64::Engine;

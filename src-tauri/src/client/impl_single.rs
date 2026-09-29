@@ -16,7 +16,7 @@ use crate::client::ops::scan::{batch_key0, scan_0_batch_count, scan_0_exact, sca
 use crate::implement_pipeline_commands;
 use crate::utils::capabilities::detect_server_capabilities;
 use crate::utils::command_log::LoggingConnection;
-use crate::utils::conn::{
+use crate::net::conn::{
     get_client_single, init_single_connection, set_client_name_unless_minimal,
 };
 use crate::utils::error::AppError;

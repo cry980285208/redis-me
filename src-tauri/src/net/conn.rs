@@ -1,8 +1,8 @@
 use crate::utils::error::AppError;
 use crate::utils::model::{ConnConfig, SslOption};
-use crate::utils::proxy_dialer::build_proxy_dialer;
-use crate::utils::ssh_dialer::SshDialer;
-use crate::utils::tls_cert;
+use crate::net::proxy::build_proxy_dialer;
+use crate::net::ssh::SshDialer;
+use crate::net::tls;
 use crate::utils::util::{AnyResult, parse_path};
 use anyhow::{Context, bail};
 use log::{info, warn};
@@ -560,7 +560,7 @@ fn get_tls_certs(ssl_option: SslOption) -> AnyResult<Option<TlsCertificates>> {
         None
     } else {
         let ca_bytes = fs::read(parse_path(&ssl_option.ca)).context("授权文件读取失败")?;
-        if tls_cert::is_x509_v1_pem(&ca_bytes) {
+        if tls::is_x509_v1_pem(&ca_bytes) {
             info!("TLS CA 为 X.509 v1，已跳过 trust store（连接已启用 insecure）");
             None
         } else {

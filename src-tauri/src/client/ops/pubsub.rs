@@ -1,5 +1,5 @@
 use crate::utils::command_log::CommandLogger;
-use crate::utils::conn::set_client_name;
+use crate::net::conn::set_client_name;
 use crate::utils::model::*;
 use crate::utils::util::*;
 use Ordering::Relaxed;

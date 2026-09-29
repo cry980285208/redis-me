@@ -1,5 +1,6 @@
 mod api;
 pub mod client;
+pub mod net;
 pub mod utils;
 
 use crate::utils::setup::{app_setup, init_logger};
