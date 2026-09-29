@@ -1,22 +1,12 @@
 #![cfg_attr(test, allow(warnings))] // 整个文件在测试时禁用该警告
 
 use crate::api_model;
-use crate::utils::capabilities::ServerCapabilities;
-use crate::utils::conn::{get_client_cluster, get_client_single, init_single_connection};
-use crate::utils::error::AppError;
-use crate::utils::util::{
-    AnyResult, CONNECTION_CONNECT_TIMEOUT, CONNECTION_NORMAL_TIMEOUT, vec8_to_display_string,
-};
-use chrono::Utc;
-use parking_lot::RwLock;
+use crate::utils::util::{CONNECTION_CONNECT_TIMEOUT, CONNECTION_NORMAL_TIMEOUT, vec8_to_display_string};
 use redis::{ProtocolVersion, RedisWrite, ToRedisArgs, ToSingleRedisArg};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::collections::HashMap;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU16};
 use std::time::Duration;
-use tauri::AppHandle;
 
 /// 终端输出格式，对应 redis-cli `--raw` / `--csv` / `--json`；默认 TTY
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, Type, PartialEq, Eq)]
@@ -239,90 +229,6 @@ impl AppSettings {
 
     pub fn command_timeout(&self) -> Duration {
         Duration::from_secs(self.command_timeout_secs)
-    }
-}
-
-impl ConnConfig {
-    pub fn test(&self, connect_timeout: Duration) -> AnyResult<()> {
-        if self.cluster {
-            get_client_cluster(self, connect_timeout, true)?;
-        } else {
-            get_client_single(self, connect_timeout, true, None)?;
-        };
-        Ok(())
-    }
-
-    pub fn masters(
-        &self,
-        connect_timeout: Duration,
-        command_timeout: Duration,
-    ) -> AnyResult<Vec<HashMap<String, String>>> {
-        let mut conf = self.clone();
-        conf.sentinel = false;
-        let (client, _) = get_client_single(&conf, connect_timeout, false, None)?;
-        let mut conn =
-            init_single_connection(&client, conf.db, connect_timeout, command_timeout, &conf)?;
-        let masters: Vec<HashMap<String, String>> =
-            redis::cmd("sentinel").arg("masters").query(&mut conn)?;
-        Ok(masters)
-    }
-}
-
-// 客户端的公共属性（仅后端内部使用，不参与前端类型导出）
-#[derive(Debug, Clone)]
-pub struct MeBase {
-    pub id: String,
-    pub conf: ConnConfig,
-    pub db: Arc<AtomicU16>,
-    pub subscribe_running: Arc<AtomicBool>,
-    pub monitor_running: Arc<AtomicBool>,
-    pub export_import_running: Arc<AtomicBool>,
-    pub last_check_time: Arc<AtomicI64>,
-    /// 已建立连接上的单次命令读写超时（init 时从 AppSettings 快照）
-    pub command_timeout: Duration,
-    /// 建连超时（TCP+握手+PING；init 时从 AppSettings 快照，重连复用）
-    pub connection_timeout: Duration,
-    /// 本连接命令执行日志（环形缓冲）
-    pub command_logger: Arc<crate::utils::command_log::CommandLogger>,
-    /// 用于后台线程 emit 事件到前端
-    pub app_handle: Arc<RwLock<Option<AppHandle>>>,
-    /// 连接成功后检测的服务器能力
-    pub capabilities: ServerCapabilities,
-}
-
-impl From<&ConnConfig> for MeBase {
-    fn from(conf: &ConnConfig) -> Self {
-        MeBase {
-            id: conf.id.clone(),
-            conf: conf.clone(),
-            db: Arc::new(AtomicU16::new(conf.db)),
-            subscribe_running: Arc::new(AtomicBool::new(false)),
-            monitor_running: Arc::new(AtomicBool::new(false)),
-            export_import_running: Arc::new(AtomicBool::new(false)),
-            last_check_time: Arc::new(AtomicI64::new(Utc::now().timestamp())),
-
-            command_timeout: CONNECTION_NORMAL_TIMEOUT,
-            connection_timeout: CONNECTION_CONNECT_TIMEOUT,
-            command_logger: Arc::new(crate::utils::command_log::CommandLogger::new(
-                conf.id.clone(),
-                conf.name.clone(),
-            )),
-            app_handle: Arc::new(RwLock::new(None::<AppHandle>)),
-            capabilities: ServerCapabilities::default(),
-        }
-    }
-}
-
-// 新增：MeBase 更新版本和能力的方法
-impl MeBase {
-    /// 获取绑定的 AppHandle，未初始化时返回错误
-    pub fn get_app_handle(&self) -> AnyResult<AppHandle> {
-        self.app_handle.read().clone().ok_or_else(|| {
-            AppError::Internal {
-                message: "AppHandle not initialized".to_string(),
-            }
-            .into()
-        })
     }
 }
 

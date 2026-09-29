@@ -1,5 +1,5 @@
 use crate::api_model;
-use crate::utils::model::MeBase;
+use crate::client::base::MeBase;
 use crate::utils::util::redis_value_to_string;
 use redis::{ConnectionLike, Value};
 use serde::{Deserialize, Serialize};

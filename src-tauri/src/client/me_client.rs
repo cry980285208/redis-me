@@ -1,3 +1,4 @@
+use crate::client::base::MeBase;
 use crate::utils::error::AppError;
 use crate::utils::model::*;
 use crate::utils::util::*;

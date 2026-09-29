@@ -9,6 +9,7 @@ mod roundtrip;
 
 use redis::LiveConn;
 use redis_me_lib::client::me_client::MeClient;
+use redis_me_lib::utils::conn::sentinel_masters;
 use redis_me_lib::utils::model::{CliOutputMode, RedisCommand};
 use redis_me_lib::utils::system_proxy::{DetectOutcome, detect_system_proxy};
 use std::time::Duration;
@@ -30,8 +31,11 @@ fn run(name: &str) {
         return;
     }
     if spec.sentinel {
-        let masters = redis::live_config(&spec)
-            .masters(Duration::from_secs(15), Duration::from_secs(20))
+        let masters = sentinel_masters(
+            &redis::live_config(&spec),
+            Duration::from_secs(15),
+            Duration::from_secs(20),
+        )
             .unwrap_or_else(|err| panic!("[{name}] sentinel masters: {err}"));
         assert!(!masters.is_empty(), "sentinel masters is empty");
     }

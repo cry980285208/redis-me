@@ -83,7 +83,7 @@ fn shell_escape(s: &str) -> String {
 #[specta]
 pub fn test_conn(app_handle: AppHandle, conf: ConnConfig) -> ApiResult<()> {
     let (connect_timeout, _) = app_timeouts(&app_handle);
-    to_api_result(conf.test(connect_timeout))
+    to_api_result(crate::utils::conn::test_conn(&conf, connect_timeout))
 }
 
 /// 勾选「使用系统代理」时检测一次，供表单只读展示。建连时会再检测。
@@ -98,7 +98,11 @@ pub fn detect_system_proxy() -> ApiResult<SystemProxyDetect> {
 #[specta]
 pub fn masters(app_handle: AppHandle, conf: ConnConfig) -> ApiResult<Vec<HashMap<String, String>>> {
     let (connect_timeout, command_timeout) = app_timeouts(&app_handle);
-    to_api_result(conf.masters(connect_timeout, command_timeout))
+    to_api_result(crate::utils::conn::sentinel_masters(
+        &conf,
+        connect_timeout,
+        command_timeout,
+    ))
 }
 
 // 连接信息发送到后端

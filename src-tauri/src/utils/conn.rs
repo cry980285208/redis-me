@@ -11,10 +11,37 @@ use redis::{
     Client, ClientTlsConfig, Commands, Connection, ConnectionAddr, ConnectionDialer,
     ConnectionLike, ErrorKind, ProtocolVersion, RedisError, TlsCertificates, TlsMode,
 };
+use std::collections::HashMap;
 use std::fs;
 use std::sync::Arc;
 use std::time::Duration;
 use url::Url;
+
+/// 按连接配置试连一次。集群走集群客户端，其余走单机客户端。
+pub fn test_conn(conf: &ConnConfig, connect_timeout: Duration) -> AnyResult<()> {
+    if conf.cluster {
+        get_client_cluster(conf, connect_timeout, true)?;
+    } else {
+        get_client_single(conf, connect_timeout, true, None)?;
+    }
+    Ok(())
+}
+
+/// 向哨兵查询 master 列表。查询前关掉 sentinel 标志，避免拨号层再走哨兵解析。
+pub fn sentinel_masters(
+    conf: &ConnConfig,
+    connect_timeout: Duration,
+    command_timeout: Duration,
+) -> AnyResult<Vec<HashMap<String, String>>> {
+    let mut conf = conf.clone();
+    conf.sentinel = false;
+    let (client, _) = get_client_single(&conf, connect_timeout, false, None)?;
+    let mut conn =
+        init_single_connection(&client, conf.db, connect_timeout, command_timeout, &conf)?;
+    let masters: Vec<HashMap<String, String>> =
+        redis::cmd("sentinel").arg("masters").query(&mut conn)?;
+    Ok(masters)
+}
 
 /// 无 `existing` 时：SSH 优先；否则代理（系统模式检不到则直连）。SSH 与代理互斥。
 fn resolve_dialer(

@@ -1,3 +1,4 @@
+use crate::client::base::MeBase;
 use crate::client::me_client::*;
 use crate::client::ops::pubsub::{monitor0, monitor_stop0, publish0, subscribe0, subscribe_stop0};
 use crate::client::ops::acl::{
