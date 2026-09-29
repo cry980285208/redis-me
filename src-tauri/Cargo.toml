@@ -90,6 +90,7 @@ path = "src/main.rs"
 
 # RedisME 的 redis-rs fork（X.509 v1、后续 ConnectionDialer 等都叠在这条分支）
 [dev-dependencies]
+base64 = "0.23"
 toml = "0.8"
 url = "2"
 

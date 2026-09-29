@@ -642,6 +642,15 @@ fn field_scan_list_page(
     }
 
     cc.now_cursor += items.len() as u64;
+    // 这一页已经盖住区间端点，就是最后一页，不必再打一次空的 LRANGE
+    let covered = if desc {
+        start <= range_min
+    } else {
+        end >= range_max
+    };
+    if covered {
+        cc.finished = true;
+    }
     Ok(items)
 }
 
@@ -1029,11 +1038,8 @@ pub fn field_scan_0_get(
                 (start, end)
             };
 
-            let scan_count = if cc.stream_cursor.is_empty() {
-                count + 1
-            } else {
-                count
-            };
+            // 每一页都多取 1 条：满页说明后面还有，不能把刚好凑满 COUNT 当成结束
+            let scan_count = count + 1;
 
             let cmd_name = if is_desc { "XREVRANGE" } else { "XRANGE" };
             let mut cmd = redis::cmd(cmd_name);

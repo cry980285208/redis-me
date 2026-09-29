@@ -1,3 +1,7 @@
+//! 只测配置解析，不连接 Redis。
+//! 与 `live_*.rs` 共用 `common/redis.rs`，活测试辅助函数在本 crate 里用不到。
+#![allow(dead_code)]
+
 #[path = "common/redis.rs"]
 mod redis;
 
