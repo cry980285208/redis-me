@@ -1,4 +1,5 @@
 use crate::client::client_trait::*;
+use crate::client::ops::as_cmd::{get_field_as_command0, get_key_as_command0};
 use crate::client::ops::key::{
     copy0, del0, field_add0, field_del0, field_get0, field_pop0, field_set0, field_ttl0, hash_keys0,
     hash_values0, set0, ttl0,
