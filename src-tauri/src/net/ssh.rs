@@ -15,9 +15,9 @@
 //! 数据流：`SshDialer::connect` 认证一次 → `dial(host, port)` 开 channel →
 //! `SshRedisStream` 交给 redis-rs。集群/哨兵子连接复用同一 `Arc<SshDialer>`。
 
-use crate::utils::error::AppError;
-use crate::utils::model::SshOption;
-use crate::utils::util::{AnyResult, parse_path};
+use crate::support::error::AppError;
+use crate::model::SshOption;
+use crate::support::util::{AnyResult, parse_path};
 use log::info;
 use parking_lot::Mutex;
 use redis::{ConnectionDialer, RedisError, RedisResult, RedisStream};

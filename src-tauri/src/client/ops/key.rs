@@ -2,9 +2,9 @@ use crate::client::ops::field_scan::{
     handle_other_value_type, hash_field_ttl_to_preserve, resolve_include_field_ttl, vadd_values,
     vemb_json_or_dash, vgetattr_opt, vsetattr_json_or_clear,
 };
-use crate::utils::error::AppError;
-use crate::utils::model::*;
-use crate::utils::util::*;
+use crate::support::error::AppError;
+use crate::model::*;
+use crate::support::util::*;
 use anyhow::{Context, bail};
 use parking_lot::MutexGuard;
 use redis::{

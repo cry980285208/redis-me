@@ -2,8 +2,8 @@
 
 use crate::redis;
 use redis_me_lib::client::me_client::MeClient;
-use redis_me_lib::utils::model::{BytesFormat, RedisFieldAdd, RedisFieldValue, RedisKey};
-use redis_me_lib::utils::util::AnyResult;
+use redis_me_lib::model::{BytesFormat, RedisFieldAdd, RedisFieldValue, RedisKey};
+use redis_me_lib::support::util::AnyResult;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 fn prefix() -> String {

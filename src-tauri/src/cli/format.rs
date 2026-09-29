@@ -226,7 +226,7 @@ pub fn format_ts_add_command(key: &[u8], timestamp: &str, value: &str) -> String
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::util::split_redis_args;
+    use crate::support::util::split_redis_args;
 
     #[test]
     fn test_format_quoted_newline_and_binary() {

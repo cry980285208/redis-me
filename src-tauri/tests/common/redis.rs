@@ -15,7 +15,7 @@ use base64::prelude::BASE64_STANDARD;
 use redis_me_lib::client::me_client::MeClient;
 use redis_me_lib::client::impl_cluster::MeCluster;
 use redis_me_lib::client::impl_single::MeSingle;
-use redis_me_lib::utils::model::{
+use redis_me_lib::model::{
     ConnConfig, ConnMetaValue, FieldScanMeta, FieldScanParam, ProxyOption, RedisKey, ScanCursor,
     ScanParam, SentinelOption, SshOption, SslOption,
 };

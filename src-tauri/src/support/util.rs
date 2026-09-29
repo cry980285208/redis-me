@@ -1,5 +1,5 @@
-use crate::utils::error::AppError;
-use crate::utils::model::*;
+use crate::support::error::AppError;
+use crate::model::*;
 
 pub use crate::cli::tty::redis_value_to_cli_display;
 use anyhow::bail;
@@ -220,11 +220,11 @@ pub fn ui_list_items(
     start_index: i64,
     value: &[Vec<u8>],
     format: &BytesFormat,
-) -> Vec<crate::utils::model::RedisListItem> {
+) -> Vec<crate::model::RedisListItem> {
     value
         .iter()
         .enumerate()
-        .map(|(i, v)| crate::utils::model::RedisListItem {
+        .map(|(i, v)| crate::model::RedisListItem {
             index: start_index + i as i64,
             value: format_bytes(v, format),
         })
@@ -283,10 +283,10 @@ pub fn parse_arscan_pairs(raw: Value) -> AnyResult<Vec<(i64, Vec<u8>)>> {
 pub fn ui_array_items_from_arscan(
     raw: Value,
     format: &BytesFormat,
-) -> AnyResult<Vec<crate::utils::model::RedisListItem>> {
+) -> AnyResult<Vec<crate::model::RedisListItem>> {
     Ok(parse_arscan_pairs(raw)?
         .into_iter()
-        .map(|(index, bytes)| crate::utils::model::RedisListItem {
+        .map(|(index, bytes)| crate::model::RedisListItem {
             index,
             value: format_bytes(&bytes, format),
         })
@@ -888,7 +888,7 @@ pub fn ts_info_total_samples(raw: &Value) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::model::RedisKey;
+    use crate::model::RedisKey;
     use base64::Engine;
     use base64::prelude::BASE64_STANDARD;
 

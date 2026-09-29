@@ -4,7 +4,7 @@
 //! - `Csv`：`cliFormatReplyCSV`（`--csv`）
 //! - `Json`：`cliFormatReplyJson`（`--json`）
 
-use crate::utils::model::CliOutputMode;
+use crate::model::CliOutputMode;
 use crate::cli::format::format_quoted;
 use redis::Value;
 

@@ -7,9 +7,9 @@
 //! - 错误判定：`req_command` 的 `Err`，以及 RESP3 下 `Ok(Value::ServerError)`（与 redis-rs `Cmd::query` 的 `extract_error` 一致）。
 //! - 写入后通过 `command-log` 事件推增量；打开面板时 `command_logs(limit)` 拉一次快照。
 
-use crate::utils::model::{CommandLogEntry, CommandLogEvent};
+use crate::model::{CommandLogEntry, CommandLogEvent};
 use crate::cli::format::format_quoted;
-use crate::utils::util::EVENT_COMMAND_LOG;
+use crate::support::util::EVENT_COMMAND_LOG;
 use chrono::Local;
 use log::debug;
 use parking_lot::RwLock;

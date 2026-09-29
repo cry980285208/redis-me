@@ -1,9 +1,9 @@
-use crate::utils::error::AppError;
-use crate::utils::model::{ConnConfig, SslOption};
+use crate::support::error::AppError;
+use crate::model::{ConnConfig, SslOption};
 use crate::net::proxy::build_proxy_dialer;
 use crate::net::ssh::SshDialer;
 use crate::net::tls;
-use crate::utils::util::{AnyResult, parse_path};
+use crate::support::util::{AnyResult, parse_path};
 use anyhow::{Context, bail};
 use log::{info, warn};
 use redis::cluster::{ClusterClient, ClusterConfig, ClusterConnection};
@@ -601,7 +601,7 @@ pub fn set_client_name_unless_minimal(conn: &mut dyn ConnectionLike, conf: &Conn
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::model::ProxyOption;
+    use crate::model::ProxyOption;
 
     #[test]
     fn io_timeout_is_not_redis_protocol() {

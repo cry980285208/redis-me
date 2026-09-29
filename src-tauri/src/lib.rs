@@ -1,10 +1,11 @@
 mod api;
 pub mod cli;
 pub mod client;
+pub mod model;
 pub mod net;
-pub mod utils;
+pub mod support;
 
-use crate::utils::setup::{app_setup, init_logger};
+use crate::support::setup::{app_setup, init_logger};
 use api::*;
 use client::state::AppState;
 use rustls::crypto::ring::default_provider;

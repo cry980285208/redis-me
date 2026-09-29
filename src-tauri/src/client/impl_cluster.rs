@@ -13,15 +13,15 @@ use crate::client::ops::key::{
 };
 use crate::client::ops::field_scan::{field_scan0, zset_range0, zset_rank0};
 use crate::client::ops::scan::{batch_key0, scan_0_batch_count, scan_0_exact, scan_1_cmd};
-use crate::utils::capabilities::detect_server_capabilities;
-use crate::utils::command_log::LoggingClusterConnection;
+use crate::support::capabilities::detect_server_capabilities;
+use crate::support::command_log::LoggingClusterConnection;
 use crate::net::conn::{
     get_client_cluster, get_client_single, init_cluster_connection, init_single_connection,
     set_client_name_unless_minimal,
 };
-use crate::utils::error::AppError;
-use crate::utils::model::*;
-use crate::utils::util::*;
+use crate::support::error::AppError;
+use crate::model::*;
+use crate::support::util::*;
 use Ordering::Relaxed;
 use anyhow::bail;
 use chrono::Utc;

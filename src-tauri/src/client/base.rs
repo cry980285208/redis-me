@@ -1,7 +1,7 @@
-use crate::utils::capabilities::ServerCapabilities;
-use crate::utils::error::AppError;
-use crate::utils::model::ConnConfig;
-use crate::utils::util::{AnyResult, CONNECTION_CONNECT_TIMEOUT, CONNECTION_NORMAL_TIMEOUT};
+use crate::support::capabilities::ServerCapabilities;
+use crate::support::error::AppError;
+use crate::model::ConnConfig;
+use crate::support::util::{AnyResult, CONNECTION_CONNECT_TIMEOUT, CONNECTION_NORMAL_TIMEOUT};
 use chrono::Utc;
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -24,7 +24,7 @@ pub struct MeBase {
     /// 建连超时（TCP+握手+PING；init 时从 AppSettings 快照，重连复用）
     pub connection_timeout: Duration,
     /// 本连接命令执行日志（环形缓冲）
-    pub command_logger: Arc<crate::utils::command_log::CommandLogger>,
+    pub command_logger: Arc<crate::support::command_log::CommandLogger>,
     /// 用于后台线程 emit 事件到前端
     pub app_handle: Arc<RwLock<Option<AppHandle>>>,
     /// 连接成功后检测的服务器能力
@@ -43,7 +43,7 @@ impl From<&ConnConfig> for MeBase {
             last_check_time: Arc::new(AtomicI64::new(Utc::now().timestamp())),
             command_timeout: CONNECTION_NORMAL_TIMEOUT,
             connection_timeout: CONNECTION_CONNECT_TIMEOUT,
-            command_logger: Arc::new(crate::utils::command_log::CommandLogger::new(
+            command_logger: Arc::new(crate::support::command_log::CommandLogger::new(
                 conf.id.clone(),
                 conf.name.clone(),
             )),

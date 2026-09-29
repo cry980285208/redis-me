@@ -2,10 +2,10 @@
 //!
 //! Redis 的 `rediss://` 仍由 redis-rs 叠在本 Dialer 返回的流上，这里不要再对 Redis 包 TLS。
 
-use crate::utils::error::AppError;
-use crate::utils::model::{ConnConfig, ProxyOption};
+use crate::support::error::AppError;
+use crate::model::{ConnConfig, ProxyOption};
 use crate::net::system_proxy::{DetectOutcome, DetectedProxy, detect_system_proxy};
-use crate::utils::util::AnyResult;
+use crate::support::util::AnyResult;
 use anyhow::bail;
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;

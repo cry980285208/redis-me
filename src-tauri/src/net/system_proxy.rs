@@ -3,7 +3,7 @@
 //! 检测结果不写入连接配置；`proxy_mode = system` 时每次建连再跑一遍。
 //! 勾选即检测/使用，不按目标主机做 loopback / NO_PROXY 绕过（本机 Redis 请自行关掉代理）。
 
-use crate::utils::model::SystemProxyDetect;
+use crate::model::SystemProxyDetect;
 use url::Url;
 
 /// 解析后的代理（含 URL 里的认证，供 Dialer 使用）
