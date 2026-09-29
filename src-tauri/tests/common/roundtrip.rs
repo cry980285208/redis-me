@@ -1,7 +1,7 @@
 //! 单机和集群共用的往返。调用方负责建连；这里只写键、断言、删除。
 
 use crate::redis;
-use redis_me_lib::client::me_client::MeClient;
+use redis_me_lib::client::client_trait::MeClient;
 use redis_me_lib::model::{BytesFormat, RedisFieldAdd, RedisFieldValue, RedisKey};
 use redis_me_lib::support::util::AnyResult;
 use std::sync::atomic::{AtomicU64, Ordering};

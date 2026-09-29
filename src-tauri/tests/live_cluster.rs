@@ -7,7 +7,7 @@ mod redis;
 #[path = "common/roundtrip.rs"]
 mod roundtrip;
 
-use redis_me_lib::client::me_client::MeClient;
+use redis_me_lib::client::client_trait::MeClient;
 
 fn client() -> Option<Box<dyn MeClient>> {
     match redis::cluster_client() {

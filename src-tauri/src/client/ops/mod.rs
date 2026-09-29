@@ -1,3 +1,5 @@
+pub mod vector;
+pub mod info;
 pub mod pubsub;
 pub mod acl;
 pub mod import_export;

@@ -1,6 +1,6 @@
 mod api;
-pub mod cli;
 pub mod client;
+pub mod cmd;
 pub mod model;
 pub mod net;
 pub mod support;

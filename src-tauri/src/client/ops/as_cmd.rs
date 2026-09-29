@@ -1,7 +1,7 @@
 use crate::client::ops::field_scan::{vgetattr_opt, ARRAY_INDEX_MAX};
 use crate::support::error::AppError;
 use crate::model::*;
-use crate::cli::format::*;
+use crate::cmd::format::*;
 use crate::support::util::*;
 use anyhow::bail;
 use parking_lot::MutexGuard;

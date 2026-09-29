@@ -1,5 +1,10 @@
-use crate::client::base::MeBase;
-use crate::client::me_client::*;
+use crate::client::state::MeBase;
+use crate::client::client_trait::*;
+use crate::client::ops::info::{
+    ar_info0, ar_last_items0, flush_all0, flush_db0, key_type0, object_info0, ts_info0,
+    xinfo_consumers0, xinfo_groups0,
+};
+use crate::client::ops::vector::{v_getattr0, v_info0, v_setattr0, v_sim0};
 use crate::client::ops::pubsub::{monitor0, monitor_stop0, publish0, subscribe0, subscribe_stop0};
 use crate::client::ops::acl::{
     acl_build_rules, acl_cat0, acl_dryrun0, acl_genpass0, acl_getuser0, acl_list_users0, acl_log0,

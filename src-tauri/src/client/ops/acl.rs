@@ -631,52 +631,6 @@ pub fn acl_dryrun0(
     Ok(result)
 }
 
-// 集群和单机共享的方法, 由于Commands不是dyn 兼容的, 无法直接写在父类中(也许有其他办法?)
-#[macro_export]
-macro_rules! implement_pipeline_commands {
-    ($struct_name:ident) => {
-        fn mock_data(&self, count: u64) -> AnyResult<()> {
-            let mut pipe = $struct_name::with_capacity(count as usize);
-            for _ in 0..count {
-                // string
-                let key = format!("redis-me-mock:string:{}", random_string(10));
-                pipe.set(&key, random_string(10)).ignore();
-
-                // hash
-                let field_count = random_range(3, 200);
-                let key = format!("redis-me-mock:hash:{}", random_string(10));
-                for x in 0..field_count {
-                    pipe.hset(&key, format!("key{x}"), random_string(10))
-                        .ignore();
-                }
-
-                // list
-                let key = format!("redis-me-mock:list:{}", random_string(10));
-                for _ in 0..field_count {
-                    pipe.rpush(&key, random_string(10)).ignore();
-                }
-
-                // set
-                let key = format!("redis-me-mock:set:{}", random_string(10));
-                for _ in 0..field_count {
-                    pipe.sadd(&key, random_string(10)).ignore();
-                }
-
-                // zset
-                let key = format!("redis-me-mock:zset:{}", random_string(10));
-                for _ in 0..field_count {
-                    pipe.zadd(&key, random_string(10), random_range(1, 100))
-                        .ignore();
-                }
-            }
-
-            let mut conn = self.get_conn()?;
-            let _: () = pipe.query(&mut conn)?;
-            Ok(())
-        }
-    };
-}
-
 #[cfg(test)]
 mod acl_selector_tests {
     use super::*;
