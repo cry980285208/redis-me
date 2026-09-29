@@ -1,4 +1,8 @@
 use crate::client::client_trait::*;
+use crate::client::ops::key::{
+    del0, field_add0, field_del0, field_get0, field_pop0, field_set0, field_ttl0, hash_keys0,
+    hash_values0, set0, ttl0,
+};
 use crate::client::ops::field_scan::{field_scan0, zset_range0, zset_rank0};
 use crate::client::ops::scan::{batch_key0, scan_0_batch_count, scan_0_exact, scan_1_cmd};
 use crate::utils::capabilities::detect_server_capabilities;
