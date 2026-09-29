@@ -1,4 +1,4 @@
-use crate::client::client_trait::MeClient;
+use crate::client::me_client::MeClient;
 use crate::utils::error::AppError;
 use crate::utils::model::*;
 use crate::utils::util::*;

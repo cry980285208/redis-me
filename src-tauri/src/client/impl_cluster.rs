@@ -1,4 +1,4 @@
-use crate::client::client_trait::*;
+use crate::client::me_client::*;
 use crate::client::ops::pubsub::{monitor0, monitor_stop0, publish0, subscribe0, subscribe_stop0};
 use crate::client::ops::acl::{
     acl_cat0, acl_dryrun0, acl_genpass0, acl_getuser0, acl_list_users0, acl_log0, acl_users0,

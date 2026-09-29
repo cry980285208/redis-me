@@ -8,7 +8,7 @@ mod redis;
 mod roundtrip;
 
 use redis::LiveConn;
-use redis_me_lib::client::client_trait::MeClient;
+use redis_me_lib::client::me_client::MeClient;
 use redis_me_lib::utils::model::{CliOutputMode, RedisCommand};
 use redis_me_lib::utils::system_proxy::{DetectOutcome, detect_system_proxy};
 use std::time::Duration;
