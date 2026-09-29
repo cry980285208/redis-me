@@ -105,6 +105,7 @@ fn format_ts_info_value(value: Value) -> String {
     }
 }
 
+/// `TS.INFO` 的扁平键值或 Map。嵌套的 labels、rules 先展平成可读字符串。
 fn parse_ts_info_items(raw: Value) -> AnyResult<Vec<RedisArInfoItem>> {
     match raw {
         Value::Nil => Ok(Vec::new()),
@@ -207,12 +208,14 @@ pub fn ar_last_items0(
     Ok(items)
 }
 
+/// `TYPE`。键不存在时返回 `none`。
 pub fn key_type0(mut conn: MutexGuard<impl Commands>, key: RedisKey) -> AnyResult<String> {
     // 简单字符串回复：key 的类型，如果 key 不存在则返回 none
     let key_type: ValueType = conn.key_type(&key)?;
     Ok(ui_key_type(key_type))
 }
 
+/// `XINFO GROUPS`：Stream 的消费组。
 pub fn xinfo_groups0(
     mut conn: MutexGuard<impl Commands>,
     key: RedisKey,
@@ -221,6 +224,7 @@ pub fn xinfo_groups0(
     Ok(reply.groups.into_iter().map(ui_xinfo_group).collect())
 }
 
+/// `XINFO CONSUMERS`：某个消费组里的消费者。
 pub fn xinfo_consumers0(
     mut conn: MutexGuard<impl Commands>,
     key: RedisKey,
@@ -230,11 +234,13 @@ pub fn xinfo_consumers0(
     Ok(reply.consumers.into_iter().map(ui_xinfo_consumer).collect())
 }
 
+/// `FLUSHDB`：清空当前库。
 pub fn flush_db0(mut conn: MutexGuard<impl Commands>) -> AnyResult<()> {
     let _: () = conn.flushdb()?;
     Ok(())
 }
 
+/// `FLUSHALL`：清空全部库。
 pub fn flush_all0(mut conn: MutexGuard<impl Commands>) -> AnyResult<()> {
     let _: () = conn.flushall()?;
     Ok(())

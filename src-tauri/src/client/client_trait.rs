@@ -3,6 +3,7 @@ use crate::model::*;
 use crate::support::util::*;
 use std::collections::HashMap;
 
+/// 单机和集群共用的 Redis 操作。两边各自实现，共享逻辑在 `ops` 的自由函数里。
 pub trait MeClient: Send + Sync {
     fn base(&self) -> &MeBase;
 

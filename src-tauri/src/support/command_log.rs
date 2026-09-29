@@ -86,6 +86,7 @@ impl CommandLogger {
         self.push_entry(db_index, command, args, error, duration_ms);
     }
 
+    /// 记一条命令：推给前端，并放进内存环形缓冲，超出上限时丢掉最旧的。
     fn push_entry(
         &self,
         db_index: u16,
@@ -125,6 +126,7 @@ impl CommandLogger {
         }
     }
 
+    /// 把这条日志发给前端。应用句柄还没就绪时直接丢掉。
     fn emit_entry(&self, entry: &CommandLogEntry) {
         let Some(app_handle) = self.app_handle.read().clone() else {
             return;
@@ -136,6 +138,7 @@ impl CommandLogger {
         let _ = app_handle.emit(EVENT_COMMAND_LOG, event);
     }
 
+    /// 管道只记一条汇总。`first` 是第一条实际命令，用来代表整批。
     fn log_pipeline_packed(
         &self,
         db_index: u16,

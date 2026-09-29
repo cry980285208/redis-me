@@ -13,6 +13,7 @@ use std::thread;
 use std::thread::JoinHandle;
 use tauri::{AppHandle, Emitter};
 
+/// 向频道发一条消息。内容按指定编码转成字节。
 pub fn publish0(
     mut conn: MutexGuard<impl Commands>,
     channel: &str,
@@ -43,6 +44,7 @@ fn psubscribe_patterns(channel: Option<String>) -> Vec<String> {
     }
 }
 
+/// 在后台线程里订阅频道，消息通过事件推到前端。
 pub fn subscribe0(
     mut conn: Connection,
     running: Arc<AtomicBool>,
@@ -87,6 +89,7 @@ pub fn subscribe0(
     Ok(())
 }
 
+/// 让订阅循环退出，并向停止频道发一条消息把阻塞的读唤醒。
 pub fn subscribe_stop0(conn: MutexGuard<impl Commands>, running: Arc<AtomicBool>) -> AnyResult<()> {
     running.store(false, Relaxed);
     // 停止订阅时必须发送一个消息，否则会阻塞
@@ -98,6 +101,7 @@ pub fn subscribe_stop0(conn: MutexGuard<impl Commands>, running: Arc<AtomicBool>
     )
 }
 
+/// 在后台线程里 `MONITOR`，命令通过事件推到前端。
 pub fn monitor0(
     mut conn: Connection,
     running: Arc<AtomicBool>,
@@ -130,6 +134,7 @@ pub fn monitor0(
     Ok(())
 }
 
+/// 让 MONITOR 循环在下一次读到输出后退出。
 pub fn monitor_stop0(running: Arc<AtomicBool>) -> AnyResult<()> {
     if running.swap(false, Relaxed) {
         info!("monitor stop");

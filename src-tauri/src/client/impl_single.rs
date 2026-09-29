@@ -1,31 +1,32 @@
-use crate::client::state::MeBase;
 use crate::client::client_trait::*;
-use crate::client::ops::info::{
-    ar_info0, ar_last_items0, flush_all0, flush_db0, key_type0, object_info0, ts_info0,
-    xinfo_consumers0, xinfo_groups0,
-};
-use crate::client::ops::vector::{v_getattr0, v_info0, v_setattr0, v_sim0};
-use crate::client::ops::pubsub::{monitor0, monitor_stop0, publish0, subscribe0, subscribe_stop0};
 use crate::client::ops::acl::{
     acl_build_rules, acl_cat0, acl_dryrun0, acl_genpass0, acl_getuser0, acl_list_users0, acl_log0,
     acl_users0, acl_whoami0,
 };
-use crate::client::ops::import_export::{export_cmd_0_thread, export_csv_0_thread, export_import_check_running, import_cmd_0_thread, import_csv_0_thread};
 use crate::client::ops::as_cmd::{get_field_as_command0, get_key_as_command0};
-use crate::client::ops::key::{
-    copy0, del0, field_add0, field_del0, field_get0, field_pop0, field_set0, field_ttl0, hash_keys0,
-    hash_values0, set0, ttl0,
-};
 use crate::client::ops::field_scan::{field_scan0, zset_range0, zset_rank0};
+use crate::client::ops::import_export::{
+    export_cmd_0_thread, export_csv_0_thread, export_import_check_running, import_cmd_0_thread,
+    import_csv_0_thread,
+};
+use crate::client::ops::info::{
+    ar_info0, ar_last_items0, flush_all0, flush_db0, key_type0, object_info0, ts_info0,
+    xinfo_consumers0, xinfo_groups0,
+};
+use crate::client::ops::key::{
+    copy0, del0, field_add0, field_del0, field_get0, field_pop0, field_set0, field_ttl0,
+    hash_keys0, hash_values0, set0, ttl0,
+};
+use crate::client::ops::pubsub::{monitor_stop0, monitor0, publish0, subscribe_stop0, subscribe0};
 use crate::client::ops::scan::{batch_key0, scan_0_batch_count, scan_0_exact, scan_1_cmd};
+use crate::client::ops::vector::{v_getattr0, v_info0, v_setattr0, v_sim0};
+use crate::client::state::MeBase;
 use crate::implement_pipeline_commands;
+use crate::model::*;
+use crate::net::conn::{get_client_single, init_single_connection, set_client_name_unless_minimal};
 use crate::support::capabilities::detect_server_capabilities;
 use crate::support::command_log::LoggingConnection;
-use crate::net::conn::{
-    get_client_single, init_single_connection, set_client_name_unless_minimal,
-};
 use crate::support::error::AppError;
-use crate::model::*;
 use crate::support::util::*;
 use anyhow::bail;
 use chrono::Utc;
@@ -38,6 +39,7 @@ use std::sync::atomic::Ordering::Relaxed;
 use std::thread;
 use std::time::Duration;
 
+/// 单机 Redis 客户端。
 pub struct MeSingle {
     base: MeBase,
     client: Client,
@@ -456,7 +458,7 @@ impl MeClient for MeSingle {
         let key_list = batch_key0(self, param.clone().into(), true)?;
         let conn = self.get_new_conn()?;
         let logger = self.base().command_logger.clone();
-        let db_index = self.db.load(Relaxed) as u16;
+        let db_index = self.db.load(Relaxed);
         let mut logging_conn = LoggingConnection::new(conn, logger, db_index);
         let running = self.export_import_running.clone();
         let id = self.id.clone();
@@ -494,7 +496,7 @@ impl MeClient for MeSingle {
     fn import_csv(&self, param: RedisImportCsv) -> AnyResult<()> {
         let conn = self.get_new_conn()?;
         let logger = self.base().command_logger.clone();
-        let db_index = self.db.load(Relaxed) as u16;
+        let db_index = self.db.load(Relaxed);
         let mut logging_conn = LoggingConnection::new(conn, logger, db_index);
         let running = self.export_import_running.clone();
         let id = self.id.clone();
@@ -509,7 +511,7 @@ impl MeClient for MeSingle {
     fn import_cmd(&self, file: String) -> AnyResult<()> {
         let conn = self.get_new_conn()?;
         let logger = self.base().command_logger.clone();
-        let db_index = self.db.load(Relaxed) as u16;
+        let db_index = self.db.load(Relaxed);
         let mut logging_conn = LoggingConnection::new(conn, logger, db_index);
         let running = self.export_import_running.clone();
         let id = self.id.clone();
@@ -625,6 +627,7 @@ impl MeClient for MeSingle {
 
 // 个性化方法
 impl MeSingle {
+    /// 建连并完成选库、客户端名和能力探测，返回可给前端用的客户端。
     pub fn init(
         redis_conn: &ConnConfig,
         connect_timeout: Duration,
@@ -656,7 +659,7 @@ impl MeSingle {
         }))
     }
 
-    // 重连/辅助连接：旧连接已失效，按建连超时建一条 TCP，再切正式命令超时
+    /// 重连或辅助连接：按建连超时建一条 TCP，建好后再切到正式命令超时。
     fn new_raw_conn(
         client: &Client,
         db: u16,
@@ -676,7 +679,7 @@ impl MeSingle {
         Ok(conn)
     }
 
-    // 重新连接
+    /// 丢掉当前连接，按当前库号重新建连并写回客户端名。
     fn reconnect(&self) -> AnyResult<()> {
         let raw_conn = Self::new_raw_conn(
             &self.client,
@@ -693,7 +696,7 @@ impl MeSingle {
         Ok(())
     }
 
-    // 获取已经建立的连接
+    /// 拿当前连接。超过检查间隔或连接已断时先探测，失败则重连。加锁超过 10 秒报超时。
     fn get_conn(&'_ self) -> AnyResult<MutexGuard<'_, LoggingConnection>> {
         // match self.conn.lock() {
         //     Ok(conn) => Ok(conn),
@@ -724,6 +727,7 @@ impl MeSingle {
         }
     }
 
+    /// 用较短超时做一次存活探测，通过后把读写超时改回正式命令超时。
     fn check_connection_timeout(&self, conn: &mut LoggingConnection) -> AnyResult<bool> {
         conn.set_read_timeout(Some(CONNECTION_CHECK_TIMEOUT))?;
         conn.set_write_timeout(Some(CONNECTION_CHECK_TIMEOUT))?;
@@ -738,7 +742,7 @@ impl MeSingle {
         }
     }
 
-    // 获取一个新的连接（导出/导入等独立线程，不记命令日志）
+    /// 另建一条连接，给导入导出这类后台线程用，不经过命令日志包装。
     fn get_new_conn(&self) -> AnyResult<Connection> {
         let mut conn = Self::new_raw_conn(
             &self.client,

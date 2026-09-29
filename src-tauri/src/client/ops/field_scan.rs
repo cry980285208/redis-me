@@ -1,5 +1,5 @@
-use crate::support::error::AppError;
 use crate::model::*;
+use crate::support::error::AppError;
 use crate::support::util::*;
 use anyhow::bail;
 use parking_lot::MutexGuard;
@@ -8,17 +8,17 @@ use redis::vector_sets::{EmbeddingInput, VectorAddInput};
 use redis::{Cmd, Commands, FromRedisValue, IntegerReplyOrNoOp, Value, ValueType};
 use std::collections::HashSet;
 
-
-
 /** fieldScan 单次 HSCAN/SSCAN/ZSCAN/LRANGE 的 COUNT，来自 settings.fieldScanCount */
 pub fn field_scan_batch_count(count: u64) -> u64 {
     if count == 0 { 20 } else { count }
 }
 
+/// 是否在结果里带 TTL 和内存。参数缺省时带上。
 fn field_scan_include_meta(param: &FieldScanParam) -> bool {
     param.include_meta.unwrap_or(true)
 }
 
+/// 这一页要不要查 Hash 字段的剩余过期时间。服务端不支持时直接跳过。
 fn field_scan_include_field_ttl(param: &FieldScanParam, httl_supported: bool) -> bool {
     resolve_include_field_ttl(param.include_field_ttl, httl_supported)
 }
@@ -45,6 +45,7 @@ pub fn hash_field_ttl_to_preserve(
     })
 }
 
+/// 需要元数据时总是向服务器查 TYPE。否则用参数里已有的类型，没有再查。
 fn resolve_field_scan_key_type(
     conn: &mut MutexGuard<impl Commands>,
     key: &RedisKey,
@@ -93,15 +94,14 @@ pub fn field_scan_0_exact(
                 let field_bytes = member.as_bytes().to_vec();
                 if let Ok(ttl_values) =
                     conn.httl::<_, _, Vec<IntegerReplyOrNoOp>>(key, &[&field_bytes])
+                    && let (Some(item), Some(ttl_reply)) = (items.first_mut(), ttl_values.first())
                 {
-                    if let (Some(item), Some(ttl_reply)) = (items.first_mut(), ttl_values.first()) {
-                        item.ttl = match ttl_reply {
-                            IntegerReplyOrNoOp::IntegerReply(ttl) => Some(*ttl as i64),
-                            IntegerReplyOrNoOp::NotExists => Some(-2),
-                            IntegerReplyOrNoOp::ExistsButNotRelevant => Some(-1),
-                            _ => None,
-                        };
-                    }
+                    item.ttl = match ttl_reply {
+                        IntegerReplyOrNoOp::IntegerReply(ttl) => Some(*ttl as i64),
+                        IntegerReplyOrNoOp::NotExists => Some(-2),
+                        IntegerReplyOrNoOp::ExistsButNotRelevant => Some(-1),
+                        _ => None,
+                    };
                 }
             }
             serde_json::to_value(items)?
@@ -158,6 +158,7 @@ pub fn field_scan_0_exact(
     Ok(Some((json, cc)))
 }
 
+/// 字段扫描入口：精确查询或按类型翻页，最后组装成一页结果。
 pub fn field_scan0(
     mut conn: MutexGuard<impl Commands>,
     param: FieldScanParam,
@@ -231,21 +232,21 @@ fn load_string_bytes(
     let strlen: usize = conn.strlen(key)?;
     let meta = param.meta.as_ref();
     let force_full = meta.and_then(|m| m.force_full_value).unwrap_or(false);
-    if !force_full {
-        if let Some(limit) = meta.and_then(|m| m.value_byte_limit) {
-            if strlen > limit as usize {
-                // 与 defaultSettings.valuePreviewBytes 一致（前端未传时）
-                let preview = meta.and_then(|m| m.value_preview_bytes).unwrap_or(4096) as usize;
-                let end = preview.saturating_sub(1) as isize;
-                let value: Vec<u8> = conn.getrange(key, 0, end)?;
-                return Ok((value, strlen, true));
-            }
-        }
+    if !force_full
+        && let Some(limit) = meta.and_then(|m| m.value_byte_limit)
+        && strlen > limit as usize
+    {
+        // 与 defaultSettings.valuePreviewBytes 一致（前端未传时）
+        let preview = meta.and_then(|m| m.value_preview_bytes).unwrap_or(4096) as usize;
+        let end = preview.saturating_sub(1) as isize;
+        let value: Vec<u8> = conn.getrange(key, 0, end)?;
+        return Ok((value, strlen, true));
     }
     let value: Vec<u8> = conn.get(key)?;
     Ok((value, strlen, false))
 }
 
+/// List 是否从大下标往小下标扫。只表示方向，不交换上下界。
 fn list_scan_desc(param: &FieldScanParam) -> bool {
     param
         .meta
@@ -254,6 +255,7 @@ fn list_scan_desc(param: &FieldScanParam) -> bool {
         .unwrap_or(false)
 }
 
+/// List 扫描区间。负下标裁进长度内，正下标保持原值，缺省是整表。
 fn resolve_list_scan_range(param: &FieldScanParam, list_len: usize) -> (i64, i64) {
     let max_default = list_len.saturating_sub(1) as i64;
     let meta = param.meta.as_ref();
@@ -352,6 +354,7 @@ fn field_scan_zset_by_score(
     Ok(ui_zset_value(values, bytes_format))
 }
 
+/// List 用 LRANGE 翻一页。这一页已经盖住区间端点时标记结束，避免再打一次空查询。
 fn field_scan_list_page(
     conn: &mut MutexGuard<impl Commands>,
     key: &RedisKey,
@@ -680,6 +683,7 @@ fn field_scan_timeseries_page(
     Ok(items)
 }
 
+/// 按键类型取一页字段。Hash/Set/ZSet 的 SCAN 命令留给下一步；List、Array、VectorSet、TimeSeries 在这里翻页。
 pub fn field_scan_0_get(
     mut conn: &mut MutexGuard<impl Commands>,
     param: &FieldScanParam,
@@ -693,7 +697,7 @@ pub fn field_scan_0_get(
 )> {
     let key = &param.key;
 
-    let key_type = resolve_field_scan_key_type(&mut conn, key, param)?;
+    let key_type = resolve_field_scan_key_type(conn, key, param)?;
     let mut cc = param.cursor.clone().unwrap_or_default();
 
     // String类型的bytes长度
@@ -707,7 +711,7 @@ pub fn field_scan_0_get(
             })
         }
         ValueType::String => {
-            let (value, strlen, truncated) = load_string_bytes(&mut conn, key, param)?;
+            let (value, strlen, truncated) = load_string_bytes(conn, key, param)?;
             length = strlen;
             value_truncated = truncated;
             let value: String = format_bytes(&value, bytes_format);
@@ -721,7 +725,7 @@ pub fn field_scan_0_get(
         }
         ValueType::Hash => None,
         ValueType::List => {
-            let items = field_scan_list_page(&mut conn, key, param, bytes_format, &mut cc)?;
+            let items = field_scan_list_page(conn, key, param, bytes_format, &mut cc)?;
             Some(serde_json::to_value(items)?)
         }
         // Array：非精确走 ARSCAN 分页；精确时返回 None，由 field_scan_0_exact→ARGET 处理
@@ -730,7 +734,7 @@ pub fn field_scan_0_get(
             if param.exact {
                 None
             } else {
-                let items = field_scan_array_page(&mut conn, key, param, bytes_format, &mut cc)?;
+                let items = field_scan_array_page(conn, key, param, bytes_format, &mut cc)?;
                 Some(serde_json::to_value(items)?)
             }
         }
@@ -739,8 +743,7 @@ pub fn field_scan_0_get(
             if param.exact {
                 None
             } else {
-                let items =
-                    field_scan_vectorset_page(&mut conn, key, param, bytes_format, &mut cc)?;
+                let items = field_scan_vectorset_page(conn, key, param, bytes_format, &mut cc)?;
                 Some(serde_json::to_value(items)?)
             }
         }
@@ -749,7 +752,7 @@ pub fn field_scan_0_get(
             if param.exact {
                 None
             } else if zset_score_range_active(param) {
-                let items = field_scan_zset_by_score(&mut conn, key, param, bytes_format, &mut cc)?;
+                let items = field_scan_zset_by_score(conn, key, param, bytes_format, &mut cc)?;
                 Some(serde_json::to_value(items)?)
             } else {
                 None
@@ -815,7 +818,7 @@ pub fn field_scan_0_get(
         }
         // TimeSeries：TS.RANGE / REVRANGE 分页（见 field_scan_timeseries_page）；不做精确单点
         ValueType::TimeSeries => {
-            let items = field_scan_timeseries_page(&mut conn, key, param, &mut cc)?;
+            let items = field_scan_timeseries_page(conn, key, param, &mut cc)?;
             Some(serde_json::to_value(items)?)
         }
         ValueType::Unknown(_) => {
@@ -827,6 +830,7 @@ pub fn field_scan_0_get(
     Ok((value, key_type, cc, length, value_truncated))
 }
 
+/// 组装 HSCAN / SSCAN / ZSCAN。`pattern` 为空或 `*` 时不加 MATCH。
 pub fn field_scan_1_cmd(
     key_type: &ValueType,
     key: &RedisKey,
@@ -852,6 +856,7 @@ pub fn field_scan_1_cmd(
     Ok(cmd)
 }
 
+/// 把 SCAN 回复写入 `FieldScanValue`，并返回本页条数。
 pub fn field_scan_2_value(
     conn: &mut impl Commands,
     key_type: &ValueType,
@@ -904,6 +909,7 @@ pub fn field_scan_2_value(
     Ok(new_count)
 }
 
+/// 把一页字段序列化成返回给前端的 JSON。
 pub fn field_scan_3_json(
     key_type: &ValueType,
     scan_value: &FieldScanValue,
@@ -949,6 +955,9 @@ fn resolve_field_scan_length(
     Ok(len)
 }
 
+/// 组装 fieldScan 的一页结果。`include_meta` 时再查 TTL 和 `MEMORY USAGE`。
+// 连接、键、游标和是否带元数据都要分开传，不值得再包一层结构体。
+#[allow(clippy::too_many_arguments)]
 pub fn field_scan_4_return(
     mut conn: MutexGuard<impl Commands>,
     key: RedisKey,
@@ -999,6 +1008,7 @@ pub fn field_scan_4_return(
     })
 }
 
+/// `ZRANK` / `ZREVRANK`：成员的排名和分数。
 pub fn zset_rank0(
     mut conn: MutexGuard<impl Commands>,
     param: RedisZsetRank,
@@ -1035,7 +1045,11 @@ pub fn zset_range0(
         .collect())
 }
 
-pub fn handle_other_value_type(value_type: &ValueType, key: &RedisKey) -> AnyResult<serde_json::Value> {
+/// 当前操作不支持这个键类型时返回对应错误。调用方在匹配失败后调用，正常类型不会走到这里。
+pub fn handle_other_value_type(
+    value_type: &ValueType,
+    key: &RedisKey,
+) -> AnyResult<serde_json::Value> {
     match value_type {
         ValueType::Unknown(other) => {
             if "none" == other {

@@ -1,5 +1,5 @@
-use crate::support::error::AppError;
 use crate::model::*;
+use crate::support::error::AppError;
 
 pub use crate::cmd::tty::redis_value_to_cli_display;
 use anyhow::bail;
@@ -497,8 +497,11 @@ pub fn redis_value_to_bulk_bytes(value: Value) -> Vec<u8> {
     }
 }
 
+type XRangeField = (Vec<u8>, Vec<u8>);
+type XRangeEntry = (Vec<u8>, Vec<XRangeField>);
+
 /// `XRANGE` 原始数组回复 → 保序 entry（id + field-value 对），避免 `HashMap` 打乱顺序
-pub fn parse_xrange_ordered(raw: Value) -> AnyResult<Vec<(Vec<u8>, Vec<(Vec<u8>, Vec<u8>)>)>> {
+pub fn parse_xrange_ordered(raw: Value) -> AnyResult<Vec<XRangeEntry>> {
     let entries = match raw {
         Value::Array(arr) => arr,
         _ => bail!(AppError::Internal {
@@ -697,10 +700,10 @@ fn redis_client_put_i64(obj: &mut Map<String, JsonValue>, raw: &HashMap<String, 
 }
 
 fn redis_client_put_u8(obj: &mut Map<String, JsonValue>, raw: &HashMap<String, &str>, norm: &str) {
-    if let Some(v) = raw.get(norm) {
-        if let Ok(n) = v.parse::<u8>() {
-            obj.insert(redis_client_json_key(norm), JsonValue::Number(n.into()));
-        }
+    if let Some(v) = raw.get(norm)
+        && let Ok(n) = v.parse::<u8>()
+    {
+        obj.insert(redis_client_json_key(norm), JsonValue::Number(n.into()));
     }
 }
 

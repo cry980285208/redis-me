@@ -1,7 +1,7 @@
-use crate::client::ops::field_scan::{vgetattr_opt, ARRAY_INDEX_MAX};
-use crate::support::error::AppError;
-use crate::model::*;
+use crate::client::ops::field_scan::{ARRAY_INDEX_MAX, vgetattr_opt};
 use crate::cmd::format::*;
+use crate::model::*;
+use crate::support::error::AppError;
 use crate::support::util::*;
 use anyhow::bail;
 use parking_lot::MutexGuard;
@@ -9,7 +9,7 @@ use redis::{Commands, Value, ValueType};
 
 /// 单键 → redis-cli 可执行命令行列表（全量读取，与键值页 fieldScan 分页无关）
 pub fn key_as_command_lines(conn: &mut impl Commands, key: &RedisKey) -> AnyResult<Vec<String>> {
-    let key_type: ValueType = conn.key_type(&key)?;
+    let key_type: ValueType = conn.key_type(key)?;
     if key_type == ValueType::None {
         bail!(AppError::KeyNotFound {
             key: vec8_to_display_string(key.to_bytes())
@@ -19,36 +19,36 @@ pub fn key_as_command_lines(conn: &mut impl Commands, key: &RedisKey) -> AnyResu
     let key_bytes = key.to_bytes();
     let lines = match key_type {
         ValueType::String => {
-            let value: Vec<u8> = conn.get(&key)?;
+            let value: Vec<u8> = conn.get(key)?;
             vec![format_set_command(key_bytes, &value)]
         }
         ValueType::Hash => {
-            let pairs: Vec<(Vec<u8>, Vec<u8>)> = conn.hgetall(&key)?;
+            let pairs: Vec<(Vec<u8>, Vec<u8>)> = conn.hgetall(key)?;
             format_hmset_command(key_bytes, &pairs)
                 .map(|s| vec![s])
                 .unwrap_or_default()
         }
         ValueType::List => {
-            let items: Vec<Vec<u8>> = conn.lrange(&key, 0, -1)?;
+            let items: Vec<Vec<u8>> = conn.lrange(key, 0, -1)?;
             format_rpush_command(key_bytes, &items)
                 .map(|s| vec![s])
                 .unwrap_or_default()
         }
         ValueType::Set => {
-            let members: Vec<Vec<u8>> = conn.smembers(&key)?;
+            let members: Vec<Vec<u8>> = conn.smembers(key)?;
             format_sadd_command(key_bytes, &members)
                 .map(|s| vec![s])
                 .unwrap_or_default()
         }
         ValueType::ZSet => {
-            let pairs: Vec<(Vec<u8>, f64)> = conn.zrange_withscores(&key, 0, -1)?;
+            let pairs: Vec<(Vec<u8>, f64)> = conn.zrange_withscores(key, 0, -1)?;
             format_zadd_command(key_bytes, &pairs)
                 .map(|s| vec![s])
                 .unwrap_or_default()
         }
         ValueType::Stream => {
             let raw: Value = redis::cmd("XRANGE")
-                .arg(&key)
+                .arg(key)
                 .arg("-")
                 .arg("+")
                 .query(conn)?;
@@ -59,7 +59,7 @@ pub fn key_as_command_lines(conn: &mut impl Commands, key: &RedisKey) -> AnyResu
                 .collect()
         }
         ValueType::JSON => {
-            let json: Value = redis::cmd("JSON.GET").arg(&key).query(conn)?;
+            let json: Value = redis::cmd("JSON.GET").arg(key).query(conn)?;
             match json {
                 Value::Nil => vec![],
                 Value::BulkString(b) if b.is_empty() => vec![],
@@ -77,7 +77,7 @@ pub fn key_as_command_lines(conn: &mut impl Commands, key: &RedisKey) -> AnyResu
         // Array：ARSCAN 全量 → ARMSET；见 is_array_type 升级注释
         _ if is_array_type(&key_type) => {
             let raw: Value = redis::cmd("ARSCAN")
-                .arg(&key)
+                .arg(key)
                 .arg(0u64)
                 .arg(ARRAY_INDEX_MAX)
                 .query(conn)?;
@@ -158,11 +158,7 @@ pub fn key_as_command_lines(conn: &mut impl Commands, key: &RedisKey) -> AnyResu
                     if lines.len() as u64 >= TS_EXPORT_LIMIT {
                         break;
                     }
-                    lines.push(format_ts_add_command(
-                        key_bytes,
-                        &item.key,
-                        &item.value,
-                    ));
+                    lines.push(format_ts_add_command(key_bytes, &item.key, &item.value));
                 }
                 if (items.len() as u64) < page || lines.len() as u64 >= TS_EXPORT_LIMIT {
                     break;

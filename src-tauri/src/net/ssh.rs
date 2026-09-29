@@ -15,8 +15,8 @@
 //! 数据流：`SshDialer::connect` 认证一次 → `dial(host, port)` 开 channel →
 //! `SshRedisStream` 交给 redis-rs。集群/哨兵子连接复用同一 `Arc<SshDialer>`。
 
-use crate::support::error::AppError;
 use crate::model::SshOption;
+use crate::support::error::AppError;
 use crate::support::util::{AnyResult, parse_path};
 use log::info;
 use parking_lot::Mutex;
@@ -328,8 +328,10 @@ async fn connect_and_auth(
     connect_timeout: Duration,
 ) -> AnyResult<client::Handle<ClientHandler>> {
     let fut = async {
-        let mut config = client::Config::default();
-        config.keepalive_interval = Some(Duration::from_secs(30));
+        let config = client::Config {
+            keepalive_interval: Some(Duration::from_secs(30)),
+            ..client::Config::default()
+        };
         let mut session = client::connect(
             Arc::new(config),
             ssh_socket_addr(&ssh_option.host, ssh_option.port),

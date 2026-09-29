@@ -99,8 +99,5 @@ pub fn detect_httl_by_command(conn: &mut impl ConnectionLike) -> bool {
         .arg("_probe_field_")
         .query(conn);
 
-    match result {
-        Ok(_) => true,
-        Err(_) => false,
-    }
+    result.is_ok()
 }

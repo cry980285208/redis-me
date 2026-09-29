@@ -6,6 +6,7 @@ use redis::acl::Rule;
 use redis::{Commands, FromRedisValue, Value};
 use std::collections::HashSet;
 
+/// 把一条 ACL 规则格式化成 `ACL LIST` 里看到的文本。
 pub fn acl_rule_to_string(rule: Rule) -> String {
     match rule {
         Rule::On => "on".into(),
@@ -50,6 +51,7 @@ pub fn acl_rule_to_setuser_arg(rule: &Rule) -> String {
     }
 }
 
+/// 按界面上的用户参数组装 `ACL SETUSER`。
 pub fn build_acl_setuser_cmd(param: &AclSetuserParam) -> AnyResult<redis::Cmd> {
     let rules = acl_build_rules(param)?;
     let mut cmd = redis::cmd("ACL");
@@ -59,6 +61,7 @@ pub fn build_acl_setuser_cmd(param: &AclSetuserParam) -> AnyResult<redis::Cmd> {
     }
     Ok(cmd)
 }
+/// `ACL SETUSER` 用的规则文本。频道 `*` 写成 `allchannels`，和 `ACL LIST` 的 `&*` 不一样。
 fn acl_rule_to_setuser_text(rule: &Rule) -> String {
     match rule {
         Rule::On => "on".into(),
@@ -81,6 +84,7 @@ fn acl_rule_to_setuser_text(rule: &Rule) -> String {
     }
 }
 
+/// 选择器内部拼成空格分隔的一段，外层括号由调用方加上。
 fn acl_rules_to_selector_text(rules: &[Rule]) -> String {
     rules
         .iter()
@@ -89,6 +93,7 @@ fn acl_rules_to_selector_text(rules: &[Rule]) -> String {
         .join(" ")
 }
 
+/// 从 `ACL GETUSER` 回复里按字段名取值。RESP3 是 Map，RESP2 是扁平键值数组。
 fn get_getuser_field<'a>(value: &'a Value, key: &str) -> Option<&'a Value> {
     if let Some(map_iter) = value.as_map_iter() {
         for (name, val) in map_iter {
@@ -96,18 +101,19 @@ fn get_getuser_field<'a>(value: &'a Value, key: &str) -> Option<&'a Value> {
                 return Some(val);
             }
         }
-    } else if let Some(seq) = value.as_sequence() {
-        if seq.len().is_multiple_of(2) {
-            for chunk in seq.chunks(2) {
-                if getuser_key_name(&chunk[0]).as_deref() == Some(key) {
-                    return Some(&chunk[1]);
-                }
+    } else if let Some(seq) = value.as_sequence()
+        && seq.len().is_multiple_of(2)
+    {
+        for chunk in seq.chunks(2) {
+            if getuser_key_name(&chunk[0]).as_deref() == Some(key) {
+                return Some(&chunk[1]);
             }
         }
     }
     None
 }
 
+/// GETUSER 字段名。批量回复里的名字有时带一层引号，这里去掉。
 fn getuser_key_name(value: &Value) -> Option<String> {
     match value {
         Value::BulkString(b) => {
@@ -138,6 +144,7 @@ fn parse_acl_selectors_from_getuser(value: &Value) -> AnyResult<Vec<String>> {
         .collect())
 }
 
+/// 一条 selector 回复收成括号里的规则文本。解析失败时返回空串，调用方会丢掉。
 fn selector_item_to_text(item: &Value) -> String {
     let info = match redis::acl::AclInfo::from_redis_value_ref(item) {
         Ok(info) => info,
@@ -153,6 +160,7 @@ fn selector_item_to_text(item: &Value) -> String {
     acl_rules_to_selector_text(&rules)
 }
 
+/// 选择器里的一个词。键模式、频道和命令类别走各自的解析，认不出的保留原文。
 fn acl_selector_token_to_rule(token: &str) -> Rule {
     let v = token.trim();
     if v.is_empty() {
@@ -180,6 +188,7 @@ fn acl_selector_token_to_rule(token: &str) -> Rule {
     }
 }
 
+/// 整段选择器文本转成 `Rule::Selector`。外层括号可有可无。
 fn acl_selector_from_text(text: &str) -> AnyResult<Rule> {
     let trimmed = text.trim();
     let inner = trimmed
@@ -198,6 +207,7 @@ fn acl_selector_from_text(text: &str) -> AnyResult<Rule> {
     Ok(Rule::Selector(rules))
 }
 
+/// `+cmd`、`-cmd`、`+@cat`、`-@cat`。其他文本原样保留。
 fn acl_rule_from_text(text: &str) -> Rule {
     let v = text.trim();
     if let Some(cmd) = v.strip_prefix("+@") {
@@ -215,6 +225,7 @@ fn acl_rule_from_text(text: &str) -> Rule {
     Rule::Other(v.into())
 }
 
+/// 键模式。`*` 和 `allkeys` 都是允许全部键，不是字面量 `~*`。
 fn acl_key_rule_from_text(text: &str) -> Rule {
     let v = text.trim().trim_start_matches('~');
     match v.to_ascii_lowercase().as_str() {
@@ -224,6 +235,7 @@ fn acl_key_rule_from_text(text: &str) -> Rule {
     }
 }
 
+/// 频道模式。`*` 写成 `allchannels`，因为 SETUSER 不接受 `&*`。
 fn acl_channel_rule_from_text(text: &str) -> Rule {
     let v = text.trim().trim_start_matches('&');
     match v.to_ascii_lowercase().as_str() {
@@ -233,6 +245,7 @@ fn acl_channel_rule_from_text(text: &str) -> Rule {
     }
 }
 
+/// 把界面参数转成 redis-rs 的 `Rule` 列表，选择器规则保留在最后。
 pub fn acl_build_rules(param: &AclSetuserParam) -> AnyResult<Vec<Rule>> {
     let mut rules = vec![Rule::Reset];
     rules.push(if param.enabled { Rule::On } else { Rule::Off });
@@ -287,6 +300,7 @@ pub fn acl_build_rules(param: &AclSetuserParam) -> AnyResult<Vec<Rule>> {
     Ok(rules)
 }
 
+/// 把 `ACL GETUSER` 的解析结果收成界面用的用户详情。
 pub fn acl_user_detail_from_info(
     username: &str,
     info: redis::acl::AclInfo,
@@ -362,6 +376,7 @@ fn tokenize_acl_list_rule_tokens(text: &str) -> Vec<String> {
     tokens
 }
 
+/// `ACL LIST` 的键模式词，去掉 `~` 后给界面展示。
 fn list_key_to_pattern(token: &str) -> String {
     let v = token.trim().trim_start_matches('~');
     match v.to_ascii_lowercase().as_str() {
@@ -371,6 +386,7 @@ fn list_key_to_pattern(token: &str) -> String {
     }
 }
 
+/// `ACL LIST` 的频道词，去掉 `&` 后给界面展示。
 fn list_channel_to_pattern(token: &str) -> String {
     let v = token.trim().trim_start_matches('&');
     match v.to_ascii_lowercase().as_str() {
@@ -380,6 +396,7 @@ fn list_channel_to_pattern(token: &str) -> String {
     }
 }
 
+/// 去掉选择器外层括号，留下里面的规则文本。
 fn selector_token_to_text(token: &str) -> String {
     let trimmed = token.trim();
     trimmed
@@ -390,6 +407,7 @@ fn selector_token_to_text(token: &str) -> String {
         .to_string()
 }
 
+/// LIST 行里的命令规则：`+`、`-`、`+@`、`-@`。单独一个符号不算。
 fn is_acl_list_command_rule(token: &str) -> bool {
     token.starts_with("+@")
         || token.starts_with("-@")
@@ -397,6 +415,7 @@ fn is_acl_list_command_rule(token: &str) -> bool {
         || (token.starts_with('-') && token.len() > 1)
 }
 
+/// LIST 行里的键规则：`~`、`allkeys`、`resetkeys` 或 `*`。
 fn is_acl_list_key_rule(token: &str) -> bool {
     token.starts_with('~')
         || matches!(
@@ -405,6 +424,7 @@ fn is_acl_list_key_rule(token: &str) -> bool {
         )
 }
 
+/// LIST 行里的频道规则：`&`、`allchannels` 或 `resetchannels`。
 fn is_acl_list_channel_rule(token: &str) -> bool {
     token.starts_with('&')
         || matches!(
@@ -478,6 +498,7 @@ pub fn parse_acl_list_line(line: &str) -> AnyResult<AclUserDetail> {
     })
 }
 
+/// `ACL LIST`：返回全部用户的规则详情，按用户名排序。
 pub fn acl_list_users0(mut conn: MutexGuard<impl Commands>) -> AnyResult<Vec<AclUserDetail>> {
     let lines: Vec<String> = conn.acl_list()?;
     let mut users = Vec::with_capacity(lines.len());
@@ -492,6 +513,7 @@ pub fn acl_list_users0(mut conn: MutexGuard<impl Commands>) -> AnyResult<Vec<Acl
     Ok(users)
 }
 
+/// `ACL GETUSER`：读取单个用户，含选择器。
 pub fn acl_getuser0(
     mut conn: MutexGuard<impl Commands>,
     username: &str,
@@ -507,14 +529,17 @@ pub fn acl_getuser0(
     Ok(acl_user_detail_from_info(username, info, selectors))
 }
 
+/// `ACL USERS`：只返回用户名。
 pub fn acl_users0(mut conn: MutexGuard<impl Commands>) -> AnyResult<Vec<String>> {
     Ok(conn.acl_users()?)
 }
 
+/// `ACL WHOAMI`：当前连接的用户名。
 pub fn acl_whoami0(mut conn: MutexGuard<impl Commands>) -> AnyResult<String> {
     Ok(conn.acl_whoami()?)
 }
 
+/// `ACL CAT`：命令分类；传入分类名时返回该分类下的命令。
 pub fn acl_cat0(
     mut conn: MutexGuard<impl Commands>,
     category: Option<String>,
@@ -528,6 +553,7 @@ pub fn acl_cat0(
     Ok(list)
 }
 
+/// `ACL GENPASS`：生成随机密码，`bits` 为空时用服务端默认位数。
 pub fn acl_genpass0(mut conn: MutexGuard<impl Commands>, bits: Option<i64>) -> AnyResult<String> {
     if let Some(v) = bits {
         Ok(conn.acl_genpass_bits(v as isize)?)
@@ -586,6 +612,7 @@ fn parse_acl_log_entry(value: Value) -> AnyResult<AclLogEntry> {
     Ok(log_entry)
 }
 
+/// `ACL LOG` 里一个字段的可显示文本。
 fn acl_log_value_to_string(value: Value) -> String {
     match value {
         Value::BulkString(b) => String::from_utf8_lossy(&b).to_string(),

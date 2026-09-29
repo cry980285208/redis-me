@@ -4,8 +4,8 @@
 //! - `Csv`：`cliFormatReplyCSV`（`--csv`）
 //! - `Json`：`cliFormatReplyJson`（`--json`）
 
-use crate::model::CliOutputMode;
 use crate::cmd::format::format_quoted;
+use crate::model::CliOutputMode;
 use redis::Value;
 
 #[derive(Copy, Clone, PartialEq)]
@@ -53,18 +53,18 @@ fn command_uses_verbatim_tty(cmd: &str, args: &[Vec<u8>]) -> bool {
     if cmd.eq_ignore_ascii_case("info") || cmd.eq_ignore_ascii_case("lolwut") {
         return true;
     }
-    if cmd.eq_ignore_ascii_case("debug") && args.len() >= 1 {
+    if cmd.eq_ignore_ascii_case("debug") && !args.is_empty() {
         return arg_eq(args, 0, "htstats")
             || arg_eq(args, 0, "htstats-key")
             || arg_eq(args, 0, "client-eviction");
     }
-    if cmd.eq_ignore_ascii_case("memory") && args.len() >= 1 {
+    if cmd.eq_ignore_ascii_case("memory") && !args.is_empty() {
         return arg_eq(args, 0, "malloc-stats") || arg_eq(args, 0, "doctor");
     }
     if cmd.eq_ignore_ascii_case("cluster") && args.len() == 1 {
         return arg_eq(args, 0, "nodes") || arg_eq(args, 0, "info");
     }
-    if cmd.eq_ignore_ascii_case("client") && args.len() >= 1 {
+    if cmd.eq_ignore_ascii_case("client") && !args.is_empty() {
         return arg_eq(args, 0, "list") || arg_eq(args, 0, "info");
     }
     if cmd.eq_ignore_ascii_case("latency") {
@@ -76,7 +76,7 @@ fn command_uses_verbatim_tty(cmd: &str, args: &[Vec<u8>]) -> bool {
         }
     }
     // Redis Cluster Proxy: PROXY INFO
-    cmd.eq_ignore_ascii_case("proxy") && args.len() >= 1 && arg_eq(args, 0, "info")
+    cmd.eq_ignore_ascii_case("proxy") && !args.is_empty() && arg_eq(args, 0, "info")
 }
 
 // ---------------------------------------------------------------------------

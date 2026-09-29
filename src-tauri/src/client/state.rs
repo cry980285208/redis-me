@@ -69,6 +69,7 @@ impl MeBase {
     }
 }
 
+/// 进程内的连接表、已打开的客户端，以及全局超时设置。
 #[derive(Default)]
 pub struct AppState {
     // 初始化连接列表
@@ -88,6 +89,7 @@ pub fn app_timeouts(app: &AppHandle) -> (Duration, Duration) {
     (s.connection_timeout(), s.command_timeout())
 }
 
+/// 从 `AppHandle` 同步连接列表，并查找、建立或断开客户端。
 pub trait ClientAccess {
     fn conn_list(&self, conn_list: Vec<ConnConfig>) -> AnyResult<()>;
     fn app_settings(&self, app_settings: AppSettings) -> AnyResult<()>;

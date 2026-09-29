@@ -165,10 +165,8 @@ pub(crate) fn parse_windows_proxy_server(s: &str) -> Option<DetectedProxy> {
         let v = v.trim();
         match k.as_str() {
             "socks" => socks = parse_host_port(v, "socks5"),
-            "http" | "https" => {
-                if http.is_none() {
-                    http = parse_host_port(v, "http");
-                }
+            "http" | "https" if http.is_none() => {
+                http = parse_host_port(v, "http");
             }
             _ => {}
         }
@@ -246,20 +244,20 @@ pub(crate) fn parse_scutil_proxy(output: &str) -> Option<DetectedProxy> {
         let port: u16 = map.get(port_k)?.parse().ok()?;
         parse_host_port(&format!("{host}:{port}"), ty)
     };
-    if enabled("SOCKSEnable") {
-        if let Some(p) = host_port("SOCKSProxy", "SOCKSPort", "socks5") {
-            return Some(p);
-        }
+    if enabled("SOCKSEnable")
+        && let Some(p) = host_port("SOCKSProxy", "SOCKSPort", "socks5")
+    {
+        return Some(p);
     }
-    if enabled("HTTPEnable") {
-        if let Some(p) = host_port("HTTPProxy", "HTTPPort", "http") {
-            return Some(p);
-        }
+    if enabled("HTTPEnable")
+        && let Some(p) = host_port("HTTPProxy", "HTTPPort", "http")
+    {
+        return Some(p);
     }
-    if enabled("HTTPSEnable") {
-        if let Some(p) = host_port("HTTPSProxy", "HTTPSPort", "http") {
-            return Some(p);
-        }
+    if enabled("HTTPSEnable")
+        && let Some(p) = host_port("HTTPSProxy", "HTTPSPort", "http")
+    {
+        return Some(p);
     }
     None
 }

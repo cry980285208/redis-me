@@ -1,31 +1,34 @@
-use crate::client::state::MeBase;
 use crate::client::client_trait::*;
-use crate::client::ops::info::{
-    ar_info0, ar_last_items0, flush_all0, flush_db0, key_type0, object_info0, ts_info0,
-    xinfo_consumers0, xinfo_groups0,
-};
-use crate::client::ops::vector::{v_getattr0, v_info0, v_setattr0, v_sim0};
-use crate::client::ops::pubsub::{monitor0, monitor_stop0, publish0, subscribe0, subscribe_stop0};
 use crate::client::ops::acl::{
     acl_cat0, acl_dryrun0, acl_genpass0, acl_getuser0, acl_list_users0, acl_log0, acl_users0,
     acl_whoami0, build_acl_setuser_cmd,
 };
-use crate::client::ops::import_export::{export_cmd_0_thread, export_csv_0_thread, export_import_check_running, import_cmd_0_thread, import_csv_0_thread};
 use crate::client::ops::as_cmd::{get_field_as_command0, get_key_as_command0};
+use crate::client::ops::field_scan::{field_scan0, zset_range0, zset_rank0};
+use crate::client::ops::import_export::{
+    export_cmd_0_thread, export_csv_0_thread, export_import_check_running, import_cmd_0_thread,
+    import_csv_0_thread,
+};
+use crate::client::ops::info::{
+    ar_info0, ar_last_items0, flush_all0, flush_db0, key_type0, object_info0, ts_info0,
+    xinfo_consumers0, xinfo_groups0,
+};
 use crate::client::ops::key::{
     del0, field_add0, field_del0, field_get0, field_pop0, field_set0, field_ttl0, hash_keys0,
     hash_values0, set0, ttl0,
 };
-use crate::client::ops::field_scan::{field_scan0, zset_range0, zset_rank0};
+use crate::client::ops::pubsub::{monitor_stop0, monitor0, publish0, subscribe_stop0, subscribe0};
 use crate::client::ops::scan::{batch_key0, scan_0_batch_count, scan_0_exact, scan_1_cmd};
-use crate::support::capabilities::detect_server_capabilities;
-use crate::support::command_log::LoggingClusterConnection;
+use crate::client::ops::vector::{v_getattr0, v_info0, v_setattr0, v_sim0};
+use crate::client::state::MeBase;
+use crate::model::*;
 use crate::net::conn::{
     get_client_cluster, get_client_single, init_cluster_connection, init_single_connection,
     set_client_name_unless_minimal,
 };
+use crate::support::capabilities::detect_server_capabilities;
+use crate::support::command_log::LoggingClusterConnection;
 use crate::support::error::AppError;
-use crate::model::*;
 use crate::support::util::*;
 use Ordering::Relaxed;
 use anyhow::bail;
@@ -45,6 +48,7 @@ use std::sync::atomic::Ordering;
 use std::thread;
 use std::time::Duration;
 
+/// 集群 Redis 客户端。
 pub struct MeCluster {
     base: MeBase,
     client: ClusterClient,
@@ -191,6 +195,7 @@ impl MeClient for MeCluster {
         del0(self.get_conn()?, key)
     }
 
+    /// 重命名。跨 slot 时不用原生 RENAME，改为 DUMP、RESTORE 再删除旧键。
     fn rename(&self, key: RedisKey, new_key: RedisKey) -> AnyResult<RedisKey> {
         // https://redis.ac.cn/docs/latest/commands/rename/
         // Redis Cluster 原生 RENAME 要求 key/newkey 在同一 hash slot。
@@ -220,6 +225,7 @@ impl MeClient for MeCluster {
         Ok(new_key.to_normal())
     }
 
+    /// 复制。跨 slot 时用 DUMP 和 RESTORE，源键保留；目标已存在则报错。
     fn copy(&self, param: RedisCopyParam) -> AnyResult<RedisKey> {
         // https://redis.io/docs/latest/commands/copy/
         // Cluster 原生 COPY 要求 source/destination 同一 hash slot。
@@ -599,7 +605,7 @@ impl MeClient for MeCluster {
         let key_list = batch_key0(self, param.clone().into(), true)?;
         let conn = self.get_new_conn()?;
         let logger = self.base().command_logger.clone();
-        let db_index = self.db.load(Relaxed) as u16;
+        let db_index = self.db.load(Relaxed);
         let mut logging_conn = LoggingClusterConnection::new(conn, logger, db_index);
         let running = self.export_import_running.clone();
         let id = self.id.clone();
@@ -637,7 +643,7 @@ impl MeClient for MeCluster {
     fn import_csv(&self, param: RedisImportCsv) -> AnyResult<()> {
         let conn = self.get_new_conn()?;
         let logger = self.base().command_logger.clone();
-        let db_index = self.db.load(Relaxed) as u16;
+        let db_index = self.db.load(Relaxed);
         let mut logging_conn = LoggingClusterConnection::new(conn, logger, db_index);
         let running = self.export_import_running.clone();
         let id = self.id.clone();
@@ -652,7 +658,7 @@ impl MeClient for MeCluster {
     fn import_cmd(&self, file: String) -> AnyResult<()> {
         let conn = self.get_new_conn()?;
         let logger = self.base().command_logger.clone();
-        let db_index = self.db.load(Relaxed) as u16;
+        let db_index = self.db.load(Relaxed);
         let mut logging_conn = LoggingClusterConnection::new(conn, logger, db_index);
         let running = self.export_import_running.clone();
         let id = self.id.clone();
@@ -864,6 +870,7 @@ impl MeClient for MeCluster {
 
 // 个性化方法
 impl MeCluster {
+    /// 建连并完成客户端名和能力探测，返回可给前端用的集群客户端。
     pub fn init(
         redis_conn: &ConnConfig,
         connect_timeout: Duration,
@@ -895,7 +902,7 @@ impl MeCluster {
         }))
     }
 
-    // 重连/辅助连接：旧连接已失效，按建连超时建一条 TCP，再切正式命令超时
+    /// 重连或辅助连接：按建连超时建一条 TCP，建好后再切到正式命令超时。
     fn new_raw_conn(
         client: &ClusterClient,
         connect_timeout: Duration,
@@ -910,7 +917,7 @@ impl MeCluster {
         Ok(conn)
     }
 
-    // 重新连接
+    /// 丢掉当前连接，重新建连并写回客户端名。
     fn reconnect(&self) -> AnyResult<()> {
         let raw_conn =
             Self::new_raw_conn(&self.client, self.connection_timeout, self.command_timeout)?;
@@ -926,6 +933,7 @@ impl MeCluster {
         Ok(())
     }
 
+    /// 拿当前连接。超过检查间隔或连接已断时先探测，失败则重连。加锁超过 10 秒报超时。
     fn get_conn(&'_ self) -> AnyResult<MutexGuard<'_, LoggingClusterConnection>> {
         match self.conn.try_lock_for(Duration::from_secs(10)) {
             Some(mut conn) => Ok({
@@ -959,6 +967,7 @@ impl MeCluster {
         Ok(())
     }
 
+    /// 用较短超时做一次存活探测，通过后把读写超时改回正式命令超时。
     fn check_connection_timeout(&self, conn: &mut LoggingClusterConnection) -> AnyResult<bool> {
         conn.set_read_timeout(Some(CONNECTION_CHECK_TIMEOUT))?;
         conn.set_write_timeout(Some(CONNECTION_CHECK_TIMEOUT))?;
@@ -973,7 +982,7 @@ impl MeCluster {
         }
     }
 
-    // 获取一个新的连接（导出/导入等独立线程，不记命令日志）
+    /// 另建一条连接，给导入导出这类后台线程用，不经过命令日志包装。
     fn get_new_conn(&self) -> AnyResult<ClusterConnection> {
         let mut conn =
             Self::new_raw_conn(&self.client, self.connection_timeout, self.command_timeout)?;

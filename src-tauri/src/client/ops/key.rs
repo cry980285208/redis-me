@@ -2,8 +2,8 @@ use crate::client::ops::field_scan::{
     handle_other_value_type, hash_field_ttl_to_preserve, resolve_include_field_ttl, vadd_values,
     vemb_json_or_dash, vgetattr_opt, vsetattr_json_or_clear,
 };
-use crate::support::error::AppError;
 use crate::model::*;
+use crate::support::error::AppError;
 use crate::support::util::*;
 use anyhow::{Context, bail};
 use parking_lot::MutexGuard;
@@ -12,7 +12,7 @@ use redis::{
     Value, ValueType,
 };
 
-
+/// 设置或取消键的过期时间。正数是秒，否则改成持久键。
 pub fn ttl0(mut conn: MutexGuard<impl Commands>, key: RedisKey, ttl: i64) -> AnyResult<()> {
     if ttl > 0 {
         // 为 key 设置超时时间。超时时间到期后，该 key 将被自动删除。
@@ -30,6 +30,7 @@ pub fn ttl0(mut conn: MutexGuard<impl Commands>, key: RedisKey, ttl: i64) -> Any
     Ok(())
 }
 
+/// 写入整个键。JSON 用 `JSON.SET`，其余按字符串 `SET`。TTL 大于 0 时一并设置。
 pub fn set0(mut conn: MutexGuard<impl Commands>, param: RedisSetParam) -> AnyResult<()> {
     let key = param.key;
     let format = param.input_format.as_ref().cloned().unwrap_or_default();
@@ -56,11 +57,13 @@ pub fn set0(mut conn: MutexGuard<impl Commands>, param: RedisSetParam) -> AnyRes
     Ok(())
 }
 
+/// `DEL`。
 pub fn del0(mut conn: MutexGuard<impl Commands>, key: RedisKey) -> AnyResult<()> {
     let _: () = conn.del(&key)?;
     Ok(())
 }
 
+/// `COPY` 到指定库。目标键已存在时直接报错，不覆盖。
 pub fn copy0(mut conn: MutexGuard<impl Commands>, param: RedisCopyParam) -> AnyResult<RedisKey> {
     let dest = &param.destination;
     if conn.exists(dest)? {
@@ -74,6 +77,7 @@ pub fn copy0(mut conn: MutexGuard<impl Commands>, param: RedisCopyParam) -> AnyR
     Ok(param.destination.to_normal())
 }
 
+/// 往已有键追加字段。不存在的键会按类型创建。
 pub fn field_add0(
     mut conn: MutexGuard<impl Commands>,
     param: RedisFieldAdd,
@@ -115,7 +119,8 @@ pub fn field_add0(
         }
         ValueType::Hash => {
             // 先解析再写入，避免中途解析失败导致已写入部分字段
-            let (field_pairs, ttls): (Vec<(Vec<u8>, Vec<u8>)>, Vec<i64>) = fv_list
+            type HashFieldBytes = (Vec<u8>, Vec<u8>);
+            let (field_pairs, ttls): (Vec<HashFieldBytes>, Vec<i64>) = fv_list
                 .iter()
                 .map(|f| -> AnyResult<_> {
                     Ok((
@@ -261,6 +266,7 @@ pub fn field_add0(
     Ok(key)
 }
 
+/// 修改已有字段。Hash 在改值前会尽量保留字段自己的过期时间。
 pub fn field_set0(
     mut conn: MutexGuard<impl Commands>,
     param: RedisFieldSet,
@@ -407,17 +413,16 @@ pub fn field_get0(
             let mut field_ttl = -1i64;
             let include_field_ttl =
                 resolve_include_field_ttl(param.include_field_ttl, httl_supported);
-            if include_field_ttl {
-                if let Ok(ttl_values) =
+            if include_field_ttl
+                && let Ok(ttl_values) =
                     conn.httl::<_, _, Vec<IntegerReplyOrNoOp>>(&key, &[&field_bytes])
-                {
-                    field_ttl = match ttl_values.first() {
-                        Some(IntegerReplyOrNoOp::IntegerReply(ttl)) => *ttl as i64,
-                        Some(IntegerReplyOrNoOp::NotExists) => -2,
-                        Some(IntegerReplyOrNoOp::ExistsButNotRelevant) | None => -1,
-                        _ => -1,
-                    };
-                }
+            {
+                field_ttl = match ttl_values.first() {
+                    Some(IntegerReplyOrNoOp::IntegerReply(ttl)) => *ttl as i64,
+                    Some(IntegerReplyOrNoOp::NotExists) => -2,
+                    Some(IntegerReplyOrNoOp::ExistsButNotRelevant) | None => -1,
+                    _ => -1,
+                };
             }
             Ok(RedisFieldValue {
                 field_key: format_bytes(&field_bytes, &val_fmt),
@@ -578,6 +583,7 @@ pub fn field_pop0(mut conn: MutexGuard<impl Commands>, param: RedisPop) -> AnyRe
     }
 }
 
+/// 按类型删除字段或成员。
 pub fn field_del0(mut conn: MutexGuard<impl Commands>, param: RedisFieldDel) -> AnyResult<()> {
     let key: RedisKey = param.key;
     let key_type: ValueType = conn.key_type(&key)?;

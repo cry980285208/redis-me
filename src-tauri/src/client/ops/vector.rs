@@ -225,6 +225,7 @@ fn flatten_vsim_map(pairs: Vec<(Value, Value)>, with_attribs: bool) -> Vec<Value
     flat
 }
 
+/// VSIM 分数。整数、浮点和字符串都能收，其他类型报错。
 fn redis_value_as_f64(value: Value) -> AnyResult<f64> {
     match value {
         Value::Double(d) => Ok(d),

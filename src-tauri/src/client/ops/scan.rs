@@ -39,6 +39,7 @@ pub fn scan_0_exact<C: redis::ConnectionLike>(
     }))
 }
 
+/// 组装一次 `SCAN`。`scan_type` 非空时加上 `TYPE`。
 pub fn scan_1_cmd(cursor: u64, pattern: &str, batch_count: u64, scan_type: Option<String>) -> Cmd {
     // SCAN cursor [MATCH pattern] [COUNT count] [TYPE type]
     let mut cmd = redis::cmd("scan");
@@ -62,6 +63,7 @@ pub fn scan_1_cmd(cursor: u64, pattern: &str, batch_count: u64, scan_type: Optio
     cmd
 }
 
+/// 按 pattern 把键 SCAN 完，供批量删除和导出使用。`COUNT` 只是提示，这里会翻到游标为 0。
 pub fn batch_key0(
     rmc: &impl MeClient,
     param: RedisBatchKey,

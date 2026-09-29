@@ -1,7 +1,7 @@
 use crate::client::ops::as_cmd::key_as_command_lines;
-use crate::support::error::AppError;
-use crate::model::*;
 use crate::cmd::format::format_expire_command;
+use crate::model::*;
+use crate::support::error::AppError;
 use crate::support::util::*;
 use Ordering::Relaxed;
 use anyhow::bail;
@@ -15,6 +15,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Emitter};
 
+/// 已有导入或导出在跑时拒绝再开一个，并把自己标成进行中。
 pub fn export_import_check_running(running: Arc<AtomicBool>) -> AnyResult<()> {
     if running.load(Relaxed) {
         bail!(AppError::ExportImportRunning)
@@ -23,6 +24,7 @@ pub fn export_import_check_running(running: Arc<AtomicBool>) -> AnyResult<()> {
     Ok(())
 }
 
+/// 后台把键 DUMP 成 CSV。进度通过事件发给前端。
 pub fn export_csv_0_thread(
     conn: &mut impl Commands,
     key_list: Vec<RedisKey>,
@@ -49,6 +51,7 @@ pub fn export_csv_0_thread(
     running.store(false, Relaxed);
 }
 
+/// 后台把键写成 redis-cli 可执行的命令文件。
 pub fn export_cmd_0_thread(
     conn: &mut impl Commands,
     key_list: Vec<RedisKey>,
@@ -75,6 +78,7 @@ pub fn export_cmd_0_thread(
     running.store(false, Relaxed);
 }
 
+/// 逐键写成命令。单个键失败记入错误数，不中断整次导出。
 fn export_keys_as_command(
     mut conn: impl Commands,
     key_list: Vec<RedisKey>,
@@ -143,12 +147,13 @@ fn export_key_as_command(
     if with_ttl {
         let ttl = conn.ttl(&key)?;
         if ttl > 0 {
-            writeln!(writer, "{}", format_expire_command(&key_bytes, ttl))?;
+            writeln!(writer, "{}", format_expire_command(key_bytes, ttl))?;
         }
     }
     Ok(true)
 }
 
+/// 逐键 DUMP 成 CSV 的一行。单个键失败记入错误数。
 fn export_keys(
     mut conn: impl Commands,
     key_list: Vec<RedisKey>,
@@ -199,6 +204,7 @@ fn export_keys(
     Ok(())
 }
 
+/// 一个键写成 `base64(key),base64(dump),ttl`。TTL 用秒，不需要时写 -1。
 fn export_key(
     conn: &mut impl Commands,
     writer: &mut BufWriter<File>,
@@ -217,6 +223,7 @@ fn export_key(
     Ok(())
 }
 
+/// 后台从 DUMP CSV 恢复键。
 pub fn import_csv_0_thread(
     conn: &mut impl Commands,
     param: RedisImportCsv,
@@ -224,7 +231,7 @@ pub fn import_csv_0_thread(
     app_handle: AppHandle,
     id: String,
 ) {
-    info!("import csv file: {}", &param.file);
+    info!("import csv file: {}", param.file);
     let result = import_keys(conn, param, running.clone(), app_handle, id);
     match result {
         Ok(_) => info!("import csv file ok"),
@@ -233,6 +240,7 @@ pub fn import_csv_0_thread(
     running.store(false, Relaxed);
 }
 
+/// 读 CSV。冲突和 TTL 按参数处理，坏行记入错误数。
 fn import_keys(
     conn: &mut impl Commands,
     param: RedisImportCsv,
@@ -301,6 +309,7 @@ fn import_keys(
     Ok(())
 }
 
+/// 用 `RESTORE` 写回一个键。`replace` 时覆盖已有键。
 fn import_key(
     conn: &mut impl Commands,
     line: &str,
@@ -332,6 +341,7 @@ fn import_key(
     Ok(())
 }
 
+/// 决定 `RESTORE` 的 TTL，单位是毫秒。忽略、已过期或解析失败时写成 0，表示永久。
 fn import_restore_ttl(part_ttl: &str, ttl: i64, handle_ttl: &str) -> i64 {
     let ttl = match handle_ttl {
         "custom" => ttl,
@@ -343,6 +353,7 @@ fn import_restore_ttl(part_ttl: &str, ttl: i64, handle_ttl: &str) -> i64 {
     if ttl <= 0 { 0 } else { ttl * 1000 }
 }
 
+/// 后台逐行执行命令文件。
 pub fn import_cmd_0_thread(
     conn: &mut impl Commands,
     file: String,
@@ -350,7 +361,7 @@ pub fn import_cmd_0_thread(
     app_handle: AppHandle,
     id: String,
 ) {
-    info!("import cmd file: {}", &file);
+    info!("import cmd file: {}", file);
     let result = import_cmds(conn, file, running.clone(), app_handle, id);
     match result {
         Ok(_) => info!("import cmd file ok"),
@@ -359,6 +370,7 @@ pub fn import_cmd_0_thread(
     running.store(false, Relaxed);
 }
 
+/// 读命令文件。空行跳过，单行失败记入错误数，不中断后面的行。
 fn import_cmds(
     conn: &mut impl Commands,
     file: String,
@@ -414,6 +426,7 @@ fn import_cmds(
     Ok(())
 }
 
+/// 执行文件里的一行命令。
 fn import_cmd(mut conn: &mut impl Commands, line: &str) -> AnyResult<()> {
     // 命令日志已经输出，这里不再输出
     //info!("line: {}", line);
