@@ -492,3 +492,31 @@ fn ssh_socket_addr(host: &str, port: u16) -> String {
 fn any_to_redis(err: anyhow::Error) -> RedisError {
     RedisError::from(io::Error::other(err.to_string()))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use russh::MethodSet;
+
+    /// 只有 Success 算通过，失败结果记成认证失败。
+    #[test]
+    fn auth_only_success_passes() {
+        assert!(check_auth_result(Ok(AuthResult::Success), "u").is_ok());
+        let err = check_auth_result(
+            Ok(AuthResult::Failure {
+                remaining_methods: MethodSet::empty(),
+                partial_success: false,
+            }),
+            "u",
+        );
+        assert!(err.is_err());
+    }
+
+    /// 裸 IPv6 加方括号，已有括号和普通主机不再改。
+    #[test]
+    fn socket_addr_brackets_bare_ipv6() {
+        assert_eq!(ssh_socket_addr("::1", 22), "[::1]:22");
+        assert_eq!(ssh_socket_addr("[::1]", 22), "[::1]:22");
+        assert_eq!(ssh_socket_addr("bastion", 22), "bastion:22");
+    }
+}

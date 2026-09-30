@@ -341,4 +341,21 @@ mod tests {
 }";
         assert!(parse_scutil_proxy(pac_only).is_none());
     }
+
+    /// 没写端口时用该协议的默认端口；空串和 0 端口不当成代理。
+    #[test]
+    fn proxy_url_defaults_and_rejects_empty() {
+        assert!(parse_proxy_url("").is_none());
+        assert!(parse_proxy_url("   ").is_none());
+        assert!(parse_proxy_url("http://127.0.0.1:0").is_none());
+
+        let http = parse_proxy_url("http://127.0.0.1").unwrap();
+        assert_eq!(http.port, 8080);
+        let https = parse_proxy_url("https://proxy.corp").unwrap();
+        assert_eq!(https.port, 443);
+        assert_eq!(https.proxy_type, "https");
+        let socks = parse_proxy_url("socks://127.0.0.1").unwrap();
+        assert_eq!(socks.proxy_type, "socks5");
+        assert_eq!(socks.port, 1080);
+    }
 }

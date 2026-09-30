@@ -498,6 +498,25 @@ mod tests {
         assert_eq!(args[3], br#"{"name":"test"}"#);
     }
 
+    /// 整数分数不带小数点；过期秒数、VADD 属性和 TS.ADD 时间戳按明文拼上。
+    #[test]
+    fn score_expire_vadd_and_ts_add() {
+        let zadd = format_zadd_command(b"rank", &[(b"a".to_vec(), 2.0)]).unwrap();
+        assert_eq!(zadd, r#"ZADD "rank" 2 "a""#);
+        assert_eq!(format_expire_command(b"k", 60), r#"EXPIRE "k" 60"#);
+
+        let plain = format_vadd_command(b"vec", &[1.0, 0.5], b"e", Some("  "));
+        assert_eq!(plain, r#"VADD "vec" VALUES 2 1 0.5 "e""#);
+        let with_attr = format_vadd_command(b"vec", &[1.0], b"e", Some(" {\"a\":1} "));
+        assert!(with_attr.contains(" SETATTR "));
+        assert!(with_attr.ends_with(r#""{\"a\":1}""#));
+
+        assert_eq!(
+            format_ts_add_command(b"ts", " 100 ", " 1.5 "),
+            r#"TS.ADD "ts" 100 1.5"#
+        );
+    }
+
     /// XADD 字段按传入顺序，不按字段名排序。
     #[test]
     fn test_format_xadd_field_order() {

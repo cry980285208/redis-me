@@ -1126,4 +1126,17 @@ junk
         assert_eq!(replica.slave_of_node.as_deref(), Some("10.0.0.2:7002"));
         assert!(replica.flags.contains("slave"));
     }
+
+    /// 副本指向的 master id 不在列表里时，slave_of_node 留空，不编一个地址。
+    #[test]
+    fn replica_without_known_master_has_no_address() {
+        let raw = "\
+aaaa 10.0.0.1:7001@17001 master - 0 1 1 connected 0-100
+bbbb 10.0.0.2:7002@17002 slave missing 0 0 1 connected
+";
+        let nodes = MeCluster::parse_node_list(raw.into()).unwrap();
+        let replica = nodes.iter().find(|n| n.node == "10.0.0.2:7002").unwrap();
+        assert!(replica.slave_of_node.is_none());
+        assert!(replica.slots.is_none());
+    }
 }

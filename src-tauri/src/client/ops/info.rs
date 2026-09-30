@@ -607,6 +607,66 @@ mod info_parse_tests {
         assert_eq!(log.client_name, "RedisME");
     }
 
+    /// INFO 里的注释和坏数字跳过；db0/db1 的 keys 相加，三位库号不算，命中率用 hits/(hits+misses)。
+    #[test]
+    fn chart_sums_keyspace_and_ignores_comments() {
+        let info = RedisInfo {
+            node: String::new(),
+            info: "\
+# Clients
+connected_clients:3
+instantaneous_ops_per_sec:bad
+db0:keys=10,expires=1
+db1:keys=5,expires=0
+db100:keys=99
+keyspace_hits:3
+keyspace_misses:1
+"
+            .into(),
+        };
+        let chart = info_to_chart(info).unwrap();
+        assert_eq!(chart.connected_clients, 3);
+        assert_eq!(chart.instantaneous_ops_per_sec, 0.0);
+        assert_eq!(chart.key_total, 15);
+        assert_eq!(chart.keyspace_hits, 3);
+        assert!((chart.cache_hit_ratio - 0.75).abs() < 1e-9);
+    }
+
+    /// 两边都是 0 时命中率为 0，避免除零。
+    #[test]
+    fn chart_hit_ratio_is_zero_without_lookups() {
+        let chart = info_to_chart(RedisInfo {
+            node: String::new(),
+            info: "keyspace_hits:0\nkeyspace_misses:0\n".into(),
+        })
+        .unwrap();
+        assert_eq!(chart.cache_hit_ratio, 0.0);
+        assert_eq!(chart.key_total, 0);
+    }
+
+    /// 慢日志数组至少 4 段；耗时从微秒换成毫秒，缺客户端时留空。
+    #[test]
+    fn slowlog_array_converts_cost_and_rejects_short() {
+        let raw = Value::Array(vec![
+            Value::Int(1),
+            Value::Int(0),
+            Value::Int(2500),
+            Value::Array(vec![
+                Value::BulkString(b"GET".to_vec()),
+                Value::BulkString(b"k".to_vec()),
+            ]),
+        ]);
+        let log = redis_value_to_log(raw, "n1").unwrap();
+        assert_eq!(log.node, "n1");
+        assert_eq!(log.id, 1);
+        assert_eq!(log.cost, 2.5);
+        assert_eq!(log.command, "GET k");
+        assert_eq!(log.time, "1970-01-01 08:00:00");
+        assert!(log.client.is_empty());
+        assert!(redis_value_to_log(Value::Array(vec![Value::Int(1)]), "").is_err());
+        assert!(redis_value_to_log(Value::Int(1), "").is_err());
+    }
+
     /// CLIENT INFO 缺的字段用空串或 0，已有字段按原文填上。
     #[test]
     fn parse_client_info_fills_missing_fields() {
@@ -622,5 +682,8 @@ mod info_parse_tests {
         assert_eq!(info.name, "");
         assert_eq!(info.age, 0);
         assert_eq!(info.fd, 0);
+
+        let dashed = parse_client_info("id=1 qbuf-free=8").unwrap();
+        assert_eq!(dashed.qbuf_free, 8);
     }
 }

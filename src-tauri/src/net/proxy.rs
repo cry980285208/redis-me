@@ -678,4 +678,38 @@ mod tests {
             "eof"
         )));
     }
+
+    /// IPv4/IPv6 写成二进制地址；socks5h 把主机名原样交给代理，空主机和超长主机拒绝。
+    #[test]
+    fn socks5_addr_encoding() {
+        let mut v4 = Vec::new();
+        append_socks5_addr(&mut v4, "1.2.3.4", 6379, false).unwrap();
+        assert_eq!(v4, vec![0x01, 1, 2, 3, 4, 0x18, 0xEB]);
+
+        let mut v6 = Vec::new();
+        append_socks5_addr(&mut v6, "[::1]", 80, false).unwrap();
+        assert_eq!(v6[0], 0x04);
+        assert_eq!(
+            &v6[1..17],
+            &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]
+        );
+        assert_eq!(&v6[17..], &[0, 80]);
+
+        let mut name = Vec::new();
+        append_socks5_addr(&mut name, "ex.com", 6379, true).unwrap();
+        assert_eq!(name[0], 0x03);
+        assert_eq!(name[1], 6);
+        assert_eq!(&name[2..8], b"ex.com");
+
+        assert!(append_socks5_addr(&mut Vec::new(), "", 1, true).is_err());
+        let long = "a".repeat(256);
+        assert!(append_socks5_addr(&mut Vec::new(), &long, 1, true).is_err());
+    }
+
+    /// 已知回复码有固定文案，其余带十六进制码。
+    #[test]
+    fn socks5_reply_text() {
+        assert!(socks5_rep_text(0x05).contains("refused"));
+        assert_eq!(socks5_rep_text(0x99), "SOCKS5 reply 0x99");
+    }
 }

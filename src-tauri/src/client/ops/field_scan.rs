@@ -1288,3 +1288,47 @@ mod list_scan_range_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod field_scan_cmd_tests {
+    use super::*;
+
+    /// 把命令参数收成字符串，方便看 MATCH 有没有加上。
+    fn cmd_args(cmd: &Cmd) -> Vec<String> {
+        cmd.args_iter()
+            .map(|arg| match arg {
+                redis::Arg::Simple(bytes) => String::from_utf8(bytes.to_vec()).unwrap(),
+                redis::Arg::Cursor => "CURSOR".into(),
+                _ => unreachable!("command args are plain bytes"),
+            })
+            .collect()
+    }
+
+    fn key() -> RedisKey {
+        RedisKey {
+            key: "hk".into(),
+            bytes: vec![],
+        }
+    }
+
+    /// Hash / Set / ZSet 分别走对应 SCAN；空 pattern 和 `*` 不加 MATCH，其它类型报错。
+    #[test]
+    fn scan_command_and_match() {
+        let hash = field_scan_1_cmd(&ValueType::Hash, &key(), 5, "f*", 20).unwrap();
+        assert_eq!(
+            cmd_args(&hash),
+            ["hscan", "hk", "5", "MATCH", "f*", "COUNT", "20"]
+        );
+
+        let set = field_scan_1_cmd(&ValueType::Set, &key(), 0, "*", 10).unwrap();
+        assert_eq!(cmd_args(&set), ["sscan", "hk", "0", "COUNT", "10"]);
+
+        let zset = field_scan_1_cmd(&ValueType::ZSet, &key(), 0, "", 10).unwrap();
+        assert_eq!(cmd_args(&zset), ["zscan", "hk", "0", "COUNT", "10"]);
+
+        let err = field_scan_1_cmd(&ValueType::List, &key(), 0, "*", 10).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("field_scan_not_supported"), "{msg}");
+        assert!(msg.contains("list"), "{msg}");
+    }
+}

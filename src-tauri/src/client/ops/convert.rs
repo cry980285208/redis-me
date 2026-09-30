@@ -509,6 +509,48 @@ mod tests {
         assert_eq!(pairs, vec![(1, vec![0xff])]);
     }
 
+    /// 界面行保留下标和字段顺序；内存结果按字节从大到小，模块类型名换成界面名。
+    #[test]
+    fn ui_rows_keep_order_and_sort_sizes() {
+        let list = ui_list_items(3, &[b"a".to_vec(), vec![0xff]], &BytesFormat::UTF8);
+        assert_eq!(list[0].index, 3);
+        assert_eq!(list[0].value, "a");
+        assert_eq!(list[1].index, 4);
+        assert_ne!(list[1].value, "a");
+
+        let hash = ui_hash_value(&[(b"f".to_vec(), vec![0xff])], &BytesFormat::Base64);
+        assert_eq!(hash[0].key, "Zg==");
+        assert!(hash[0].ttl.is_none());
+
+        let zset = ui_zset_value(
+            vec![(b"m1".to_vec(), 1.0), (b"m2".to_vec(), 2.0)],
+            &BytesFormat::UTF8,
+        );
+        assert_eq!(zset[0].value, "m1");
+        assert_eq!(zset[1].score, 2.0);
+
+        let sizes = tuple_to_key_size(vec![
+            (b"small".to_vec(), 1, "string".into()),
+            (b"big".to_vec(), 9, REDIS_JSON_TYPE_NAME.into()),
+        ]);
+        assert_eq!(sizes[0].key, "big");
+        assert_eq!(sizes[0].key_type, ME_JSON_TYPE_NAME);
+        assert_eq!(sizes[1].size, 1);
+    }
+
+    /// ARSCAN 收成带索引的界面行，值按当前 wire 格式编码。
+    #[test]
+    fn array_items_from_arscan() {
+        let raw = Value::Array(vec![Value::Array(vec![
+            Value::Int(2),
+            Value::BulkString(b"ab".to_vec()),
+        ])]);
+        let items = ui_array_items_from_arscan(raw, &BytesFormat::UTF8).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].index, 2);
+        assert_eq!(items[0].value, "ab");
+    }
+
     /// totalSamples 大小写不敏感；没有这个字段时返回 None。
     #[test]
     fn ts_info_total_samples_is_optional() {

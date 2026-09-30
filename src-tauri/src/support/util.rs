@@ -272,4 +272,36 @@ mod tests {
         assert_eq!(resolve_command_name(&conf, "config"), "config2");
         assert_eq!(resolve_command_name(&conf, "GET"), "GET");
     }
+
+    /// 标量收成 bulk 字节；数组按分隔符拼，Map 写成 `k: v`。
+    #[test]
+    fn redis_value_flattens_scalars_and_aggregates() {
+        assert_eq!(redis_value_to_bulk_bytes(Value::Nil), b"");
+        assert_eq!(redis_value_to_bulk_bytes(Value::Boolean(true)), b"1");
+        assert_eq!(redis_value_to_bulk_bytes(Value::Int(7)), b"7");
+        assert_eq!(redis_value_to_string(Value::Nil, ","), "");
+        assert_eq!(redis_value_to_string(Value::Okay, ""), "OK");
+        assert_eq!(
+            redis_value_to_string(
+                Value::Array(vec![Value::Int(1), Value::SimpleString("a".into())]),
+                ","
+            ),
+            "1,a"
+        );
+        assert_eq!(
+            redis_value_to_string(
+                Value::Map(vec![(Value::SimpleString("k".into()), Value::Int(2))]),
+                " "
+            ),
+            "k: 2"
+        );
+    }
+
+    /// 成功原样返回；普通错误收成字符串，不把 source 再拼一遍。
+    #[test]
+    fn api_result_keeps_ok_and_stringifies_err() {
+        assert_eq!(to_api_result(Ok(3)).unwrap(), 3);
+        let err = to_api_result::<()>(Err(anyhow::anyhow!("boom"))).unwrap_err();
+        assert!(err.contains("boom"));
+    }
 }

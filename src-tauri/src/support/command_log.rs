@@ -534,4 +534,21 @@ mod tests {
         let err = command_log_error(&Ok(value)).expect("should detect server error");
         assert!(err.contains("NoPerm") || err.contains("permissions"));
     }
+
+    /// 可打印参数原样；控制字符按 redis-cli 转义，超长截断并加省略号。
+    #[test]
+    fn log_arg_quotes_binary_and_truncates() {
+        assert_eq!(display_log_arg(b"hello"), "hello");
+        assert_eq!(display_log_arg(b"\n"), r#""\n""#);
+        let long = "a".repeat(40);
+        assert_eq!(
+            display_log_arg(long.as_bytes()),
+            format!("{}...", "a".repeat(32))
+        );
+
+        let (command, args) = parse_cmd(&redis::cmd("get").arg("mykey"));
+        assert_eq!(command, "GET");
+        assert_eq!(args, vec!["mykey".to_string()]);
+        assert_eq!(format_cmd_brief(&redis::cmd("PING")), "PING");
+    }
 }
