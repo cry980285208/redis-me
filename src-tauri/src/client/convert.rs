@@ -1,4 +1,7 @@
-//! Redis 回复转成界面和 IPC 行。扫描、读键和导出命令从这里拿结构。
+//! Redis 回复转成某一种界面行。不发命令。
+//!
+//! 函数要认识 `ValueType`、某种扫描回复，或产出 `RedisHashItem` 这类行，就放这里。
+//! 字节和 wire 字符串、路径、随机数、超时仍在 `support::util`。
 
 use crate::model::*;
 use crate::support::error::AppError;

@@ -1,12 +1,12 @@
-//! 按调用过程拆开的命令实现。扫描、改键、导入导出、ACL、订阅各自一个文件，不按 Redis 类型拆。
+//! 按调用过程拆开的命令实现。键和字段分开，扫描再分成键扫描与字段扫描。不按 Redis 类型拆。
 
 pub mod acl;
 pub mod as_cmd;
-pub mod convert;
+pub mod field;
 pub mod field_scan;
 pub mod import_export;
 pub mod info;
 pub mod key;
+pub mod key_scan;
 pub mod pubsub;
-pub mod scan;
 pub mod vector;

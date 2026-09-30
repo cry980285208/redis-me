@@ -1,3 +1,6 @@
+//! 键扫描。精确匹配走 EXISTS，否则组装 `SCAN`。按 pattern 扫完一批键，给批量删除和导出用。
+//! 字段扫描在 `field_scan`。
+
 use crate::client::me_client::MeClient;
 use crate::model::*;
 use crate::support::error::AppError;
@@ -103,7 +106,7 @@ pub fn batch_key0(
 }
 
 #[cfg(test)]
-mod scan_cmd_tests {
+mod key_scan_cmd_tests {
     use super::*;
 
     /// 把命令参数收成字符串，方便断言 TYPE 的位置。
