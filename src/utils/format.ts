@@ -301,11 +301,12 @@ export function isReadonlyView(view: ViewBytesFormat): boolean {
   return view === 'javaserial' || view === 'pickle' || view === 'phpserial'
 }
 
-/** 只读视图的保存按钮 tooltip 文案；RedisValue / FieldSet saveTip */
+/** 只读视图的保存按钮 tooltip 文案；RedisValue / FieldSet saveTip。非只读视图返回空串 */
 export function readonlyViewTip(view: ViewBytesFormat): string {
   if (view === 'pickle') return t('util.pickleReadonly')
   if (view === 'phpserial') return t('util.phpSerialReadonly')
-  return t('util.javaSerialReadonly')
+  if (view === 'javaserial') return t('util.javaSerialReadonly')
+  return ''
 }
 
 function resolveCustomCodec(view: ViewBytesFormat): CustomCodec {
