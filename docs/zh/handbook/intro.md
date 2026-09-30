@@ -10,3 +10,4 @@
 ## 文章列表
 
 - [慢日志专项治理](/zh/handbook/slowlog-governance)：生产慢日志专项实践（RedisME 观测与改造闭环）
+- [SSL 加密改造](/zh/handbook/ssl-encryption)：新建 TLS 集群，应用各挑 2 个场景验证，同一个迭代内全部上线；并行期间把旧集群数据同步到新集群，确认已无应用连接后再停同步并下线
