@@ -4,7 +4,7 @@ import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import logoGlowUrl from '@/assets/images/logo-glow.png'
-import { isDark, meOpenUrl } from '@/utils/util'
+import { meOpenUrl } from '@/utils/util'
 import RedisInstall from '@/views/ext/RedisInstall.vue'
 // #endregion
 
@@ -35,14 +35,8 @@ function handleRedisInstallClick(): void {
 <template>
   <div class="key-empty">
     <div class="logo-wrap" @click="handleLogoClick">
-      <!-- 预烘焙光晕（含 blur），避开 Mac WKWebView 对 filter:blur 偶发露方框。暗色不用这张图 -->
-      <img
-        v-if="!isDark"
-        class="logo-glow"
-        :src="logoGlowUrl"
-        alt=""
-        aria-hidden="true"
-        draggable="false" />
+      <!-- 预烘焙光晕，避开 Mac WKWebView 对 filter:blur 偶发露方框。外圈 alpha 收到 0，避免暗色下圆边或裁切方框 -->
+      <img class="logo-glow" :src="logoGlowUrl" alt="" aria-hidden="true" draggable="false" />
       <SvgIcon class="logo-icon" name="me-icon-logo-color" />
     </div>
     <div class="tagline">{{ t('keyEmpty.tagline') }}</div>
