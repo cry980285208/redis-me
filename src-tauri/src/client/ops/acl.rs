@@ -731,6 +731,7 @@ mod acl_selector_tests {
         assert_eq!(detail.selectors, vec!["-@all +get ~key1".to_string()]);
     }
 
+    /// 把 `ACL SETUSER` 的参数收成字符串，用来看 selector 有没有留在最后。
     fn cmd_args(cmd: &redis::Cmd) -> Vec<String> {
         cmd.args_iter()
             .map(|arg| match arg {

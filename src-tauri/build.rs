@@ -1,3 +1,4 @@
+/// Windows 先塞应用清单，再跑 Tauri 的构建脚本。
 fn main() {
     #[cfg(windows)]
     add_manifest();
@@ -5,6 +6,7 @@ fn main() {
     tauri_build::try_build(build_attributes()).unwrap();
 }
 
+/// Windows 不用 Tauri 自带清单，改用仓库里的 `windows-app-manifest.xml`。
 fn build_attributes() -> tauri_build::Attributes {
     #[cfg(windows)]
     {
@@ -18,6 +20,7 @@ fn build_attributes() -> tauri_build::Attributes {
 }
 
 #[cfg(windows)]
+/// 把清单嵌进 exe，并把链接警告当成错误。
 fn add_manifest() {
     static WINDOWS_MANIFEST_FILE: &str = "windows-app-manifest.xml";
 

@@ -42,6 +42,9 @@ pub const REDIS_JSON_TYPE_NAME: &str = "ReJSON-RL";
 pub const ME_TIMESERIES_TYPE_NAME: &str = "timeseries";
 pub const REDIS_TIMESERIES_TYPE_NAME: &str = "TSDB-TYPE";
 
+type XRangeField = (Vec<u8>, Vec<u8>);
+type XRangeEntry = (Vec<u8>, Vec<XRangeField>);
+
 /// 将用户输入的命令名按连接 meta.commandMap 映射为服务端实际命令（键为小写，如 `config`）。
 pub fn resolve_command_name(conf: &ConnConfig, cmd: &str) -> String {
     let map = conf.command_map();
@@ -81,22 +84,13 @@ pub fn to_api_result<T>(result: anyhow::Result<T>) -> ApiResult<T> {
     }
 }
 
+/// `ValueType` 转成界面上的小写类型名（json / timeseries / array 等）。
 pub fn ui_key_type(key_type: ValueType) -> String {
     let key_type: String = key_type.into();
     ui_key_type_str(&key_type)
 }
 
-/// `TYPE` 等返回的原始类型名（含模块名如 ReJSON-RL / TSDB-TYPE）统一为与 `ui_key_type` 一致的展示名
-fn ui_key_type_str(key_type: &str) -> String {
-    if key_type == REDIS_JSON_TYPE_NAME {
-        ME_JSON_TYPE_NAME.to_string()
-    } else if key_type == REDIS_TIMESERIES_TYPE_NAME {
-        ME_TIMESERIES_TYPE_NAME.to_string()
-    } else {
-        key_type.to_string()
-    }
-}
-
+/// 界面类型名或 `TYPE` 回复转回 `ValueType`。认不出的名字原样放进 `Unknown`。
 pub fn to_key_type(key_type: &str) -> ValueType {
     match key_type {
         ME_JSON_TYPE_NAME => ValueType::JSON,
@@ -157,6 +151,7 @@ pub fn parse_array_index(s: &str) -> AnyResult<i64> {
     Ok(idx)
 }
 
+/// `XINFO GROUPS` 的 redis-rs 结构转成 IPC 的 `XInfoGroup`。
 pub fn ui_xinfo_group(group: StreamInfoGroup) -> XInfoGroup {
     XInfoGroup {
         name: group.name,
@@ -168,6 +163,7 @@ pub fn ui_xinfo_group(group: StreamInfoGroup) -> XInfoGroup {
     }
 }
 
+/// `XINFO CONSUMERS` 的 redis-rs 结构转成 IPC 的 `XInfoConsumer`。
 pub fn ui_xinfo_consumer(consumer: StreamInfoConsumer) -> XInfoConsumer {
     XInfoConsumer {
         name: consumer.name,
@@ -211,11 +207,13 @@ pub fn tuple_to_key_size(keys: Vec<(Vec<u8>, u64, String)>) -> Vec<RedisKeySize>
     key_list
 }
 
+/// 扫描得到的键字节转成 `RedisKey`。合法 UTF-8 不重复带 `bytes`。
 pub fn ui_key_list(keys: Vec<Vec<u8>>) -> Vec<RedisKey> {
     // UTF-8 键省略 bytes，见 RedisKey::from(Vec<u8>)
     keys.into_iter().map(RedisKey::from).collect()
 }
 
+/// List 一页转成带起始下标的 `{index, value}`。
 pub fn ui_list_items(
     start_index: i64,
     value: &[Vec<u8>],
@@ -293,6 +291,7 @@ pub fn ui_array_items_from_arscan(
         .collect())
 }
 
+/// Hash 字段对转成界面行。这里不填字段 TTL。
 pub fn ui_hash_value(value: &[(Vec<u8>, Vec<u8>)], format: &BytesFormat) -> Vec<RedisHashItem> {
     value
         .iter()
@@ -308,6 +307,7 @@ pub fn ui_hash_value(value: &[(Vec<u8>, Vec<u8>)], format: &BytesFormat) -> Vec<
         .collect()
 }
 
+/// Set 成员转成界面字符串。顺序不稳定，和 Redis `SMEMBERS` 一样。
 pub fn ui_set_value(value: HashSet<Vec<u8>>, format: &BytesFormat) -> Vec<String> {
     value
         .into_iter()
@@ -315,6 +315,7 @@ pub fn ui_set_value(value: HashSet<Vec<u8>>, format: &BytesFormat) -> Vec<String
         .collect()
 }
 
+/// ZSet 成员和分数转成界面行，顺序保持 Redis 返回的顺序。
 pub fn ui_zset_value(value: Vec<(Vec<u8>, f64)>, format: &BytesFormat) -> Vec<RedisZetItem> {
     value
         .into_iter()
@@ -325,6 +326,7 @@ pub fn ui_zset_value(value: Vec<(Vec<u8>, f64)>, format: &BytesFormat) -> Vec<Re
         .collect()
 }
 
+/// Stream 区间回复转成 `{id, value}`。字段值用换行拼成一段文本。
 pub fn ui_stream_value(reply: StreamRangeReply) -> Vec<RedisStreamItem> {
     reply
         .ids
@@ -336,13 +338,6 @@ pub fn ui_stream_value(reply: StreamRangeReply) -> Vec<RedisStreamItem> {
                 value: ui_stream_id(map),
             }
         })
-        .collect()
-}
-
-fn ui_stream_id(stream_id: HashMap<String, Value>) -> HashMap<String, String> {
-    stream_id
-        .into_iter()
-        .map(|(k, v)| (k, redis_value_to_string(v, "\n")))
         .collect()
 }
 
@@ -364,23 +359,6 @@ pub fn random_string(len: usize) -> String {
 // 随机范围
 pub fn random_range(min: i32, max: i32) -> i32 {
     rand::rng().random_range(min..=max)
-}
-
-fn is_hex_digit(c: u8) -> bool {
-    c.is_ascii_digit() || (b'a'..=b'f').contains(&c) || (b'A'..=b'F').contains(&c)
-}
-
-fn hex_digit_to_int(c: u8) -> u8 {
-    match c {
-        b'0'..=b'9' => c - b'0',
-        b'a' | b'A' => 10,
-        b'b' | b'B' => 11,
-        b'c' | b'C' => 12,
-        b'd' | b'D' => 13,
-        b'e' | b'E' => 14,
-        b'f' | b'F' => 15,
-        _ => 0,
-    }
 }
 
 /// 与 redis-cli sdssplitargs 一致的分词（终端命令、ACL selector 等复用）
@@ -496,9 +474,6 @@ pub fn redis_value_to_bulk_bytes(value: Value) -> Vec<u8> {
         other => redis_value_to_string(other, "").into_bytes(),
     }
 }
-
-type XRangeField = (Vec<u8>, Vec<u8>);
-type XRangeEntry = (Vec<u8>, Vec<XRangeField>);
 
 /// `XRANGE` 原始数组回复 → 保序 entry（id + field-value 对），避免 `HashMap` 打乱顺序
 pub fn parse_xrange_ordered(raw: Value) -> AnyResult<Vec<XRangeEntry>> {
@@ -630,92 +605,6 @@ pub fn redis_value_to_log(value: Value, node: &str) -> AnyResult<RedisSlowLog> {
     })
 }
 
-/// RESP3 Map 形态的慢日志条目：按字段名取值，与数组形态语义一致
-fn slow_log_from_map(map: Vec<(Value, Value)>, node: &str) -> AnyResult<RedisSlowLog> {
-    let mut id: u64 = 0;
-    let mut timestamp: i64 = 0;
-    let mut duration: f64 = 0.0;
-    let mut command = String::new();
-    let mut client = String::new();
-    let mut client_name = String::new();
-    for (k, v) in map {
-        match redis_value_to_string(k, "").as_str() {
-            "id" => id = FromRedisValue::from_redis_value(v)?,
-            "timestamp" => timestamp = FromRedisValue::from_redis_value(v)?,
-            "duration" => duration = FromRedisValue::from_redis_value(v)?,
-            "command" => command = redis_value_to_string(v, " "),
-            "client-addr" => client = redis_value_to_string(v, ""),
-            "client-name" => client_name = redis_value_to_string(v, ""),
-            _ => {}
-        }
-    }
-    Ok(RedisSlowLog {
-        node: node.to_string(),
-        id,
-        time: timestamp_to_string(timestamp),
-        cost: duration / 1000.0,
-        command,
-        client,
-        client_name,
-    })
-}
-
-// 时间戳 (秒) 转字符串
-fn timestamp_to_string(timestamp: i64) -> String {
-    let datetime = DateTime::from_timestamp(timestamp, 0)
-        .unwrap()
-        .with_timezone(&chrono_tz::Asia::Shanghai);
-    datetime.format("%Y-%m-%d %H:%M:%S").to_string()
-}
-
-/// `tot_mem` → `totMem`，与 `RedisClientInfo` 的 `rename_all = "camelCase"` 一致。
-fn redis_client_json_key(norm_snake: &str) -> String {
-    let parts: Vec<&str> = norm_snake.split('_').filter(|p| !p.is_empty()).collect();
-    if parts.is_empty() {
-        return String::new();
-    }
-    let mut out = String::from(parts[0]);
-    for p in parts.iter().skip(1) {
-        let mut c = p.chars();
-        if let Some(f) = c.next() {
-            out.push(f.to_ascii_uppercase());
-            out.extend(c);
-        }
-    }
-    out
-}
-
-fn redis_client_put_u64(obj: &mut Map<String, JsonValue>, raw: &HashMap<String, &str>, norm: &str) {
-    if let Some(v) = raw.get(norm) {
-        let n = v.parse::<u64>().unwrap_or(0);
-        obj.insert(redis_client_json_key(norm), JsonValue::Number(n.into()));
-    }
-}
-
-fn redis_client_put_i64(obj: &mut Map<String, JsonValue>, raw: &HashMap<String, &str>, norm: &str) {
-    if let Some(v) = raw.get(norm) {
-        let n = v.parse::<i64>().unwrap_or(0);
-        obj.insert(redis_client_json_key(norm), serde_json::json!(n));
-    }
-}
-
-fn redis_client_put_u8(obj: &mut Map<String, JsonValue>, raw: &HashMap<String, &str>, norm: &str) {
-    if let Some(v) = raw.get(norm)
-        && let Ok(n) = v.parse::<u8>()
-    {
-        obj.insert(redis_client_json_key(norm), JsonValue::Number(n.into()));
-    }
-}
-
-fn redis_client_put_str(obj: &mut Map<String, JsonValue>, raw: &HashMap<String, &str>, norm: &str) {
-    if let Some(v) = raw.get(norm) {
-        obj.insert(
-            redis_client_json_key(norm),
-            JsonValue::String((*v).to_string()),
-        );
-    }
-}
-
 // 解析客户端信息（Redis 行里缺字段时由 `RedisClientInfo` 上 `#[serde(default)]` 填 0 / ""）
 pub fn parse_client_info(client_info: &str) -> AnyResult<RedisClientInfo> {
     let mut raw: HashMap<String, &str> = HashMap::with_capacity(32);
@@ -833,11 +722,6 @@ pub fn parse_path(path: &str) -> PathBuf {
     PathBuf::from(expanded.as_ref())
 }
 
-/// 将 Redis Value 标量为十进制/明文字符串（TimeSeries timestamp / value）
-fn redis_scalar_to_plain(v: &Value) -> String {
-    redis_value_to_string(v.clone(), "")
-}
-
 /// 解析 `TS.REVRANGE` / `TS.RANGE` 回复为样本行（`[[ts, value], ...]`）
 pub fn parse_ts_range_items(raw: Value) -> AnyResult<Vec<RedisTimeSeriesItem>> {
     match raw {
@@ -886,6 +770,141 @@ pub fn ts_info_total_samples(raw: &Value) -> Option<u64> {
         .into_iter()
         .find(|(k, _)| k.eq_ignore_ascii_case("totalSamples"))
         .and_then(|(_, v)| v.parse::<u64>().ok())
+}
+
+// ------------------------------ 仅本文件使用 ------------------------------
+
+/// `TYPE` 等返回的原始类型名（含模块名如 ReJSON-RL / TSDB-TYPE）统一为与 `ui_key_type` 一致的展示名
+fn ui_key_type_str(key_type: &str) -> String {
+    if key_type == REDIS_JSON_TYPE_NAME {
+        ME_JSON_TYPE_NAME.to_string()
+    } else if key_type == REDIS_TIMESERIES_TYPE_NAME {
+        ME_TIMESERIES_TYPE_NAME.to_string()
+    } else {
+        key_type.to_string()
+    }
+}
+
+/// 一条 Stream 消息的字段表转成字符串。嵌套值用换行展开。
+fn ui_stream_id(stream_id: HashMap<String, Value>) -> HashMap<String, String> {
+    stream_id
+        .into_iter()
+        .map(|(k, v)| (k, redis_value_to_string(v, "\n")))
+        .collect()
+}
+
+/// redis-cli `\xNN` 转义里的一个十六进制字符。
+fn is_hex_digit(c: u8) -> bool {
+    c.is_ascii_digit() || (b'a'..=b'f').contains(&c) || (b'A'..=b'F').contains(&c)
+}
+
+/// 一个十六进制字符转成 0–15。调用方应先用 `is_hex_digit` 判断。
+fn hex_digit_to_int(c: u8) -> u8 {
+    match c {
+        b'0'..=b'9' => c - b'0',
+        b'a' | b'A' => 10,
+        b'b' | b'B' => 11,
+        b'c' | b'C' => 12,
+        b'd' | b'D' => 13,
+        b'e' | b'E' => 14,
+        b'f' | b'F' => 15,
+        _ => 0,
+    }
+}
+
+/// RESP3 Map 形态的慢日志条目：按字段名取值，与数组形态语义一致
+fn slow_log_from_map(map: Vec<(Value, Value)>, node: &str) -> AnyResult<RedisSlowLog> {
+    let mut id: u64 = 0;
+    let mut timestamp: i64 = 0;
+    let mut duration: f64 = 0.0;
+    let mut command = String::new();
+    let mut client = String::new();
+    let mut client_name = String::new();
+    for (k, v) in map {
+        match redis_value_to_string(k, "").as_str() {
+            "id" => id = FromRedisValue::from_redis_value(v)?,
+            "timestamp" => timestamp = FromRedisValue::from_redis_value(v)?,
+            "duration" => duration = FromRedisValue::from_redis_value(v)?,
+            "command" => command = redis_value_to_string(v, " "),
+            "client-addr" => client = redis_value_to_string(v, ""),
+            "client-name" => client_name = redis_value_to_string(v, ""),
+            _ => {}
+        }
+    }
+    Ok(RedisSlowLog {
+        node: node.to_string(),
+        id,
+        time: timestamp_to_string(timestamp),
+        cost: duration / 1000.0,
+        command,
+        client,
+        client_name,
+    })
+}
+
+// 时间戳 (秒) 转字符串
+fn timestamp_to_string(timestamp: i64) -> String {
+    let datetime = DateTime::from_timestamp(timestamp, 0)
+        .unwrap()
+        .with_timezone(&chrono_tz::Asia::Shanghai);
+    datetime.format("%Y-%m-%d %H:%M:%S").to_string()
+}
+
+/// `tot_mem` → `totMem`，与 `RedisClientInfo` 的 `rename_all = "camelCase"` 一致。
+fn redis_client_json_key(norm_snake: &str) -> String {
+    let parts: Vec<&str> = norm_snake.split('_').filter(|p| !p.is_empty()).collect();
+    if parts.is_empty() {
+        return String::new();
+    }
+    let mut out = String::from(parts[0]);
+    for p in parts.iter().skip(1) {
+        let mut c = p.chars();
+        if let Some(f) = c.next() {
+            out.push(f.to_ascii_uppercase());
+            out.extend(c);
+        }
+    }
+    out
+}
+
+/// CLIENT LIST 里的无符号整数字段。缺字段或解析失败写成 0。
+fn redis_client_put_u64(obj: &mut Map<String, JsonValue>, raw: &HashMap<String, &str>, norm: &str) {
+    if let Some(v) = raw.get(norm) {
+        let n = v.parse::<u64>().unwrap_or(0);
+        obj.insert(redis_client_json_key(norm), JsonValue::Number(n.into()));
+    }
+}
+
+/// CLIENT LIST 里的有符号整数字段（如 `multi`）。缺字段写成 0。
+fn redis_client_put_i64(obj: &mut Map<String, JsonValue>, raw: &HashMap<String, &str>, norm: &str) {
+    if let Some(v) = raw.get(norm) {
+        let n = v.parse::<i64>().unwrap_or(0);
+        obj.insert(redis_client_json_key(norm), serde_json::json!(n));
+    }
+}
+
+/// CLIENT LIST 里的 `u8` 字段（如 `resp`）。解析失败就跳过，交给 serde 默认值。
+fn redis_client_put_u8(obj: &mut Map<String, JsonValue>, raw: &HashMap<String, &str>, norm: &str) {
+    if let Some(v) = raw.get(norm)
+        && let Ok(n) = v.parse::<u8>()
+    {
+        obj.insert(redis_client_json_key(norm), JsonValue::Number(n.into()));
+    }
+}
+
+/// CLIENT LIST 里的字符串字段。缺字段不写入，交给 serde 默认空串。
+fn redis_client_put_str(obj: &mut Map<String, JsonValue>, raw: &HashMap<String, &str>, norm: &str) {
+    if let Some(v) = raw.get(norm) {
+        obj.insert(
+            redis_client_json_key(norm),
+            JsonValue::String((*v).to_string()),
+        );
+    }
+}
+
+/// 将 Redis Value 标量为十进制/明文字符串（TimeSeries timestamp / value）
+fn redis_scalar_to_plain(v: &Value) -> String {
+    redis_value_to_string(v.clone(), "")
 }
 
 #[cfg(test)]

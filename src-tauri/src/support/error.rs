@@ -129,6 +129,7 @@ pub enum AppError {
 
 /// 将 AppError 转换为 anyhow::Error
 impl From<AppError> for anyhow::Error {
+    /// 序列化成 JSON；序列化失败时退回 Debug 文本。
     fn from(err: AppError) -> Self {
         anyhow::anyhow!(serde_json::to_string(&err).unwrap_or_else(|_| format!("{:?}", err)))
     }

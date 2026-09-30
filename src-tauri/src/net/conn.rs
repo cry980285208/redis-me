@@ -43,6 +43,124 @@ pub fn sentinel_masters(
     Ok(masters)
 }
 
+// 获取单机 Client；verify 为 true 时按 connect_timeout ping 验证（测试连接），为 false 时仅构建 Client（init 复用 TCP）
+// existing：集群 subscribe/monitor 旁路传入 ClusterClient 上的同一 SSH Dialer，避免新开会话
+pub fn get_client_single(
+    conf: &ConnConfig,
+    connect_timeout: Duration,
+    verify: bool,
+    existing: Option<Arc<dyn ConnectionDialer>>,
+) -> AnyResult<(Client, Option<Arc<dyn ConnectionDialer>>)> {
+    if conf.sentinel && conf.sentinel_option.master_name.is_empty() {
+        bail!(AppError::SentinelMasterNotFound {
+            name: conf.sentinel_option.master_name.clone()
+        });
+    }
+    let dialer = resolve_dialer(conf, connect_timeout, existing)?;
+    if conf.ssl {
+        reject_if_plaintext_redis(conf, connect_timeout, dialer.clone())?;
+    }
+
+    let client = if conf.sentinel {
+        get_client_sentinel(conf, connect_timeout, dialer.clone())?
+    } else {
+        build_single_client(conf, dialer.clone())?
+    };
+    // verify=true：仅测试连接（ConnConfig::test），按建连超时 ping 后丢弃，不再 init；verify=false：由 init_*_connection 验证并复用 TCP
+    if verify {
+        let _conn = verify_single_connection(&client, connect_timeout, conf)?;
+    }
+    Ok((client, dialer))
+}
+
+/// 正式初始化：阶段 1 验证通过后复用同一条 TCP，再进入阶段 2（避免二次建连导致外网 RST，#155）。
+pub fn init_single_connection(
+    client: &Client,
+    db: u16,
+    connect_timeout: Duration,
+    command_timeout: Duration,
+    conf: &ConnConfig,
+) -> AnyResult<Connection> {
+    let conn = verify_single_connection(client, connect_timeout, conf)?;
+    apply_single_command_timeout(conn, db, command_timeout)
+}
+
+// 获取集群 Client；verify 为 true 时按建连超时 ping 验证（测试连接），为 false 时仅构建 Client（init 复用 TCP）
+pub fn get_client_cluster(
+    conf: &ConnConfig,
+    connect_timeout: Duration,
+    verify: bool,
+) -> AnyResult<ClusterClient> {
+    let dialer = resolve_dialer(conf, connect_timeout, None)?;
+    if conf.ssl {
+        reject_if_plaintext_redis(conf, connect_timeout, dialer.clone())?;
+    }
+    let url = redis_url(conf)?;
+    log_redis_url(conf, &url);
+
+    let mut builder = ClusterClient::builder(vec![url.to_string()]);
+    if conf.is_resp3() {
+        builder = builder.use_protocol(ProtocolVersion::RESP3);
+    }
+    if !conf.username.is_empty() {
+        builder = builder.username(conf.username.clone());
+    }
+    if !conf.password.is_empty() {
+        builder = builder.password(conf.password.clone());
+    }
+    if conf.ssl {
+        // 须 Insecure：Secure + danger_accept_invalid_hostnames 仍会 webpki 验服务端证，v1 报 UnsupportedCertVersion
+        builder = builder.tls(TlsMode::Insecure);
+        let certs = get_tls_certs(conf.ssl_option.clone())?;
+        if let Some(certs) = certs {
+            builder = builder.certs(certs);
+        };
+    }
+    builder = builder.database_id(conf.db as i64);
+    if let Some(d) = dialer {
+        builder = builder.dialer(d);
+    }
+    let client = builder.build()?;
+    if verify {
+        let _conn = verify_cluster_connection(&client, connect_timeout, conf)?;
+    }
+    Ok(client)
+}
+
+/// 正式初始化：阶段 1 验证通过后复用同一条 TCP，再进入阶段 2（#155）。
+pub fn init_cluster_connection(
+    client: &ClusterClient,
+    connect_timeout: Duration,
+    command_timeout: Duration,
+    conf: &ConnConfig,
+) -> AnyResult<ClusterConnection> {
+    let conn = verify_cluster_connection(client, connect_timeout, conf)?;
+    apply_cluster_command_timeout(conn, command_timeout)
+}
+
+/// 设置客户端名称；无 CLIENT 权限时跳过，不影响连接
+pub fn set_client_name(conn: &mut dyn ConnectionLike) {
+    match redis::cmd("client")
+        .arg("setname")
+        .arg("RedisME")
+        .query::<()>(conn)
+    {
+        Ok(()) => info!("client setname RedisME"),
+        Err(e) => warn!("client setname 不可用，跳过: {e}"),
+    }
+}
+
+/// 极简模式不发 CLIENT SETNAME（仅客户端展示名，不影响能力探测）
+pub fn set_client_name_unless_minimal(conn: &mut dyn ConnectionLike, conf: &ConnConfig) {
+    if conf.is_minimal_mode() {
+        info!("极简模式：跳过 CLIENT SETNAME");
+        return;
+    }
+    set_client_name(conn);
+}
+
+// ------------------------------ 仅本文件使用 ------------------------------
+
 /// 无 `existing` 时：SSH 优先；否则代理（系统模式检不到则直连）。SSH 与代理互斥。
 fn resolve_dialer(
     conf: &ConnConfig,
@@ -64,6 +182,7 @@ fn resolve_dialer(
     }
 }
 
+/// 拼 redis-rs 用的连接 URL。裸 IPv6 加方括号；SSL 带 `#insecure`；RESP3 写在 query 里。
 fn redis_url(conf: &ConnConfig) -> AnyResult<Url> {
     // 与前端 buildRedisUrl 一致：裸 IPv6 必须加 []，否则 Url 解析失败；哨兵发现的 master 常是无括号地址
     let host = if conf.host.contains(':') && !conf.host.starts_with('[') {
@@ -88,6 +207,7 @@ fn redis_url(conf: &ConnConfig) -> AnyResult<Url> {
     Ok(url)
 }
 
+/// 打连接 URL 日志。密码固定打成 `******`。
 fn log_redis_url(conf: &ConnConfig, url: &Url) {
     info!(
         "redis_url: {}://{}:******@{}:{}{}{}",
@@ -102,6 +222,7 @@ fn log_redis_url(conf: &ConnConfig, url: &Url) {
     );
 }
 
+/// 有 SSH 或代理 Dialer 时挂到 Client 上，否则保持直连。
 fn apply_dialer(client: Client, dialer: Option<Arc<dyn ConnectionDialer>>) -> Client {
     match dialer {
         Some(d) => client.set_dialer(d),
@@ -153,6 +274,7 @@ fn reject_if_plaintext_redis(
     Ok(())
 }
 
+/// 关掉 SSL 后短超时 PING。对端回 PONG 或 Redis 错误（如 NOAUTH）视为明文 Redis。
 fn plaintext_redis_reachable(
     conf: &ConnConfig,
     connect_timeout: Duration,
@@ -183,6 +305,7 @@ fn plaintext_redis_reachable(
     }
 }
 
+/// 把 anyhow 错误和它的 source 链拼成一段文本，供 RST/parse 特征匹配。
 fn error_chain_text(err: &anyhow::Error) -> String {
     let mut s = err.to_string();
     let mut src = err.source();
@@ -232,6 +355,7 @@ fn looks_like_tls_peer_error(err: &RedisError) -> bool {
         || t.contains("bad certificate")
 }
 
+/// 从 Client 取出 TCP 对端地址。Unix socket 等非 TCP 返回 `None`。
 fn client_tcp_peer(client: &Client) -> Option<(String, u16)> {
     match client.get_connection_info().addr() {
         ConnectionAddr::Tcp(host, port) => Some((host.clone(), *port)),
@@ -258,6 +382,7 @@ fn hint_if_ssl_required(
     err
 }
 
+/// 短超时按 TLS 连一次。握手成功或收到 TLS alert 视为对端开了 SSL。
 fn tls_server_reachable(
     conf: &ConnConfig,
     host: &str,
@@ -282,36 +407,6 @@ fn tls_server_reachable(
         Ok(_) => true,
         Err(e) => looks_like_tls_peer_error(&e),
     }
-}
-
-// 获取单机 Client；verify 为 true 时按 connect_timeout ping 验证（测试连接），为 false 时仅构建 Client（init 复用 TCP）
-// existing：集群 subscribe/monitor 旁路传入 ClusterClient 上的同一 SSH Dialer，避免新开会话
-pub fn get_client_single(
-    conf: &ConnConfig,
-    connect_timeout: Duration,
-    verify: bool,
-    existing: Option<Arc<dyn ConnectionDialer>>,
-) -> AnyResult<(Client, Option<Arc<dyn ConnectionDialer>>)> {
-    if conf.sentinel && conf.sentinel_option.master_name.is_empty() {
-        bail!(AppError::SentinelMasterNotFound {
-            name: conf.sentinel_option.master_name.clone()
-        });
-    }
-    let dialer = resolve_dialer(conf, connect_timeout, existing)?;
-    if conf.ssl {
-        reject_if_plaintext_redis(conf, connect_timeout, dialer.clone())?;
-    }
-
-    let client = if conf.sentinel {
-        get_client_sentinel(conf, connect_timeout, dialer.clone())?
-    } else {
-        build_single_client(conf, dialer.clone())?
-    };
-    // verify=true：仅测试连接（ConnConfig::test），按建连超时 ping 后丢弃，不再 init；verify=false：由 init_*_connection 验证并复用 TCP
-    if verify {
-        let _conn = verify_single_connection(&client, connect_timeout, conf)?;
-    }
-    Ok((client, dialer))
 }
 
 /// 阶段 1：按建连超时建连并 ping，连不上时失败。
@@ -363,18 +458,6 @@ fn apply_single_command_timeout(
             .unwrap_or_else(|_| warn!("select {db} 失败，使用默认数据库0"));
     }
     Ok(conn)
-}
-
-/// 正式初始化：阶段 1 验证通过后复用同一条 TCP，再进入阶段 2（避免二次建连导致外网 RST，#155）。
-pub fn init_single_connection(
-    client: &Client,
-    db: u16,
-    connect_timeout: Duration,
-    command_timeout: Duration,
-    conf: &ConnConfig,
-) -> AnyResult<Connection> {
-    let conn = verify_single_connection(client, connect_timeout, conf)?;
-    apply_single_command_timeout(conn, db, command_timeout)
 }
 
 /// 带建连超时连哨兵并 `GET-MASTER-ADDR-BY-NAME`，再返回指向 master 的 Client。
@@ -451,48 +534,6 @@ fn get_client_sentinel(
     build_single_client(&master_conf, dialer)
 }
 
-// 获取集群 Client；verify 为 true 时按建连超时 ping 验证（测试连接），为 false 时仅构建 Client（init 复用 TCP）
-pub fn get_client_cluster(
-    conf: &ConnConfig,
-    connect_timeout: Duration,
-    verify: bool,
-) -> AnyResult<ClusterClient> {
-    let dialer = resolve_dialer(conf, connect_timeout, None)?;
-    if conf.ssl {
-        reject_if_plaintext_redis(conf, connect_timeout, dialer.clone())?;
-    }
-    let url = redis_url(conf)?;
-    log_redis_url(conf, &url);
-
-    let mut builder = ClusterClient::builder(vec![url.to_string()]);
-    if conf.is_resp3() {
-        builder = builder.use_protocol(ProtocolVersion::RESP3);
-    }
-    if !conf.username.is_empty() {
-        builder = builder.username(conf.username.clone());
-    }
-    if !conf.password.is_empty() {
-        builder = builder.password(conf.password.clone());
-    }
-    if conf.ssl {
-        // 须 Insecure：Secure + danger_accept_invalid_hostnames 仍会 webpki 验服务端证，v1 报 UnsupportedCertVersion
-        builder = builder.tls(TlsMode::Insecure);
-        let certs = get_tls_certs(conf.ssl_option.clone())?;
-        if let Some(certs) = certs {
-            builder = builder.certs(certs);
-        };
-    }
-    builder = builder.database_id(conf.db as i64);
-    if let Some(d) = dialer {
-        builder = builder.dialer(d);
-    }
-    let client = builder.build()?;
-    if verify {
-        let _conn = verify_cluster_connection(&client, connect_timeout, conf)?;
-    }
-    Ok(client)
-}
-
 /// 阶段 1：按建连超时建连并 ping（集群入口节点）。
 fn verify_cluster_connection(
     client: &ClusterClient,
@@ -538,17 +579,6 @@ fn apply_cluster_command_timeout(
     Ok(conn)
 }
 
-/// 正式初始化：阶段 1 验证通过后复用同一条 TCP，再进入阶段 2（#155）。
-pub fn init_cluster_connection(
-    client: &ClusterClient,
-    connect_timeout: Duration,
-    command_timeout: Duration,
-    conf: &ConnConfig,
-) -> AnyResult<ClusterConnection> {
-    let conn = verify_cluster_connection(client, connect_timeout, conf)?;
-    apply_cluster_command_timeout(conn, command_timeout)
-}
-
 // 获取证书；v1 CA 不装入 trust store（已 #insecure，见 22_tls-x509-v1-compat.md）
 fn get_tls_certs(ssl_option: SslOption) -> AnyResult<Option<TlsCertificates>> {
     if ssl_option.key.is_empty() && ssl_option.cert.is_empty() && ssl_option.ca.is_empty() {
@@ -575,27 +605,6 @@ fn get_tls_certs(ssl_option: SslOption) -> AnyResult<Option<TlsCertificates>> {
         root_cert,
     };
     Ok(Some(certs))
-}
-
-/// 设置客户端名称；无 CLIENT 权限时跳过，不影响连接
-pub fn set_client_name(conn: &mut dyn ConnectionLike) {
-    match redis::cmd("client")
-        .arg("setname")
-        .arg("RedisME")
-        .query::<()>(conn)
-    {
-        Ok(()) => info!("client setname RedisME"),
-        Err(e) => warn!("client setname 不可用，跳过: {e}"),
-    }
-}
-
-/// 极简模式不发 CLIENT SETNAME（仅客户端展示名，不影响能力探测）
-pub fn set_client_name_unless_minimal(conn: &mut dyn ConnectionLike, conf: &ConnConfig) {
-    if conf.is_minimal_mode() {
-        info!("极简模式：跳过 CLIENT SETNAME");
-        return;
-    }
-    set_client_name(conn);
 }
 
 #[cfg(test)]

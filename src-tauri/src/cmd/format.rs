@@ -1,29 +1,5 @@
 //! 将 Redis 键值格式化为 redis-cli 可粘贴执行的命令行（与 `split_redis_args` 对称）。
 
-fn utf8_char_len(b: u8) -> Option<usize> {
-    if b <= 0x7f {
-        Some(1)
-    } else if (b & 0xe0) == 0xc0 {
-        Some(2)
-    } else if (b & 0xf0) == 0xe0 {
-        Some(3)
-    } else if (b & 0xf8) == 0xf0 {
-        Some(4)
-    } else {
-        None
-    }
-}
-
-fn read_utf8_char(bytes: &[u8], i: usize) -> Option<(char, usize)> {
-    let len = utf8_char_len(bytes[i])?;
-    if i + len > bytes.len() {
-        return None;
-    }
-    let s = std::str::from_utf8(&bytes[i..i + len]).ok()?;
-    let ch = s.chars().next()?;
-    Some((ch, len))
-}
-
 /// 双引号包裹 + C 风格转义（与 redis-cli `sdscatrepr` 一致）
 pub fn format_quoted(bytes: &[u8]) -> String {
     let mut s = String::from('"');
@@ -80,22 +56,17 @@ pub fn format_quoted(bytes: &[u8]) -> String {
     s
 }
 
-fn format_score(score: f64) -> String {
-    if score.fract() == 0.0 && score.is_finite() {
-        format!("{}", score as i64)
-    } else {
-        score.to_string()
-    }
-}
-
+/// `SET key value`
 pub fn format_set_command(key: &[u8], value: &[u8]) -> String {
     format!("SET {} {}", format_quoted(key), format_quoted(value))
 }
 
+/// `EXPIRE key seconds`。`ttl_secs` 是十进制明文，不再加引号。
 pub fn format_expire_command(key: &[u8], ttl_secs: i64) -> String {
     format!("EXPIRE {} {}", format_quoted(key), ttl_secs)
 }
 
+/// `HMSET key field value ...`。没有字段时返回 `None`，避免写出空命令。
 pub fn format_hmset_command(key: &[u8], pairs: &[(Vec<u8>, Vec<u8>)]) -> Option<String> {
     if pairs.is_empty() {
         return None;
@@ -108,6 +79,7 @@ pub fn format_hmset_command(key: &[u8], pairs: &[(Vec<u8>, Vec<u8>)]) -> Option<
     Some(parts.join(" "))
 }
 
+/// 单个 Hash 字段：`HSET key field value`
 pub fn format_hset_command(key: &[u8], field: &[u8], value: &[u8]) -> String {
     format!(
         "HSET {} {} {}",
@@ -166,6 +138,7 @@ pub fn format_armset_command(key: &[u8], pairs: &[(i64, Vec<u8>)]) -> Option<Str
     Some(parts.join(" "))
 }
 
+/// `RPUSH key element ...`。没有元素时返回 `None`。
 pub fn format_rpush_command(key: &[u8], items: &[Vec<u8>]) -> Option<String> {
     if items.is_empty() {
         return None;
@@ -177,6 +150,7 @@ pub fn format_rpush_command(key: &[u8], items: &[Vec<u8>]) -> Option<String> {
     Some(parts.join(" "))
 }
 
+/// `SADD key member ...`。没有成员时返回 `None`。
 pub fn format_sadd_command(key: &[u8], members: &[Vec<u8>]) -> Option<String> {
     if members.is_empty() {
         return None;
@@ -188,6 +162,7 @@ pub fn format_sadd_command(key: &[u8], members: &[Vec<u8>]) -> Option<String> {
     Some(parts.join(" "))
 }
 
+/// `ZADD key score member ...`。整数分数不带小数点。没有成员时返回 `None`。
 pub fn format_zadd_command(key: &[u8], pairs: &[(Vec<u8>, f64)]) -> Option<String> {
     if pairs.is_empty() {
         return None;
@@ -200,6 +175,7 @@ pub fn format_zadd_command(key: &[u8], pairs: &[(Vec<u8>, f64)]) -> Option<Strin
     Some(parts.join(" "))
 }
 
+/// `XADD key id field value ...`，字段顺序保持传入顺序。
 pub fn format_xadd_command(key: &[u8], id: &[u8], fields: &[(Vec<u8>, Vec<u8>)]) -> String {
     let mut parts = vec!["XADD".to_string(), format_quoted(key), format_quoted(id)];
     for (f, v) in fields {
@@ -209,6 +185,7 @@ pub fn format_xadd_command(key: &[u8], id: &[u8], fields: &[(Vec<u8>, Vec<u8>)])
     parts.join(" ")
 }
 
+/// `JSON.SET key $ json`
 pub fn format_json_set_command(key: &[u8], json: &[u8]) -> String {
     format!("JSON.SET {} $ {}", format_quoted(key), format_quoted(json))
 }
@@ -221,6 +198,43 @@ pub fn format_ts_add_command(key: &[u8], timestamp: &str, value: &str) -> String
         timestamp.trim(),
         value.trim()
     )
+}
+
+// ------------------------------ 仅本文件使用 ------------------------------
+
+/// 按首字节判断一个 UTF-8 字符占几个字节。非法首字节返回 `None`。
+fn utf8_char_len(b: u8) -> Option<usize> {
+    if b <= 0x7f {
+        Some(1)
+    } else if (b & 0xe0) == 0xc0 {
+        Some(2)
+    } else if (b & 0xf0) == 0xe0 {
+        Some(3)
+    } else if (b & 0xf8) == 0xf0 {
+        Some(4)
+    } else {
+        None
+    }
+}
+
+/// 从 `i` 读出一个完整 UTF-8 字符。截断或非法序列返回 `None`。
+fn read_utf8_char(bytes: &[u8], i: usize) -> Option<(char, usize)> {
+    let len = utf8_char_len(bytes[i])?;
+    if i + len > bytes.len() {
+        return None;
+    }
+    let s = std::str::from_utf8(&bytes[i..i + len]).ok()?;
+    let ch = s.chars().next()?;
+    Some((ch, len))
+}
+
+/// 整数分数写成不带小数点的十进制，其余用 `Display`。
+fn format_score(score: f64) -> String {
+    if score.fract() == 0.0 && score.is_finite() {
+        format!("{}", score as i64)
+    } else {
+        score.to_string()
+    }
 }
 
 #[cfg(test)]

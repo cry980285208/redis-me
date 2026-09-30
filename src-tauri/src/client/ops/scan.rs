@@ -106,6 +106,7 @@ pub fn batch_key0(
 mod scan_cmd_tests {
     use super::*;
 
+    /// 把命令参数收成字符串，方便断言 TYPE 的位置。
     fn cmd_args(cmd: &Cmd) -> Vec<String> {
         cmd.args_iter()
             .map(|arg| match arg {
@@ -116,6 +117,7 @@ mod scan_cmd_tests {
             .collect()
     }
 
+    /// 取出 `SCAN` 里 `TYPE` 后面的那个参数。没有 TYPE 就是 `None`。
     fn scan_type_arg(scan_type: Option<&str>) -> Option<String> {
         let args = cmd_args(&scan_1_cmd(0, "*", 10, scan_type.map(str::to_string)));
         args.windows(2)

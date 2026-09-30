@@ -9,6 +9,7 @@ mod roundtrip;
 
 use redis_me_lib::client::client_trait::MeClient;
 
+/// 没配集群就跳过。配了却建连失败则测试失败。
 fn client() -> Option<Box<dyn MeClient>> {
     match redis::cluster_client() {
         Ok(None) => {

@@ -39,10 +39,11 @@ pub fn redis_value_to_cli_display(
     out
 }
 
-// ---------------------------------------------------------------------------
-// 命令名硬编码（对齐 redis-cli `cliSendCommand` 中 `output_raw = 1` 分支）
-// ---------------------------------------------------------------------------
+// ------------------------------ 仅本文件使用 ------------------------------
 
+// 命令名硬编码（对齐 redis-cli `cliSendCommand` 中 `output_raw = 1` 分支）
+
+/// 第 `i` 个参数是否等于 `expected`，大小写不敏感。
 fn arg_eq(args: &[Vec<u8>], i: usize, expected: &str) -> bool {
     args.get(i)
         .is_some_and(|b| String::from_utf8_lossy(b).eq_ignore_ascii_case(expected))
@@ -117,6 +118,7 @@ fn is_multiline_tty(value: &Value) -> bool {
     }
 }
 
+/// 编号列宽度：至少 1，按十进制位数算。
 fn index_width(count: usize) -> usize {
     let mut n = count.max(1);
     let mut width = 0;
@@ -127,16 +129,19 @@ fn index_width(count: usize) -> usize {
     width
 }
 
+/// 嵌套行的缩进：父前缀再加上编号列和分隔符占的空格。
 fn child_prefix(prefix: &str, idxlen: usize) -> String {
     format!("{}{}", prefix, " ".repeat(idxlen + 2))
 }
 
+/// 去掉标量格式化多出来的那一个末尾换行，方便拼 `key => value`。
 fn strip_trailing_newline(s: &mut String) {
     if s.ends_with('\n') {
         s.pop();
     }
 }
 
+/// 一行编号：`1)`、集合用 `1~`、Map 用 `1#`。
 fn format_index_line(entry_prefix: &str, human_idx: usize, numsep: char, idxlen: usize) -> String {
     format!(
         "{}{:>idxlen$}{numsep} ",
@@ -146,6 +151,7 @@ fn format_index_line(entry_prefix: &str, human_idx: usize, numsep: char, idxlen:
     )
 }
 
+/// 标准 TTY：标量带类型提示，数组和 Map 递归编号。
 fn cli_format_tty(value: Value, prefix: &str) -> String {
     match value {
         Value::Nil => "(nil)\n".into(),
@@ -167,6 +173,7 @@ fn cli_format_tty(value: Value, prefix: &str) -> String {
     }
 }
 
+/// 数组、集合、Push 的多行编号。空集合有各自的 empty 文案。
 fn format_aggregate_tty(kind: AggregateKind, elements: Vec<Value>, prefix: &str) -> String {
     if elements.is_empty() {
         let msg = match kind {
@@ -191,6 +198,7 @@ fn format_aggregate_tty(kind: AggregateKind, elements: Vec<Value>, prefix: &str)
     out
 }
 
+/// Map 按 `key => value` 输出。值本身跨行时先换行再缩进。
 fn format_map_tty(pairs: Vec<(Value, Value)>, prefix: &str) -> String {
     if pairs.is_empty() {
         return "(empty hash)\n".into();
@@ -226,10 +234,12 @@ fn format_map_tty(pairs: Vec<(Value, Value)>, prefix: &str) -> String {
 /// 数组/集合元素分隔符，对应 redis-cli `config.mb_delim` 默认 `\n`
 const RAW_MB_DELIM: &str = "\n";
 
+/// Raw 模式不做引号转义，非法 UTF-8 用 lossy 替换。
 fn raw_string(bytes: &[u8]) -> String {
     String::from_utf8_lossy(bytes).into_owned()
 }
 
+/// `--raw`：不加引号、不加 `(integer)` 这类提示。
 fn cli_format_raw(value: Value) -> String {
     match value {
         Value::Nil => String::new(),
@@ -257,6 +267,7 @@ fn cli_format_raw(value: Value) -> String {
     }
 }
 
+/// Raw 模式下数组元素用换行拼起来。
 fn format_raw_sequence(items: &[Value]) -> String {
     items
         .iter()
@@ -266,6 +277,7 @@ fn format_raw_sequence(items: &[Value]) -> String {
         .join(RAW_MB_DELIM)
 }
 
+/// Raw 模式下 Map 写成 `key value`，多对之间换行。
 fn format_raw_map(pairs: &[(Value, Value)]) -> String {
     pairs
         .iter()
@@ -284,6 +296,7 @@ fn format_raw_map(pairs: &[(Value, Value)]) -> String {
 // CSV（--csv）
 // ---------------------------------------------------------------------------
 
+/// `--csv`：字符串加引号，数组和 Map 展平后用逗号连接。
 fn cli_format_csv(value: Value) -> String {
     match value {
         Value::Nil => "NULL".into(),
@@ -329,10 +342,12 @@ fn json_string_from_bytes(bytes: &[u8]) -> String {
     serde_json::to_string(text.as_ref()).unwrap_or_else(|_| "\"\"".into())
 }
 
+/// 把一段文本收成 JSON 字符串，包含引号和转义。
 fn json_string_from_str(text: &str) -> String {
     serde_json::to_string(text).unwrap_or_else(|_| "\"\"".into())
 }
 
+/// `--json`：Nil 是 `null`，数组和 Map 组成 JSON 文本。
 fn cli_format_json(value: Value) -> String {
     match value {
         Value::Nil => "null".into(),
@@ -395,10 +410,12 @@ mod tests {
     use super::*;
     use CliOutputMode::{Csv, Json, Raw, Standard};
 
+    /// 不带命令名的格式化，用来测标量和容器。
     fn display(value: Value, mode: CliOutputMode) -> String {
         redis_value_to_cli_display(value, Some(mode), "", &[])
     }
 
+    /// 带命令名和参数，用来测 INFO 这类强制 Raw 的命令。
     fn display_cmd(value: Value, mode: CliOutputMode, cmd: &str, args: &[&[u8]]) -> String {
         let args: Vec<Vec<u8>> = args.iter().map(|b| b.to_vec()).collect();
         redis_value_to_cli_display(value, Some(mode), cmd, &args)

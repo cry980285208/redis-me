@@ -170,6 +170,7 @@ api_model!(ProxyOption {
 });
 
 impl Default for ProxyOption {
+    /// 手动代理的占位：本机 7897 的 HTTP 代理，模式仍是 system。
     fn default() -> Self {
         Self {
             proxy_mode: "system".into(),
@@ -197,6 +198,7 @@ api_model!(
     }
 );
 
+/// serde 缺字段时用的建连超时秒数。
 fn default_connection_timeout_secs() -> u64 {
     CONNECTION_CONNECT_TIMEOUT.as_secs()
 }
@@ -209,6 +211,7 @@ api_model!(AppSettings {
 });
 
 impl Default for AppSettings {
+    /// 建连 10 秒、命令 30 秒。和常量默认值一致。
     fn default() -> Self {
         Self {
             connection_timeout_secs: CONNECTION_CONNECT_TIMEOUT.as_secs(),
@@ -218,6 +221,7 @@ impl Default for AppSettings {
 }
 
 impl AppSettings {
+    /// 超时夹到 5–300 秒，避免 0 或特别大的值把连接挂死。
     pub fn normalized(self) -> Self {
         Self {
             connection_timeout_secs: self.connection_timeout_secs.clamp(5, 300),
@@ -225,10 +229,12 @@ impl AppSettings {
         }
     }
 
+    /// 建连超时。
     pub fn connection_timeout(&self) -> Duration {
         Duration::from_secs(self.connection_timeout_secs)
     }
 
+    /// 单次命令的读写超时。
     pub fn command_timeout(&self) -> Duration {
         Duration::from_secs(self.command_timeout_secs)
     }
@@ -431,6 +437,7 @@ api_model!(RedisKey {
 });
 
 impl RedisKey {
+    /// 发给 Redis 的原始字节。`bytes` 为空时用 `key` 的 UTF-8。
     pub fn to_bytes(&self) -> &[u8] {
         // 扫描 UTF-8 键 / 手动新增键：bytes 为空，用 key；二进制键：必须用 bytes
         if self.bytes.is_empty() {
@@ -440,6 +447,7 @@ impl RedisKey {
         }
     }
 
+    /// 合法 UTF-8 去掉重复的 `bytes`，二进制键补上 lossy 的显示名。
     pub fn to_normal(&self) -> Self {
         if self.key.is_empty() {
             RedisKey::from(self.bytes.clone())
@@ -452,6 +460,7 @@ impl RedisKey {
 }
 
 impl From<&str> for RedisKey {
+    /// 文本键只留 `key`，不重复存 `bytes`。
     fn from(s: &str) -> Self {
         // 字符串构造的键本身是 UTF-8，无需再带一份 bytes
         RedisKey {
@@ -461,6 +470,7 @@ impl From<&str> for RedisKey {
     }
 }
 impl From<String> for RedisKey {
+    /// 和 `&str` 一样，合法文本不带 `bytes`。
     fn from(s: String) -> Self {
         RedisKey {
             key: s,
@@ -469,6 +479,7 @@ impl From<String> for RedisKey {
     }
 }
 impl From<Vec<u8>> for RedisKey {
+    /// 能解成 UTF-8 就只留显示名，否则 `key` 用 lossy，`bytes` 留原字节。
     fn from(bytes: Vec<u8>) -> Self {
         // 合法 UTF-8：只留 key，省略 bytes，降低 SCAN 全量时的 IPC/前端内存
         match String::from_utf8(bytes) {
@@ -488,6 +499,7 @@ impl From<Vec<u8>> for RedisKey {
 }
 
 impl From<RedisKey> for String {
+    /// 给日志和错误信息用的显示名。没有 `key` 时从字节 lossy 解码。
     fn from(redis_key: RedisKey) -> Self {
         if redis_key.key.is_empty() {
             String::from_utf8_lossy(&redis_key.bytes).to_string()
@@ -498,6 +510,7 @@ impl From<RedisKey> for String {
 }
 
 impl ToRedisArgs for RedisKey {
+    /// 命令参数用原始字节，不用 lossy 的显示名。
     fn write_redis_args<W>(&self, out: &mut W)
     where
         W: ?Sized + RedisWrite,
@@ -527,6 +540,7 @@ api_model!(RedisBatchTtl {
     ttl: i64
 });
 
+/// 导出格式缺省是 csv。
 fn default_export_format() -> String {
     "csv".into()
 }
@@ -543,6 +557,7 @@ api_model!(RedisExportCsv {
 });
 
 impl From<RedisExportCsv> for RedisBatchKey {
+    /// 导出参数里和批量删除共用的 pattern、键列表。
     fn from(value: RedisExportCsv) -> Self {
         RedisBatchKey {
             pattern: value.pattern,
@@ -904,6 +919,7 @@ api_model!(RedisKeySize {
 });
 
 impl From<(Vec<u8>, u64, String)> for RedisKeySize {
+    /// 内存分析结果：键按 `RedisKey` 的 UTF-8 规则收，再带上大小和类型。
     fn from((key, size, key_type): (Vec<u8>, u64, String)) -> Self {
         // 与 RedisKey::from 一致：UTF-8 省略 bytes
         let rk = RedisKey::from(key);
@@ -1030,10 +1046,12 @@ api_model!(
 mod u64_as_string {
     use serde::{Deserialize, Deserializer, Serializer};
 
+    /// 游标写成十进制字符串，避免前端把大整数弄丢精度。
     pub fn serialize<S: Serializer>(v: &u64, s: S) -> Result<S::Ok, S::Error> {
         s.serialize_str(&v.to_string())
     }
 
+    /// 从十进制字符串读回 `u64`。
     pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<u64, D::Error> {
         String::deserialize(d)?
             .parse()
@@ -1048,6 +1066,7 @@ mod v8_base64 {
     use serde::de::Error;
     use serde::{Deserialize, Deserializer, Serializer};
 
+    /// 字节数组写成标准 Base64 字符串。
     pub fn serialize<S>(bytes: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -1056,6 +1075,7 @@ mod v8_base64 {
         serializer.serialize_str(&base64_string)
     }
 
+    /// 从标准 Base64 解回字节。
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
     where
         D: Deserializer<'de>,

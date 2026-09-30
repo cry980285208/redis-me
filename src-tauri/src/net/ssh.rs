@@ -41,6 +41,7 @@ struct ClientHandler;
 impl client::Handler for ClientHandler {
     type Error = russh::Error;
 
+    /// 不校验 known_hosts，和以前的隧道一样接受服务器密钥。
     async fn check_server_key(
         &mut self,
         _server_public_key: &russh::keys::PublicKeyOrCertificate,
@@ -65,10 +66,12 @@ pub struct SshDialer {
 }
 
 impl SshDialer {
+    /// Drop 之后不应再被调用。
     fn runtime(&self) -> &Runtime {
         self.runtime.as_ref().expect("SSH runtime dropped")
     }
 
+    /// 给 `off_ui` 和析构用的 Runtime 句柄。
     fn rt_handle(&self) -> tokio::runtime::Handle {
         self.runtime().handle().clone()
     }
@@ -120,6 +123,7 @@ impl SshDialer {
         Ok(())
     }
 
+    /// 没有会话或 russh 报告已关闭。
     fn session_closed(&self) -> bool {
         self.session
             .lock()
@@ -170,6 +174,7 @@ impl SshDialer {
 }
 
 impl ConnectionDialer for SshDialer {
+    /// 开一条到 Redis 的 `direct-tcpip`。会话断了会重连一次。
     fn dial(
         &self,
         host: &str,
@@ -199,6 +204,7 @@ impl ConnectionDialer for SshDialer {
 }
 
 impl Drop for SshDialer {
+    /// 不在 WebView 线程上直接丢 russh。先拿到会话和 Runtime，再到 `off_ui` 里关。
     fn drop(&mut self) {
         // 只 take、不在 WebView2 上真正 drop russh / Runtime
         let session = self.session.lock().take();
@@ -222,6 +228,7 @@ struct SshRedisStream {
 }
 
 impl SshRedisStream {
+    /// channel 已经关掉时返回未连接。
     fn stream(&mut self) -> io::Result<&mut ChannelStream> {
         self.stream
             .as_mut()
@@ -239,6 +246,7 @@ impl SshRedisStream {
 }
 
 impl Drop for SshRedisStream {
+    /// channel 的 Drop 会 `tokio::spawn`，必须在 Runtime 的 `enter` 下做。
     fn drop(&mut self) {
         let Some(stream) = self.stream.take() else {
             return;
@@ -248,6 +256,7 @@ impl Drop for SshRedisStream {
 }
 
 impl Read for SshRedisStream {
+    /// 同步读，实际在 SSH Runtime 上 `block_on`，并套读超时。
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let limit = *self.read_timeout.lock();
         let rt = self.rt.clone();
@@ -260,6 +269,7 @@ impl Read for SshRedisStream {
 }
 
 impl Write for SshRedisStream {
+    /// 同步写，套写超时。
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let limit = *self.write_timeout.lock();
         let rt = self.rt.clone();
@@ -270,6 +280,7 @@ impl Write for SshRedisStream {
         })
     }
 
+    /// 把 channel 里还没发出去的数据刷掉。
     fn flush(&mut self) -> io::Result<()> {
         let limit = *self.write_timeout.lock();
         let rt = self.rt.clone();
@@ -282,17 +293,22 @@ impl Write for SshRedisStream {
 }
 
 impl RedisStream for SshRedisStream {
+    /// redis-rs 在握手后会重设读超时，记下来给下一次 `read`。
     fn set_read_timeout(&self, dur: Option<Duration>) -> io::Result<()> {
         *self.read_timeout.lock() = dur;
         Ok(())
     }
 
+    /// 同上，给下一次 `write` / `flush`。
     fn set_write_timeout(&self, dur: Option<Duration>) -> io::Result<()> {
         *self.write_timeout.lock() = dur;
         Ok(())
     }
 }
 
+// ------------------------------ 仅本文件使用 ------------------------------
+
+/// 给一次 SSH channel 读写套上超时。没设超时就直接等完成。
 async fn io_timeout<T>(
     limit: Option<Duration>,
     timed_out: &'static str,
@@ -323,6 +339,7 @@ fn drop_with_enter<T: Send>(rt: tokio::runtime::Handle, value: T) {
     });
 }
 
+/// 在超时内完成 TCP、握手和认证。超时映射成 `SshTimeout`。
 async fn connect_and_auth(
     ssh_option: &SshOption,
     connect_timeout: Duration,
@@ -350,6 +367,7 @@ async fn connect_and_auth(
     }
 }
 
+/// 密码或私钥登录。用户名为空时用 `root`。
 async fn authenticate(
     session: &mut client::Handle<ClientHandler>,
     ssh_option: &SshOption,
@@ -394,6 +412,7 @@ async fn authenticate(
     Ok(())
 }
 
+/// 只有 `AuthResult::Success` 算通过，其余都是认证失败。
 fn check_auth_result(result: Result<AuthResult, russh::Error>, username: &str) -> AnyResult<()> {
     match result {
         Ok(AuthResult::Success) => Ok(()),
@@ -434,6 +453,7 @@ fn off_ui<T: Send>(f: impl FnOnce() -> T + Send) -> Result<T, String> {
     .map_err(panic_message)
 }
 
+/// 把工作线程 panic 的 payload 收成一句错误文本。
 fn panic_message(payload: Box<dyn Any + Send>) -> String {
     if let Some(s) = payload.downcast_ref::<&str>() {
         (*s).to_string()
@@ -444,18 +464,22 @@ fn panic_message(payload: Box<dyn Any + Send>) -> String {
     }
 }
 
+/// `off_ui` 的 `io::Result` 版本。线程 panic 变成 IO 错误。
 fn off_ui_io<T: Send>(f: impl FnOnce() -> io::Result<T> + Send) -> io::Result<T> {
     off_ui(f).unwrap_or_else(|msg| Err(io::Error::other(msg)))
 }
 
+/// `off_ui` 的 `RedisResult` 版本。线程 panic 变成 Redis IO 错误。
 fn off_ui_redis<T: Send>(f: impl FnOnce() -> RedisResult<T> + Send) -> RedisResult<T> {
     off_ui(f).unwrap_or_else(|msg| Err(RedisError::from(io::Error::other(msg))))
 }
 
+/// `off_ui` 的 `anyhow` 版本。线程 panic 变成 `bail`。
 fn off_ui_any<T: Send>(f: impl FnOnce() -> AnyResult<T> + Send) -> AnyResult<T> {
     off_ui(f).unwrap_or_else(|msg| anyhow::bail!(msg))
 }
 
+/// russh 要的 `host:port`。裸 IPv6 加方括号。
 fn ssh_socket_addr(host: &str, port: u16) -> String {
     if host.contains(':') && !host.starts_with('[') {
         format!("[{host}]:{port}")
@@ -464,6 +488,7 @@ fn ssh_socket_addr(host: &str, port: u16) -> String {
     }
 }
 
+/// Dialer 只能返回 `RedisError`，把 anyhow 收成 IO 错误。
 fn any_to_redis(err: anyhow::Error) -> RedisError {
     RedisError::from(io::Error::other(err.to_string()))
 }

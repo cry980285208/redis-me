@@ -58,6 +58,7 @@ macro_rules! api_commands {
 #[macro_export]
 macro_rules! implement_pipeline_commands {
     ($struct_name:ident) => {
+        /// 用 pipeline 写入 string 和 hash 的随机样本，给空库看界面。
         fn mock_data(&self, count: u64) -> $crate::support::util::AnyResult<()> {
             let mut pipe = $struct_name::with_capacity(count as usize);
             for _ in 0..count {

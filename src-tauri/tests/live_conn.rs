@@ -14,6 +14,7 @@ use redis_me_lib::net::conn::sentinel_masters;
 use redis_me_lib::net::system_proxy::{DetectOutcome, detect_system_proxy};
 use std::time::Duration;
 
+/// 按段名取扩展连接。toml 里没有这一段就跳过。
 fn spec(name: &str) -> Option<LiveConn> {
     match redis::load_live_conns() {
         Ok(list) => list.into_iter().find(|item| item.name == name),
@@ -21,6 +22,7 @@ fn spec(name: &str) -> Option<LiveConn> {
     }
 }
 
+/// 连上后做同一件数据断言。集群段再跑槽位和跨 slot 重命名。
 fn run(name: &str) {
     let Some(spec) = spec(name) else {
         eprintln!("skip: [{name}]");
@@ -54,6 +56,7 @@ fn run(name: &str) {
     }
 }
 
+/// `CLIENT INFO` 里的 `resp` 必须是 3。
 fn assert_resp3(client: &dyn MeClient) {
     let text = client
         .execute_command(RedisCommand {

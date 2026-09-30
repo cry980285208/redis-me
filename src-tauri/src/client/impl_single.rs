@@ -49,12 +49,14 @@ pub struct MeSingle {
 impl Deref for MeSingle {
     type Target = MeBase;
 
+    /// 让单机客户端直接用 `MeBase` 上的字段。
     fn deref(&self) -> &Self::Target {
         &self.base
     }
 }
 
 impl Drop for MeSingle {
+    /// 关掉还在跑的订阅和 MONITOR。连接已经断了就忽略错误。
     fn drop(&mut self) {
         // Drop 时静默忽略错误（连接可能已关闭）
         let _ = self.subscribe_stop();
@@ -64,10 +66,12 @@ impl Drop for MeSingle {
 }
 
 impl MeClient for MeSingle {
+    /// 这条连接的运行时状态。
     fn base(&self) -> &MeBase {
         &self.base
     }
 
+    /// 数据库列表。
     fn db_list(&self) -> AnyResult<Vec<RedisDB>> {
         let map = match self.config_get("databases", None) {
             Ok(map) => map,
@@ -89,6 +93,7 @@ impl MeClient for MeSingle {
         Ok(db_list)
     }
 
+    /// 切换当前库。
     fn select_db(&self, db: u16) -> AnyResult<()> {
         if self.db.load(Relaxed) == db {
             return Ok(());
@@ -102,6 +107,7 @@ impl MeClient for MeSingle {
         Ok(())
     }
 
+    /// 单节点 `INFO`。集群可指定节点。
     fn info(&self, _node: Option<String>) -> AnyResult<RedisInfo> {
         let mut conn = self.get_conn()?;
         let info: String = redis::cmd("info").query(&mut conn)?;
@@ -111,15 +117,18 @@ impl MeClient for MeSingle {
         })
     }
 
+    /// 每个节点一份 `INFO`。单机只有一条。
     fn info_list(&self) -> AnyResult<Vec<RedisInfo>> {
         let info = self.info(None)?;
         Ok(vec![info])
     }
 
+    /// 集群节点列表。单机返回空。
     fn node_list(&self) -> AnyResult<Vec<RedisNode>> {
         Ok(vec![])
     }
 
+    /// 按 pattern 扫描键。
     fn scan(&self, param: ScanParam) -> AnyResult<ScanResult> {
         let mut conn = self.get_conn()?;
 
@@ -151,23 +160,28 @@ impl MeClient for MeSingle {
         })
     }
 
+    /// 扫描一个键里面的字段或元素。
     fn field_scan(&self, param: FieldScanParam) -> AnyResult<FieldScanResult> {
         let httl_supported = self.base().capabilities.httl_supported;
         field_scan0(self.get_conn()?, param, httl_supported)
     }
 
+    /// 设置键的 TTL，秒。负数表示取消过期。
     fn ttl(&self, key: RedisKey, ttl: i64) -> AnyResult<()> {
         ttl0(self.get_conn()?, key, ttl)
     }
 
+    /// 按类型写入整个键。
     fn set(&self, param: RedisSetParam) -> AnyResult<()> {
         set0(self.get_conn()?, param)
     }
 
+    /// 删除键。
     fn del(&self, key: RedisKey) -> AnyResult<()> {
         del0(self.get_conn()?, key)
     }
 
+    /// 重命名。集群上可能跨 slot。
     fn rename(&self, key: RedisKey, new_key: RedisKey) -> AnyResult<RedisKey> {
         // 防止同名重命名时执行无意义操作
         if key.to_bytes() == new_key.to_bytes() {
@@ -180,10 +194,12 @@ impl MeClient for MeSingle {
         Ok(new_key.to_normal())
     }
 
+    /// 复制键。
     fn copy(&self, param: RedisCopyParam) -> AnyResult<RedisKey> {
         copy0(self.get_conn()?, param)
     }
 
+    /// 给已有键新增字段或元素。
     fn field_add(&self, param: RedisFieldAdd) -> AnyResult<RedisKey> {
         field_add0(
             self.get_conn()?,
@@ -192,6 +208,7 @@ impl MeClient for MeSingle {
         )
     }
 
+    /// 改一个字段或元素。
     fn field_set(&self, param: RedisFieldSet) -> AnyResult<()> {
         field_set0(
             self.get_conn()?,
@@ -200,6 +217,7 @@ impl MeClient for MeSingle {
         )
     }
 
+    /// Hash 字段过期（`HEXPIRE` / `HPERSIST`）。
     fn field_ttl(&self, param: RedisFieldTtl) -> AnyResult<()> {
         field_ttl0(
             self.get_conn()?,
@@ -208,6 +226,7 @@ impl MeClient for MeSingle {
         )
     }
 
+    /// 读取单条字段。
     fn field_get(&self, param: RedisFieldGet) -> AnyResult<RedisFieldValue> {
         field_get0(
             self.get_conn()?,
@@ -216,62 +235,77 @@ impl MeClient for MeSingle {
         )
     }
 
+    /// Hash 全量字段名。
     fn hash_keys(&self, param: RedisHashKeys) -> AnyResult<Vec<String>> {
         hash_keys0(self.get_conn()?, param)
     }
 
+    /// Hash 全量字段值。
     fn hash_values(&self, param: RedisHashKeys) -> AnyResult<Vec<String>> {
         hash_values0(self.get_conn()?, param)
     }
 
+    /// List / Set / ZSet 弹出元素。
     fn field_pop(&self, param: RedisPop) -> AnyResult<String> {
         field_pop0(self.get_conn()?, param)
     }
 
+    /// 删除字段或元素。
     fn field_del(&self, param: RedisFieldDel) -> AnyResult<()> {
         field_del0(self.get_conn()?, param)
     }
 
+    /// ZSet 排名。
     fn zset_rank(&self, param: RedisZsetRank) -> AnyResult<RedisZsetRankResult> {
         zset_rank0(self.get_conn()?, param)
     }
 
+    /// ZSet 按名次取一段。
     fn zset_range(&self, param: RedisZsetRange) -> AnyResult<Vec<RedisZsetRangeItem>> {
         zset_range0(self.get_conn()?, param)
     }
 
+    /// Array 尾部若干元素。
     fn ar_last_items(&self, param: RedisArLastItems) -> AnyResult<Vec<RedisArLastItemsItem>> {
         ar_last_items0(self.get_conn()?, param)
     }
 
+    /// Array `ARINFO`。
     fn ar_info(&self, key: RedisKey) -> AnyResult<Vec<RedisArInfoItem>> {
         ar_info0(self.get_conn()?, key)
     }
 
+    /// Vector Set `VINFO`，行结构和 `ARINFO` 相同。
     fn v_info(&self, key: RedisKey) -> AnyResult<Vec<RedisArInfoItem>> {
         v_info0(self.get_conn()?, key)
     }
 
+    /// TimeSeries `TS.INFO`，行结构和 `ARINFO` 相同。
     fn ts_info(&self, key: RedisKey) -> AnyResult<Vec<RedisArInfoItem>> {
         ts_info0(self.get_conn()?, key)
     }
 
+    /// Vector Set `VGETATTR`。
     fn v_getattr(&self, param: RedisVAttr) -> AnyResult<String> {
         v_getattr0(self.get_conn()?, param)
     }
 
+    /// Vector Set `VSETATTR`。空串表示删掉属性。
     fn v_setattr(&self, param: RedisVAttr) -> AnyResult<()> {
         v_setattr0(self.get_conn()?, param)
     }
 
+    /// Vector Set `VSIM`。
     fn v_sim(&self, param: RedisVSim) -> AnyResult<Vec<RedisVSimItem>> {
         v_sim0(self.get_conn()?, param)
     }
 
+    /// `OBJECT` 自省：编码、空闲时间、引用计数、访问频率。
     fn object_info(&self, key: RedisKey) -> AnyResult<RedisObjectInfo> {
         object_info0(self.get_conn()?, key)
     }
 
+    /// 在终端里执行一条命令，返回 redis-cli 风格文本。
     fn execute_command(&self, param: RedisCommand) -> AnyResult<String> {
         let (cmd, args) = parse_command(param.command.as_str())?;
         if cmd.is_empty() {
@@ -288,6 +322,7 @@ impl MeClient for MeSingle {
         ))
     }
 
+    /// `CONFIG GET`。
     fn config_get(
         &self,
         pattern: &str,
@@ -300,6 +335,7 @@ impl MeClient for MeSingle {
         Ok(result)
     }
 
+    /// `CONFIG SET`。
     fn config_set(&self, key: &str, value: &str, _node: Option<String>) -> AnyResult<()> {
         let cmd = resolve_command_name(&self.conf, "config");
         let mut conn = self.get_conn()?;
@@ -311,6 +347,7 @@ impl MeClient for MeSingle {
         Ok(())
     }
 
+    /// 慢日志。
     fn slow_log(&self, count: Option<u64>, _node: Option<String>) -> AnyResult<Vec<RedisSlowLog>> {
         let mut conn = self.get_conn()?;
         let mut logs = vec![];
@@ -325,6 +362,7 @@ impl MeClient for MeSingle {
         Ok(logs)
     }
 
+    /// 对一批键 pipeline MEMORY USAGE（及可选 TYPE），只保留 >= size_limit 的。
     fn memory_usage_keys(
         &self,
         keys: &[RedisKey],
@@ -361,6 +399,7 @@ impl MeClient for MeSingle {
         Ok(tuple_to_key_size(out))
     }
 
+    /// `CLIENT LIST`。
     fn client_list(
         &self,
         _node: Option<String>,
@@ -384,11 +423,13 @@ impl MeClient for MeSingle {
         Ok(clients)
     }
 
+    /// `PUBLISH`。
     fn publish(&self, channel: &str, message: &str, msg_fmt: Option<BytesFormat>) -> AnyResult<()> {
         let fmt = msg_fmt.unwrap_or_default();
         publish0(self.get_conn()?, channel, message, &fmt)
     }
 
+    /// 按模式订阅，空模式等价于 `*`。
     fn subscribe(&self, channel: Option<String>) -> AnyResult<()> {
         let conn = self
             .client
@@ -399,10 +440,12 @@ impl MeClient for MeSingle {
         subscribe0(conn, running, app_handle, channel, self.id.clone(), logger)
     }
 
+    /// 停掉当前订阅循环。
     fn subscribe_stop(&self) -> AnyResult<()> {
         subscribe_stop0(self.get_conn()?, self.subscribe_running.clone())
     }
 
+    /// `MONITOR`。集群要指定节点。
     fn monitor(&self, _node: &str) -> AnyResult<()> {
         let conn = self
             .client
@@ -413,10 +456,12 @@ impl MeClient for MeSingle {
         monitor0(conn, running, app_handle, self.id.clone(), logger)
     }
 
+    /// 停掉 `MONITOR`。
     fn monitor_stop(&self) -> AnyResult<()> {
         monitor_stop0(self.monitor_running.clone())
     }
 
+    /// 按 pattern 或键列表批量删除。
     fn batch_del(&self, param: RedisBatchKey) -> AnyResult<()> {
         let key_list = batch_key0(self, param, false)?;
         if key_list.is_empty() {
@@ -434,6 +479,7 @@ impl MeClient for MeSingle {
         Ok(())
     }
 
+    /// 批量改 TTL。
     fn batch_ttl(&self, param: RedisBatchTtl) -> AnyResult<()> {
         if param.key_list.is_empty() {
             return Ok(());
@@ -454,6 +500,7 @@ impl MeClient for MeSingle {
         Ok(())
     }
 
+    /// 导出 CSV 或命令文件。
     fn export_csv(&self, param: RedisExportCsv) -> AnyResult<()> {
         let key_list = batch_key0(self, param.clone().into(), true)?;
         let conn = self.get_new_conn()?;
@@ -493,6 +540,7 @@ impl MeClient for MeSingle {
         Ok(())
     }
 
+    /// 从 CSV 导入。
     fn import_csv(&self, param: RedisImportCsv) -> AnyResult<()> {
         let conn = self.get_new_conn()?;
         let logger = self.base().command_logger.clone();
@@ -508,6 +556,7 @@ impl MeClient for MeSingle {
         Ok(())
     }
 
+    /// 按行执行命令文件。
     fn import_cmd(&self, file: String) -> AnyResult<()> {
         let conn = self.get_new_conn()?;
         let logger = self.base().command_logger.clone();
@@ -523,30 +572,37 @@ impl MeClient for MeSingle {
         Ok(())
     }
 
+    /// `TYPE`。
     fn key_type(&self, key: RedisKey) -> AnyResult<String> {
         key_type0(self.get_conn()?, key)
     }
 
+    /// 把整个键格式化成 redis-cli 命令。
     fn get_key_as_command(&self, key: RedisKey) -> AnyResult<String> {
         get_key_as_command0(self.get_conn()?, key)
     }
 
+    /// 把表格里的一行格式化成命令。
     fn get_field_as_command(&self, param: RedisFieldAsCommand) -> AnyResult<String> {
         get_field_as_command0(self.get_conn()?, param)
     }
 
+    /// `XINFO GROUPS`。
     fn xinfo_groups(&self, key: RedisKey) -> AnyResult<Vec<XInfoGroup>> {
         xinfo_groups0(self.get_conn()?, key)
     }
 
+    /// `XINFO CONSUMERS`。
     fn xinfo_consumers(&self, key: RedisKey, group: String) -> AnyResult<Vec<XInfoConsumer>> {
         xinfo_consumers0(self.get_conn()?, key, group)
     }
 
+    /// 键所在的集群 slot。
     fn key_slot(&self, _key: RedisKey) -> AnyResult<u64> {
         Ok(0)
     }
 
+    /// 键所在的集群节点。
     fn key_node(&self, _key: RedisKey) -> AnyResult<Vec<RedisNode>> {
         let node = format!("{}:{}", self.conf.host, self.conf.port);
         Ok(vec![RedisNode {
@@ -555,26 +611,32 @@ impl MeClient for MeSingle {
         }])
     }
 
+    /// `FLUSHDB`。
     fn flush_db(&self) -> AnyResult<()> {
         flush_db0(self.get_conn()?)
     }
 
+    /// `FLUSHALL`。
     fn flush_all(&self) -> AnyResult<()> {
         flush_all0(self.get_conn()?)
     }
 
+    /// `ACL USERS`，只要用户名。
     fn acl_users(&self) -> AnyResult<Vec<String>> {
         acl_users0(self.get_conn()?)
     }
 
+    /// `ACL LIST` 解析后的用户详情。
     fn acl_list_users(&self) -> AnyResult<Vec<AclUserDetail>> {
         acl_list_users0(self.get_conn()?)
     }
 
+    /// `ACL GETUSER`。
     fn acl_getuser(&self, username: &str) -> AnyResult<AclUserDetail> {
         acl_getuser0(self.get_conn()?, username)
     }
 
+    /// `ACL SETUSER`。
     fn acl_setuser(&self, param: AclSetuserParam) -> AnyResult<()> {
         let rules = acl_build_rules(&param)?;
         let _: () = self
@@ -583,41 +645,50 @@ impl MeClient for MeSingle {
         Ok(())
     }
 
+    /// `ACL DELUSER`。
     fn acl_deluser(&self, usernames: Vec<String>) -> AnyResult<usize> {
         Ok(self.get_conn()?.acl_deluser(&usernames)?)
     }
 
+    /// `ACL WHOAMI`。
     fn acl_whoami(&self) -> AnyResult<String> {
         acl_whoami0(self.get_conn()?)
     }
 
+    /// `ACL CAT`。
     fn acl_cat(&self, category: Option<String>) -> AnyResult<Vec<String>> {
         acl_cat0(self.get_conn()?, category)
     }
 
+    /// `ACL GENPASS`。
     fn acl_genpass(&self, bits: Option<i64>) -> AnyResult<String> {
         acl_genpass0(self.get_conn()?, bits)
     }
 
+    /// `ACL SAVE`。
     fn acl_save(&self) -> AnyResult<()> {
         let _: () = self.get_conn()?.acl_save()?;
         Ok(())
     }
 
+    /// `ACL LOAD`。
     fn acl_load(&self) -> AnyResult<()> {
         let _: () = self.get_conn()?.acl_load()?;
         Ok(())
     }
 
+    /// `ACL LOG`。
     fn acl_log(&self, count: Option<u64>) -> AnyResult<Vec<AclLogEntry>> {
         acl_log0(self.get_conn()?, count)
     }
 
+    /// `ACL LOG RESET`。
     fn acl_log_reset(&self) -> AnyResult<()> {
         let _: () = self.get_conn()?.acl_log_reset()?;
         Ok(())
     }
 
+    /// `ACL DRYRUN`。
     fn acl_dryrun(&self, username: String, command: String) -> AnyResult<String> {
         acl_dryrun0(self.get_conn()?, username, command)
     }

@@ -36,6 +36,7 @@ pub struct CommandLogger {
 }
 
 impl CommandLogger {
+    /// 一条连接一份日志。上限见 `DEFAULT_MAX_ENTRIES`。
     pub fn new(conn_id: String, conn_name: String) -> Self {
         Self {
             entries: RwLock::new(Vec::new()),
@@ -52,6 +53,7 @@ impl CommandLogger {
         *self.app_handle.write() = Some(app_handle);
     }
 
+    /// 清空内存里的日志。不通知前端，面板自己会再拉一次。
     pub fn clear(&self) {
         self.entries.write().clear();
     }
@@ -63,6 +65,7 @@ impl CommandLogger {
         entries.iter().rev().take(limit).cloned().collect()
     }
 
+    /// 从 redis-rs 的 `Cmd` 记一条，含耗时和错误。
     pub fn log_from_cmd(
         &self,
         db_index: u16,
@@ -75,6 +78,7 @@ impl CommandLogger {
         self.push_entry(db_index, &command, &args, error, duration_ms);
     }
 
+    /// 调用方已经拆好命令名和参数时用这个记。
     pub fn log_raw(
         &self,
         db_index: u16,
@@ -164,6 +168,7 @@ pub struct LoggingConnection {
 }
 
 impl LoggingConnection {
+    /// 包住单机连接。`db_index` 跟着 `SELECT` 更新，日志里要显示当前库。
     pub fn new(inner: Connection, logger: Arc<CommandLogger>, db_index: u16) -> Self {
         Self {
             inner,
@@ -172,20 +177,24 @@ impl LoggingConnection {
         }
     }
 
+    /// 读超时交给内层连接。记日志不改超时。
     pub fn set_read_timeout(&mut self, timeout: Option<Duration>) -> RedisResult<()> {
         self.inner.set_read_timeout(timeout)
     }
 
+    /// 写超时交给内层连接。
     pub fn set_write_timeout(&mut self, timeout: Option<Duration>) -> RedisResult<()> {
         self.inner.set_write_timeout(timeout)
     }
 
+    /// `SELECT` 成功后更新日志里显示的库号。
     pub fn set_db_index(&mut self, db: u16) {
         self.db_index = db;
     }
 }
 
 impl ConnectionLike for LoggingConnection {
+    /// 执行一条命令并记日志。
     fn req_command(&mut self, cmd: &Cmd) -> RedisResult<Value> {
         let start = Instant::now();
         let result = self.inner.req_command(cmd);
@@ -195,10 +204,12 @@ impl ConnectionLike for LoggingConnection {
         result
     }
 
+    /// 单条已打包命令不单独记。pipeline 走 `req_packed_commands`。
     fn req_packed_command(&mut self, cmd: &[u8]) -> RedisResult<Value> {
         self.inner.req_packed_command(cmd)
     }
 
+    /// pipeline 只记一条汇总，带上第一条命令的名字。
     fn req_packed_commands(
         &mut self,
         cmd: &[u8],
@@ -219,14 +230,17 @@ impl ConnectionLike for LoggingConnection {
         result
     }
 
+    /// 日志里显示的当前库。
     fn get_db(&self) -> i64 {
         self.db_index as i64
     }
 
+    /// 探活交给内层连接。
     fn check_connection(&mut self) -> bool {
         self.inner.check_connection()
     }
 
+    /// 连接是否还开着。
     fn is_open(&self) -> bool {
         self.inner.is_open()
     }
@@ -240,6 +254,7 @@ pub struct LoggingClusterConnection {
 }
 
 impl LoggingClusterConnection {
+    /// 包住集群连接。库号一般是 0，和单机包装同一套日志。
     pub fn new(inner: ClusterConnection, logger: Arc<CommandLogger>, db_index: u16) -> Self {
         Self {
             inner,
@@ -248,14 +263,17 @@ impl LoggingClusterConnection {
         }
     }
 
+    /// 读超时交给集群连接。
     pub fn set_read_timeout(&mut self, timeout: Option<Duration>) -> RedisResult<()> {
         self.inner.set_read_timeout(timeout)
     }
 
+    /// 写超时交给集群连接。
     pub fn set_write_timeout(&mut self, timeout: Option<Duration>) -> RedisResult<()> {
         self.inner.set_write_timeout(timeout)
     }
 
+    /// 发到指定节点并记日志。ACL 广播这类调用走这里。
     pub fn route_command(&mut self, cmd: &Cmd, route: RoutingInfo) -> RedisResult<Value> {
         let start = Instant::now();
         let result = self.inner.route_command(cmd, route);
@@ -265,6 +283,7 @@ impl LoggingClusterConnection {
         result
     }
 
+    /// pipeline 查询要拿到里面的 `ClusterConnection`。
     pub fn inner_mut(&mut self) -> &mut ClusterConnection {
         &mut self.inner
     }
@@ -298,6 +317,7 @@ impl LoggingClusterConnection {
 }
 
 impl ConnectionLike for LoggingClusterConnection {
+    /// 执行一条命令并记日志。路由由 redis-rs 决定。
     fn req_command(&mut self, cmd: &Cmd) -> RedisResult<Value> {
         let start = Instant::now();
         let result = self.inner.req_command(cmd);
@@ -307,10 +327,12 @@ impl ConnectionLike for LoggingClusterConnection {
         result
     }
 
+    /// 单条已打包命令不单独记。pipeline 走 `req_packed_commands`。
     fn req_packed_command(&mut self, cmd: &[u8]) -> RedisResult<Value> {
         self.inner.req_packed_command(cmd)
     }
 
+    /// pipeline 只记一条汇总，带上第一条命令的名字。
     fn req_packed_commands(
         &mut self,
         cmd: &[u8],
@@ -331,19 +353,25 @@ impl ConnectionLike for LoggingClusterConnection {
         result
     }
 
+    /// 日志里显示的当前库。
     fn get_db(&self) -> i64 {
         self.db_index as i64
     }
 
+    /// 探活交给内层连接。
     fn check_connection(&mut self) -> bool {
         self.inner.check_connection()
     }
 
+    /// 连接是否还开着。
     fn is_open(&self) -> bool {
         self.inner.is_open()
     }
 }
 
+// ------------------------------ 仅本文件使用 ------------------------------
+
+/// 从 Redis 结果里抽出错误文本。成功且没有内嵌错误时返回 `None`。
 fn command_log_error(result: &RedisResult<Value>) -> Option<String> {
     match result {
         Err(e) => Some(e.to_string()),
@@ -430,6 +458,7 @@ fn parse_pipeline_first(packed: &[u8], offset: usize) -> Option<String> {
     }
 }
 
+/// 从 `Cmd` 取出大写命令名和已截断的参数，供日志一行展示。
 fn parse_cmd(cmd: &Cmd) -> (String, Vec<String>) {
     let args: Vec<String> = cmd
         .args_iter()

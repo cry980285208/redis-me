@@ -18,6 +18,7 @@ struct EnvGuard {
 }
 
 impl EnvGuard {
+    /// 改环境变量并记住原值。并行用例靠 `ENV_LOCK` 串行。
     fn set(pairs: &[(&'static str, Option<&str>)]) -> Self {
         let _lock = ENV_LOCK.lock().unwrap_or_else(|err| err.into_inner());
         let saved = pairs
@@ -38,6 +39,7 @@ impl EnvGuard {
 }
 
 impl Drop for EnvGuard {
+    /// 把环境变量恢复成进入测试前的值。
     fn drop(&mut self) {
         for (key, value) in &self.saved {
             unsafe {
@@ -50,6 +52,7 @@ impl Drop for EnvGuard {
     }
 }
 
+/// 断言用的期望地址，避免每个用例手写结构体。
 fn endpoint(host: &str, port: u16, db: u16, username: &str, password: &str) -> Endpoint {
     Endpoint {
         host: host.into(),

@@ -1075,6 +1075,7 @@ fn field_scan_4_return(
 mod zset_score_range_tests {
     use super::*;
 
+    /// 只填分数上下界，其它字段用扫描默认值。
     fn param_with_scores(min: Option<&str>, max: Option<&str>) -> FieldScanParam {
         FieldScanParam {
             key: RedisKey {
@@ -1171,6 +1172,7 @@ mod zset_score_range_tests {
 mod list_scan_range_tests {
     use super::*;
 
+    /// List 扫描参数：下标范围和是否倒序，其余用默认值。
     fn list_param(min: Option<i64>, max: Option<i64>, desc: Option<bool>) -> FieldScanParam {
         FieldScanParam {
             key: RedisKey {

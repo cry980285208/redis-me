@@ -6,89 +6,25 @@ use redis_me_lib::model::{BytesFormat, RedisFieldAdd, RedisFieldValue, RedisKey}
 use redis_me_lib::support::util::AnyResult;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-fn prefix() -> String {
-    static N: AtomicU64 = AtomicU64::new(0);
-    let n = N.fetch_add(1, Ordering::Relaxed);
-    format!("redis-me:test:{}:{n}:", std::process::id())
-}
-
 struct Trash<'a> {
     client: &'a dyn MeClient,
     keys: Vec<RedisKey>,
 }
 
 impl Trash<'_> {
+    /// 记下要在结束时删掉的键。
     fn keep(&mut self, key: RedisKey) {
         self.keys.push(key);
     }
 }
 
 impl Drop for Trash<'_> {
+    /// 只删除这个用例写下的键。
     fn drop(&mut self) {
         for key in self.keys.drain(..) {
             let _ = self.client.del(key);
         }
     }
-}
-
-fn field(key: &str, value: &str, score: f64) -> RedisFieldValue {
-    RedisFieldValue {
-        field_key: key.into(),
-        field_value: value.into(),
-        field_score: score,
-        field_ttl: -1,
-        field_attrs: String::new(),
-    }
-}
-
-fn new_add(key: RedisKey, key_type: &str) -> RedisFieldAdd {
-    RedisFieldAdd {
-        key,
-        mode: "key".into(),
-        key_type: key_type.into(),
-        ttl: -1,
-        value: String::new(),
-        list_push_method: "rpush".into(),
-        array_write_method: String::new(),
-        vector: Vec::new(),
-        attrs: String::new(),
-        field_value_list: Vec::new(),
-        stream_id: "*".into(),
-        key_fmt: None,
-        val_fmt: None,
-    }
-}
-
-fn write(client: &dyn MeClient, add: RedisFieldAdd) -> RedisKey {
-    client.field_add(add).expect("field_add")
-}
-
-fn string_of(page: &serde_json::Value) -> String {
-    page.as_str().unwrap_or("").to_string()
-}
-
-fn list_values(page: &serde_json::Value) -> Vec<String> {
-    page.as_array()
-        .unwrap_or(&Vec::new())
-        .iter()
-        .map(|item| item["value"].as_str().unwrap_or("").to_string())
-        .collect()
-}
-
-fn stream_values(page: &serde_json::Value) -> Vec<String> {
-    page.as_array()
-        .unwrap_or(&Vec::new())
-        .iter()
-        .map(|item| item["value"]["v"].as_str().unwrap_or("").to_string())
-        .collect()
-}
-
-fn zset_values(page: &serde_json::Value) -> Vec<String> {
-    page.as_array()
-        .unwrap_or(&Vec::new())
-        .iter()
-        .map(|item| item["value"].as_str().unwrap_or("").to_string())
-        .collect()
 }
 
 /// 扩展连接用：一条中文 String，一段非 UTF-8 用 Base64 读回。
@@ -118,6 +54,7 @@ pub fn string_roundtrip(client: &dyn MeClient) {
     assert_eq!(redis::decode_b64(&string_of(&page[0].value)).unwrap(), raw);
 }
 
+/// 键名、String、Hash、List 都含中文；二进制键用 Base64 读回原字节。
 pub fn chinese_and_binary_string(client: &dyn MeClient) {
     let prefix = prefix();
     let mut trash = Trash {
@@ -165,6 +102,7 @@ pub fn chinese_and_binary_string(client: &dyn MeClient) {
     redis::assert_exact_key(client, &format!("{prefix}不存在"), 0).unwrap();
 }
 
+/// 同一前缀写 5 个键，`count = 2`，翻页拼起来正好是这 5 个。
 pub fn key_scan_collects_five(client: &dyn MeClient) {
     let prefix = prefix();
     let mut trash = Trash {
@@ -182,6 +120,7 @@ pub fn key_scan_collects_five(client: &dyn MeClient) {
     redis::assert_key_scan(client, &format!("{prefix}*"), &expected).unwrap();
 }
 
+/// Hash / List / Set / ZSet / Stream 各 5 个元素，按返回游标翻页，List 和 Stream 还核对顺序。
 pub fn hash_list_set_zset_stream_pages(client: &dyn MeClient) {
     let prefix = prefix();
     let mut trash = Trash {
@@ -308,6 +247,7 @@ pub fn hash_list_set_zset_stream_pages(client: &dyn MeClient) {
     redis::assert_ordered_pages(&pages, &list_values_expected, stream_values);
 }
 
+/// JSON、Array、VectorSet、TimeSeries。没有对应命令就跳过。
 pub fn optional_modules_when_present(client: &dyn MeClient) {
     let prefix = prefix();
     let mut trash = Trash {
@@ -379,6 +319,83 @@ pub fn cluster_slot_and_rename(client: &dyn MeClient) {
     assert_eq!(string_of(&page[0].value), "值");
 }
 
+// ------------------------------ 仅本文件使用 ------------------------------
+
+/// 每个用例一把键前缀，避免 `cargo test` 并行时互相删键。
+fn prefix() -> String {
+    static N: AtomicU64 = AtomicU64::new(0);
+    let n = N.fetch_add(1, Ordering::Relaxed);
+    format!("redis-me:test:{}:{n}:", std::process::id())
+}
+
+/// 一条字段。TTL 用 -1，表示不单独设置字段过期。
+fn field(key: &str, value: &str, score: f64) -> RedisFieldValue {
+    RedisFieldValue {
+        field_key: key.into(),
+        field_value: value.into(),
+        field_score: score,
+        field_ttl: -1,
+        field_attrs: String::new(),
+    }
+}
+
+/// 新建键的参数骨架。调用方再填值和字段。
+fn new_add(key: RedisKey, key_type: &str) -> RedisFieldAdd {
+    RedisFieldAdd {
+        key,
+        mode: "key".into(),
+        key_type: key_type.into(),
+        ttl: -1,
+        value: String::new(),
+        list_push_method: "rpush".into(),
+        array_write_method: String::new(),
+        vector: Vec::new(),
+        attrs: String::new(),
+        field_value_list: Vec::new(),
+        stream_id: "*".into(),
+        key_fmt: None,
+        val_fmt: None,
+    }
+}
+
+/// 写入并返回键。失败直接让测试挂掉。
+fn write(client: &dyn MeClient, add: RedisFieldAdd) -> RedisKey {
+    client.field_add(add).expect("field_add")
+}
+
+/// String 页的值。不是字符串就当成空，断言会失败。
+fn string_of(page: &serde_json::Value) -> String {
+    page.as_str().unwrap_or("").to_string()
+}
+
+/// List 一页里的元素文本，按返回顺序。
+fn list_values(page: &serde_json::Value) -> Vec<String> {
+    page.as_array()
+        .unwrap_or(&Vec::new())
+        .iter()
+        .map(|item| item["value"].as_str().unwrap_or("").to_string())
+        .collect()
+}
+
+/// Stream 一页里字段 `v` 的文本，用来核对顺序。
+fn stream_values(page: &serde_json::Value) -> Vec<String> {
+    page.as_array()
+        .unwrap_or(&Vec::new())
+        .iter()
+        .map(|item| item["value"]["v"].as_str().unwrap_or("").to_string())
+        .collect()
+}
+
+/// ZSet 一页里的成员文本。
+fn zset_values(page: &serde_json::Value) -> Vec<String> {
+    page.as_array()
+        .unwrap_or(&Vec::new())
+        .iter()
+        .map(|item| item["value"].as_str().unwrap_or("").to_string())
+        .collect()
+}
+
+/// 可选模块：unknown command 就跳过，能创建再做中文和非 UTF-8 往返。
 fn optional(
     client: &dyn MeClient,
     trash: &mut Trash<'_>,

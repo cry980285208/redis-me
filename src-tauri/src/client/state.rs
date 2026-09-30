@@ -36,6 +36,7 @@ pub struct MeBase {
 }
 
 impl From<&ConnConfig> for MeBase {
+    /// 用连接配置做出运行时状态。超时先用默认值，真正建连时再按设置覆盖。
     fn from(conf: &ConnConfig) -> Self {
         MeBase {
             id: conf.id.clone(),
@@ -91,14 +92,20 @@ pub fn app_timeouts(app: &AppHandle) -> (Duration, Duration) {
 
 /// 从 `AppHandle` 同步连接列表，并查找、建立或断开客户端。
 pub trait ClientAccess {
+    /// 用前端发来的列表整表替换内存里的连接配置。
     fn conn_list(&self, conn_list: Vec<ConnConfig>) -> AnyResult<()>;
+    /// 同步全局超时。已经打开的连接不改，下次重连才用新值。
     fn app_settings(&self, app_settings: AppSettings) -> AnyResult<()>;
+    /// 取已打开的客户端。没有就建连。
     fn get_client(&self, id: &str) -> AnyResult<Arc<Box<dyn MeClient>>>;
+    /// 按 id 建连并放进缓存。
     fn connect(&self, app_handle: AppHandle, id: &str) -> AnyResult<Arc<Box<dyn MeClient>>>;
+    /// 从缓存拿掉客户端。本来就没有也算成功。
     fn disconnect(&self, id: &str) -> AnyResult<()>;
 }
 
 impl ClientAccess for AppHandle {
+    /// 用前端发来的列表整表替换内存里的连接配置。
     fn conn_list(&self, conn_list: Vec<ConnConfig>) -> AnyResult<()> {
         let state: State<AppState> = self.state();
         let mut map = state.connections.lock().unwrap();
@@ -110,6 +117,7 @@ impl ClientAccess for AppHandle {
         Ok(())
     }
 
+    /// 同步全局超时。已经打开的连接不改，下次重连才用新值。
     fn app_settings(&self, app_settings: AppSettings) -> AnyResult<()> {
         let state: State<AppState> = self.state();
         *state.app_settings.write().unwrap() = app_settings.normalized();
@@ -121,6 +129,7 @@ impl ClientAccess for AppHandle {
         Ok(())
     }
 
+    /// 取已打开的客户端。没有就建连。
     fn get_client(&self, id: &str) -> AnyResult<Arc<Box<dyn MeClient>>> {
         let state: State<AppState> = self.state();
         {
@@ -134,6 +143,7 @@ impl ClientAccess for AppHandle {
         self.connect(self.clone(), id)
     }
 
+    /// 按 id 建连并放进缓存。
     fn connect(&self, app_handle: AppHandle, id: &str) -> AnyResult<Arc<Box<dyn MeClient>>> {
         let state: State<AppState> = self.state();
         let map = state.connections.lock().unwrap();
@@ -159,6 +169,7 @@ impl ClientAccess for AppHandle {
         Ok(client)
     }
 
+    /// 从缓存拿掉客户端。本来就没有也算成功。
     fn disconnect(&self, id: &str) -> AnyResult<()> {
         let state: State<AppState> = self.state();
         let mut clients = state.clients.write().unwrap();

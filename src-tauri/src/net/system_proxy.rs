@@ -52,6 +52,9 @@ pub fn detect_for_ui() -> SystemProxyDetect {
     }
 }
 
+// ------------------------------ 仅本文件使用 ------------------------------
+
+/// 环境变量优先，然后才读 Windows / macOS 的静态代理设置。
 fn find_system_proxy() -> Option<(DetectedProxy, &'static str)> {
     if let Some(p) = detect_from_env() {
         return Some((p, "env"));
@@ -67,6 +70,7 @@ fn find_system_proxy() -> Option<(DetectedProxy, &'static str)> {
     None
 }
 
+/// 读 `https_proxy` / `http_proxy` / `all_proxy`（含大写）。都空就当没配。
 fn detect_from_env() -> Option<DetectedProxy> {
     let raw = env_nonempty(&[
         "https_proxy",
@@ -79,6 +83,7 @@ fn detect_from_env() -> Option<DetectedProxy> {
     parse_proxy_url(&raw)
 }
 
+/// 按顺序取第一个非空环境变量。
 fn env_nonempty(names: &[&str]) -> Option<String> {
     names
         .iter()
@@ -122,6 +127,7 @@ fn parse_proxy_url(raw: &str) -> Option<DetectedProxy> {
     })
 }
 
+/// 当前用户的 Internet Settings 注册表项。打不开就当没有系统代理。
 #[cfg(windows)]
 fn read_win_internet_settings() -> Option<winreg::RegKey> {
     use winreg::RegKey;
@@ -131,6 +137,7 @@ fn read_win_internet_settings() -> Option<winreg::RegKey> {
         .ok()
 }
 
+/// `ProxyEnable=1` 时解析 `ProxyServer`。未启用返回 `None`。
 #[cfg(windows)]
 fn detect_windows_static() -> Option<DetectedProxy> {
     let key = read_win_internet_settings()?;
@@ -212,6 +219,7 @@ fn parse_host_port(s: &str, proxy_type: &str) -> Option<DetectedProxy> {
     })
 }
 
+/// 跑 `scutil --proxy`，失败或只有 PAC 时返回 `None`。
 #[cfg(target_os = "macos")]
 fn detect_macos_static() -> Option<DetectedProxy> {
     let out = std::process::Command::new("scutil")

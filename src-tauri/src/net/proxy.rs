@@ -43,6 +43,9 @@ pub fn build_proxy_dialer(
     }
 }
 
+// ------------------------------ 仅本文件使用 ------------------------------
+
+/// 手动代理：host 为空或端口为 0 时直接失败，不发起连接。
 fn manual_dialer(
     opt: &ProxyOption,
     connect_timeout: Duration,
@@ -64,6 +67,7 @@ fn manual_dialer(
     dialer_from_detected(&detected, connect_timeout)
 }
 
+/// 按代理类型做成 HTTP CONNECT 或 SOCKS5 Dialer。`https` 表示先对代理做 TLS。
 fn dialer_from_detected(
     p: &DetectedProxy,
     connect_timeout: Duration,
@@ -91,6 +95,7 @@ fn dialer_from_detected(
     }
 }
 
+/// 把本应用的错误塞进 redis-rs 的 IO 错误，Dialer 接口只能返回 `RedisError`。
 fn app_to_redis(err: AppError) -> RedisError {
     let msg = serde_json::to_string(&err).unwrap_or_else(|_| format!("{err:?}"));
     RedisError::from(io::Error::other(msg))
@@ -101,12 +106,14 @@ fn proxy_auth_configured(username: &str, password: &str) -> bool {
     !username.is_empty() || !password.is_empty()
 }
 
+/// 去掉调用方已经加上的 IPv6 方括号，避免再包一层。
 fn strip_brackets(host: &str) -> &str {
     host.strip_prefix('[')
         .and_then(|s| s.strip_suffix(']'))
         .unwrap_or(host)
 }
 
+/// HTTP CONNECT 和日志里的 `host:port`。IPv6 写成 `[::1]:6379`。
 fn format_connect_authority(host: &str, port: u16) -> String {
     let h = strip_brackets(host);
     if h.contains(':') {
@@ -116,6 +123,7 @@ fn format_connect_authority(host: &str, port: u16) -> String {
     }
 }
 
+/// 连到代理自己的地址，带超时，并打开 `TCP_NODELAY`。
 fn connect_proxy_tcp(host: &str, port: u16, timeout: Duration) -> io::Result<TcpStream> {
     let host = strip_brackets(host);
     let addrs: Vec<SocketAddr> = (host, port).to_socket_addrs()?.collect();
@@ -152,6 +160,7 @@ struct HttpDialer {
 }
 
 impl ConnectionDialer for HttpDialer {
+    /// 连到 HTTP 代理再 `CONNECT` 到 Redis。`https` 类型先对代理做 TLS。
     fn dial(
         &self,
         host: &str,
@@ -191,6 +200,7 @@ fn dial_https_proxy(
     Ok(Box::new(tls))
 }
 
+/// TLS 到代理失败时，明文代理的 EOF/RST 换成「先对代理做 TLS」的提示。
 fn map_https_proxy_io(err: io::Error) -> RedisError {
     if looks_like_plaintext_proxy_tls_fail(&err) {
         app_to_redis(AppError::ProxyTlsToProxyFailed)
@@ -201,6 +211,7 @@ fn map_https_proxy_io(err: io::Error) -> RedisError {
     }
 }
 
+/// CONNECT 阶段的错误。已经是应用错误 JSON 的原样返回。
 fn map_https_proxy_redis(err: RedisError) -> RedisError {
     let msg = err.to_string();
     // 已是 AppError JSON（407 / CONNECT 拒绝等）则原样返回
@@ -213,6 +224,7 @@ fn map_https_proxy_redis(err: RedisError) -> RedisError {
     err
 }
 
+/// EOF、RST、坏管道，多半是对明文代理发了 TLS。
 fn looks_like_plaintext_proxy_tls_fail(err: &io::Error) -> bool {
     matches!(
         err.kind(),
@@ -223,6 +235,7 @@ fn looks_like_plaintext_proxy_tls_fail(err: &io::Error) -> bool {
     ) || looks_like_plaintext_proxy_tls_msg(&err.to_string())
 }
 
+/// 错误文本里出现 unexpected eof / connection reset 等，同样当成明文代理。
 fn looks_like_plaintext_proxy_tls_msg(msg: &str) -> bool {
     let m = msg.to_ascii_lowercase();
     m.contains("unexpected end of file")
@@ -231,6 +244,7 @@ fn looks_like_plaintext_proxy_tls_msg(msg: &str) -> bool {
         || m.contains("peer closed")
 }
 
+/// 发 `CONNECT host:port`，可选 Basic 认证。状态码不是 200 就失败。
 fn http_connect<S: Read + Write>(
     stream: &mut S,
     host: &str,
@@ -263,6 +277,7 @@ fn http_connect<S: Read + Write>(
     Err(app_to_redis(AppError::ProxyConnectRejected { status }))
 }
 
+/// 读到 HTTP 头结束（空行）为止，不把后面的隧道数据读进来。
 fn read_http_headers<S: Read>(stream: &mut S) -> io::Result<Vec<u8>> {
     let mut buf = Vec::new();
     let mut byte = [0u8; 1];
@@ -278,6 +293,7 @@ fn read_http_headers<S: Read>(stream: &mut S) -> io::Result<Vec<u8>> {
     }
 }
 
+/// 从状态行 `HTTP/1.x NNN` 取出状态码。
 fn parse_http_status(headers: &[u8]) -> Option<u16> {
     let text = std::str::from_utf8(headers).ok()?;
     let line = text.lines().next()?;
@@ -291,29 +307,35 @@ struct TlsProxyStream {
 }
 
 impl Read for TlsProxyStream {
+    /// 从已经和代理握完手的 TLS 流读。
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.inner.read(buf)
     }
 }
 
 impl Write for TlsProxyStream {
+    /// 写到代理的 TLS 流。
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.inner.write(buf)
     }
+    /// 刷到代理的 TLS 流。
     fn flush(&mut self) -> io::Result<()> {
         self.inner.flush()
     }
 }
 
 impl RedisStream for TlsProxyStream {
+    /// 超时设在底层 TCP 上，TLS 层没有自己的超时。
     fn set_read_timeout(&self, dur: Option<Duration>) -> io::Result<()> {
         self.inner.get_ref().set_read_timeout(dur)
     }
+    /// 写超时同样设在底层 TCP 上。
     fn set_write_timeout(&self, dur: Option<Duration>) -> io::Result<()> {
         self.inner.get_ref().set_write_timeout(dur)
     }
 }
 
+/// 在到代理的 TCP 上做 TLS。不校验代理证书（代理地址由用户填写）。
 fn wrap_proxy_tls(tcp: TcpStream, proxy_host: &str) -> io::Result<TlsProxyStream> {
     let name = strip_brackets(proxy_host);
     let server_name = ServerName::try_from(name.to_string()).map_err(|e| {
@@ -329,6 +351,7 @@ fn wrap_proxy_tls(tcp: TcpStream, proxy_host: &str) -> io::Result<TlsProxyStream
     })
 }
 
+/// 到代理的 rustls 配置：接受任意证书，只为加密这条 CONNECT。
 fn proxy_tls_config() -> Arc<ClientConfig> {
     static CFG: OnceLock<Arc<ClientConfig>> = OnceLock::new();
     CFG.get_or_init(|| {
@@ -350,6 +373,7 @@ struct NoCert {
 }
 
 impl rustls::client::danger::ServerCertVerifier for NoCert {
+    /// 不校验代理证书。代理地址是用户填的。
     fn verify_server_cert(
         &self,
         _end_entity: &rustls::pki_types::CertificateDer<'_>,
@@ -361,6 +385,7 @@ impl rustls::client::danger::ServerCertVerifier for NoCert {
         Ok(rustls::client::danger::ServerCertVerified::assertion())
     }
 
+    /// 配合上面的跳过校验，签名也不验。
     fn verify_tls12_signature(
         &self,
         _message: &[u8],
@@ -370,6 +395,7 @@ impl rustls::client::danger::ServerCertVerifier for NoCert {
         Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
     }
 
+    /// TLS 1.3 同样不验签名。
     fn verify_tls13_signature(
         &self,
         _message: &[u8],
@@ -379,6 +405,7 @@ impl rustls::client::danger::ServerCertVerifier for NoCert {
         Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
     }
 
+    /// 告诉 rustls 这个 provider 支持哪些签名，即使我们并不真的验。
     fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
         self.supported.supported_schemes()
     }
@@ -394,6 +421,7 @@ struct Socks5Dialer {
 }
 
 impl ConnectionDialer for Socks5Dialer {
+    /// 连到 SOCKS5 代理再 CONNECT。`socks5h` 把主机名交给代理解析。
     fn dial(
         &self,
         host: &str,
@@ -414,6 +442,7 @@ impl ConnectionDialer for Socks5Dialer {
     }
 }
 
+/// SOCKS5 握手：可选用户名密码，然后 CONNECT。`remote_dns` 为真时主机名交给代理。
 fn socks5_handshake(
     stream: &mut TcpStream,
     host: &str,
@@ -479,6 +508,7 @@ fn socks5_handshake(
     Ok(())
 }
 
+/// SOCKS5 用户名密码子协商（RFC 1929）。
 fn socks5_userpass(stream: &mut TcpStream, username: &str, password: &str) -> RedisResult<()> {
     let u = username.as_bytes();
     let p = password.as_bytes();
@@ -502,6 +532,7 @@ fn socks5_userpass(stream: &mut TcpStream, username: &str, password: &str) -> Re
     Ok(())
 }
 
+/// 把目标地址写成 SOCKS5 地址字段。IPv4/IPv6 用二进制，主机名用域名。
 fn append_socks5_addr(
     req: &mut Vec<u8>,
     host: &str,
@@ -536,6 +567,7 @@ fn append_socks5_addr(
     Ok(())
 }
 
+/// 把 IP 和端口按 SOCKS5 的 ATYP 写进请求。
 fn push_socks5_ip(req: &mut Vec<u8>, ip: IpAddr, port: u16) {
     match ip {
         IpAddr::V4(v4) => {
@@ -550,6 +582,7 @@ fn push_socks5_ip(req: &mut Vec<u8>, ip: IpAddr, port: u16) {
     req.extend_from_slice(&port.to_be_bytes());
 }
 
+/// 读掉回复里的 BND.ADDR / BND.PORT，后面才是 Redis 数据。
 fn skip_socks5_bnd(stream: &mut TcpStream, atyp: u8) -> RedisResult<()> {
     match atyp {
         0x01 => {
@@ -575,6 +608,7 @@ fn skip_socks5_bnd(stream: &mut TcpStream, atyp: u8) -> RedisResult<()> {
     Ok(())
 }
 
+/// SOCKS5 回复码转成可读原因。
 fn socks5_rep_text(rep: u8) -> String {
     match rep {
         0x01 => "SOCKS5 general failure".into(),

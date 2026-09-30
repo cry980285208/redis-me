@@ -47,6 +47,59 @@ pub struct Profile {
     pub cluster: Option<Cluster>,
 }
 
+pub struct FieldPage {
+    pub finished: bool,
+    pub value: serde_json::Value,
+}
+
+/// toml 里的一段扩展连接。没有这段就不会出现在 `parse_live_conns` 的结果里。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LiveConn {
+    pub name: String,
+    pub endpoint: Endpoint,
+    pub cluster: bool,
+    pub ssl: bool,
+    pub cert: String,
+    pub tls_key: String,
+    pub ca: String,
+    pub ssh: bool,
+    pub ssh_host: String,
+    pub ssh_port: u16,
+    pub login_type: String,
+    pub ssh_username: String,
+    pub ssh_password: String,
+    pub pkfile: String,
+    pub passphrase: String,
+    pub proxy: bool,
+    pub proxy_mode: String,
+    pub proxy_type: String,
+    pub proxy_host: String,
+    pub proxy_port: u16,
+    pub proxy_username: String,
+    pub proxy_password: String,
+    pub sentinel: bool,
+    pub master_name: String,
+    pub master_username: String,
+    pub master_password: String,
+    pub resp3: bool,
+}
+
+const LIVE_CONN_NAMES: &[&str] = &[
+    "ssl",
+    "ssl_mtls",
+    "ssh_pwd",
+    "ssh_key",
+    "proxy_http",
+    "proxy_https",
+    "proxy_socks5",
+    "proxy_socks5h",
+    "proxy_auth",
+    "proxy_system",
+    "sentinel",
+    "cluster_ssl",
+    "cluster_ssh",
+];
+
 /// 按默认路径和当前环境变量加载。不连接 Redis。
 pub fn load() -> Result<Profile, String> {
     let text = toml_text_from(&local_toml_path(), &home_toml_path())?;
@@ -113,10 +166,12 @@ pub fn toml_text_from(local: &Path, home: &Path) -> Result<Option<String>, Strin
     Ok(None)
 }
 
+/// 仓库里的 `src-tauri/redis-test.local.toml`，不提交。
 pub fn local_toml_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("redis-test.local.toml")
 }
 
+/// 家目录 `~/.config/redis-me/test.toml`。Windows 用 `USERPROFILE`。
 pub fn home_toml_path() -> PathBuf {
     let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME"));
     match home {
@@ -128,118 +183,7 @@ pub fn home_toml_path() -> PathBuf {
     }
 }
 
-fn env_nonempty(name: &str) -> Option<String> {
-    std::env::var(name).ok().filter(|s| !s.is_empty())
-}
-
-fn read_toml(path: &Path) -> Result<String, String> {
-    fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))
-}
-
-fn section_str<'a>(
-    section: &'a toml::Value,
-    key: &str,
-    section_name: &str,
-) -> Result<&'a str, String> {
-    section
-        .get(key)
-        .and_then(toml::Value::as_str)
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| format!("[{section_name}] {key} is required"))
-}
-
-fn cluster_from_section(section: &toml::Value) -> Result<Cluster, String> {
-    let password = section
-        .get("password")
-        .and_then(toml::Value::as_str)
-        .unwrap_or("")
-        .to_string();
-    let raw_nodes = section
-        .get("nodes")
-        .and_then(toml::Value::as_array)
-        .ok_or_else(|| "[cluster] nodes is required".to_string())?;
-    if raw_nodes.is_empty() {
-        return Err("[cluster] nodes is empty".into());
-    }
-    let mut nodes = Vec::with_capacity(raw_nodes.len());
-    for node in raw_nodes {
-        let text = node
-            .as_str()
-            .filter(|s| !s.is_empty())
-            .ok_or_else(|| "[cluster] node must be a string".to_string())?;
-        let mut endpoint = parse_endpoint(text)?;
-        if endpoint.password.is_empty() {
-            endpoint.password = password.clone();
-        }
-        nodes.push(endpoint);
-    }
-    Ok(Cluster { nodes })
-}
-
-fn parse_endpoint(text: &str) -> Result<Endpoint, String> {
-    let text = text.trim();
-    if text.is_empty() {
-        return Err("redis address is empty".into());
-    }
-    if text.contains("://") {
-        return parse_url(text);
-    }
-    parse_host_port(text)
-}
-
-fn parse_url(text: &str) -> Result<Endpoint, String> {
-    let url = Url::parse(text).map_err(|e| format!("redis url {text}: {e}"))?;
-    let host = url
-        .host_str()
-        .ok_or_else(|| format!("redis url {text}: missing host"))?
-        .to_string();
-    let port = url.port().unwrap_or(6379);
-    let db = url
-        .path()
-        .trim_start_matches('/')
-        .parse::<u16>()
-        .unwrap_or(0);
-    Ok(Endpoint {
-        host,
-        port,
-        db,
-        username: url.username().to_string(),
-        password: url.password().unwrap_or("").to_string(),
-    })
-}
-
-fn parse_host_port(text: &str) -> Result<Endpoint, String> {
-    let (host, port) = text
-        .rsplit_once(':')
-        .ok_or_else(|| format!("redis node {text}: expected host:port"))?;
-    let host = host
-        .trim()
-        .trim_start_matches('[')
-        .trim_end_matches(']')
-        .to_string();
-    if host.is_empty() {
-        return Err(format!("redis node {text}: missing host"));
-    }
-    let port = port
-        .parse::<u16>()
-        .map_err(|_| format!("redis node {text}: bad port"))?;
-    Ok(Endpoint {
-        host,
-        port,
-        db: 0,
-        username: String::new(),
-        password: String::new(),
-    })
-}
-
-fn install_rustls() {
-    static ONCE: Once = Once::new();
-    ONCE.call_once(|| {
-        // 带 tls-rustls 的进程不装 provider，建连时会 panic
-        let _ = rustls::crypto::ring::default_provider().install_default();
-    });
-}
-
+/// 测试用的连接配置。超时和名称固定，账号密码来自 endpoint。
 pub fn conn_config(endpoint: &Endpoint, cluster: bool) -> ConnConfig {
     ConnConfig {
         id: "redis-me-test".into(),
@@ -287,6 +231,7 @@ pub fn cluster_client() -> Result<Option<Box<dyn MeClient>>, String> {
     .map_err(|err| err.to_string())
 }
 
+/// 字段扫描的默认参数。用例只改自己关心的那几项。
 pub fn field_scan_param(key: RedisKey) -> FieldScanParam {
     FieldScanParam {
         key,
@@ -302,6 +247,7 @@ pub fn field_scan_param(key: RedisKey) -> FieldScanParam {
     }
 }
 
+/// 空的字段扫描元数据，给不关心 TTL、长度的断言用。
 pub fn empty_meta() -> FieldScanMeta {
     FieldScanMeta {
         max_id: String::new(),
@@ -324,16 +270,19 @@ pub fn empty_meta() -> FieldScanMeta {
     }
 }
 
+/// 测试里比较二进制时用的标准 Base64。
 pub fn b64(bytes: &[u8]) -> String {
     BASE64_STANDARD.encode(bytes)
 }
 
+/// 把界面上的 Base64 解回原始字节。
 pub fn decode_b64(text: &str) -> Result<Vec<u8>, String> {
     BASE64_STANDARD
         .decode(text)
         .map_err(|err| format!("base64: {err}"))
 }
 
+/// 服务端没有这个模块命令时跳过，而不是判失败。
 pub fn unknown_command(err: &dyn std::error::Error) -> bool {
     let mut current = Some(err);
     while let Some(item) = current {
@@ -347,11 +296,6 @@ pub fn unknown_command(err: &dyn std::error::Error) -> bool {
         current = item.source();
     }
     false
-}
-
-pub struct FieldPage {
-    pub finished: bool,
-    pub value: serde_json::Value,
 }
 
 /// 按返回游标把字段扫描走完。调用方自己判断第一页是否结束。
@@ -428,6 +372,7 @@ pub fn assert_key_scan(
     Err("key scan did not finish".into())
 }
 
+/// `exact: true` 时只命中这一条；`hits` 为 0 表示不存在。
 pub fn assert_exact_key(client: &dyn MeClient, pattern: &str, hits: usize) -> Result<(), String> {
     let result = client
         .scan(ScanParam {
@@ -476,54 +421,7 @@ pub fn assert_binary_key_returned(
     Err("key scan did not finish".into())
 }
 
-/// toml 里的一段扩展连接。没有这段就不会出现在 `parse_live_conns` 的结果里。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LiveConn {
-    pub name: String,
-    pub endpoint: Endpoint,
-    pub cluster: bool,
-    pub ssl: bool,
-    pub cert: String,
-    pub tls_key: String,
-    pub ca: String,
-    pub ssh: bool,
-    pub ssh_host: String,
-    pub ssh_port: u16,
-    pub login_type: String,
-    pub ssh_username: String,
-    pub ssh_password: String,
-    pub pkfile: String,
-    pub passphrase: String,
-    pub proxy: bool,
-    pub proxy_mode: String,
-    pub proxy_type: String,
-    pub proxy_host: String,
-    pub proxy_port: u16,
-    pub proxy_username: String,
-    pub proxy_password: String,
-    pub sentinel: bool,
-    pub master_name: String,
-    pub master_username: String,
-    pub master_password: String,
-    pub resp3: bool,
-}
-
-const LIVE_CONN_NAMES: &[&str] = &[
-    "ssl",
-    "ssl_mtls",
-    "ssh_pwd",
-    "ssh_key",
-    "proxy_http",
-    "proxy_https",
-    "proxy_socks5",
-    "proxy_socks5h",
-    "proxy_auth",
-    "proxy_system",
-    "sentinel",
-    "cluster_ssl",
-    "cluster_ssh",
-];
-
+/// 读本机 toml 里写了的扩展连接段。文件不存在则空列表。
 pub fn load_live_conns() -> Result<Vec<LiveConn>, String> {
     let Some(text) = toml_text_from(&local_toml_path(), &home_toml_path())? else {
         return Ok(Vec::new());
@@ -531,6 +429,7 @@ pub fn load_live_conns() -> Result<Vec<LiveConn>, String> {
     parse_live_conns(&text)
 }
 
+/// 只解析 `LIVE_CONN_NAMES` 里出现的段，缺段就跳过。
 pub fn parse_live_conns(text: &str) -> Result<Vec<LiveConn>, String> {
     let value: toml::Value = toml::from_str(text).map_err(|e| format!("redis test toml: {e}"))?;
     let mut found = Vec::new();
@@ -542,6 +441,7 @@ pub fn parse_live_conns(text: &str) -> Result<Vec<LiveConn>, String> {
     Ok(found)
 }
 
+/// 按一段扩展配置建连。集群段走集群客户端。
 pub fn open_live(spec: &LiveConn) -> Result<Box<dyn MeClient>, String> {
     install_rustls();
     let conf = live_config(spec);
@@ -555,6 +455,7 @@ pub fn open_live(spec: &LiveConn) -> Result<Box<dyn MeClient>, String> {
     .map_err(|err| err.to_string())
 }
 
+/// 扩展段转成 `ConnConfig`，给哨兵查询这类还不需要长连接的调用。
 pub fn live_config(spec: &LiveConn) -> ConnConfig {
     let mut conf = conn_config(&spec.endpoint, spec.cluster);
     conf.ssl = spec.ssl;
@@ -595,6 +496,129 @@ pub fn live_config(spec: &LiveConn) -> ConnConfig {
     conf
 }
 
+// ------------------------------ 仅本文件使用 ------------------------------
+
+/// 环境变量有值才算配置。空串当成没设。
+fn env_nonempty(name: &str) -> Option<String> {
+    std::env::var(name).ok().filter(|s| !s.is_empty())
+}
+
+/// 读 toml 文本。读失败是配置坏了，测试应失败而不是跳过。
+fn read_toml(path: &Path) -> Result<String, String> {
+    fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))
+}
+
+/// 取 toml 段里的非空字符串。缺了就报这一段的字段名。
+fn section_str<'a>(
+    section: &'a toml::Value,
+    key: &str,
+    section_name: &str,
+) -> Result<&'a str, String> {
+    section
+        .get(key)
+        .and_then(toml::Value::as_str)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| format!("[{section_name}] {key} is required"))
+}
+
+/// `[cluster]`：节点列表必填，段上的 password 填进还没写密码的种子。
+fn cluster_from_section(section: &toml::Value) -> Result<Cluster, String> {
+    let password = section
+        .get("password")
+        .and_then(toml::Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    let raw_nodes = section
+        .get("nodes")
+        .and_then(toml::Value::as_array)
+        .ok_or_else(|| "[cluster] nodes is required".to_string())?;
+    if raw_nodes.is_empty() {
+        return Err("[cluster] nodes is empty".into());
+    }
+    let mut nodes = Vec::with_capacity(raw_nodes.len());
+    for node in raw_nodes {
+        let text = node
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| "[cluster] node must be a string".to_string())?;
+        let mut endpoint = parse_endpoint(text)?;
+        if endpoint.password.is_empty() {
+            endpoint.password = password.clone();
+        }
+        nodes.push(endpoint);
+    }
+    Ok(Cluster { nodes })
+}
+
+/// 带 `://` 当 URL，否则当 `host:port`。
+fn parse_endpoint(text: &str) -> Result<Endpoint, String> {
+    let text = text.trim();
+    if text.is_empty() {
+        return Err("redis address is empty".into());
+    }
+    if text.contains("://") {
+        return parse_url(text);
+    }
+    parse_host_port(text)
+}
+
+/// 从 `redis://` URL 取出 host、port、db 和密码。密码只认 URL。
+fn parse_url(text: &str) -> Result<Endpoint, String> {
+    let url = Url::parse(text).map_err(|e| format!("redis url {text}: {e}"))?;
+    let host = url
+        .host_str()
+        .ok_or_else(|| format!("redis url {text}: missing host"))?
+        .to_string();
+    let port = url.port().unwrap_or(6379);
+    let db = url
+        .path()
+        .trim_start_matches('/')
+        .parse::<u16>()
+        .unwrap_or(0);
+    Ok(Endpoint {
+        host,
+        port,
+        db,
+        username: url.username().to_string(),
+        password: url.password().unwrap_or("").to_string(),
+    })
+}
+
+/// `host:port` 或 `[ipv6]:port`。没有库号和账号。
+fn parse_host_port(text: &str) -> Result<Endpoint, String> {
+    let (host, port) = text
+        .rsplit_once(':')
+        .ok_or_else(|| format!("redis node {text}: expected host:port"))?;
+    let host = host
+        .trim()
+        .trim_start_matches('[')
+        .trim_end_matches(']')
+        .to_string();
+    if host.is_empty() {
+        return Err(format!("redis node {text}: missing host"));
+    }
+    let port = port
+        .parse::<u16>()
+        .map_err(|_| format!("redis node {text}: bad port"))?;
+    Ok(Endpoint {
+        host,
+        port,
+        db: 0,
+        username: String::new(),
+        password: String::new(),
+    })
+}
+
+/// 进程里只装一次 rustls provider。不装的话 TLS 测试会 panic。
+fn install_rustls() {
+    static ONCE: Once = Once::new();
+    ONCE.call_once(|| {
+        // 带 tls-rustls 的进程不装 provider，建连时会 panic
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    });
+}
+
+/// 按段名检查必填字段。证书文件读不到算失败，不当成没配。
 fn parse_live_conn(name: &str, section: &toml::Value) -> Result<LiveConn, String> {
     let cluster = name == "cluster_ssl" || name == "cluster_ssh";
     let endpoint = if cluster {
@@ -694,6 +718,7 @@ fn parse_live_conn(name: &str, section: &toml::Value) -> Result<LiveConn, String
     Ok(spec)
 }
 
+/// 可选字符串。缺字段或不是字符串时用空串。
 fn opt_str(section: &toml::Value, key: &str) -> String {
     section
         .get(key)
@@ -702,6 +727,7 @@ fn opt_str(section: &toml::Value, key: &str) -> String {
         .to_string()
 }
 
+/// 可选端口。缺字段返回 `None`，写了却不是整数则测试失败。
 fn opt_u16(section: &toml::Value, key: &str) -> Option<u16> {
     section
         .get(key)
@@ -709,6 +735,7 @@ fn opt_u16(section: &toml::Value, key: &str) -> Option<u16> {
         .and_then(|n| u16::try_from(n).ok())
 }
 
+/// 这一段写了就必须有值，空串算配置错误。
 fn require_nonempty(section: &str, key: &str, value: &str) -> Result<(), String> {
     if value.is_empty() {
         Err(format!("[{section}] {key} is required"))

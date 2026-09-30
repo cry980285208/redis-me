@@ -60,24 +60,6 @@ pub fn restart_after_update(app: AppHandle) -> ApiResult<()> {
     Ok(())
 }
 
-#[cfg(target_os = "macos")]
-fn macos_app_bundle_path(exe: &std::path::Path) -> Option<std::path::PathBuf> {
-    let macos_dir = exe.parent()?;
-    if macos_dir.file_name()? != "MacOS" {
-        return None;
-    }
-    let contents = macos_dir.parent()?;
-    if contents.file_name()? != "Contents" {
-        return None;
-    }
-    Some(contents.parent()?.to_path_buf())
-}
-
-#[cfg(target_os = "macos")]
-fn shell_escape(s: &str) -> String {
-    format!("'{}'", s.replace('\'', "'\\''"))
-}
-
 // 测试连接
 #[command]
 #[specta]
@@ -216,3 +198,25 @@ api_commands!(
     import_csv(param: RedisImportCsv) -> ();    // 导入CSV
     import_cmd(file: String) -> ();             // 导入命令
 );
+
+// ------------------------------ 仅本文件使用 ------------------------------
+
+/// 从可执行文件路径往上找到 `App.app`。不在标准 bundle 布局里时返回 `None`。
+#[cfg(target_os = "macos")]
+fn macos_app_bundle_path(exe: &std::path::Path) -> Option<std::path::PathBuf> {
+    let macos_dir = exe.parent()?;
+    if macos_dir.file_name()? != "MacOS" {
+        return None;
+    }
+    let contents = macos_dir.parent()?;
+    if contents.file_name()? != "Contents" {
+        return None;
+    }
+    Some(contents.parent()?.to_path_buf())
+}
+
+/// 包一层单引号，供 `sh -c` 使用。路径里的单引号按 POSIX 规则转义。
+#[cfg(target_os = "macos")]
+fn shell_escape(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
