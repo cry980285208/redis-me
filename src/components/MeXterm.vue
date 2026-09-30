@@ -34,7 +34,9 @@ type TerminalExpose = {
   pushMessage: (message: string | Message) => void
   fullscreen: () => void
   clearLog: () => void
+  getCommand: () => string
   setCommand: (command: string) => void
+  execute: (command: string) => boolean
 }
 
 const terminalRef = useTemplateRef<TerminalExpose | null>('terminal')
@@ -45,6 +47,9 @@ onMounted(() => {
   terminalRef.value?.pushMessage(props.welcome)
 })
 
+// execute() 不返回完成时机；多行粘贴时记下 resolve，等 execCmd 结束再发下一条
+let pasteResolve: (() => void) | null = null
+
 async function execCmd(
   _commandKey: string,
   command: string,
@@ -52,9 +57,97 @@ async function execCmd(
   _failed: FailedFunc,
   _name: string,
 ): Promise<void> {
-  const data = await props.execCommand(command)
-  const content = typeof data === 'string' ? data : String(data)
-  success({ type: 'html', content })
+  const resolve = pasteResolve
+  pasteResolve = null
+  try {
+    const data = await props.execCommand(command)
+    const content = typeof data === 'string' ? data : String(data)
+    success({ type: 'html', content })
+  } catch (error) {
+    _failed(String(error))
+  } finally {
+    resolve?.()
+  }
+}
+
+function runCommand(cmd: string): Promise<void> {
+  const term = terminalRef.value
+  if (!term) return Promise.resolve()
+  return new Promise(resolve => {
+    pasteResolve = resolve
+    term.execute(cmd)
+    // help / clear / open 不进 execCmd，上面的 resolve 还在
+    if (pasteResolve) {
+      pasteResolve = null
+      resolve()
+    }
+  })
+}
+
+let pasteQueue: Promise<void> = Promise.resolve()
+
+function enqueue(task: () => Promise<void> | void): void {
+  pasteQueue = pasteQueue.then(task).catch((error: unknown) => console.error(error))
+}
+
+// 换行结尾的行立刻执行；最后一行没有换行则留在输入框
+async function pasteLines(text: string): Promise<void> {
+  const term = terminalRef.value
+  if (!term) return
+  const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')
+  const tail = lines.pop() ?? ''
+  const typed = term.getCommand().trim()
+  if (typed && lines.length > 0) lines[0] = `${typed} ${lines[0]}`.trim()
+  for (const line of lines) {
+    const cmd = line.trim()
+    if (cmd) await runCommand(cmd)
+  }
+  term.setCommand(tail.trim())
+}
+
+function onPaste(event: ClipboardEvent): void {
+  const data = event.clipboardData
+  const text = data?.getData('text/plain') || data?.getData('text') || ''
+  if (!/[\r\n]/.test(text)) return
+  event.preventDefault()
+  enqueue(() => pasteLines(text))
+}
+
+// 右键按下时选区还在；到 contextmenu 时可能已被清掉，有选区则留给组件复制
+let selectedOnPointer = ''
+
+function onMouseDown(): void {
+  selectedOnPointer = document.getSelection()?.toString() ?? ''
+}
+
+function insertAtCursor(root: HTMLElement, text: string): void {
+  const term = terminalRef.value
+  if (!term) return
+  const input = root.querySelector('textarea')
+  const current = term.getCommand()
+  const at = input instanceof HTMLTextAreaElement ? input.selectionStart : current.length
+  term.setCommand(current.slice(0, at) + text.trim() + current.slice(at))
+}
+
+function onContextMenu(event: MouseEvent): void {
+  const selected = document.getSelection()?.toString() || selectedOnPointer
+  selectedOnPointer = ''
+  if (selected) return
+  event.preventDefault()
+  event.stopPropagation()
+  const root = event.currentTarget
+  if (!(root instanceof HTMLElement)) return
+  void navigator.clipboard
+    .readText()
+    .then(text => {
+      if (!text) return
+      if (!/[\r\n]/.test(text)) {
+        enqueue(() => insertAtCursor(root, text))
+        return
+      }
+      enqueue(() => pasteLines(text))
+    })
+    .catch((error: unknown) => console.error(error))
 }
 
 const theme = computed(() => (isDark.value ? 'dark' : 'light'))
@@ -93,7 +186,12 @@ function onKeydown(e: KeyboardEvent): void {
 </script>
 
 <template>
-  <div class="me-xterm" :class="{ 'is-wrap': lineWrap }">
+  <div
+    class="me-xterm"
+    :class="{ 'is-wrap': lineWrap }"
+    @paste.capture="onPaste"
+    @mousedown.capture="onMouseDown"
+    @contextmenu.capture="onContextMenu">
     <terminal
       name="terminal"
       ref="terminal"
