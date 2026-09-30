@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 /// 前端根据 `code` 字段获取翻译模板，其他字段用于插值
 ///
 /// 使用方式:
-/// ```rust
+/// ```text
 /// bail!(AppError::KeyNotFound { key: "user:1001".into() })
 /// bail!(AppError::ConnectionLockTimeout)
 /// bail!(AppError::FileReadFailed { filename: "xxx".into(), detail: e.to_string() })
