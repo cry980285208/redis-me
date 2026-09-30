@@ -1,4 +1,6 @@
-use crate::client::ops::field_scan::{handle_other_value_type, vgetattr_opt, vsetattr_json_or_clear};
+use crate::client::ops::field_scan::{
+    handle_other_value_type, vgetattr_opt, vsetattr_json_or_clear,
+};
 use crate::client::ops::info::parse_info_kv_items;
 use crate::model::*;
 use crate::support::error::AppError;
@@ -243,5 +245,70 @@ fn redis_value_as_f64(value: Value) -> AnyResult<f64> {
         other => bail!(AppError::Internal {
             message: format!("unexpected VSIM score: {:?}", other)
         }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 分数接受整数、浮点和数字字符串，其他类型或非法文本报错。
+    #[test]
+    fn score_accepts_number_forms() {
+        assert_eq!(redis_value_as_f64(Value::Int(2)).unwrap(), 2.0);
+        assert_eq!(redis_value_as_f64(Value::Double(1.5)).unwrap(), 1.5);
+        assert_eq!(
+            redis_value_as_f64(Value::BulkString(b"1.25".to_vec())).unwrap(),
+            1.25
+        );
+        assert_eq!(
+            redis_value_as_f64(Value::SimpleString("3".into())).unwrap(),
+            3.0
+        );
+        assert!(redis_value_as_f64(Value::BulkString(b"nope".to_vec())).is_err());
+        assert!(redis_value_as_f64(Value::Nil).is_err());
+    }
+
+    /// RESP3 带属性时 Map 值是 `[score, attribs]`，要拆开；只带分数时原样接在元素后面。
+    #[test]
+    fn map_flattens_score_and_optional_attribs() {
+        let score_only = flatten_vsim_map(
+            vec![(Value::BulkString(b"a".to_vec()), Value::Double(0.5))],
+            true,
+        );
+        assert_eq!(score_only.len(), 2);
+
+        let with_attrs = flatten_vsim_map(
+            vec![(
+                Value::BulkString(b"b".to_vec()),
+                Value::Array(vec![Value::Double(1.0), Value::BulkString(b"{}".to_vec())]),
+            )],
+            true,
+        );
+        assert_eq!(with_attrs.len(), 3);
+        assert!(matches!(with_attrs[2], Value::BulkString(ref b) if b == b"{}"));
+    }
+
+    /// RESP2 按 2 或 3 个一组解析；空回复是空列表，长度对不齐就报错。
+    #[test]
+    fn items_from_array_nil_and_bad_stride() {
+        assert!(
+            parse_vsim_items(Value::Nil, false, &BytesFormat::UTF8)
+                .unwrap()
+                .is_empty()
+        );
+        let raw = Value::Array(vec![
+            Value::BulkString(b"elem".to_vec()),
+            Value::BulkString(b"0.25".to_vec()),
+            Value::Nil,
+        ]);
+        let items = parse_vsim_items(raw, true, &BytesFormat::UTF8).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].key, "elem");
+        assert_eq!(items[0].score, 0.25);
+        assert!(items[0].attrs.is_empty());
+
+        let odd = Value::Array(vec![Value::BulkString(b"only".to_vec())]);
+        assert!(parse_vsim_items(odd, false, &BytesFormat::UTF8).is_err());
     }
 }

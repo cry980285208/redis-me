@@ -404,6 +404,7 @@ mod tests {
         redis_value_to_cli_display(value, Some(mode), cmd, &args)
     }
 
+    /// 标准模式下 nil、字符串、整数和布尔用 redis-cli 的标量写法。
     #[test]
     fn test_tty_scalars() {
         assert_eq!(display(Value::Nil, Standard), "(nil)");
@@ -415,6 +416,7 @@ mod tests {
         assert_eq!(display(Value::Boolean(true), Standard), "(true)");
     }
 
+    /// 数组带序号；空数组有单独的空提示。
     #[test]
     fn test_tty_array_numbered() {
         assert_eq!(
@@ -427,6 +429,7 @@ mod tests {
         assert_eq!(display(Value::Array(vec![]), Standard), "(empty array)");
     }
 
+    /// raw 模式不加引号和序号，数组按行拼。
     #[test]
     fn test_raw_mode() {
         assert_eq!(display(Value::Nil, Raw), "");
@@ -444,6 +447,7 @@ mod tests {
         );
     }
 
+    /// csv 里 nil 写成 NULL，数组用逗号接。
     #[test]
     fn test_csv_mode() {
         assert_eq!(display(Value::Nil, Csv), "NULL");
@@ -454,6 +458,7 @@ mod tests {
         );
     }
 
+    /// json 模式把 nil、数组和 Map 收成 JSON。
     #[test]
     fn test_json_mode() {
         assert_eq!(display(Value::Nil, Json), "null");
@@ -476,6 +481,7 @@ mod tests {
         );
     }
 
+    /// INFO 和 CLUSTER NODES 保留原文换行；普通 GET 仍加引号。
     #[test]
     fn test_verbatim_tty_commands() {
         let info = b"# Server\r\nredis_version:7.0.0\r\n";
@@ -516,6 +522,7 @@ mod tests {
         );
     }
 
+    /// 只有 INFO 和 CLUSTER NODES 走原文；CLUSTER SLOTS 不是。
     #[test]
     fn test_command_uses_verbatim_tty() {
         assert!(command_uses_verbatim_tty("INFO", &[]));
@@ -524,6 +531,7 @@ mod tests {
         assert!(!command_uses_verbatim_tty("cluster", &[b"slots".to_vec()]));
     }
 
+    /// Map 用 `#`、Set 用 `~`；空的各有空提示。
     #[test]
     fn test_tty_map_and_set() {
         assert_eq!(
@@ -547,6 +555,7 @@ mod tests {
         assert_eq!(display(Value::Map(vec![]), Standard), "(empty hash)");
     }
 
+    /// 没指定输出模式时按标准 TTY。
     #[test]
     fn test_default_mode_is_standard() {
         assert_eq!(

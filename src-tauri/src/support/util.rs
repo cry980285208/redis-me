@@ -895,6 +895,7 @@ mod tests {
     use base64::Engine;
     use base64::prelude::BASE64_STANDARD;
 
+    /// 键能编成 JSON，序列化路径本身不报错。
     #[test]
     fn test_serde() -> AnyResult<()> {
         let key = RedisKey {
@@ -911,6 +912,7 @@ mod tests {
         Ok(())
     }
 
+    /// UTF-8 键只留文本，bytes 留空，读回时再从文本取。
     #[test]
     fn test_redis_key_from_utf8_omits_bytes() {
         let rk = RedisKey::from(b"user:1".to_vec());
@@ -924,6 +926,7 @@ mod tests {
         assert_eq!(rk.to_bytes(), b"hello");
     }
 
+    /// 非法 UTF-8 键把原始字节留在 bytes 里。
     #[test]
     fn test_redis_key_from_binary_keeps_bytes() {
         let raw = vec![0xff, 0x00, 0xfe];
@@ -933,6 +936,7 @@ mod tests {
         assert!(!rk.key.is_empty()); // lossy 展示非空
     }
 
+    /// 键列表里能当文本的项同样省略 bytes。
     #[test]
     fn test_ui_key_list_omits_utf8_bytes() {
         let list = ui_key_list(vec![b"a".to_vec(), vec![0xff]]);
@@ -942,6 +946,7 @@ mod tests {
         assert_eq!(list[1].bytes, vec![0xff]);
     }
 
+    /// 一行命令拆成命令名和参数，引号里的空格不切开。
     #[test]
     fn test_parse_command() {
         let (cmd, args) = parse_command("").unwrap();
@@ -979,6 +984,7 @@ mod tests {
         );
     }
 
+    /// 反斜杠转义按 redis-cli 规则还原成字节。
     #[test]
     fn test_split_redis_args_escapes() {
         let args = split_redis_args(r#"SET "MultiLine" "Line01\nLine02""#).unwrap();
@@ -1025,6 +1031,7 @@ mod tests {
         assert!(split_redis_args(r#"SET key "abc\"#).is_err());
     }
 
+    /// XRANGE 回复按条目顺序收成 id 和字段。
     #[test]
     fn test_parse_xrange_ordered() {
         let raw = Value::Array(vec![Value::Array(vec![
@@ -1073,6 +1080,7 @@ mod tests {
         );
     }
 
+    /// RESP3 Map 形态的慢日志也能填上耗时和客户端。
     #[test]
     fn test_redis_value_to_log_resp3_map() {
         // RESP3：SLOWLOG GET 单条为 Map
@@ -1107,6 +1115,7 @@ mod tests {
         assert_eq!(log.client_name, "RedisME");
     }
 
+    /// 倒序续页把时间戳减 1；空、0 和非法都落成 0。
     #[test]
     fn test_ts_timestamp_dec_one() {
         assert_eq!(ts_timestamp_dec_one("100"), "99");
@@ -1117,6 +1126,7 @@ mod tests {
         assert_eq!(ts_timestamp_dec_one(" 42 "), "41");
     }
 
+    /// 正序续页把时间戳加 1；空和非法落成 0。
     #[test]
     fn test_ts_timestamp_inc_one() {
         assert_eq!(ts_timestamp_inc_one("100"), "101");
@@ -1126,6 +1136,7 @@ mod tests {
         assert_eq!(ts_timestamp_inc_one(" 42 "), "43");
     }
 
+    /// TS.RANGE 的样本行收成时间戳和值。
     #[test]
     fn test_parse_ts_range_items() {
         let raw = Value::Array(vec![
@@ -1140,6 +1151,7 @@ mod tests {
         assert_eq!(items[1].value, "2");
     }
 
+    /// 家目录、环境变量和 Windows 路径都能展开。
     #[test]
     fn test_parse_path() {
         // 支持多种格式
@@ -1157,6 +1169,7 @@ mod tests {
         }
     }
 
+    /// CLIENT INFO 缺的字段用空串或 0，已有字段按原文填上。
     #[test]
     fn parse_client_info_fills_missing_fields() {
         let line = "id=10 addr=127.0.0.1:6380 flags=N db=15 cmd=get user=default resp=3";
@@ -1171,5 +1184,85 @@ mod tests {
         assert_eq!(info.name, "");
         assert_eq!(info.age, 0);
         assert_eq!(info.fd, 0);
+    }
+
+    /// 模块类型名和界面名双向对应；Array 仍走 Unknown，索引不能是负数。
+    #[test]
+    fn module_types_and_array_index() {
+        assert_eq!(ui_key_type_str(REDIS_JSON_TYPE_NAME), ME_JSON_TYPE_NAME);
+        assert_eq!(
+            ui_key_type_str(REDIS_TIMESERIES_TYPE_NAME),
+            ME_TIMESERIES_TYPE_NAME
+        );
+        assert_eq!(ui_key_type_str("hash"), "hash");
+        assert!(matches!(to_key_type("json"), ValueType::JSON));
+        assert!(matches!(to_key_type("TimeSeries"), ValueType::TimeSeries));
+        assert!(is_array_type(&to_key_type("Array")));
+        assert!(!is_array_type(&to_key_type("hash")));
+        assert_eq!(parse_array_index(" 12 ").unwrap(), 12);
+        assert!(parse_array_index("-1").is_err());
+        assert!(parse_array_index("1.5").is_err());
+    }
+
+    /// UTF-8 原样往返；非 UTF-8 走 base64，坏的 base64 报错。
+    #[test]
+    fn bytes_roundtrip_utf8_and_base64() {
+        assert_eq!(format_bytes("中文".as_bytes(), &BytesFormat::UTF8), "中文");
+        assert_eq!(
+            parse_bytes("中文", &BytesFormat::UTF8).unwrap(),
+            "中文".as_bytes()
+        );
+        let raw = [0xff, 0xfe];
+        let encoded = format_bytes(&raw, &BytesFormat::Base64);
+        assert_eq!(parse_bytes(&encoded, &BytesFormat::Base64).unwrap(), raw);
+        assert!(parse_bytes("@@@", &BytesFormat::Base64).is_err());
+    }
+
+    /// ARSCAN 嵌套对和扁平对都能收成索引加字节；空回复是空列表。
+    #[test]
+    fn arscan_nested_and_flat_pairs() {
+        assert!(parse_arscan_pairs(Value::Nil).unwrap().is_empty());
+        let nested = Value::Array(vec![Value::Array(vec![
+            Value::Int(3),
+            Value::BulkString(b"ab".to_vec()),
+        ])]);
+        assert_eq!(
+            parse_arscan_pairs(nested).unwrap(),
+            vec![(3, b"ab".to_vec())]
+        );
+        let flat = Value::Array(vec![
+            Value::Int(1),
+            Value::BulkString(vec![0xff]),
+            Value::Int(2),
+        ]);
+        let pairs = parse_arscan_pairs(flat).unwrap();
+        assert_eq!(pairs, vec![(1, vec![0xff])]);
+    }
+
+    /// 命令映射键转成小写，空映射名或空目标丢掉。
+    #[test]
+    fn command_map_skips_blank() {
+        let mut conf = ConnConfig::default();
+        assert_eq!(resolve_command_name(&conf, "CONFIG"), "CONFIG");
+        conf.meta.insert(
+            "commandMap".into(),
+            ConnMetaValue::Object(HashMap::from([(
+                " Config ".into(),
+                ConnMetaValue::String("config2".into()),
+            )])),
+        );
+        assert_eq!(resolve_command_name(&conf, "config"), "config2");
+        assert_eq!(resolve_command_name(&conf, "GET"), "GET");
+    }
+
+    /// totalSamples 大小写不敏感；没有这个字段时返回 None。
+    #[test]
+    fn ts_info_total_samples_is_optional() {
+        let raw = Value::Array(vec![
+            Value::BulkString(b"totalsamples".to_vec()),
+            Value::Int(6),
+        ]);
+        assert_eq!(ts_info_total_samples(&raw), Some(6));
+        assert_eq!(ts_info_total_samples(&Value::Array(vec![])), None);
     }
 }

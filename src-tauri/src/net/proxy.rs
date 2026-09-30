@@ -2,9 +2,9 @@
 //!
 //! Redis 的 `rediss://` 仍由 redis-rs 叠在本 Dialer 返回的流上，这里不要再对 Redis 包 TLS。
 
-use crate::support::error::AppError;
 use crate::model::{ConnConfig, ProxyOption};
 use crate::net::system_proxy::{DetectOutcome, DetectedProxy, detect_system_proxy};
+use crate::support::error::AppError;
 use crate::support::util::AnyResult;
 use anyhow::bail;
 use base64::Engine;
@@ -593,6 +593,7 @@ fn socks5_rep_text(rep: u8) -> String {
 mod tests {
     use super::*;
 
+    /// CONNECT 的目标地址给 IPv6 补方括号，已有括号不套第二层。
     #[test]
     fn connect_authority_ipv6() {
         assert_eq!(format_connect_authority("::1", 6379), "[::1]:6379");
@@ -607,6 +608,7 @@ mod tests {
         );
     }
 
+    /// 从 HTTP 状态行取出状态码；不是 HTTP 就当失败。
     #[test]
     fn http_connect_status_line() {
         assert_eq!(
@@ -620,6 +622,7 @@ mod tests {
         assert_eq!(parse_http_status(b"not http"), None);
     }
 
+    /// 只填用户名或只填密码都要带代理认证。
     #[test]
     fn auth_when_password_only() {
         assert!(!proxy_auth_configured("", ""));
@@ -628,10 +631,13 @@ mod tests {
         assert!(proxy_auth_configured("u", "p"));
     }
 
+    /// 对端提前断开像是代理没做 TLS；认证失败不算这种错。
     #[test]
     fn plaintext_proxy_tls_fail_heuristics() {
         assert!(looks_like_plaintext_proxy_tls_msg("unexpected end of file"));
-        assert!(looks_like_plaintext_proxy_tls_msg("Connection reset by peer"));
+        assert!(looks_like_plaintext_proxy_tls_msg(
+            "Connection reset by peer"
+        ));
         assert!(!looks_like_plaintext_proxy_tls_msg("proxy auth required"));
         assert!(looks_like_plaintext_proxy_tls_fail(&io::Error::new(
             io::ErrorKind::UnexpectedEof,

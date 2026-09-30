@@ -61,27 +61,49 @@ macro_rules! implement_pipeline_commands {
         fn mock_data(&self, count: u64) -> $crate::support::util::AnyResult<()> {
             let mut pipe = $struct_name::with_capacity(count as usize);
             for _ in 0..count {
-                let key = format!("redis-me-mock:string:{}", $crate::support::util::random_string(10));
-                pipe.set(&key, $crate::support::util::random_string(10)).ignore();
+                let key = format!(
+                    "redis-me-mock:string:{}",
+                    $crate::support::util::random_string(10)
+                );
+                pipe.set(&key, $crate::support::util::random_string(10))
+                    .ignore();
 
                 let field_count = $crate::support::util::random_range(3, 200);
-                let key = format!("redis-me-mock:hash:{}", $crate::support::util::random_string(10));
+                let key = format!(
+                    "redis-me-mock:hash:{}",
+                    $crate::support::util::random_string(10)
+                );
                 for x in 0..field_count {
-                    pipe.hset(&key, format!("key{x}"), $crate::support::util::random_string(10))
+                    pipe.hset(
+                        &key,
+                        format!("key{x}"),
+                        $crate::support::util::random_string(10),
+                    )
+                    .ignore();
+                }
+
+                let key = format!(
+                    "redis-me-mock:list:{}",
+                    $crate::support::util::random_string(10)
+                );
+                for _ in 0..field_count {
+                    pipe.rpush(&key, $crate::support::util::random_string(10))
                         .ignore();
                 }
 
-                let key = format!("redis-me-mock:list:{}", $crate::support::util::random_string(10));
+                let key = format!(
+                    "redis-me-mock:set:{}",
+                    $crate::support::util::random_string(10)
+                );
                 for _ in 0..field_count {
-                    pipe.rpush(&key, $crate::support::util::random_string(10)).ignore();
+                    pipe.sadd(&key, $crate::support::util::random_string(10))
+                        .ignore();
                 }
 
-                let key = format!("redis-me-mock:set:{}", $crate::support::util::random_string(10));
-                for _ in 0..field_count {
-                    pipe.sadd(&key, $crate::support::util::random_string(10)).ignore();
-                }
-
-                let key = format!("redis-me-mock:zset:{}", $crate::support::util::random_string(10));
+                let key = format!(
+                    "redis-me-mock:zset:{}",
+                    $crate::support::util::random_string(10)
+                );
                 for _ in 0..field_count {
                     pipe.zadd(
                         &key,

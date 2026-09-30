@@ -441,6 +441,7 @@ fn import_cmd(mut conn: &mut impl Commands, line: &str) -> AnyResult<()> {
 mod import_restore_ttl_tests {
     use super::*;
 
+    /// ignore 和未知策略把键收成永久；自定义秒数换成毫秒，过期和解析失败落成 0。
     #[test]
     fn permanent_expired_and_ignore() {
         // ignore 以及其它未知策略：RESTORE ttl 0，键永久

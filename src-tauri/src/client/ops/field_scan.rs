@@ -1111,6 +1111,7 @@ mod zset_score_range_tests {
         }
     }
 
+    /// 两侧都空、只有空白，或没有 meta 时，仍走 ZSCAN。
     #[test]
     fn inactive_when_both_empty() {
         assert!(!zset_score_range_active(&param_with_scores(None, None)));
@@ -1125,6 +1126,7 @@ mod zset_score_range_tests {
         assert!(!zset_score_range_active(&no_meta));
     }
 
+    /// 任意一侧有分数就改走 ZRANGEBYSCORE，包括只写了 inf。
     #[test]
     fn active_when_either_side_set() {
         assert!(zset_score_range_active(&param_with_scores(Some("1"), None)));
@@ -1135,6 +1137,7 @@ mod zset_score_range_tests {
         )));
     }
 
+    /// 空边界用调用方给的 ±inf；大小写和 infinity 都收成 Redis 的 inf。
     #[test]
     fn parse_bound_defaults_and_inf() {
         assert_eq!(parse_zset_score_bound(None, "-inf").unwrap(), "-inf");
@@ -1155,6 +1158,7 @@ mod zset_score_range_tests {
         assert_eq!(parse_zset_score_bound(Some("1e2"), "-inf").unwrap(), "1e2");
     }
 
+    /// 非数字、NaN 和开区间括号都不是合法分数边界。
     #[test]
     fn parse_bound_rejects_invalid() {
         assert!(parse_zset_score_bound(Some("abc"), "-inf").is_err());
@@ -1203,6 +1207,7 @@ mod list_scan_range_tests {
         }
     }
 
+    /// 负下标按长度裁进表内，正下标保持原值，缺省是整表。
     #[test]
     fn clips_negative_indexes_and_keeps_positive() {
         assert_eq!(
@@ -1226,6 +1231,7 @@ mod list_scan_range_tests {
         assert_eq!(resolve_list_scan_range(&no_meta, 5), (0, 4));
     }
 
+    /// 降序只是方向标记，不把上下界对调。
     #[test]
     fn desc_is_a_flag_and_does_not_swap_bounds() {
         let desc = list_param(Some(0), Some(4), Some(true));
@@ -1233,5 +1239,49 @@ mod list_scan_range_tests {
         assert_eq!(resolve_list_scan_range(&desc, 5), (0, 4));
         assert!(!list_scan_desc(&list_param(None, None, None)));
         assert!(!list_scan_desc(&list_param(None, None, Some(false))));
+    }
+
+    /// 字段 TTL 要服务端支持和调用方同时打开；COUNT 为 0 时兜底 20，和键扫描的 1000 不同。
+    #[test]
+    fn field_ttl_and_batch_count_defaults() {
+        assert!(!resolve_include_field_ttl(None, true));
+        assert!(!resolve_include_field_ttl(Some(true), false));
+        assert!(resolve_include_field_ttl(Some(true), true));
+        let mut param = list_param(None, None, None);
+        assert!(!field_scan_include_field_ttl(&param, true));
+        param.include_field_ttl = Some(true);
+        assert!(field_scan_include_field_ttl(&param, true));
+        assert_eq!(field_scan_batch_count(0), 20);
+        assert_eq!(field_scan_batch_count(7), 7);
+    }
+
+    /// 没传 include_meta 时默认带上 TTL 和内存。
+    #[test]
+    fn include_meta_defaults_on() {
+        let mut param = list_param(None, None, None);
+        assert!(field_scan_include_meta(&param));
+        param.include_meta = Some(false);
+        assert!(!field_scan_include_meta(&param));
+    }
+
+    /// Array 的负下标当成缺省（0 到最大索引），上下界颠倒则这一页没有范围。
+    #[test]
+    fn array_bounds_treat_negative_as_open() {
+        assert_eq!(
+            resolve_array_scan_bounds(&list_param(None, None, None)),
+            Some((0, ARRAY_INDEX_MAX))
+        );
+        assert_eq!(
+            resolve_array_scan_bounds(&list_param(Some(-1), Some(-2), None)),
+            Some((0, ARRAY_INDEX_MAX))
+        );
+        assert_eq!(
+            resolve_array_scan_bounds(&list_param(Some(3), Some(8), None)),
+            Some((3, 8))
+        );
+        assert_eq!(
+            resolve_array_scan_bounds(&list_param(Some(9), Some(1), None)),
+            None
+        );
     }
 }

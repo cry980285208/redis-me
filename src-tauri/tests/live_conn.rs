@@ -9,8 +9,8 @@ mod roundtrip;
 
 use redis::LiveConn;
 use redis_me_lib::client::client_trait::MeClient;
-use redis_me_lib::net::conn::sentinel_masters;
 use redis_me_lib::model::{CliOutputMode, RedisCommand};
+use redis_me_lib::net::conn::sentinel_masters;
 use redis_me_lib::net::system_proxy::{DetectOutcome, detect_system_proxy};
 use std::time::Duration;
 
@@ -36,7 +36,7 @@ fn run(name: &str) {
             Duration::from_secs(15),
             Duration::from_secs(20),
         )
-            .unwrap_or_else(|err| panic!("[{name}] sentinel masters: {err}"));
+        .unwrap_or_else(|err| panic!("[{name}] sentinel masters: {err}"));
         assert!(!masters.is_empty(), "sentinel masters is empty");
     }
     let client = redis::open_live(&spec).unwrap_or_else(|err| panic!("[{name}] {err}"));
@@ -66,54 +66,79 @@ fn assert_resp3(client: &dyn MeClient) {
     assert!(text.contains("resp=3"), "{text}");
 }
 
+/// 不校验证书的 TLS。没配这一节就跳过。
 #[test]
 fn ssl() {
     run("ssl");
 }
+
+/// 双向证书。没配这一节就跳过。
 #[test]
 fn ssl_mtls() {
     run("ssl_mtls");
 }
+
+/// SSH 密码登录。没配这一节就跳过。
 #[test]
 fn ssh_pwd() {
     run("ssh_pwd");
 }
+
+/// SSH 私钥登录。没配这一节就跳过。
 #[test]
 fn ssh_key() {
     run("ssh_key");
 }
+
+/// HTTP 代理。没配这一节就跳过。
 #[test]
 fn proxy_http() {
     run("proxy_http");
 }
+
+/// HTTPS 代理。没配这一节就跳过。
 #[test]
 fn proxy_https() {
     run("proxy_https");
 }
+
+/// SOCKS5 代理，域名由本机解析。没配这一节就跳过。
 #[test]
 fn proxy_socks5() {
     run("proxy_socks5");
 }
+
+/// SOCKS5H 代理，域名由代理解析。没配这一节就跳过。
 #[test]
 fn proxy_socks5h() {
     run("proxy_socks5h");
 }
+
+/// 带账号的代理。没配这一节就跳过。
 #[test]
 fn proxy_auth() {
     run("proxy_auth");
 }
+
+/// 系统代理。本机检测不到就跳过。
 #[test]
 fn proxy_system() {
     run("proxy_system");
 }
+
+/// 哨兵先列出 master，再连上去做读写。没配这一节就跳过。
 #[test]
 fn sentinel() {
     run("sentinel");
 }
+
+/// 集群加 TLS。没配这一节就跳过。
 #[test]
 fn cluster_ssl() {
     run("cluster_ssl");
 }
+
+/// 集群加 SSH。没配这一节就跳过。
 #[test]
 fn cluster_ssh() {
     run("cluster_ssh");

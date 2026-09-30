@@ -228,6 +228,7 @@ mod tests {
     use super::*;
     use crate::support::util::split_redis_args;
 
+    /// 换行和不可见字节按 redis-cli 引号转义。
     #[test]
     fn test_format_quoted_newline_and_binary() {
         assert_eq!(format_quoted(b"Line01\nLine02"), "\"Line01\\nLine02\"");
@@ -235,6 +236,7 @@ mod tests {
         assert_eq!(format_quoted(b"\x07\x08"), "\"\\a\\b\"");
     }
 
+    /// 多行 SET 转义之后还能拆回原来的字节。
     #[test]
     fn test_format_set_multiline() {
         let cmd = format_set_command(b"MultiLine", b"Line01\nLine02");
@@ -244,6 +246,7 @@ mod tests {
         assert_eq!(args[2], b"Line01\nLine02");
     }
 
+    /// 中文和 emoji 写成字面量，不拆成 `\x`。
     #[test]
     fn test_format_set_utf8_literal() {
         let value = "RDM!\n中文 hepengju 表情😄 \n\nOfficial"
@@ -257,6 +260,7 @@ mod tests {
         assert_eq!(args[2], value);
     }
 
+    /// 单个 Hash 字段的 HSET 能拆回键、字段和值。
     #[test]
     fn test_format_hset_single_field() {
         let cmd = format_hset_command(b"user:1", b"name", b"\xe5\xbc\xa0\xe4\xb8\x89");
@@ -267,6 +271,7 @@ mod tests {
         assert_eq!(args[3], b"\xe5\xbc\xa0\xe4\xb8\x89");
     }
 
+    /// ARSET 把十进制下标放在键和值中间。
     #[test]
     fn test_format_arset_command() {
         let cmd = format_arset_command(b"arr:1", 3, b"hello");
@@ -277,6 +282,7 @@ mod tests {
         assert_eq!(args[3], b"hello");
     }
 
+    /// ARMSET 按给定顺序写出多组下标和值。
     #[test]
     fn test_format_armset_command() {
         let pairs = vec![(0i64, b"a".to_vec()), (2, b"b\nc".to_vec())];
@@ -284,6 +290,7 @@ mod tests {
         assert_eq!(cmd, r#"ARMSET "arr:1" 0 "a" 2 "b\nc""#);
     }
 
+    /// HMSET 字段顺序保持传入顺序，不按名字重排。
     #[test]
     fn test_format_hmset_all_quoted() {
         let pairs = vec![
@@ -301,6 +308,7 @@ mod tests {
         assert_eq!(args[2], b"k3");
     }
 
+    /// Hash 值里的中文写成字面量，拆回去仍是原来的字节。
     #[test]
     fn test_format_hmset_utf8_field() {
         let pairs = vec![
@@ -317,6 +325,7 @@ mod tests {
         assert_eq!(args[5], b"28");
     }
 
+    /// List 元素里的换行转义后还能拆回。
     #[test]
     fn test_format_rpush_newline() {
         let cmd = format_rpush_command(b"mylist", &[b"a".to_vec(), b"b\nc".to_vec()]).unwrap();
@@ -325,6 +334,7 @@ mod tests {
         assert_eq!(args[3], b"b\nc");
     }
 
+    /// 含 `0x00` 的值转义后再解析，字节不变。
     #[test]
     fn test_format_binary_roundtrip() {
         let cmd = format_set_command(b"binkey", b"\x00\x01\xffhello");
@@ -332,12 +342,14 @@ mod tests {
         assert_eq!(args[2], b"\x00\x01\xffhello");
     }
 
+    /// 没有字段或元素时不生成空命令。
     #[test]
     fn test_empty_collection_returns_none() {
         assert!(format_hmset_command(b"k", &[]).is_none());
         assert!(format_rpush_command(b"k", &[]).is_none());
     }
 
+    /// SADD、ZADD 和 JSON.SET 的参数顺序固定，JSON 文本拆回去不加引号层。
     #[test]
     fn test_format_sadd_zadd_json() {
         let sadd = format_sadd_command(b"myset", &[b"m1".to_vec(), b"m2".to_vec()]).unwrap();
@@ -350,6 +362,7 @@ mod tests {
         assert_eq!(args[3], br#"{"name":"test"}"#);
     }
 
+    /// XADD 字段按传入顺序，不按字段名排序。
     #[test]
     fn test_format_xadd_field_order() {
         let fields = vec![

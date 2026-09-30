@@ -252,6 +252,7 @@ fn parse_ts_info_items(raw: Value) -> AnyResult<Vec<RedisArInfoItem>> {
 mod ts_info_parse_tests {
     use super::*;
 
+    /// labels 展成 `k=v`，rules 这种多元素用逗号，组与组用分号。
     #[test]
     fn labels_pairs_flatten() {
         let raw = Value::Array(vec![
@@ -283,5 +284,35 @@ mod ts_info_parse_tests {
         assert_eq!(items[1].value, "device=thermometer; location=lab");
         assert_eq!(items[2].field, "rules");
         assert_eq!(items[2].value, "dest,60000,avg");
+    }
+
+    /// TS.INFO 的空回复和 Map 都能收；不是数组或 Map 就报错。
+    #[test]
+    fn ts_info_nil_map_and_unexpected() {
+        assert!(parse_ts_info_items(Value::Nil).unwrap().is_empty());
+        let map = Value::Map(vec![(
+            Value::BulkString(b"totalSamples".to_vec()),
+            Value::Int(4),
+        )]);
+        let items = parse_ts_info_items(map).unwrap();
+        assert_eq!(items[0].field, "totalSamples");
+        assert_eq!(items[0].value, "4");
+        assert!(parse_ts_info_items(Value::Int(1)).is_err());
+    }
+
+    /// ARINFO / VINFO 按对取值，落单的最后一个丢掉；空回复是空列表。
+    #[test]
+    fn info_kv_pairs_drop_trailing_odd() {
+        assert!(parse_info_kv_items(Value::Nil, "VINFO").unwrap().is_empty());
+        let raw = Value::Array(vec![
+            Value::BulkString(b"size".to_vec()),
+            Value::Int(2),
+            Value::BulkString(b"orphan".to_vec()),
+        ]);
+        let items = parse_info_kv_items(raw, "ARINFO").unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].field, "size");
+        assert_eq!(items[0].value, "2");
+        assert!(parse_info_kv_items(Value::Int(1), "VINFO").is_err());
     }
 }

@@ -666,6 +666,7 @@ mod acl_selector_tests {
     use super::*;
     use redis::acl::Rule;
 
+    /// 选择器文本能转回同样的三类规则，顺序不丢。
     #[test]
     fn selector_text_roundtrip() {
         let rules = vec![
@@ -685,6 +686,7 @@ mod acl_selector_tests {
         assert!(matches!(parsed[2], Rule::Pattern(_)));
     }
 
+    /// 表单里的选择器字符串会变成 Rule::Selector，而不是拆散进主规则。
     #[test]
     fn acl_build_rules_keeps_selectors() {
         let param = AclSetuserParam {
@@ -703,6 +705,7 @@ mod acl_selector_tests {
         );
     }
 
+    /// 默认用户这一行要认出 on、nopass 和键模式。
     #[test]
     fn parse_acl_list_default_user() {
         let detail = parse_acl_list_line("user default on nopass ~* +@all").expect("parse");
@@ -713,6 +716,7 @@ mod acl_selector_tests {
         assert!(detail.command_rules.contains(&"+@all".to_string()));
     }
 
+    /// 密码哈希去掉 `#`，括号里的选择器整段保留。
     #[test]
     fn parse_acl_list_with_hash_and_selector() {
         let line = "user bob on #abc123 ~redis:* -@all +set (-@all +get ~key1)";
@@ -737,6 +741,7 @@ mod acl_selector_tests {
             .collect()
     }
 
+    /// 选择器参数排在命令规则和键规则后面，避免被前面的 reset 吃掉。
     #[test]
     fn setuser_keeps_selector_after_other_rules() {
         let param = AclSetuserParam {
@@ -753,5 +758,93 @@ mod acl_selector_tests {
         assert!(pos("SETUSER") < pos("+@read"));
         assert!(pos("+@read") < pos("allkeys"));
         assert!(pos("allkeys") < pos("(-@all +set ~key2)"));
+    }
+
+    /// 空表单显式写成关、无密码、禁命令、全键、清频道，避免 reset 之后登不进去。
+    #[test]
+    fn empty_form_uses_safe_defaults() {
+        let param = AclSetuserParam {
+            username: "u".into(),
+            enabled: false,
+            password_hashes: vec![],
+            command_rules: vec![],
+            key_patterns: vec![],
+            channel_patterns: vec![],
+            selectors: vec![],
+        };
+        let rules = acl_build_rules(&param).unwrap();
+        assert!(matches!(rules[0], Rule::Reset));
+        assert!(matches!(rules[1], Rule::Off));
+        assert!(rules.iter().any(|r| matches!(r, Rule::NoPass)));
+        assert!(rules.iter().any(|r| matches!(r, Rule::NoCommands)));
+        assert!(rules.iter().any(|r| matches!(r, Rule::AllKeys)));
+        assert!(rules.iter().any(|r| matches!(r, Rule::ResetChannels)));
+    }
+
+    /// 键和频道的 `*` 写成 allkeys / allchannels；密码哈希带 `#`，不发 `~*` 或 `&*`。
+    #[test]
+    fn star_key_and_channel_become_all_flags() {
+        let param = AclSetuserParam {
+            username: "u".into(),
+            enabled: true,
+            password_hashes: vec!["abc".into()],
+            command_rules: vec!["+@read".into()],
+            key_patterns: vec!["*".into()],
+            channel_patterns: vec!["*".into()],
+            selectors: vec![],
+        };
+        let args = cmd_args(&build_acl_setuser_cmd(&param).unwrap());
+        assert!(args.iter().any(|arg| arg == "#abc"));
+        assert!(args.iter().any(|arg| arg == "allkeys"));
+        assert!(args.iter().any(|arg| arg == "allchannels"));
+        assert!(!args.iter().any(|arg| arg == "~*" || arg == "&*"));
+    }
+
+    /// LIST 行保留频道和关闭状态；嵌套括号的选择器只去掉最外层。
+    #[test]
+    fn parse_acl_list_channels_off_and_nested_selector() {
+        let detail = parse_acl_list_line("user carol off allkeys &news:* (~a (b))").unwrap();
+        assert!(!detail.enabled);
+        assert_eq!(detail.key_patterns, vec!["allkeys"]);
+        assert_eq!(detail.channel_patterns, vec!["news:*"]);
+        assert_eq!(detail.selectors, vec!["~a (b)"]);
+    }
+
+    /// GETUSER 字段名有时多一层引号；扁平数组和 Map 都能按名字取到。
+    #[test]
+    fn getuser_field_strips_quotes() {
+        let seq = Value::Array(vec![
+            Value::BulkString(b"\"selectors\"".to_vec()),
+            Value::BulkString(b"inner".to_vec()),
+        ]);
+        let got = get_getuser_field(&seq, "selectors").unwrap();
+        assert!(matches!(got, Value::BulkString(b) if b == b"inner"));
+
+        let map = Value::Map(vec![(Value::SimpleString("flags".into()), Value::Int(1))]);
+        assert!(get_getuser_field(&map, "flags").is_some());
+        assert!(get_getuser_field(&map, "selectors").is_none());
+    }
+
+    /// ACL LOG 认 `timestamp-last` 这个别名；不认识的字段丢掉，不是数组就报错。
+    #[test]
+    fn acl_log_entry_aliases_and_rejects_non_array() {
+        let raw = Value::Array(vec![
+            Value::BulkString(b"count".to_vec()),
+            Value::Int(3),
+            Value::BulkString(b"reason".to_vec()),
+            Value::BulkString(b"command".to_vec()),
+            Value::BulkString(b"timestamp-last".to_vec()),
+            Value::Int(9),
+            Value::BulkString(b"age-seconds".to_vec()),
+            Value::BulkString(b"1.5".to_vec()),
+            Value::BulkString(b"nope".to_vec()),
+            Value::Int(1),
+        ]);
+        let entry = parse_acl_log_entry(raw).unwrap();
+        assert_eq!(entry.count, 3);
+        assert_eq!(entry.reason, "command");
+        assert_eq!(entry.timestamp_last_updated, 9);
+        assert_eq!(entry.age_seconds, 1.5);
+        assert!(parse_acl_log_entry(Value::Int(1)).is_err());
     }
 }

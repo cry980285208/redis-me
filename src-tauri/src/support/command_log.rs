@@ -7,8 +7,8 @@
 //! - 错误判定：`req_command` 的 `Err`，以及 RESP3 下 `Ok(Value::ServerError)`（与 redis-rs `Cmd::query` 的 `extract_error` 一致）。
 //! - 写入后通过 `command-log` 事件推增量；打开面板时 `command_logs(limit)` 拉一次快照。
 
-use crate::model::{CommandLogEntry, CommandLogEvent};
 use crate::cmd::format::format_quoted;
+use crate::model::{CommandLogEntry, CommandLogEvent};
 use crate::support::util::EVENT_COMMAND_LOG;
 use chrono::Local;
 use log::debug;
@@ -452,6 +452,7 @@ fn parse_cmd(cmd: &Cmd) -> (String, Vec<String>) {
 mod tests {
     use super::*;
 
+    /// 日志条数超过上限时丢掉最老的，只留最近几条。
     #[test]
     fn ring_buffer_overwrites_oldest() {
         let logger = CommandLogger {
@@ -469,6 +470,7 @@ mod tests {
         assert_eq!(logger.entries.read().len(), 3);
     }
 
+    /// 管道摘要跳过前面的 SELECT，超长参数截断，二进制按转义显示。
     #[test]
     fn parse_pipeline_first_skips_offset_and_truncates() {
         let mut packed = Vec::new();
@@ -495,6 +497,7 @@ mod tests {
         assert_eq!(parse_pipeline_first(b"garbage", 0), None);
     }
 
+    /// 服务端错误回复要写进命令日志，不能当成成功。
     #[test]
     fn command_log_error_includes_server_error_value() {
         let wire = b"-NOPERM User has no permissions to run the 'config|get' command\r\n";

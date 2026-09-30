@@ -1,11 +1,10 @@
 use crate::client::client_trait::MeClient;
-use crate::support::error::AppError;
 use crate::model::*;
+use crate::support::error::AppError;
 use crate::support::util::*;
 use anyhow::bail;
 use log::info;
 use redis::Cmd;
-
 
 // 通用实现: 由于Connection动态兼容问题，无法写在接口里面，因此写在方法中
 
@@ -124,6 +123,7 @@ mod scan_cmd_tests {
             .map(|pair| pair[1].clone())
     }
 
+    /// 界面上的 json / timeseries 要换成模块 TYPE 名；空类型不加 TYPE。
     #[test]
     fn maps_module_type_and_skips_empty() {
         assert_eq!(
@@ -136,5 +136,12 @@ mod scan_cmd_tests {
         );
         assert_eq!(scan_type_arg(None), None);
         assert_eq!(scan_type_arg(Some("")), None);
+    }
+
+    /// 键扫描 COUNT 为 0 时兜底 1000，和字段扫描的 20 不是同一个数。
+    #[test]
+    fn batch_count_defaults_to_1000() {
+        assert_eq!(scan_0_batch_count(0), 1000);
+        assert_eq!(scan_0_batch_count(50), 50);
     }
 }

@@ -60,6 +60,7 @@ fn endpoint(host: &str, port: u16, db: u16, username: &str, password: &str) -> E
     }
 }
 
+/// URL 里的主机、端口、库号和密码都要拆出来。
 #[test]
 fn url_parses_host_port_db_and_password() {
     let profile = resolve(Some("redis://alice:s3cret@127.0.0.1:6380/15"), None, None).unwrap();
@@ -70,6 +71,7 @@ fn url_parses_host_port_db_and_password() {
     assert!(profile.cluster.is_none());
 }
 
+/// 环境和文件都没有时，单机和集群都算没配。
 #[test]
 fn missing_file_and_env_has_no_single() {
     let profile = resolve(None, None, None).unwrap();
@@ -77,6 +79,7 @@ fn missing_file_and_env_has_no_single() {
     assert!(profile.cluster.is_none());
 }
 
+/// 有 REDIS_URL 时不用文件里的单机，集群段仍然读文件。
 #[test]
 fn redis_url_ignores_single_in_file() {
     let toml = r#"
@@ -97,6 +100,7 @@ password = "file-secret"
     assert_eq!(cluster.nodes[0].password, "file-secret");
 }
 
+/// 有 REDIS_CLUSTER_URL 时不用文件里的集群节点。
 #[test]
 fn cluster_url_ignores_file_cluster() {
     let toml = r#"
@@ -117,6 +121,7 @@ password = "file-secret"
     assert!(profile.single.is_none());
 }
 
+/// 文件只有集群段时，单机保持缺失，不拿集群地址去填。
 #[test]
 fn only_cluster_section_leaves_single_missing() {
     let toml = r#"
@@ -132,6 +137,7 @@ password = ""
     );
 }
 
+/// 仓库里的 local toml 优先于用户目录；两边都没有就当没配。
 #[test]
 fn local_toml_wins_over_home_toml() {
     let _guard = EnvGuard::set(&[("REDIS_URL", None), ("REDIS_CLUSTER_URL", None)]);
@@ -161,6 +167,7 @@ fn local_toml_wins_over_home_toml() {
     let _ = fs::remove_dir_all(&dir);
 }
 
+/// load 读的是当前进程环境，不是写死的地址。
 #[test]
 fn process_env_is_what_load_reads() {
     let _guard = EnvGuard::set(&[
@@ -173,6 +180,7 @@ fn process_env_is_what_load_reads() {
     assert_eq!(single.db, 4);
 }
 
+/// 扩展段缺了就跳过，各段互不合并；缺必填项则这一段解析失败。
 #[test]
 fn extended_section_is_optional_and_does_not_merge() {
     let text = r#"

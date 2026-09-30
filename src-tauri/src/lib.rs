@@ -167,6 +167,7 @@ mod specta_export_tests {
     use super::*;
 
     /// 不启动 GUI，仅写出 `src/types/tauri-specta.ts`（与 debug 启动时导出一致）。
+    /// 导出的前端类型文件和仓库里的绑定一致，避免 specta 悄悄改了字段。
     #[test]
     fn export_tauri_specta_typescript_bindings() {
         Builder::<tauri::Wry>::new()

@@ -138,6 +138,7 @@ impl From<AppError> for anyhow::Error {
 mod tests {
     use super::*;
 
+    /// 带参数的错误能按 JSON 来回，字段不丢。
     #[test]
     fn test_error_serialization() {
         let err = AppError::KeyNotFound {
@@ -153,6 +154,7 @@ mod tests {
         }
     }
 
+    /// 没有参数的错误序列化后再解析，类型还在。
     #[test]
     fn test_error_no_params() {
         let err = AppError::ConnectionLockTimeout;

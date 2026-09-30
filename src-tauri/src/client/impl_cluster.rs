@@ -1102,6 +1102,7 @@ impl MeCluster {
 mod parse_node_list_tests {
     use super::*;
 
+    /// master 保留槽位，副本指向对应 master 的地址，残行跳过。
     #[test]
     fn masters_keep_slots_and_replicas_point_at_master() {
         let raw = "\

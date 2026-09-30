@@ -1,7 +1,9 @@
 #![cfg_attr(test, allow(warnings))] // 整个文件在测试时禁用该警告
 
 use crate::api_model;
-use crate::support::util::{CONNECTION_CONNECT_TIMEOUT, CONNECTION_NORMAL_TIMEOUT, vec8_to_display_string};
+use crate::support::util::{
+    CONNECTION_CONNECT_TIMEOUT, CONNECTION_NORMAL_TIMEOUT, vec8_to_display_string,
+};
 use redis::{ProtocolVersion, RedisWrite, ToRedisArgs, ToSingleRedisArg};
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -1070,6 +1072,7 @@ mod v8_base64 {
 mod tests {
     use super::*;
 
+    /// 只有 uiMode=minimal 才算极简，缺省和 normal 都不是。
     #[test]
     fn is_minimal_mode_reads_ui_mode() {
         let mut conf = ConnConfig::default();
@@ -1080,5 +1083,39 @@ mod tests {
         conf.meta
             .insert("uiMode".into(), ConnMetaValue::String("normal".into()));
         assert!(!conf.is_minimal_mode());
+    }
+
+    /// 命令映射的键转成小写；空名字、空目标和非字符串值丢掉。
+    #[test]
+    fn command_map_lowercases_and_skips_blank() {
+        let mut conf = ConnConfig::default();
+        assert!(conf.command_map().is_empty());
+        conf.meta.insert(
+            "commandMap".into(),
+            ConnMetaValue::Object(HashMap::from([
+                (" Get ".into(), ConnMetaValue::String("get2".into())),
+                (String::new(), ConnMetaValue::String("x".into())),
+                ("set".into(), ConnMetaValue::String("  ".into())),
+                ("ttl".into(), ConnMetaValue::Number(1.0)),
+            ])),
+        );
+        let map = conf.command_map();
+        assert_eq!(map.get("get").map(String::as_str), Some("get2"));
+        assert_eq!(map.len(), 1);
+    }
+
+    /// 只有 meta.protocol=resp3 才升到 RESP3，大小写不敏感，别的值仍是 RESP2。
+    #[test]
+    fn protocol_only_resp3_changes_version() {
+        let mut conf = ConnConfig::default();
+        assert!(!conf.is_resp3());
+        assert_eq!(conf.protocol_version(), ProtocolVersion::RESP2);
+        conf.meta
+            .insert("protocol".into(), ConnMetaValue::String("RESP3".into()));
+        assert!(conf.is_resp3());
+        assert_eq!(conf.protocol_version(), ProtocolVersion::RESP3);
+        conf.meta
+            .insert("protocol".into(), ConnMetaValue::String("resp2".into()));
+        assert!(!conf.is_resp3());
     }
 }

@@ -266,6 +266,7 @@ fn parse_scutil_proxy(output: &str) -> Option<DetectedProxy> {
 mod tests {
     use super::*;
 
+    /// http、https、socks5、socks5h 和无 scheme 的 host:port 都能拆出类型和端口。
     #[test]
     fn proxy_url_schemes() {
         let p = parse_proxy_url("http://127.0.0.1:7890").unwrap();
@@ -290,6 +291,7 @@ mod tests {
         assert_eq!(p.port, 7897);
     }
 
+    /// Windows 代理串优先用 socks；只有 https= 时仍按 http 代理连。
     #[test]
     fn windows_proxy_server_formats() {
         let p = parse_windows_proxy_server("127.0.0.1:8080").unwrap();
@@ -307,6 +309,7 @@ mod tests {
         assert_eq!(p.proxy_type, "http");
     }
 
+    /// macOS 同时开了 SOCKS 和 HTTP 时用 SOCKS；只开自动配置则不当成可用代理。
     #[test]
     fn scutil_prefers_socks_then_http() {
         let out = "\

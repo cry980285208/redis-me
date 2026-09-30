@@ -103,3 +103,62 @@ fn detect_httl_by_command(conn: &mut impl ConnectionLike) -> bool {
 
     result.is_ok()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Valkey 行优先于 redis_version；两边都没有时版本为空且不是 Valkey。
+    #[test]
+    fn version_prefers_valkey_line() {
+        let info = "redis_version:7.2.4\nvalkey_version:8.1.0\n";
+        assert_eq!(parse_server_version(info), ("8.1.0".into(), true));
+        assert_eq!(
+            parse_server_version("redis_version:6.2.0\n"),
+            ("6.2.0".into(), false)
+        );
+        assert_eq!(
+            parse_server_version("no version here"),
+            (String::new(), false)
+        );
+    }
+
+    /// ACL、DRYRUN、选择器、字段 TTL 和集群库号按主次版本打开，空版本全部关掉。
+    #[test]
+    fn capability_flags_follow_version_boundaries() {
+        let caps = detect_capabilities("5.0.14", false, false);
+        assert!(!caps.acl_supported);
+        assert!(!caps.acl_dryrun_supported);
+        assert!(!caps.acl_selector_supported);
+        assert!(!caps.httl_supported);
+
+        let caps = detect_capabilities("6.2.0", false, false);
+        assert!(caps.acl_supported);
+        assert!(!caps.acl_dryrun_supported);
+
+        let caps = detect_capabilities("7.0.0", false, false);
+        assert!(caps.acl_dryrun_supported);
+        assert!(!caps.acl_selector_supported);
+        assert!(!caps.httl_supported);
+
+        let caps = detect_capabilities("7.2.5", false, false);
+        assert!(caps.acl_selector_supported);
+        assert!(!caps.httl_supported);
+
+        let caps = detect_capabilities("7.4.0", false, true);
+        assert!(caps.httl_supported);
+        assert!(!caps.cluster_db_supported);
+
+        let caps = detect_capabilities("9.0.0", true, true);
+        assert!(caps.is_valkey);
+        assert!(caps.cluster_db_supported);
+        assert!(caps.info_supported);
+
+        let caps = detect_capabilities("9.0.0", true, false);
+        assert!(!caps.cluster_db_supported);
+
+        let caps = detect_capabilities("", false, true);
+        assert!(!caps.acl_supported);
+        assert!(!caps.cluster_db_supported);
+    }
+}

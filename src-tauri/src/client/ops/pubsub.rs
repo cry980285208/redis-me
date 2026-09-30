@@ -1,6 +1,6 @@
-use crate::support::command_log::CommandLogger;
-use crate::net::conn::set_client_name;
 use crate::model::*;
+use crate::net::conn::set_client_name;
+use crate::support::command_log::CommandLogger;
 use crate::support::util::*;
 use Ordering::Relaxed;
 use chrono::Local;
@@ -141,5 +141,26 @@ fn psubscribe_patterns(channel: Option<String>) -> Vec<String> {
         // 添加停止订阅频道, 用于停止订阅时发送消息避免阻塞
         parts.push(REDIS_ME_SUBSCRIBE_STOP_CHANNEL.into());
         parts
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 空白或没填时订阅 `*`；有模式时追加停止频道，用来唤醒阻塞读。
+    #[test]
+    fn empty_channel_is_star_and_patterns_append_stop() {
+        assert_eq!(psubscribe_patterns(None), vec!["*"]);
+        assert_eq!(psubscribe_patterns(Some(String::new())), vec!["*"]);
+        assert_eq!(psubscribe_patterns(Some("   ".into())), vec!["*"]);
+        assert_eq!(
+            psubscribe_patterns(Some("news.*  chat.*".into())),
+            vec![
+                "news.*".to_string(),
+                "chat.*".to_string(),
+                REDIS_ME_SUBSCRIBE_STOP_CHANNEL.into(),
+            ]
+        );
     }
 }

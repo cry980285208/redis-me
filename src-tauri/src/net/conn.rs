@@ -1,8 +1,8 @@
-use crate::support::error::AppError;
 use crate::model::{ConnConfig, SslOption};
 use crate::net::proxy::build_proxy_dialer;
 use crate::net::ssh::SshDialer;
 use crate::net::tls;
+use crate::support::error::AppError;
 use crate::support::util::{AnyResult, parse_path};
 use anyhow::{Context, bail};
 use log::{info, warn};
@@ -603,6 +603,7 @@ mod tests {
     use super::*;
     use crate::model::ProxyOption;
 
+    /// 超时还没收到 RESP，不能当成明文 Redis 已经开口。
     #[test]
     fn io_timeout_is_not_redis_protocol() {
         let err = RedisError::from(std::io::Error::new(
@@ -612,18 +613,21 @@ mod tests {
         assert!(!server_spoke_redis_protocol(&err));
     }
 
+    /// 解析失败同样不算对端回了 Redis 协议。
     #[test]
     fn parse_error_is_not_redis_protocol() {
         let err = RedisError::from((ErrorKind::Parse, "invalid byte"));
         assert!(!server_spoke_redis_protocol(&err));
     }
 
+    /// NOAUTH 说明对端是 Redis，只是还没认证。
     #[test]
     fn auth_failed_counts_as_redis_protocol() {
         let err = RedisError::from((ErrorKind::AuthenticationFailed, "NOAUTH"));
         assert!(server_spoke_redis_protocol(&err));
     }
 
+    /// SSH 和代理同时打开，在发起连接前就拒绝。
     #[test]
     fn ssh_and_proxy_rejected_before_io() {
         let conf = ConnConfig {
@@ -641,6 +645,7 @@ mod tests {
         );
     }
 
+    /// 手工代理没填主机，在发起连接前就拒绝。
     #[test]
     fn manual_proxy_empty_host_fails_before_io() {
         let conf = ConnConfig {
@@ -665,6 +670,7 @@ mod tests {
         );
     }
 
+    /// 哨兵没填 master 名，在发起连接前就拒绝。
     #[test]
     fn sentinel_empty_master_name_fails_before_io() {
         let conf = ConnConfig {
@@ -684,6 +690,7 @@ mod tests {
         );
     }
 
+    /// 明文探测最多等 3 秒，更短的连接超时保持原值。
     #[test]
     fn plaintext_probe_timeout_capped_at_3s() {
         assert_eq!(
@@ -696,6 +703,7 @@ mod tests {
         );
     }
 
+    /// 裸 IPv6 主机会补上方括号，否则 URL 解析失败。
     #[test]
     fn redis_url_brackets_ipv6() {
         let conf = ConnConfig {
@@ -711,6 +719,7 @@ mod tests {
         );
     }
 
+    /// 已经带方括号的 IPv6 不再套一层。
     #[test]
     fn redis_url_keeps_bracketed_ipv6() {
         let conf = ConnConfig {
@@ -726,6 +735,7 @@ mod tests {
         );
     }
 
+    /// 连接被对端重置像是协议不匹配；超时和拒连不是。
     #[test]
     fn windows_rst_looks_like_tls_mismatch() {
         assert!(looks_like_reset_or_parse(
@@ -739,11 +749,34 @@ mod tests {
         assert!(!looks_like_reset_or_parse("Connection refused"));
     }
 
+    /// TLS alert 说明对端在做 TLS；非法握手记录不是。
     #[test]
     fn rustls_alert_looks_like_tls_peer() {
         let err = RedisError::from((ErrorKind::Io, "received fatal alert: HandshakeFailure"));
         assert!(looks_like_tls_peer_error(&err));
         let plaintext = RedisError::from((ErrorKind::Io, "invalid peer handshake message"));
         assert!(!looks_like_tls_peer_error(&plaintext));
+    }
+
+    /// 勾了 SSL 时用 rediss 并带 insecure；resp3 写进查询参数。
+    #[test]
+    fn redis_url_ssl_and_resp3() {
+        let mut conf = ConnConfig {
+            host: "127.0.0.1".into(),
+            port: 6379,
+            username: "u".into(),
+            password: "p".into(),
+            ssl: true,
+            ..ConnConfig::default()
+        };
+        conf.meta.insert(
+            "protocol".into(),
+            crate::model::ConnMetaValue::String("resp3".into()),
+        );
+        let url = redis_url(&conf).unwrap();
+        assert_eq!(url.scheme(), "rediss");
+        assert_eq!(url.username(), "u");
+        assert_eq!(url.fragment(), Some("insecure"));
+        assert!(url.query().unwrap_or("").contains("protocol=resp3"));
     }
 }
