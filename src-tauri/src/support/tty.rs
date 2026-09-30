@@ -4,8 +4,8 @@
 //! - `Csv`：`cliFormatReplyCSV`（`--csv`）
 //! - `Json`：`cliFormatReplyJson`（`--json`）
 
-use crate::cmd::format::format_quoted;
 use crate::model::CliOutputMode;
+use crate::support::format::format_quoted;
 use redis::Value;
 
 #[derive(Copy, Clone, PartialEq)]

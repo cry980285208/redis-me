@@ -22,22 +22,23 @@
 仍是一个 crate。`MeClient` 方法名、Tauri command、specta 类型名都不改。`impl_single.rs` / `impl_cluster.rs` 不改名。
 
 ```text
-src-tauri/src/client/
-  mod.rs
-  me_client.rs       # 原 client_trait.rs：只留 trait，以及下面「短命令」
-  state.rs
-  base.rs            # MeBase（从 model.rs 挪来）
-  impl_single.rs
-  impl_cluster.rs
-  ops/
-    mod.rs
-    scan.rs          # 键 SCAN
-    field_scan.rs    # 字段扫描整条链路，含各类型分页
-    key.rs           # 对已知键的读写
-    as_cmd.rs        # 键/字段 → redis-cli 命令文本
-    import_export.rs # CSV 与命令文件的导入导出
-    acl.rs
-    pubsub.rs
+src-tauri/src/
+  client.rs            # 模块入口，代替 client/mod.rs
+  client/
+    me_client.rs       # 原 client_trait.rs：只留 trait，以及下面「短命令」
+    state.rs
+    base.rs            # MeBase（从 model.rs 挪来）
+    impl_single.rs
+    impl_cluster.rs
+    ops.rs             # 模块入口，代替 ops/mod.rs
+    ops/
+      scan.rs          # 键 SCAN
+      field_scan.rs    # 字段扫描整条链路，含各类型分页
+      key.rs           # 对已知键的读写
+      as_cmd.rs        # 键/字段 → redis-cli 命令文本
+      import_export.rs # CSV 与命令文件的导入导出
+      acl.rs
+      pubsub.rs
 ```
 
 `utils/model.rs` 在 31.4 之前仍是一个文件，只留 IPC 数据和纯查询方法（`command_map`、`protocol_version`、`is_minimal_mode`）。31.7 把它挪到 crate 根的 `model.rs`，不拆成多个文件。
@@ -47,16 +48,17 @@ src-tauri/src/client/
 ```text
 src-tauri/src/
   model.rs                 # 原 utils/model.rs
+  net.rs                   # 模块入口，代替 net/mod.rs
   net/
     conn.rs                # 建连，原 utils/conn.rs
     proxy.rs               # 原 proxy_dialer.rs
     ssh.rs                 # 原 ssh_dialer.rs
     system_proxy.rs
     tls.rs                 # 原 tls_cert.rs
-  cli/
-    format.rs              # 原 redis_cli_format.rs
-    tty.rs                 # 原 redis_cli_tty.rs
+  support.rs               # 模块入口，代替 support/mod.rs
   support/
+    format.rs              # redis-cli 命令文本，原 redis_cli_format.rs
+    tty.rs                 # redis-cli 回复排版，原 redis_cli_tty.rs
     error.rs
     util.rs
     command_log.rs
@@ -66,7 +68,7 @@ src-tauri/src/
     app_store.rs
 ```
 
-`support/` 只收不属于建连、redis-cli、IPC 的现有文件。新业务不要再丢进这个目录。
+`support/` 收错误、工具、命令日志、redis-cli 文本和启动。建连在 `net/`，IPC 在根上的 `model.rs`。新业务不要再丢进 `support/`。
 
 ## 按调用关系切，不要按类型切
 
@@ -100,7 +102,7 @@ src-tauri/src/
 
 - 同一次提交里改掉调用方 import。这个 crate 没有外部用户，不留 `pub use ...::*` 垫片。
 - 跨文件调用的函数用 `pub`。RedisME 是独立程序，不用 `pub(crate)`。
-- `ops/mod.rs` 只声明子模块，不把函数再导出一遍。调用写成 `ops::field_scan::field_scan0`。
+- `ops.rs` 只声明子模块，不把函数再导出一遍。调用写成 `ops::field_scan::field_scan0`。
 - `cargo check --manifest-path src-tauri/Cargo.toml` 通过。
 - `cargo test --lib --manifest-path src-tauri/Cargo.toml` 通过。
 - 单机和集群继续手写一行转发，不要用宏生成。
@@ -152,9 +154,9 @@ pub fn sentinel_masters(conf: &ConnConfig, connect_timeout: Duration, command_ti
 
 单测跟着文件走。本步只搬文件，不改建连逻辑。
 
-## 31.6 redis-cli 归到 cli/
+## 31.6 redis-cli 归到 support/
 
-`utils/redis_cli_format.rs` → `cli/format.rs`，`utils/redis_cli_tty.rs` → `cli/tty.rs`。同样当次改完 import。
+只有 `format.rs` 和 `tty.rs` 两个文件，不单开 `cli/`。`utils/redis_cli_format.rs` → `support/format.rs`，`utils/redis_cli_tty.rs` → `support/tty.rs`。同样当次改完 import。
 
 ## 31.7 其余归到 support/，model 提到根上
 
@@ -171,7 +173,7 @@ pub fn sentinel_masters(conf: &ConnConfig, connect_timeout: Duration, command_ti
 
 `lib.rs` 去掉 `mod utils`。搬完删除空的 `utils/`。
 
-`util.rs` 保持原样跟着走，不在这一步把 `parse_client_info`、`split_redis_args` 等再拆进 `ops/` 或 `cli/`。那是另一次行为不变的搬家，和改目录混在一起会很难看 diff。
+`util.rs` 保持原样跟着走，不在这一步把 `parse_client_info`、`split_redis_args` 等再拆进 `ops/`。那是另一次行为不变的搬家，和改目录混在一起会很难看 diff。
 
 做完再跑一次 specta 导出和 `cargo test --lib`。
 
