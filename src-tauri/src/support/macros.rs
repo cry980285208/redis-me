@@ -53,71 +53,195 @@ macro_rules! api_commands {
     };
 }
 
-/// 单机 `mock_data`。`Commands` 不能写成 trait 方法，所以用宏在 `me_single` 里展开。
-/// 集群的造数是手写的 `ClusterPipeline`，不要并进这个宏。
+/// 单机和集群相同的 `MeClient` 转发：取当前连接后交给 `ops` 里的 `*0`。
+/// 两边行为不同的方法留在各自的 `impl` 里，不要放进这个宏。
 #[macro_export]
-macro_rules! implement_pipeline_commands {
-    ($struct_name:ident) => {
-        /// 用 pipeline 写入 string 和 hash 的随机样本，给空库看界面。
-        fn mock_data(&self, count: u64) -> $crate::support::util::AnyResult<()> {
-            let mut pipe = $struct_name::with_capacity(count as usize);
-            for _ in 0..count {
-                let key = format!(
-                    "redis-me-mock:string:{}",
-                    $crate::support::util::random_string(10)
-                );
-                pipe.set(&key, $crate::support::util::random_string(10))
-                    .ignore();
+macro_rules! me_client_forwards {
+    () => {
+        fn field_scan(&self, param: FieldScanParam) -> AnyResult<FieldScanResult> {
+            let httl_supported = self.base().capabilities.httl_supported;
+            $crate::client::ops::field_scan::field_scan0(self.get_conn()?, param, httl_supported)
+        }
 
-                let field_count = $crate::support::util::random_range(3, 200);
-                let key = format!(
-                    "redis-me-mock:hash:{}",
-                    $crate::support::util::random_string(10)
-                );
-                for x in 0..field_count {
-                    pipe.hset(
-                        &key,
-                        format!("key{x}"),
-                        $crate::support::util::random_string(10),
-                    )
-                    .ignore();
-                }
+        fn ttl(&self, key: RedisKey, ttl: i64) -> AnyResult<()> {
+            $crate::client::ops::key::ttl0(self.get_conn()?, key, ttl)
+        }
 
-                let key = format!(
-                    "redis-me-mock:list:{}",
-                    $crate::support::util::random_string(10)
-                );
-                for _ in 0..field_count {
-                    pipe.rpush(&key, $crate::support::util::random_string(10))
-                        .ignore();
-                }
+        fn set(&self, param: RedisSetParam) -> AnyResult<()> {
+            $crate::client::ops::key::set0(self.get_conn()?, param)
+        }
 
-                let key = format!(
-                    "redis-me-mock:set:{}",
-                    $crate::support::util::random_string(10)
-                );
-                for _ in 0..field_count {
-                    pipe.sadd(&key, $crate::support::util::random_string(10))
-                        .ignore();
-                }
+        fn del(&self, key: RedisKey) -> AnyResult<()> {
+            $crate::client::ops::key::del0(self.get_conn()?, key)
+        }
 
-                let key = format!(
-                    "redis-me-mock:zset:{}",
-                    $crate::support::util::random_string(10)
-                );
-                for _ in 0..field_count {
-                    pipe.zadd(
-                        &key,
-                        $crate::support::util::random_string(10),
-                        $crate::support::util::random_range(1, 100),
-                    )
-                    .ignore();
-                }
-            }
+        fn field_add(&self, param: RedisFieldAdd) -> AnyResult<RedisKey> {
+            $crate::client::ops::field::field_add0(
+                self.get_conn()?,
+                param,
+                self.base().capabilities.httl_supported,
+            )
+        }
 
-            let mut conn = self.get_conn()?;
-            let _: () = pipe.query(&mut conn)?;
-            Ok(())
+        fn field_set(&self, param: RedisFieldSet) -> AnyResult<()> {
+            $crate::client::ops::field::field_set0(
+                self.get_conn()?,
+                param,
+                self.base().capabilities.httl_supported,
+            )
+        }
+
+        fn field_ttl(&self, param: RedisFieldTtl) -> AnyResult<()> {
+            $crate::client::ops::field::field_ttl0(
+                self.get_conn()?,
+                param,
+                self.base().capabilities.httl_supported,
+            )
+        }
+
+        fn field_get(&self, param: RedisFieldGet) -> AnyResult<RedisFieldValue> {
+            $crate::client::ops::field::field_get0(
+                self.get_conn()?,
+                param,
+                self.base().capabilities.httl_supported,
+            )
+        }
+
+        fn hash_keys(&self, param: RedisHashKeys) -> AnyResult<Vec<String>> {
+            $crate::client::ops::field::hash_keys0(self.get_conn()?, param)
+        }
+
+        fn hash_values(&self, param: RedisHashKeys) -> AnyResult<Vec<String>> {
+            $crate::client::ops::field::hash_values0(self.get_conn()?, param)
+        }
+
+        fn field_pop(&self, param: RedisPop) -> AnyResult<String> {
+            $crate::client::ops::field::field_pop0(self.get_conn()?, param)
+        }
+
+        fn field_del(&self, param: RedisFieldDel) -> AnyResult<()> {
+            $crate::client::ops::field::field_del0(self.get_conn()?, param)
+        }
+
+        fn zset_rank(&self, param: RedisZsetRank) -> AnyResult<RedisZsetRankResult> {
+            $crate::client::ops::field_scan::zset_rank0(self.get_conn()?, param)
+        }
+
+        fn zset_range(&self, param: RedisZsetRange) -> AnyResult<Vec<RedisZsetRangeItem>> {
+            $crate::client::ops::field_scan::zset_range0(self.get_conn()?, param)
+        }
+
+        fn ar_last_items(&self, param: RedisArLastItems) -> AnyResult<Vec<RedisArLastItemsItem>> {
+            $crate::client::ops::field::ar_last_items0(self.get_conn()?, param)
+        }
+
+        fn ar_info(&self, key: RedisKey) -> AnyResult<Vec<RedisArInfoItem>> {
+            $crate::client::ops::info::ar_info0(self.get_conn()?, key)
+        }
+
+        fn v_info(&self, key: RedisKey) -> AnyResult<Vec<RedisArInfoItem>> {
+            $crate::client::ops::vector::v_info0(self.get_conn()?, key)
+        }
+
+        fn ts_info(&self, key: RedisKey) -> AnyResult<Vec<RedisArInfoItem>> {
+            $crate::client::ops::info::ts_info0(self.get_conn()?, key)
+        }
+
+        fn v_getattr(&self, param: RedisVAttr) -> AnyResult<String> {
+            $crate::client::ops::vector::v_getattr0(self.get_conn()?, param)
+        }
+
+        fn v_setattr(&self, param: RedisVAttr) -> AnyResult<()> {
+            $crate::client::ops::vector::v_setattr0(self.get_conn()?, param)
+        }
+
+        fn v_sim(&self, param: RedisVSim) -> AnyResult<Vec<RedisVSimItem>> {
+            $crate::client::ops::vector::v_sim0(self.get_conn()?, param)
+        }
+
+        fn object_info(&self, key: RedisKey) -> AnyResult<RedisObjectInfo> {
+            $crate::client::ops::key::object_info0(self.get_conn()?, key)
+        }
+
+        fn publish(
+            &self,
+            channel: &str,
+            message: &str,
+            msg_fmt: Option<BytesFormat>,
+        ) -> AnyResult<()> {
+            let fmt = msg_fmt.unwrap_or_default();
+            $crate::client::ops::pubsub::publish0(self.get_conn()?, channel, message, &fmt)
+        }
+
+        fn subscribe_stop(&self) -> AnyResult<()> {
+            $crate::client::ops::pubsub::subscribe_stop0(
+                self.get_conn()?,
+                self.subscribe_running.clone(),
+            )
+        }
+
+        fn monitor_stop(&self) -> AnyResult<()> {
+            $crate::client::ops::pubsub::monitor_stop0(self.monitor_running.clone())
+        }
+
+        fn key_type(&self, key: RedisKey) -> AnyResult<String> {
+            $crate::client::ops::key::key_type0(self.get_conn()?, key)
+        }
+
+        fn get_key_as_command(&self, key: RedisKey) -> AnyResult<String> {
+            $crate::client::ops::cmd::get_key_as_command0(self.get_conn()?, key)
+        }
+
+        fn get_field_as_command(&self, param: RedisFieldAsCommand) -> AnyResult<String> {
+            $crate::client::ops::cmd::get_field_as_command0(self.get_conn()?, param)
+        }
+
+        fn xinfo_groups(&self, key: RedisKey) -> AnyResult<Vec<XInfoGroup>> {
+            $crate::client::ops::info::xinfo_groups0(self.get_conn()?, key)
+        }
+
+        fn xinfo_consumers(&self, key: RedisKey, group: String) -> AnyResult<Vec<XInfoConsumer>> {
+            $crate::client::ops::info::xinfo_consumers0(self.get_conn()?, key, group)
+        }
+
+        fn flush_db(&self) -> AnyResult<()> {
+            $crate::client::ops::key::flush_db0(self.get_conn()?)
+        }
+
+        fn flush_all(&self) -> AnyResult<()> {
+            $crate::client::ops::key::flush_all0(self.get_conn()?)
+        }
+
+        fn acl_users(&self) -> AnyResult<Vec<String>> {
+            $crate::client::ops::acl::acl_users0(self.get_conn()?)
+        }
+
+        fn acl_list_users(&self) -> AnyResult<Vec<AclUserDetail>> {
+            $crate::client::ops::acl::acl_list_users0(self.get_conn()?)
+        }
+
+        fn acl_getuser(&self, username: &str) -> AnyResult<AclUserDetail> {
+            $crate::client::ops::acl::acl_getuser0(self.get_conn()?, username)
+        }
+
+        fn acl_whoami(&self) -> AnyResult<String> {
+            $crate::client::ops::acl::acl_whoami0(self.get_conn()?)
+        }
+
+        fn acl_cat(&self, category: Option<String>) -> AnyResult<Vec<String>> {
+            $crate::client::ops::acl::acl_cat0(self.get_conn()?, category)
+        }
+
+        fn acl_genpass(&self, bits: Option<i64>) -> AnyResult<String> {
+            $crate::client::ops::acl::acl_genpass0(self.get_conn()?, bits)
+        }
+
+        fn acl_log(&self, count: Option<u64>) -> AnyResult<Vec<AclLogEntry>> {
+            $crate::client::ops::acl::acl_log0(self.get_conn()?, count)
+        }
+
+        fn acl_dryrun(&self, username: String, command: String) -> AnyResult<String> {
+            $crate::client::ops::acl::acl_dryrun0(self.get_conn()?, username, command)
         }
     };
 }

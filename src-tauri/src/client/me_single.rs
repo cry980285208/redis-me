@@ -1,27 +1,13 @@
 use crate::client::me_client::*;
-use crate::client::ops::acl::{
-    acl_build_rules, acl_cat0, acl_dryrun0, acl_genpass0, acl_getuser0, acl_list_users0, acl_log0,
-    acl_users0, acl_whoami0,
-};
-use crate::client::ops::cmd::{get_field_as_command0, get_key_as_command0};
+use crate::client::ops::acl::acl_build_rules;
 use crate::client::ops::exp::{export_cmd_0_thread, export_csv_0_thread};
-use crate::client::ops::field::{
-    ar_last_items0, field_add0, field_del0, field_get0, field_pop0, field_set0, field_ttl0,
-    hash_keys0, hash_values0,
-};
-use crate::client::ops::field_scan::{field_scan0, zset_range0, zset_rank0};
 use crate::client::ops::imp::{import_cmd_0_thread, import_csv_0_thread};
-use crate::client::ops::info::{
-    ar_info0, parse_client_info, redis_value_to_log, ts_info0, xinfo_consumers0, xinfo_groups0,
-};
-use crate::client::ops::key::{
-    copy0, del0, flush_all0, flush_db0, key_type0, object_info0, set0, ttl0,
-};
+use crate::client::ops::info::{parse_client_info, redis_value_to_log};
+use crate::client::ops::key::copy0;
 use crate::client::ops::key_scan::{batch_key0, scan_0_batch_count, scan_0_exact, scan_1_cmd};
-use crate::client::ops::pubsub::{monitor_stop0, monitor0, publish0, subscribe_stop0, subscribe0};
-use crate::client::ops::vector::{v_getattr0, v_info0, v_setattr0, v_sim0};
+use crate::client::ops::pubsub::{monitor0, subscribe0};
 use crate::client::state::MeBase;
-use crate::implement_pipeline_commands;
+use crate::me_client_forwards;
 use crate::model::*;
 use crate::net::conn::{get_client_single, init_single_connection, set_client_name_unless_minimal};
 use crate::support::capabilities::detect_server_capabilities;
@@ -153,23 +139,6 @@ impl MeClient for MeSingle {
         })
     }
 
-    fn field_scan(&self, param: FieldScanParam) -> AnyResult<FieldScanResult> {
-        let httl_supported = self.base().capabilities.httl_supported;
-        field_scan0(self.get_conn()?, param, httl_supported)
-    }
-
-    fn ttl(&self, key: RedisKey, ttl: i64) -> AnyResult<()> {
-        ttl0(self.get_conn()?, key, ttl)
-    }
-
-    fn set(&self, param: RedisSetParam) -> AnyResult<()> {
-        set0(self.get_conn()?, param)
-    }
-
-    fn del(&self, key: RedisKey) -> AnyResult<()> {
-        del0(self.get_conn()?, key)
-    }
-
     fn rename(&self, key: RedisKey, new_key: RedisKey) -> AnyResult<RedisKey> {
         // 防止同名重命名时执行无意义操作
         if key.to_bytes() == new_key.to_bytes() {
@@ -184,94 +153,6 @@ impl MeClient for MeSingle {
 
     fn copy(&self, param: RedisCopyParam) -> AnyResult<RedisKey> {
         copy0(self.get_conn()?, param)
-    }
-
-    fn field_add(&self, param: RedisFieldAdd) -> AnyResult<RedisKey> {
-        field_add0(
-            self.get_conn()?,
-            param,
-            self.base().capabilities.httl_supported,
-        )
-    }
-
-    fn field_set(&self, param: RedisFieldSet) -> AnyResult<()> {
-        field_set0(
-            self.get_conn()?,
-            param,
-            self.base().capabilities.httl_supported,
-        )
-    }
-
-    fn field_ttl(&self, param: RedisFieldTtl) -> AnyResult<()> {
-        field_ttl0(
-            self.get_conn()?,
-            param,
-            self.base().capabilities.httl_supported,
-        )
-    }
-
-    fn field_get(&self, param: RedisFieldGet) -> AnyResult<RedisFieldValue> {
-        field_get0(
-            self.get_conn()?,
-            param,
-            self.base().capabilities.httl_supported,
-        )
-    }
-
-    fn hash_keys(&self, param: RedisHashKeys) -> AnyResult<Vec<String>> {
-        hash_keys0(self.get_conn()?, param)
-    }
-
-    fn hash_values(&self, param: RedisHashKeys) -> AnyResult<Vec<String>> {
-        hash_values0(self.get_conn()?, param)
-    }
-
-    fn field_pop(&self, param: RedisPop) -> AnyResult<String> {
-        field_pop0(self.get_conn()?, param)
-    }
-
-    fn field_del(&self, param: RedisFieldDel) -> AnyResult<()> {
-        field_del0(self.get_conn()?, param)
-    }
-
-    fn zset_rank(&self, param: RedisZsetRank) -> AnyResult<RedisZsetRankResult> {
-        zset_rank0(self.get_conn()?, param)
-    }
-
-    fn zset_range(&self, param: RedisZsetRange) -> AnyResult<Vec<RedisZsetRangeItem>> {
-        zset_range0(self.get_conn()?, param)
-    }
-
-    fn ar_last_items(&self, param: RedisArLastItems) -> AnyResult<Vec<RedisArLastItemsItem>> {
-        ar_last_items0(self.get_conn()?, param)
-    }
-
-    fn ar_info(&self, key: RedisKey) -> AnyResult<Vec<RedisArInfoItem>> {
-        ar_info0(self.get_conn()?, key)
-    }
-
-    fn v_info(&self, key: RedisKey) -> AnyResult<Vec<RedisArInfoItem>> {
-        v_info0(self.get_conn()?, key)
-    }
-
-    fn ts_info(&self, key: RedisKey) -> AnyResult<Vec<RedisArInfoItem>> {
-        ts_info0(self.get_conn()?, key)
-    }
-
-    fn v_getattr(&self, param: RedisVAttr) -> AnyResult<String> {
-        v_getattr0(self.get_conn()?, param)
-    }
-
-    fn v_setattr(&self, param: RedisVAttr) -> AnyResult<()> {
-        v_setattr0(self.get_conn()?, param)
-    }
-
-    fn v_sim(&self, param: RedisVSim) -> AnyResult<Vec<RedisVSimItem>> {
-        v_sim0(self.get_conn()?, param)
-    }
-
-    fn object_info(&self, key: RedisKey) -> AnyResult<RedisObjectInfo> {
-        object_info0(self.get_conn()?, key)
     }
 
     fn execute_command(&self, param: RedisCommand) -> AnyResult<String> {
@@ -386,11 +267,6 @@ impl MeClient for MeSingle {
         Ok(clients)
     }
 
-    fn publish(&self, channel: &str, message: &str, msg_fmt: Option<BytesFormat>) -> AnyResult<()> {
-        let fmt = msg_fmt.unwrap_or_default();
-        publish0(self.get_conn()?, channel, message, &fmt)
-    }
-
     fn subscribe(&self, channel: Option<String>) -> AnyResult<()> {
         let conn = self
             .client
@@ -401,10 +277,6 @@ impl MeClient for MeSingle {
         subscribe0(conn, running, app_handle, channel, self.id.clone(), logger)
     }
 
-    fn subscribe_stop(&self) -> AnyResult<()> {
-        subscribe_stop0(self.get_conn()?, self.subscribe_running.clone())
-    }
-
     fn monitor(&self, _node: &str) -> AnyResult<()> {
         let conn = self
             .client
@@ -413,10 +285,6 @@ impl MeClient for MeSingle {
         let app_handle = self.base().get_app_handle()?;
         let logger = self.base().command_logger.clone();
         monitor0(conn, running, app_handle, self.id.clone(), logger)
-    }
-
-    fn monitor_stop(&self) -> AnyResult<()> {
-        monitor_stop0(self.monitor_running.clone())
     }
 
     fn batch_del(&self, param: RedisBatchKey) -> AnyResult<()> {
@@ -522,26 +390,6 @@ impl MeClient for MeSingle {
         Ok(())
     }
 
-    fn key_type(&self, key: RedisKey) -> AnyResult<String> {
-        key_type0(self.get_conn()?, key)
-    }
-
-    fn get_key_as_command(&self, key: RedisKey) -> AnyResult<String> {
-        get_key_as_command0(self.get_conn()?, key)
-    }
-
-    fn get_field_as_command(&self, param: RedisFieldAsCommand) -> AnyResult<String> {
-        get_field_as_command0(self.get_conn()?, param)
-    }
-
-    fn xinfo_groups(&self, key: RedisKey) -> AnyResult<Vec<XInfoGroup>> {
-        xinfo_groups0(self.get_conn()?, key)
-    }
-
-    fn xinfo_consumers(&self, key: RedisKey, group: String) -> AnyResult<Vec<XInfoConsumer>> {
-        xinfo_consumers0(self.get_conn()?, key, group)
-    }
-
     fn key_slot(&self, _key: RedisKey) -> AnyResult<u64> {
         Ok(0)
     }
@@ -552,26 +400,6 @@ impl MeClient for MeSingle {
             node,
             ..RedisNode::default()
         }])
-    }
-
-    fn flush_db(&self) -> AnyResult<()> {
-        flush_db0(self.get_conn()?)
-    }
-
-    fn flush_all(&self) -> AnyResult<()> {
-        flush_all0(self.get_conn()?)
-    }
-
-    fn acl_users(&self) -> AnyResult<Vec<String>> {
-        acl_users0(self.get_conn()?)
-    }
-
-    fn acl_list_users(&self) -> AnyResult<Vec<AclUserDetail>> {
-        acl_list_users0(self.get_conn()?)
-    }
-
-    fn acl_getuser(&self, username: &str) -> AnyResult<AclUserDetail> {
-        acl_getuser0(self.get_conn()?, username)
     }
 
     fn acl_setuser(&self, param: AclSetuserParam) -> AnyResult<()> {
@@ -586,18 +414,6 @@ impl MeClient for MeSingle {
         Ok(self.get_conn()?.acl_deluser(&usernames)?)
     }
 
-    fn acl_whoami(&self) -> AnyResult<String> {
-        acl_whoami0(self.get_conn()?)
-    }
-
-    fn acl_cat(&self, category: Option<String>) -> AnyResult<Vec<String>> {
-        acl_cat0(self.get_conn()?, category)
-    }
-
-    fn acl_genpass(&self, bits: Option<i64>) -> AnyResult<String> {
-        acl_genpass0(self.get_conn()?, bits)
-    }
-
     fn acl_save(&self) -> AnyResult<()> {
         let _: () = self.get_conn()?.acl_save()?;
         Ok(())
@@ -608,20 +424,48 @@ impl MeClient for MeSingle {
         Ok(())
     }
 
-    fn acl_log(&self, count: Option<u64>) -> AnyResult<Vec<AclLogEntry>> {
-        acl_log0(self.get_conn()?, count)
-    }
-
     fn acl_log_reset(&self) -> AnyResult<()> {
         let _: () = self.get_conn()?.acl_log_reset()?;
         Ok(())
     }
 
-    fn acl_dryrun(&self, username: String, command: String) -> AnyResult<String> {
-        acl_dryrun0(self.get_conn()?, username, command)
+    /// 用 pipeline 写入各类型随机样本，给空库看界面。
+    fn mock_data(&self, count: u64) -> AnyResult<()> {
+        let mut pipe = Pipeline::with_capacity(count as usize);
+        for _ in 0..count {
+            let key = format!("redis-me-mock:string:{}", random_string(10));
+            pipe.set(&key, random_string(10)).ignore();
+
+            let field_count = random_range(3, 200);
+            let key = format!("redis-me-mock:hash:{}", random_string(10));
+            for x in 0..field_count {
+                pipe.hset(&key, format!("key{x}"), random_string(10))
+                    .ignore();
+            }
+
+            let key = format!("redis-me-mock:list:{}", random_string(10));
+            for _ in 0..field_count {
+                pipe.rpush(&key, random_string(10)).ignore();
+            }
+
+            let key = format!("redis-me-mock:set:{}", random_string(10));
+            for _ in 0..field_count {
+                pipe.sadd(&key, random_string(10)).ignore();
+            }
+
+            let key = format!("redis-me-mock:zset:{}", random_string(10));
+            for _ in 0..field_count {
+                pipe.zadd(&key, random_string(10), random_range(1, 100))
+                    .ignore();
+            }
+        }
+
+        let mut conn = self.get_conn()?;
+        let _: () = pipe.query(&mut conn)?;
+        Ok(())
     }
 
-    implement_pipeline_commands!(Pipeline);
+    me_client_forwards!();
 }
 
 // 个性化方法
