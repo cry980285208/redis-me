@@ -199,8 +199,6 @@ pub fn disconnect(app_handle: AppHandle, id: &str) -> ApiResult<()> {
     to_api_result(app_handle.disconnect(id))
 }
 
-
-
 // ------------------------------ 仅本文件使用 ------------------------------
 
 /// 从可执行文件路径往上找到 `App.app`。不在标准 bundle 布局里时返回 `None`。

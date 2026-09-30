@@ -126,4 +126,3 @@ pub fn flush_all0(mut conn: MutexGuard<impl Commands>) -> AnyResult<()> {
     let _: () = conn.flushall()?;
     Ok(())
 }
-
