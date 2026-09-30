@@ -1,25 +1,32 @@
-//! 扩展连接。toml 里没有的段跳过，写了却连不上则失败。
+//! 扩展连接。名字不在 `common/conn.rs` 的 `live_conns` 里就跳过，写进去却连不上则失败。
+//!
+//! 测的是「这条路能连上并读写」，不重复单机那套翻页：
+//! - 普通连接：写入一条中文 String，再用 Base64 读回一段非 UTF-8
+//! - 哨兵（含 TLS 哨兵）：先确认 `sentinel masters` 至少一条，再做上面的读写
+//! - 集群加 TLS / SSH：跑单机那套往返，再加槽位和跨 slot 重命名
+//! - `meta.protocol = resp3` 时，`CLIENT INFO` 里的 `resp` 必须是 3
+//! - 系统代理：本机检测不到就跳过
+//!
+//! 新增一种连法（例如新的代理类型）时，在 `conn.rs` 加一项，并在本文件加同名测试。
 
-#![allow(dead_code)]
+#[path = "common/live.rs"]
+#[allow(dead_code)]
+mod live;
+#[path = "common/check.rs"]
+#[allow(dead_code)]
+mod check;
 
-#[path = "common/redis.rs"]
-mod redis;
-#[path = "common/roundtrip.rs"]
-mod roundtrip;
-
-use redis::LiveConn;
 use redis_me_lib::client::me_client::MeClient;
-use redis_me_lib::model::{CliOutputMode, RedisCommand};
+use redis_me_lib::model::{CliOutputMode, ConnConfig, RedisCommand};
 use redis_me_lib::net::conn::sentinel_masters;
 use redis_me_lib::net::system_proxy::{DetectOutcome, detect_system_proxy};
 use std::time::Duration;
 
-/// 按段名取扩展连接。toml 里没有这一段就跳过。
-fn spec(name: &str) -> Option<LiveConn> {
-    match redis::load_live_conns() {
-        Ok(list) => list.into_iter().find(|item| item.name == name),
-        Err(err) => panic!("redis conn config: {err}"),
-    }
+/// 按连接名取扩展连接。`conn.rs` 里没有这一项就跳过。
+fn spec(name: &str) -> Option<ConnConfig> {
+    live::live_conns()
+        .into_iter()
+        .find(|item| item.name == name)
 }
 
 /// 连上后做同一件数据断言。集群段再跑槽位和跨 slot 重命名。
@@ -33,25 +40,21 @@ fn run(name: &str) {
         return;
     }
     if spec.sentinel {
-        let masters = sentinel_masters(
-            &redis::live_config(&spec),
-            Duration::from_secs(15),
-            Duration::from_secs(20),
-        )
-        .unwrap_or_else(|err| panic!("[{name}] sentinel masters: {err}"));
+        let masters = sentinel_masters(&spec, Duration::from_secs(15), Duration::from_secs(20))
+            .unwrap_or_else(|err| panic!("[{name}] sentinel masters: {err}"));
         assert!(!masters.is_empty(), "sentinel masters is empty");
     }
-    let client = redis::open_live(&spec).unwrap_or_else(|err| panic!("[{name}] {err}"));
+    let client = live::open_live(&spec).unwrap_or_else(|err| panic!("[{name}] {err}"));
     if spec.cluster {
-        roundtrip::chinese_and_binary_string(client.as_ref());
-        roundtrip::key_scan_collects_five(client.as_ref());
-        roundtrip::hash_list_set_zset_stream_pages(client.as_ref());
-        roundtrip::optional_modules_when_present(client.as_ref());
-        roundtrip::cluster_slot_and_rename(client.as_ref());
+        check::chinese_and_binary_string(client.as_ref());
+        check::key_scan_collects_five(client.as_ref());
+        check::hash_list_set_zset_stream_pages(client.as_ref());
+        check::optional_modules_when_present(client.as_ref());
+        check::cluster_slot_and_rename(client.as_ref());
     } else {
-        roundtrip::string_roundtrip(client.as_ref());
+        check::string_roundtrip(client.as_ref());
     }
-    if spec.resp3 {
+    if spec.is_resp3() {
         assert_resp3(client.as_ref());
     }
 }
@@ -69,7 +72,7 @@ fn assert_resp3(client: &dyn MeClient) {
     assert!(text.contains("resp=3"), "{text}");
 }
 
-/// 不校验证书的 TLS。没配这一节就跳过。
+/// TLS 单机。不校验服务端证书，但会带上 `conn.rs` 里的客户端证书。没写进 `live_conns` 就跳过。
 #[test]
 fn ssl() {
     run("ssl");
@@ -133,6 +136,12 @@ fn proxy_system() {
 #[test]
 fn sentinel() {
     run("sentinel");
+}
+
+/// TLS 哨兵。没配这一节就跳过。
+#[test]
+fn sentinel_ssl() {
+    run("sentinel_ssl");
 }
 
 /// 集群加 TLS。没配这一节就跳过。

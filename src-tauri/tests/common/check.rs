@@ -1,6 +1,10 @@
-//! 单机和集群共用的往返。调用方负责建连；这里只写键、断言、删除。
+//! 单机和集群共用的往返断言。调用方负责建连；这里写临时键、核对、删掉。
+//!
+//! 键前缀带本次测试的序号，并行时不会互相删。结束只删这些键，不做 FLUSH。
+//! 断言：中文不能变成乱码；非 UTF-8 用 Base64 读回原字节；SCAN 翻页合起来不丢不重；
+//! List 和 Stream 顺序不变。没有对应模块命令时，可选类型跳过。
 
-use crate::redis;
+use crate::live;
 use redis_me_lib::client::me_client::MeClient;
 use redis_me_lib::model::{BytesFormat, RedisFieldAdd, RedisFieldValue, RedisKey};
 use redis_me_lib::support::util::AnyResult;
@@ -39,19 +43,19 @@ pub fn string_roundtrip(client: &dyn MeClient) {
     add.value = "值".into();
     let key = write(client, add);
     trash.keep(key.clone());
-    let page = redis::field_pages(client, redis::field_scan_param(key)).unwrap();
+    let page = live::field_pages(client, live::field_scan_param(key)).unwrap();
     assert_eq!(string_of(&page[0].value), "值");
 
     let raw = [0xff, 0xfe];
     let mut add = new_add(RedisKey::from(format!("{prefix}bin")), "string");
-    add.value = redis::b64(&raw);
+    add.value = live::b64(&raw);
     add.val_fmt = Some(BytesFormat::Base64);
     let key = write(client, add);
     trash.keep(key.clone());
-    let mut param = redis::field_scan_param(key);
+    let mut param = live::field_scan_param(key);
     param.bytes_format = Some(BytesFormat::Base64);
-    let page = redis::field_pages(client, param).unwrap();
-    assert_eq!(redis::decode_b64(&string_of(&page[0].value)).unwrap(), raw);
+    let page = live::field_pages(client, param).unwrap();
+    assert_eq!(live::decode_b64(&string_of(&page[0].value)).unwrap(), raw);
 }
 
 /// 键名、String、Hash、List 都含中文；二进制键用 Base64 读回原字节。
@@ -66,28 +70,28 @@ pub fn chinese_and_binary_string(client: &dyn MeClient) {
     let mut add = new_add(RedisKey::from(chinese.clone()), "string");
     add.value = "值".into();
     trash.keep(write(client, add));
-    let page = redis::field_pages(
+    let page = live::field_pages(
         client,
-        redis::field_scan_param(RedisKey::from(chinese.clone())),
+        live::field_scan_param(RedisKey::from(chinese.clone())),
     )
     .unwrap();
     assert_eq!(string_of(&page[0].value), "值");
 
     let mut add = new_add(RedisKey::from(format!("{prefix}bin-value")), "string");
-    add.value = redis::b64(redis::NON_UTF8);
+    add.value = live::b64(live::NON_UTF8);
     add.val_fmt = Some(BytesFormat::Base64);
     let key = write(client, add);
     trash.keep(key.clone());
-    let mut param = redis::field_scan_param(key);
+    let mut param = live::field_scan_param(key);
     param.bytes_format = Some(BytesFormat::Base64);
-    let page = redis::field_pages(client, param).unwrap();
+    let page = live::field_pages(client, param).unwrap();
     assert_eq!(
-        redis::decode_b64(&string_of(&page[0].value)).unwrap(),
-        redis::NON_UTF8
+        live::decode_b64(&string_of(&page[0].value)).unwrap(),
+        live::NON_UTF8
     );
 
     let mut raw = prefix.as_bytes().to_vec();
-    raw.extend_from_slice(redis::NON_UTF8);
+    raw.extend_from_slice(live::NON_UTF8);
     let binary = RedisKey::from(raw.clone());
     assert!(!binary.bytes.is_empty());
     let mut add = new_add(binary, "string");
@@ -95,14 +99,14 @@ pub fn chinese_and_binary_string(client: &dyn MeClient) {
     let stored = write(client, add);
     assert_eq!(stored.bytes, raw);
     trash.keep(stored.clone());
-    let page = redis::field_pages(client, redis::field_scan_param(stored)).unwrap();
+    let page = live::field_pages(client, live::field_scan_param(stored)).unwrap();
     assert_eq!(string_of(&page[0].value), "值");
-    redis::assert_binary_key_returned(client, &format!("{prefix}*"), &raw).unwrap();
-    redis::assert_exact_key(client, &chinese, 1).unwrap();
-    redis::assert_exact_key(client, &format!("{prefix}不存在"), 0).unwrap();
+    live::assert_binary_key_returned(client, &format!("{prefix}*"), &raw).unwrap();
+    live::assert_exact_key(client, &chinese, 1).unwrap();
+    live::assert_exact_key(client, &format!("{prefix}不存在"), 0).unwrap();
 }
 
-/// 同一前缀写 5 个键，`count = 2`，翻页拼起来正好是这 5 个。
+/// 同一前缀写 5 个键，SCAN 拼起来正好是这 5 个。
 pub fn key_scan_collects_five(client: &dyn MeClient) {
     let prefix = prefix();
     let mut trash = Trash {
@@ -117,7 +121,7 @@ pub fn key_scan_collects_five(client: &dyn MeClient) {
         add.value = "v".into();
         trash.keep(write(client, add));
     }
-    redis::assert_key_scan(client, &format!("{prefix}*"), &expected).unwrap();
+    live::assert_key_scan(client, &format!("{prefix}*"), &expected).unwrap();
 }
 
 /// Hash / List / Set / ZSet / Stream 各 5 个元素，按返回游标翻页，List 和 Stream 还核对顺序。
@@ -134,26 +138,26 @@ pub fn hash_list_set_zset_stream_pages(client: &dyn MeClient) {
     add.field_value_list = (0..5)
         .map(|i| {
             field(
-                &redis::b64(format!("字段{i}").as_bytes()),
-                &redis::b64(format!("值{i}").as_bytes()),
+                &live::b64(format!("字段{i}").as_bytes()),
+                &live::b64(format!("值{i}").as_bytes()),
                 0.0,
             )
         })
         .collect();
     add.field_value_list.push(field(
-        &redis::b64(redis::NON_UTF8),
-        &redis::b64(redis::NON_UTF8),
+        &live::b64(live::NON_UTF8),
+        &live::b64(live::NON_UTF8),
         0.0,
     ));
     trash.keep(write(client, add));
-    let mut param = redis::field_scan_param(RedisKey::from(hash_key.clone()));
+    let mut param = live::field_scan_param(RedisKey::from(hash_key.clone()));
     param.bytes_format = Some(BytesFormat::Base64);
-    let pages = redis::field_pages(client, param).unwrap();
+    let pages = live::field_pages(client, param).unwrap();
     let mut pairs = Vec::new();
     for page in &pages {
         for item in page.value.as_array().unwrap() {
-            let k = redis::decode_b64(item["key"].as_str().unwrap()).unwrap();
-            let v = redis::decode_b64(item["value"].as_str().unwrap()).unwrap();
+            let k = live::decode_b64(item["key"].as_str().unwrap()).unwrap();
+            let v = live::decode_b64(item["value"].as_str().unwrap()).unwrap();
             pairs.push((k, v));
         }
     }
@@ -166,21 +170,21 @@ pub fn hash_list_set_zset_stream_pages(client: &dyn MeClient) {
             )
         })
         .collect();
-    want.push((redis::NON_UTF8.to_vec(), redis::NON_UTF8.to_vec()));
+    want.push((live::NON_UTF8.to_vec(), live::NON_UTF8.to_vec()));
     want.sort();
     assert_eq!(pairs, want);
 
-    let mut exact = redis::field_scan_param(RedisKey::from(hash_key));
+    let mut exact = live::field_scan_param(RedisKey::from(hash_key));
     exact.exact = true;
     exact.pattern = "字段0".into();
-    let hit = redis::field_pages(client, exact).unwrap();
+    let hit = live::field_pages(client, exact).unwrap();
     assert_eq!(hit.len(), 1);
     assert_eq!(hit[0].value[0]["key"], "字段0");
     assert_eq!(hit[0].value[0]["value"], "值0");
-    let mut miss = redis::field_scan_param(RedisKey::from(format!("{prefix}hash")));
+    let mut miss = live::field_scan_param(RedisKey::from(format!("{prefix}hash")));
     miss.exact = true;
     miss.pattern = "没有这个字段".into();
-    let miss = redis::field_pages(client, miss).unwrap();
+    let miss = live::field_pages(client, miss).unwrap();
     assert_eq!(miss[0].value.as_array().unwrap().len(), 0);
 
     let list_values_expected: Vec<String> = (0..5).map(|i| format!("值{i}")).collect();
@@ -191,14 +195,14 @@ pub fn hash_list_set_zset_stream_pages(client: &dyn MeClient) {
         .collect();
     let key = write(client, add);
     trash.keep(key.clone());
-    let pages = redis::field_pages(client, redis::field_scan_param(key)).unwrap();
-    redis::assert_ordered_pages(&pages, &list_values_expected, list_values);
+    let pages = live::field_pages(client, live::field_scan_param(key)).unwrap();
+    live::assert_ordered_pages(&pages, &list_values_expected, list_values);
 
     let mut add = new_add(RedisKey::from(format!("{prefix}set")), "set");
     add.field_value_list = (0..5).map(|i| field("", &format!("值{i}"), 0.0)).collect();
     let key = write(client, add);
     trash.keep(key.clone());
-    let pages = redis::field_pages(client, redis::field_scan_param(key)).unwrap();
+    let pages = live::field_pages(client, live::field_scan_param(key)).unwrap();
     let mut got: Vec<String> = pages
         .iter()
         .flat_map(|page| {
@@ -220,12 +224,12 @@ pub fn hash_list_set_zset_stream_pages(client: &dyn MeClient) {
         .collect();
     let key = write(client, add);
     trash.keep(key.clone());
-    let mut param = redis::field_scan_param(key);
-    let mut meta = redis::empty_meta();
+    let mut param = live::field_scan_param(key);
+    let mut meta = live::empty_meta();
     meta.zset_min_score = Some("-inf".into());
     param.meta = Some(meta);
-    let pages = redis::field_pages(client, param).unwrap();
-    redis::assert_ordered_pages(&pages, &list_values_expected, zset_values);
+    let pages = live::field_pages(client, param).unwrap();
+    live::assert_ordered_pages(&pages, &list_values_expected, zset_values);
 
     let stream_key = format!("{prefix}stream");
     for (i, value) in list_values_expected.iter().enumerate() {
@@ -239,12 +243,12 @@ pub fn hash_list_set_zset_stream_pages(client: &dyn MeClient) {
             trash.keep(stored);
         }
     }
-    let mut param = redis::field_scan_param(RedisKey::from(stream_key));
-    let mut meta = redis::empty_meta();
+    let mut param = live::field_scan_param(RedisKey::from(stream_key));
+    let mut meta = live::empty_meta();
     meta.stream_desc = Some(false);
     param.meta = Some(meta);
-    let pages = redis::field_pages(client, param).unwrap();
-    redis::assert_ordered_pages(&pages, &list_values_expected, stream_values);
+    let pages = live::field_pages(client, param).unwrap();
+    live::assert_ordered_pages(&pages, &list_values_expected, stream_values);
 }
 
 /// JSON、Array、VectorSet、TimeSeries。没有对应命令就跳过。
@@ -261,16 +265,16 @@ pub fn optional_modules_when_present(client: &dyn MeClient) {
     });
     optional(client, &mut trash, &prefix, "array", |key| {
         let mut add = new_add(key, "array");
-        add.field_value_list = vec![field("0", &redis::b64("值".as_bytes()), 0.0)];
+        add.field_value_list = vec![field("0", &live::b64("值".as_bytes()), 0.0)];
         add.field_value_list
-            .push(field("1", &redis::b64(redis::NON_UTF8), 0.0));
+            .push(field("1", &live::b64(live::NON_UTF8), 0.0));
         add.val_fmt = Some(BytesFormat::Base64);
         Ok(add)
     });
     optional(client, &mut trash, &prefix, "vectorset", |key| {
         let mut add = new_add(key, "vectorset");
         add.vector = vec![1.0, 0.0];
-        add.field_value_list = vec![field(&redis::b64("元素".as_bytes()), "", 0.0)];
+        add.field_value_list = vec![field(&live::b64("元素".as_bytes()), "", 0.0)];
         add.val_fmt = Some(BytesFormat::Base64);
         Ok(add)
     });
@@ -315,7 +319,7 @@ pub fn cluster_slot_and_rename(client: &dyn MeClient) {
         )
         .expect("cross-slot rename");
     trash.keep(renamed.clone());
-    let page = redis::field_pages(client, redis::field_scan_param(renamed)).unwrap();
+    let page = live::field_pages(client, live::field_scan_param(renamed)).unwrap();
     assert_eq!(string_of(&page[0].value), "值");
 }
 
@@ -410,7 +414,7 @@ fn optional(
     };
     let stored = match client.field_add(add) {
         Ok(stored) => stored,
-        Err(err) if redis::unknown_command(&*err) => {
+        Err(err) if live::unknown_command(&*err) => {
             eprintln!("skip: {name}: {err}");
             return;
         }
@@ -420,27 +424,27 @@ fn optional(
         }
     };
     trash.keep(stored.clone());
-    let mut param = redis::field_scan_param(stored);
+    let mut param = live::field_scan_param(stored);
     if name != "json" && name != "timeseries" {
         param.bytes_format = Some(BytesFormat::Base64);
     }
-    let pages = redis::field_pages(client, param).unwrap_or_else(|err| panic!("{name}: {err}"));
+    let pages = live::field_pages(client, param).unwrap_or_else(|err| panic!("{name}: {err}"));
     match name {
         "json" => assert_eq!(pages[0].value["字"], "值"),
         "array" => {
             let mut values: Vec<Vec<u8>> = pages
                 .iter()
                 .flat_map(|page| page.value.as_array().unwrap().iter())
-                .map(|item| redis::decode_b64(item["value"].as_str().unwrap()).unwrap())
+                .map(|item| live::decode_b64(item["value"].as_str().unwrap()).unwrap())
                 .collect();
             values.sort();
-            let mut want = vec!["值".as_bytes().to_vec(), redis::NON_UTF8.to_vec()];
+            let mut want = vec!["值".as_bytes().to_vec(), live::NON_UTF8.to_vec()];
             want.sort();
             assert_eq!(values, want);
         }
         "vectorset" => {
             let name = pages[0].value[0]["name"].as_str().unwrap();
-            assert_eq!(redis::decode_b64(name).unwrap(), "元素".as_bytes());
+            assert_eq!(live::decode_b64(name).unwrap(), "元素".as_bytes());
         }
         "timeseries" => {
             let hit = pages.iter().any(|page| {

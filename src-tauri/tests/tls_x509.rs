@@ -1,4 +1,6 @@
-//! `is_x509_v1_pem` 用固定证书样例区分 X.509 v1 和 v3。样例在 `fixtures/`。
+//! 不连 Redis。用 `fixtures/` 里的证书样例确认 `is_x509_v1_pem`：
+//! v1 要认出来，v3、非法 PEM 和空内容都不是 v1。
+//! rustls 装不进 v1 证书，连 TLS 之前靠这个判断。
 
 use redis_me_lib::net::tls::is_x509_v1_pem;
 
