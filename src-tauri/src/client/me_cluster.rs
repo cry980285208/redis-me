@@ -1,19 +1,16 @@
-use crate::client::convert::{tuple_to_key_size, ui_key_list};
 use crate::client::me_client::*;
 use crate::client::ops::acl::{
     acl_cat0, acl_dryrun0, acl_genpass0, acl_getuser0, acl_list_users0, acl_log0, acl_users0,
     acl_whoami0, build_acl_setuser_cmd,
 };
-use crate::client::ops::as_cmd::{get_field_as_command0, get_key_as_command0};
+use crate::client::ops::cmd::{get_field_as_command0, get_key_as_command0};
+use crate::client::ops::exp::{export_cmd_0_thread, export_csv_0_thread};
 use crate::client::ops::field::{
     ar_last_items0, field_add0, field_del0, field_get0, field_pop0, field_set0, field_ttl0,
     hash_keys0, hash_values0,
 };
 use crate::client::ops::field_scan::{field_scan0, zset_range0, zset_rank0};
-use crate::client::ops::import_export::{
-    export_cmd_0_thread, export_csv_0_thread, export_import_check_running, import_cmd_0_thread,
-    import_csv_0_thread,
-};
+use crate::client::ops::imp::{import_cmd_0_thread, import_csv_0_thread};
 use crate::client::ops::info::{
     ar_info0, parse_client_info, redis_value_to_log, ts_info0, xinfo_consumers0, xinfo_groups0,
 };
@@ -31,6 +28,7 @@ use crate::net::conn::{
 };
 use crate::support::capabilities::detect_server_capabilities;
 use crate::support::command_log::LoggingClusterConnection;
+use crate::support::convert::{tuple_to_key_size, ui_key_list};
 use crate::support::error::AppError;
 use crate::support::format::parse_command;
 use crate::support::tty::redis_value_to_cli_display;
@@ -609,10 +607,9 @@ impl MeClient for MeCluster {
         let logger = self.base().command_logger.clone();
         let db_index = self.db.load(Relaxed);
         let mut logging_conn = LoggingClusterConnection::new(conn, logger, db_index);
-        let running = self.export_import_running.clone();
+        let running = self.export_import_check_running()?;
         let id = self.id.clone();
         let app_handle = self.base().get_app_handle()?;
-        export_import_check_running(running.clone())?;
         let export_format = param.export_format.clone();
         let file = param.file.clone();
         let with_ttl = param.with_ttl;
@@ -647,10 +644,9 @@ impl MeClient for MeCluster {
         let logger = self.base().command_logger.clone();
         let db_index = self.db.load(Relaxed);
         let mut logging_conn = LoggingClusterConnection::new(conn, logger, db_index);
-        let running = self.export_import_running.clone();
+        let running = self.export_import_check_running()?;
         let id = self.id.clone();
         let app_handle = self.base().get_app_handle()?;
-        export_import_check_running(running.clone())?;
         thread::spawn(move || {
             import_csv_0_thread(&mut logging_conn, param, running, app_handle, id)
         });
@@ -662,10 +658,9 @@ impl MeClient for MeCluster {
         let logger = self.base().command_logger.clone();
         let db_index = self.db.load(Relaxed);
         let mut logging_conn = LoggingClusterConnection::new(conn, logger, db_index);
-        let running = self.export_import_running.clone();
+        let running = self.export_import_check_running()?;
         let id = self.id.clone();
         let app_handle = self.base().get_app_handle()?;
-        export_import_check_running(running.clone())?;
         thread::spawn(move || {
             import_cmd_0_thread(&mut logging_conn, file, running, app_handle, id)
         });

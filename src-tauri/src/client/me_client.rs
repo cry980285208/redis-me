@@ -1,8 +1,12 @@
 use crate::client::ops::info::info_to_chart;
 use crate::client::state::MeBase;
 use crate::model::*;
+use crate::support::error::AppError;
 use crate::support::util::*;
+use anyhow::bail;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 pub trait MeClient: Send + Sync {
     fn base(&self) -> &MeBase;
@@ -133,6 +137,17 @@ pub trait MeClient: Send + Sync {
 
     fn batch_del(&self, param: RedisBatchKey) -> AnyResult<()>;
     fn batch_ttl(&self, param: RedisBatchTtl) -> AnyResult<()>;
+
+    /// 已有导入或导出在跑时拒绝再开一个，并把自己标成进行中。返回的标记交给后台线程。
+    fn export_import_check_running(&self) -> AnyResult<Arc<AtomicBool>> {
+        let running = self.base().export_import_running.clone();
+        if running.load(Ordering::Relaxed) {
+            bail!(AppError::ExportImportRunning);
+        }
+        running.store(true, Ordering::Relaxed);
+        Ok(running)
+    }
+
     fn export_csv(&self, param: RedisExportCsv) -> AnyResult<()>;
     fn import_csv(&self, param: RedisImportCsv) -> AnyResult<()>;
     fn import_cmd(&self, file: String) -> AnyResult<()>;

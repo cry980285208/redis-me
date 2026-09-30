@@ -1,5 +1,5 @@
-use crate::client::convert::*;
 use crate::model::*;
+use crate::support::convert::*;
 use crate::support::error::AppError;
 use crate::support::util::*;
 use anyhow::bail;
@@ -209,7 +209,7 @@ pub fn handle_other_value_type(
 
 // ------------------------------ 仅本文件使用 ------------------------------
 
-/** fieldScan 单次 HSCAN/SSCAN/ZSCAN/LRANGE 的 COUNT，来自 settings.fieldScanCount */
+/// fieldScan 单次 HSCAN/SSCAN/ZSCAN/LRANGE 的 COUNT，来自 settings.fieldScanCount
 fn field_scan_batch_count(count: u64) -> u64 {
     if count == 0 { 20 } else { count }
 }

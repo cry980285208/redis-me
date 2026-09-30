@@ -1,7 +1,7 @@
 //! Redis 回复转成某一种界面行。不发命令。
 //!
 //! 函数要认识 `ValueType`、某种扫描回复，或产出 `RedisHashItem` 这类行，就放这里。
-//! 字节和 wire 字符串、路径、随机数、超时仍在 `support::util`。
+//! 字节和 wire 字符串、路径、随机数、超时仍在 `util`。
 
 use crate::model::*;
 use crate::support::error::AppError;

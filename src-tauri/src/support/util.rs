@@ -1,5 +1,5 @@
 //! 和 Redis 类型无关的小工具：wire 字节、路径、随机数、超时和命令名映射。
-//! 认识某种类型或界面行的转换在 `client::convert`。
+//! 认识某种类型或界面行的转换在 `support::convert`。
 
 use crate::model::*;
 use crate::support::error::AppError;
