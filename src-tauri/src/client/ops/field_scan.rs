@@ -1,3 +1,4 @@
+use crate::client::ops::convert::*;
 use crate::model::*;
 use crate::support::error::AppError;
 use crate::support::util::*;

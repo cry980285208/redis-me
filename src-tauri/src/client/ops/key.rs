@@ -1,3 +1,4 @@
+use crate::client::ops::convert::{is_array_type, parse_array_index, to_key_type};
 use crate::client::ops::field_scan::{
     handle_other_value_type, hash_field_ttl_to_preserve, resolve_include_field_ttl, vadd_values,
     vemb_json_or_dash, vgetattr_opt, vsetattr_json_or_clear,

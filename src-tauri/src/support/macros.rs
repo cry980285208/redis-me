@@ -53,7 +53,7 @@ macro_rules! api_commands {
     };
 }
 
-/// 单机 `mock_data`。`Commands` 不能写成 trait 方法，所以用宏在 `impl_single` 里展开。
+/// 单机 `mock_data`。`Commands` 不能写成 trait 方法，所以用宏在 `me_single` 里展开。
 /// 集群的造数是手写的 `ClusterPipeline`，不要并进这个宏。
 #[macro_export]
 macro_rules! implement_pipeline_commands {

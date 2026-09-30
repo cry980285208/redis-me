@@ -1,3 +1,4 @@
+use crate::client::ops::convert::*;
 use crate::client::ops::field_scan::{ARRAY_INDEX_MAX, vgetattr_opt};
 use crate::model::*;
 use crate::support::error::AppError;

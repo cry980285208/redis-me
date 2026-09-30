@@ -1,6 +1,6 @@
-use crate::client::client_trait::MeClient;
-use crate::client::impl_cluster::MeCluster;
-use crate::client::impl_single::MeSingle;
+use crate::client::me_client::MeClient;
+use crate::client::me_cluster::MeCluster;
+use crate::client::me_single::MeSingle;
 use crate::model::{AppSettings, ConnConfig};
 use crate::support::capabilities::ServerCapabilities;
 use crate::support::error::AppError;

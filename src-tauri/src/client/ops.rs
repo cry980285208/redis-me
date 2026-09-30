@@ -2,6 +2,7 @@
 
 pub mod acl;
 pub mod as_cmd;
+pub mod convert;
 pub mod field_scan;
 pub mod import_export;
 pub mod info;

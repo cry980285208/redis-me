@@ -7,7 +7,7 @@ mod redis;
 #[path = "common/roundtrip.rs"]
 mod roundtrip;
 
-use redis_me_lib::client::client_trait::MeClient;
+use redis_me_lib::client::me_client::MeClient;
 
 /// 没配集群就跳过。配了却建连失败则测试失败。
 fn client() -> Option<Box<dyn MeClient>> {
