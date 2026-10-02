@@ -6,6 +6,7 @@ import { useI18n } from 'vue-i18n'
 import { connUiProvideKey, shareProvideKey } from '@/types/me-interface'
 import type { SearchHit, SearchIndexInfo } from '@/types/tauri-specta'
 import type { TableExportMatrix } from '@/utils/export'
+import { indexDdl } from '@/utils/search-ddl'
 import { defaultSettings } from '@/utils/settings-defaults'
 import { KEY_REFRESH, bus, meCommands, meConfirm, meFormatDisplayValue, meOk } from '@/utils/util'
 
@@ -26,6 +27,7 @@ const hits = ref<SearchHit[]>([])
 
 const detailVisible = ref(false)
 const infoVisible = ref(false)
+const ddlVisible = ref(false)
 const sampleVisible = ref(false)
 const sampleKind = ref('')
 const loadingSample = ref(false)
@@ -39,6 +41,8 @@ const filteredIndexes = computed(() => {
 
 // FT.INFO 原文。走终端的展示格式，避免 JSON.parse 碰到裸 NaN。
 const infoText = computed(() => meFormatDisplayValue(selected.value?.raw ?? '', true))
+// 由原文还原 FT.CREATE，不另存一份。
+const ddlText = computed(() => indexDdl(selected.value?.raw ?? '', selected.value?.name ?? ''))
 
 // 弹框标题：有选中索引时是「标签 索引名」。
 function indexTitle(label: string): string {
@@ -149,11 +153,18 @@ async function loadIndexes(prefer?: string): Promise<void> {
   }
 }
 
-// 字段定义和原文共用 selected，同时只开一个弹框。
-function openIndex(row: SearchIndexInfo, which: 'fields' | 'info'): void {
+// 字段、原文、DDL 共用 selected，同时只开一个弹框。
+function openIndex(row: SearchIndexInfo, which: 'fields' | 'info' | 'ddl'): void {
   selected.value = row
   detailVisible.value = which === 'fields'
   infoVisible.value = which === 'info'
+  ddlVisible.value = which === 'ddl'
+}
+
+// 更多菜单：DDL 谁都能看，删除只在可写时出现。
+function onMore(row: SearchIndexInfo, cmd: string): void {
+  if (cmd === 'ddl') openIndex(row, 'ddl')
+  else if (cmd === 'drop') dropIndex(row)
 }
 
 // 进入查询页时清空条件和分数，马上搜一次。
@@ -199,13 +210,14 @@ async function loadSample(): Promise<void> {
   }
 }
 
-// 退出查询页，并关掉字段、原文两个弹框。
+// 退出查询页，并关掉字段、原文、DDL 三个弹框。
 function leaveIndex(): void {
   selected.value = null
   pageMode.value = 'list'
   hits.value = []
   detailVisible.value = false
   infoVisible.value = false
+  ddlVisible.value = false
 }
 
 // 不带 DD，文档键保留。删的是当前索引就退回列表。
@@ -335,7 +347,7 @@ watch(
             </template>
           </el-table-column>
 
-          <!-- 查询、原文始终可看；删除只在可写时出现 -->
+          <!-- 查询、原文、DDL 始终可看；删除只在可写时出现 -->
           <el-table-column :label="t('action')" width="80" fixed="right" align="center">
             <template #default="{ row }">
               <div class="action-icons">
@@ -350,13 +362,15 @@ watch(
                   :info="t('redisSearch.info')"
                   @click="openIndex(row, 'info')" />
                 <el-dropdown
-                  v-if="canEdit"
                   trigger="click"
                   placement="bottom-end"
-                  @command="() => dropIndex(row)">
+                  @command="(cmd: string) => onMore(row, cmd)">
                   <me-icon icon="el-icon-more-filled" class="icon-btn" />
                   <template #dropdown>
                     <el-dropdown-menu>
+                      <el-dropdown-item command="ddl">
+                        <me-icon icon="me-icon-copy-command" :name="t('redisSearch.ddl')" />
+                      </el-dropdown-item>
                       <el-dropdown-item v-if="canEdit" command="drop">
                         <me-icon icon="el-icon-delete" :name="t('redisSearch.drop')" />
                       </el-dropdown-item>
@@ -440,6 +454,15 @@ watch(
         <el-table-column prop="fieldType" :label="t('redisSearch.fieldType')" width="110" />
       </el-table>
     </el-dialog>
+
+    <!-- 由 FT.INFO 还原的 FT.CREATE，不是服务器保存的原文 -->
+    <me-dialog
+      v-model="ddlVisible"
+      :title="indexTitle(t('redisSearch.ddl'))"
+      icon="me-icon-copy-command"
+      width="720px">
+      <me-code :model-value="ddlText" mode="redis" read-only copyable />
+    </me-dialog>
 
     <!-- FT.INFO 原文 -->
     <me-dialog

@@ -917,6 +917,7 @@ export default {
     fieldType: 'Field Type',
     fields: 'Fields',
     info: 'Index info',
+    ddl: 'Index DDL',
     filter: 'Filter (Name, Prefix)',
     sample: 'Sample index',
     sampleTitle: 'Getting your sample data ready for Search',

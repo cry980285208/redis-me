@@ -900,6 +900,7 @@ export default {
     fieldType: '字段类型',
     fields: '字段数',
     info: '索引信息',
+    ddl: '索引DDL',
     filter: '模糊筛选（名称、前缀）',
     sample: '索引样例',
     sampleTitle: '准备搜索样例数据',

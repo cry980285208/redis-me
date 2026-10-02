@@ -18,6 +18,7 @@ import {
   propertiesEagerParse,
   zhPhrases,
 } from '@/plugins/codemirror'
+import { redisHighlighting, redisLang } from '@/utils/redis-lang'
 import { isZh, meCopy } from '@/utils/util'
 // #endregion
 
@@ -105,7 +106,9 @@ const meCodePrecKeymap = Prec.highest(
 
 const props = withDefaults(
   defineProps<{
-    /** `json` / `json5` 均使用 JSON5 语法高亮；`properties`/`conf` 为行式配置；`shell` / `yaml` 安装帮助产物 */
+    /** 编辑器文本 */
+    modelValue?: string
+    /** `json` / `json5` 均使用 JSON5 语法高亮；`properties`/`conf` 为行式配置；`shell` / `yaml` 安装帮助产物；`redis` 为 FT.CREATE */
     mode?: string
     readOnly?: boolean
     /** 解码失败：danger 描边 */
@@ -113,10 +116,10 @@ const props = withDefaults(
     /** 右上角内置复制图标（可选展示） */
     copyable?: boolean
   }>(),
-  { mode: 'json', readOnly: false, error: false, copyable: false },
+  { modelValue: '', mode: 'json', readOnly: false, error: false, copyable: false },
 )
 
-// class/style 落到外层包装（撑高度），其余属性（含 modelValue）透给编辑器
+// class/style 落到外层包装（撑高度），其余属性透给编辑器
 defineOptions({ inheritAttrs: false })
 const attrs = useAttrs()
 // class/style 拆到外层 wrapper，其余透传给 code-mirror
@@ -129,7 +132,7 @@ const restAttrs = computed(() => {
 const { t } = useI18n()
 
 function copyCode(): void {
-  meCopy((restAttrs.value.modelValue as string) ?? '')
+  meCopy(props.modelValue)
 }
 
 const rootClass = computed(() => [
@@ -143,6 +146,7 @@ const lang = computed(() => {
   if (props.mode === 'properties' || props.mode === 'conf') return propertiesLang
   if (props.mode === 'shell') return shellLang
   if (props.mode === 'yaml') return yamlLang
+  if (props.mode === 'redis') return redisLang
   return undefined
 })
 const phrases = computed(() => (isZh.value ? zhPhrases : {}))
@@ -164,6 +168,8 @@ const extensions = computed(() => {
   if (props.mode === 'properties' || props.mode === 'conf') {
     list.push(syntaxHighlighting(propertiesDarkSyntax), propertiesEagerParse)
   }
+  // 跟语言包各挂一次。只放在 LanguageSupport 里时，这个编辑器仍会落到默认高亮。
+  if (props.mode === 'redis') list.push(redisHighlighting)
   return list
 })
 // #endregion
@@ -174,6 +180,7 @@ const extensions = computed(() => {
   <div class="me-code-wrap" :class="wrapClass" :style="wrapStyle">
     <code-mirror
       v-bind="restAttrs"
+      :model-value="props.modelValue"
       :dark
       :lang
       :phrases
