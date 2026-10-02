@@ -981,6 +981,8 @@ export type SearchQueryParam = {
 	offset: number,
 	count: number,
 	withScores: boolean,
+	/**  为 true 时带 `NOCONTENT`，只回键名。键树用，避免把向量字段整份拉回来。 */
+	noContent: boolean,
 	/**  按 FLOAT32 解开的字段名。页面已有 schema，查询时不再为这个打 FT.INFO。 */
 	vectorFields: string[],
 };

@@ -918,6 +918,8 @@ api_model!(SearchQueryParam {
     offset: u64,
     count: u64,
     with_scores: bool,
+    /// 为 true 时带 `NOCONTENT`，只回键名。键树用，避免把向量字段整份拉回来。
+    no_content: bool,
     /// 按 FLOAT32 解开的字段名。页面已有 schema，查询时不再为这个打 FT.INFO。
     vector_fields: Vec<String>,
 });

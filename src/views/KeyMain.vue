@@ -1424,6 +1424,7 @@ async function searchKeysPage(): Promise<void> {
     offset: searchOffset.value,
     count: SCAN_FETCH_COUNT.value,
     withScores: false,
+    noContent: true,
     vectorFields: [],
   })
   searchTotal.value = res.total

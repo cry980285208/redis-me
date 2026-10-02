@@ -28,6 +28,9 @@ pub fn prepare_search(param: &SearchQueryParam) -> AnyResult<PreparedSearch> {
     if param.with_scores {
         cmd.arg("WITHSCORES");
     }
+    if param.no_content {
+        cmd.arg("NOCONTENT");
+    }
     cmd.arg("LIMIT").arg(param.offset).arg(param.count);
     Ok(PreparedSearch {
         cmd,
@@ -496,7 +499,11 @@ fn format_f32(n: f32) -> String {
     }
 }
 
-/// RESP2 的 `FT.SEARCH`：`[total, key, fields]`，带分数时是 `key, score, fields`。
+fn is_field_container(value: &Value) -> bool {
+    matches!(value, Value::Array(_) | Value::Map(_) | Value::Nil)
+}
+
+/// RESP2 的 `FT.SEARCH`：`[total, key, fields]`，带分数时是 `key, score, fields`。`NOCONTENT` 只有键。
 fn parse_search_array(
     arr: Vec<Value>,
     with_scores: bool,
@@ -519,8 +526,14 @@ fn parse_search_array(
             score = Some(text(&arr[i]));
             i += 1;
         }
-        if i >= arr.len() {
-            bail!(invalid("FT.SEARCH fields"));
+        // NOCONTENT 时键后面没有字段数组，下一项直接是下一个键
+        if i >= arr.len() || !is_field_container(&arr[i]) {
+            hits.push(SearchHit {
+                key,
+                score,
+                fields: Vec::new(),
+            });
+            continue;
         }
         let fields = field_pairs(&arr[i], vectors)?;
         i += 1;
@@ -688,6 +701,18 @@ mod tests {
         assert_eq!(page.hits[0].key, "user:1");
         assert_eq!(page.hits[0].score.as_deref(), Some("1.5"));
         assert_eq!(page.hits[0].fields[0].value, "ann");
+    }
+
+    /// `NOCONTENT` 只有键，没有字段数组。
+    #[test]
+    fn ft_search_resp2_no_content() {
+        let raw = Value::Array(vec![Value::Int(2), b("bikes:1"), b("bikes:2")]);
+        let page = parse_ft_search(raw, false, &HashSet::new()).unwrap();
+        assert_eq!(page.total, 2);
+        assert_eq!(page.hits.len(), 2);
+        assert_eq!(page.hits[0].key, "bikes:1");
+        assert!(page.hits[0].fields.is_empty());
+        assert_eq!(page.hits[1].key, "bikes:2");
     }
 
     /// RESP3 Map 从 `results` 里取 id 和 extra_attributes。

@@ -127,6 +127,7 @@ async function runSearch(): Promise<void> {
       offset: 0,
       count,
       withScores: withScores.value,
+      noContent: false,
       vectorFields: vectorFieldNames(selected.value),
     })
     hits.value = res.hits
