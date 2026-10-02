@@ -403,6 +403,7 @@ export default {
     monitor: '命令监控',
     pubsub: '发布订阅',
     chart: '图表',
+    search: '搜索',
   },
 
   keyHeader: {
@@ -882,6 +883,43 @@ export default {
     slowerMaxLenRequired: '数量不能为空',
   },
 
+  redisSearch: {
+    drop: '删除索引',
+    name: '索引名称',
+    prefixes: '索引前缀',
+    prefixTip: '匹配此前缀的键会自动被索引',
+    docsTip: '当前已索引的文档数',
+    recordsTip: '所有文档里已索引的字段值对总数。一个文档有 5 个字段，就算 5 条记录',
+    termsTip: '从 TEXT 字段抽出的、用于全文搜索的不同词',
+    fieldsTip: '索引 schema 里定义的字段总数',
+    numDocs: '文档数',
+    records: '记录数',
+    terms: '词条数',
+    identifier: '字段标识',
+    attribute: '属性名',
+    fieldType: '字段类型',
+    fields: '字段数',
+    info: '索引信息',
+    filter: '模糊筛选（名称、前缀）',
+    sample: '索引样例',
+    sampleTitle: '准备搜索样例数据',
+    sampleHint: '选择一套样例。会写入数据并创建搜索所需的索引',
+    sampleBikes: '电商发现',
+    sampleBikesHint: '按意图找商品，不只是文本匹配',
+    sampleMovies: '内容推荐',
+    sampleMoviesHint: '按主题或剧情找内容',
+    sampleCreated: '样例索引 {name} 已创建',
+    sampleExists: '样例索引 {name} 已存在，可以直接查询',
+    query: '查询',
+    back: '返回',
+    queryPlaceholder: "* 或 {'@'}title:redis 或 {'@'}status:{'{'}paid{'}'}",
+    withScores: '分数',
+    docKey: '键',
+    score: '分数',
+    dropConfirm: '删除索引 "{name}"？文档键会保留。',
+    dropOk: '已删除索引',
+  },
+
   redisTerminal: {
     broadcastHint: `
 ① 自动广播开启且没有选择节点时 CONFIG SET 和 SLOWLOG RESET 等命令会在所有节点执行<br>
@@ -1264,5 +1302,6 @@ export default {
     proxy_tls_to_proxy_failed: '无法对代理建立 TLS，Clash 等明文代理请选 HTTP',
     file_read_failed: '文件读取失败: {filename} ({detail})',
     file_write_failed: '文件写入失败: {filename} ({detail})',
+    search_reply_invalid: 'RedisSearch 回复无法解析（{detail}）',
   },
 }

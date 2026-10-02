@@ -673,6 +673,89 @@ impl MeClient for MeCluster {
     }
 
     me_client_forwards!();
+
+    fn search_index_list(&self) -> AnyResult<Vec<SearchIndexInfo>> {
+        use crate::client::ops::search::{parse_ft_info, parse_ft_list};
+        use std::collections::BTreeSet;
+
+        let targets = self.search_targets();
+        let mut conn = self.get_conn()?;
+        let mut names = BTreeSet::new();
+        for node in &targets {
+            let (route, _) = self.get_node_route(node.clone())?;
+            let cmd = redis::cmd("FT._LIST");
+            let value = conn.route_command(&cmd, route)?;
+            for name in parse_ft_list(value)? {
+                names.insert(name);
+            }
+        }
+        let info_node = targets.first().cloned().flatten();
+        let (info_route, _) = self.get_node_route(info_node)?;
+        let mut indexes = Vec::with_capacity(names.len());
+        for name in names {
+            let mut cmd = redis::cmd("FT.INFO");
+            cmd.arg(&name);
+            let value = conn.route_command(&cmd, info_route.clone())?;
+            indexes.push(parse_ft_info(&name, value)?);
+        }
+        Ok(indexes)
+    }
+
+    fn search_query(&self, param: SearchQueryParam) -> AnyResult<SearchQueryResult> {
+        use crate::client::ops::search::{parse_ft_search, prepare_search};
+
+        // 打到一个 master，由协调节点汇总。单机 node_list 为空时不会走到这里。
+        let (route, _) = self.get_node_route(self.search_targets().into_iter().flatten().next())?;
+        let mut conn = self.get_conn()?;
+        let prepared = prepare_search(&param)?;
+        let value = conn.route_command(&prepared.cmd, route)?;
+        parse_ft_search(value, param.with_scores, &prepared.vectors)
+    }
+
+    fn search_sample_load(&self, kind: String) -> AnyResult<SearchSampleResult> {
+        use crate::client::ops::search::{
+            apply_sample_data, index_already_exists, parse_ft_list, sample_create_cmd,
+            sample_index_name,
+        };
+
+        let index = sample_index_name(&kind)?.to_string();
+        let targets = self.search_targets();
+        let mut conn = self.get_conn()?;
+        // 任一 master 上已有同名索引就整次跳过，避免盖掉已有文档
+        for node in &targets {
+            let (route, _) = self.get_node_route(node.clone())?;
+            let cmd = redis::cmd("FT._LIST");
+            let value = conn.route_command(&cmd, route)?;
+            if parse_ft_list(value)?.iter().any(|name| name == &index) {
+                return Ok(SearchSampleResult {
+                    created: false,
+                    index,
+                });
+            }
+        }
+        apply_sample_data(&mut conn, &kind)?;
+        // 每个 master 都建一次：旧版要逐个建，Redis 8 建一次就会同步，其余节点回已存在。
+        let mut created = false;
+        for node in &targets {
+            let (route, _) = self.get_node_route(node.clone())?;
+            let cmd = sample_create_cmd(&kind)?;
+            match conn.route_command(&cmd, route) {
+                Ok(_) => created = true,
+                Err(e) if index_already_exists(&e.to_string()) => {}
+                Err(e) => return Err(e.into()),
+            }
+        }
+        Ok(SearchSampleResult { created, index })
+    }
+
+    fn search_index_drop(&self, index: String) -> AnyResult<()> {
+        use crate::client::ops::search::drop_cmd;
+
+        let (route, _) = self.get_node_route(self.search_targets().into_iter().flatten().next())?;
+        let mut conn = self.get_conn()?;
+        conn.route_command(&drop_cmd(&index)?, route)?;
+        Ok(())
+    }
 }
 
 // 个性化方法
@@ -837,6 +920,16 @@ impl MeCluster {
             .filter(|node| node.flags.contains("master"))
             .map(|node| node.node.clone())
             .collect::<Vec<String>>()
+    }
+
+    /// 搜索命令要打到的节点。有 master 就逐个发；列表为空时退回随机主节点一次。
+    fn search_targets(&self) -> Vec<Option<String>> {
+        let masters = self.get_node_list_master();
+        if masters.is_empty() {
+            vec![None]
+        } else {
+            masters.into_iter().map(Some).collect()
+        }
     }
 
     // 解析 cluster_nodes (静态方法)

@@ -38,6 +38,7 @@ export interface ServerCapabilities {
   aclSelectorSupported: boolean
   httlSupported: boolean
   clusterDbSupported: boolean
+  redisSearchSupported: boolean
 }
 
 export interface AppMainShare {

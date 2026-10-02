@@ -1,8 +1,11 @@
 ## Future
 
+- RedisSearch 的支持
+- 集群的图形: 可以显示所有的
+- 集群的信息: 表格展示
+- 数据编码: 自定义编码支持自动识别
 - 键的数据编码记住(连接内粘住或每个键自定义待进一步确认)
 - TimeSeries：TS.CREATE 全参数、多键 MRANGE 与聚合
-- RedisSearch 的支持
 - 抖音/B站短视频的制作: 每个痛点解决1个小视频
 - Redis实战相关文章的编写
 - 连接级自动解压：优先 GZIP，可选 LZ4 / ZSTD / Snappy（对标 RedisInsight；即此前「自动解压缩」）

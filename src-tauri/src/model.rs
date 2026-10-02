@@ -887,6 +887,58 @@ api_model!(RedisSlowLog {
     client_name: String
 });
 
+// RedisSearch：索引不是键类型。列表来自 FT._LIST + FT.INFO，查询是 FT.SEARCH。
+api_model!(SearchKv {
+    field: String,
+    value: String,
+});
+
+api_model!(SearchIndexField {
+    identifier: String,
+    attribute: String,
+    field_type: String,
+    options: String,
+});
+
+api_model!(SearchIndexInfo {
+    name: String,
+    key_type: String,
+    prefixes: String,
+    num_docs: String,
+    num_records: String,
+    num_terms: String,
+    fields: Vec<SearchIndexField>,
+    /// `FT.INFO` 原文，格式与终端 JSON 输出一致
+    raw: String,
+});
+
+api_model!(SearchQueryParam {
+    index: String,
+    query: String,
+    offset: u64,
+    count: u64,
+    with_scores: bool,
+    /// 按 FLOAT32 解开的字段名。页面已有 schema，查询时不再为这个打 FT.INFO。
+    vector_fields: Vec<String>,
+});
+
+api_model!(SearchHit {
+    key: String,
+    score: Option<String>,
+    fields: Vec<SearchKv>,
+});
+
+api_model!(SearchQueryResult {
+    total: u64,
+    hits: Vec<SearchHit>,
+});
+
+// 样例导入结果。created 为 false 时同名索引已在，没有写键也没有重建。
+api_model!(SearchSampleResult {
+    created: bool,
+    index: String,
+});
+
 // 内存分析：一轮 SCAN + MEMORY USAGE，循环/暂停由前端控制（与键列表 SCAN 同构）
 api_model!(RedisMemoryParam {
     #[serde(rename = "match")]

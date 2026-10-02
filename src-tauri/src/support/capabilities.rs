@@ -18,6 +18,8 @@ api_model!(
         httl_supported: bool,
         /// 集群模式是否支持编号数据库（Valkey 9+）
         cluster_db_supported: bool,
+        /// 当前连接能执行 FT._LIST。未装 RedisSearch 时不展示搜索页。
+        redis_search_supported: bool,
     }
 );
 
@@ -39,6 +41,7 @@ pub fn detect_server_capabilities(
         base.capabilities.httl_supported = detect_httl_by_command(conn);
         base.capabilities.cluster_db_supported = false;
     }
+    base.capabilities.redis_search_supported = detect_redis_search(conn);
     log::info!("服务能力: {:?}", base.capabilities);
 }
 
@@ -88,6 +91,19 @@ fn detect_capabilities(version: &str, is_valkey: bool, is_cluster: bool) -> Serv
         httl_supported: major > 7 || (major == 7 && minor >= 4),
         // Valkey 9+ 集群模式编号数据库（Redis OSS 集群不支持）
         cluster_db_supported: is_cluster && is_valkey && major >= 9,
+        // 是否装了 RedisSearch 要发命令看，不能从版本号推断
+        redis_search_supported: false,
+    }
+}
+
+/// `FT._LIST` 能执行才算启用。未知命令是没装模块，其它错误同样不展示搜索页。
+fn detect_redis_search(conn: &mut impl ConnectionLike) -> bool {
+    match redis::cmd("FT._LIST").query::<Value>(conn) {
+        Ok(_) => true,
+        Err(e) => {
+            log::info!("FT._LIST 不可用，搜索页不展示: {e}");
+            false
+        }
     }
 }
 

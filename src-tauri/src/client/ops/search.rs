@@ -1,0 +1,774 @@
+//! RedisSearch 的解析和样例拼装。发命令在单机、集群各自做：集群要按节点路由。
+
+use crate::model::*;
+use crate::support::error::AppError;
+use crate::support::format::parse_command;
+use crate::support::tty::redis_value_to_cli_display;
+use crate::support::util::{AnyResult, redis_value_to_string};
+use anyhow::bail;
+use redis::{Commands, Value};
+use std::collections::HashSet;
+
+/// 单次 FT.SEARCH 最多取这么多条，与设置里字段扫描的上限一致。
+pub const SEARCH_COUNT_MAX: u64 = 1000;
+
+/// 一次查询要发出的命令，以及要按向量解开的字段。
+pub struct PreparedSearch {
+    pub cmd: redis::Cmd,
+    pub vectors: HashSet<String>,
+}
+
+/// 拼 `FT.SEARCH`。空查询按 `*`，条数钳在上限内。
+pub fn prepare_search(param: &SearchQueryParam) -> AnyResult<PreparedSearch> {
+    let index = param.index.trim();
+    if index.is_empty() {
+        bail!(AppError::EmptyParameters);
+    }
+    let query = param.query.trim();
+    let mut cmd = redis::cmd("FT.SEARCH");
+    cmd.arg(index)
+        .arg(if query.is_empty() { "*" } else { query });
+    if param.with_scores {
+        cmd.arg("WITHSCORES");
+    }
+    cmd.arg("LIMIT")
+        .arg(param.offset)
+        .arg(param.count.clamp(1, SEARCH_COUNT_MAX));
+    Ok(PreparedSearch {
+        cmd,
+        vectors: param.vector_fields.iter().cloned().collect(),
+    })
+}
+
+/// `FT.DROPINDEX`，不带 `DD`。空名当参数错误。
+pub fn drop_cmd(index: &str) -> AnyResult<redis::Cmd> {
+    let index = index.trim();
+    if index.is_empty() {
+        bail!(AppError::EmptyParameters);
+    }
+    let mut cmd = redis::cmd("FT.DROPINDEX");
+    cmd.arg(index);
+    Ok(cmd)
+}
+
+/// 样例索引名。集群先用它在各 master 上查重。
+pub fn sample_index_name(kind: &str) -> AnyResult<&'static str> {
+    Ok(sample_of(kind)?.index)
+}
+
+/// 按样例文件逐行执行 `HSET` / `JSON.SET`。集群连接会按键槽位转发。
+pub fn apply_sample_data(conn: &mut impl Commands, kind: &str) -> AnyResult<()> {
+    exec_lines(conn, sample_of(kind)?.data)
+}
+
+/// `FT.CREATE` 命令。集群要对每个 master 各发一次。
+pub fn sample_create_cmd(kind: &str) -> AnyResult<redis::Cmd> {
+    let mut cmd = redis::cmd("FT.CREATE");
+    cmd.arg(sample_of(kind)?.create);
+    Ok(cmd)
+}
+
+/// `FT._LIST`：索引名。空回复当成没有索引。
+pub fn parse_ft_list(value: Value) -> AnyResult<Vec<String>> {
+    let names = match value {
+        Value::Nil => Vec::new(),
+        Value::Array(arr) | Value::Set(arr) => arr
+            .into_iter()
+            .map(|v| text(&v))
+            .filter(|s| !s.is_empty())
+            .collect(),
+        _ => bail!(invalid("FT._LIST")),
+    };
+    Ok(names)
+}
+
+/// `FT.INFO`：列表用到的标量和字段定义单独取出，整份回复按终端 JSON 放进 `raw`。
+pub fn parse_ft_info(name: &str, value: Value) -> AnyResult<SearchIndexInfo> {
+    let raw = redis_value_to_cli_display(
+        value.clone(),
+        Some(CliOutputMode::Json),
+        "FT.INFO",
+        &[name.as_bytes().to_vec()],
+    );
+    let pairs = as_pairs(value)?;
+    let mut key_type = String::new();
+    let mut prefixes = String::new();
+    let mut num_docs = String::new();
+    let mut num_records = String::new();
+    let mut num_terms = String::new();
+    let mut fields = Vec::new();
+    for (k, v) in pairs {
+        match k.to_ascii_lowercase().as_str() {
+            "index_definition" => {
+                let (kt, px) = parse_definition(v)?;
+                key_type = kt;
+                prefixes = px;
+            }
+            "attributes" => fields = parse_attributes(v)?,
+            "num_docs" => num_docs = text(&v),
+            "num_records" => num_records = text(&v),
+            "num_terms" => num_terms = text(&v),
+            _ => {}
+        }
+    }
+    Ok(SearchIndexInfo {
+        name: name.to_string(),
+        key_type,
+        prefixes,
+        num_docs,
+        num_records,
+        num_terms,
+        fields,
+        raw,
+    })
+}
+
+/// `FT.SEARCH`：RESP2 数组或 RESP3 Map。`vectors` 里的字段按小端 FLOAT32 解开。
+pub fn parse_ft_search(
+    value: Value,
+    with_scores: bool,
+    vectors: &HashSet<String>,
+) -> AnyResult<SearchQueryResult> {
+    match value {
+        Value::Array(arr) => parse_search_array(arr, with_scores, vectors),
+        Value::Map(map) => parse_search_map(map, vectors),
+        _ => bail!(invalid("FT.SEARCH")),
+    }
+}
+
+/// 同名索引已经在。集群上一条 `FT.CREATE` 会同步到其他分片，后一个 master 常回这个错。
+pub fn index_already_exists(err: &str) -> bool {
+    let err = err.to_lowercase();
+    err.contains("index already exists") || err.contains("search_index_exists")
+}
+
+// ------------------------------ 仅本文件使用 ------------------------------
+
+/// Redis Insight 的样例命令，一行一条 redis-cli 命令，编译期嵌进 exe。
+const BIKES: &str = include_str!("../../../samples/bikes");
+const MOVIES: &str = include_str!("../../../samples/movies");
+
+const BIKES_CREATE: &[&str] = &[
+    "idx:bikes_vss",
+    "ON",
+    "HASH",
+    "PREFIX",
+    "1",
+    "bikes:",
+    "SCHEMA",
+    "model",
+    "TEXT",
+    "NOSTEM",
+    "SORTABLE",
+    "brand",
+    "TEXT",
+    "NOSTEM",
+    "SORTABLE",
+    "price",
+    "NUMERIC",
+    "SORTABLE",
+    "type",
+    "TAG",
+    "material",
+    "TAG",
+    "weight",
+    "NUMERIC",
+    "SORTABLE",
+    "description_embeddings",
+    "VECTOR",
+    "FLAT",
+    "10",
+    "TYPE",
+    "FLOAT32",
+    "DIM",
+    "768",
+    "DISTANCE_METRIC",
+    "L2",
+    "INITIAL_CAP",
+    "111",
+    "BLOCK_SIZE",
+    "111",
+];
+
+const MOVIES_CREATE: &[&str] = &[
+    "idx:movies_vss",
+    "ON",
+    "JSON",
+    "PREFIX",
+    "1",
+    "movie:",
+    "SCHEMA",
+    "$.title",
+    "AS",
+    "title",
+    "TEXT",
+    "$.genres[*]",
+    "AS",
+    "genres",
+    "TAG",
+    "$.plot",
+    "AS",
+    "plot",
+    "TEXT",
+    "$.year",
+    "AS",
+    "year",
+    "NUMERIC",
+    "$.embedding",
+    "AS",
+    "embedding",
+    "VECTOR",
+    "FLAT",
+    "6",
+    "TYPE",
+    "FLOAT32",
+    "DIM",
+    "8",
+    "DISTANCE_METRIC",
+    "COSINE",
+];
+
+struct Sample {
+    index: &'static str,
+    data: &'static str,
+    create: &'static [&'static str],
+}
+
+/// `bikes` 是 Hash 电商样例，`movies` 是 JSON 电影样例。
+fn sample_of(kind: &str) -> AnyResult<Sample> {
+    match kind.trim() {
+        "bikes" => Ok(Sample {
+            index: "idx:bikes_vss",
+            data: BIKES,
+            create: BIKES_CREATE,
+        }),
+        "movies" => Ok(Sample {
+            index: "idx:movies_vss",
+            data: MOVIES,
+            create: MOVIES_CREATE,
+        }),
+        _ => bail!(AppError::EmptyParameters),
+    }
+}
+
+/// 跳过空行，一行失败就停，不继续后面的键。
+fn exec_lines(conn: &mut impl Commands, data: &str) -> AnyResult<()> {
+    for line in data.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let (cmd, args) = parse_command(line)?;
+        if cmd.is_empty() {
+            bail!(AppError::EmptyParameters);
+        }
+        redis::cmd(cmd.as_str()).arg(&args).exec(conn)?;
+    }
+    Ok(())
+}
+
+/// 回复形状不对，带上字段名方便页面报错。
+fn invalid(detail: &str) -> anyhow::Error {
+    AppError::SearchReplyInvalid {
+        detail: detail.into(),
+    }
+    .into()
+}
+
+/// Redis 值转成字符串。嵌套结构不加分隔符。
+fn text(value: &Value) -> String {
+    redis_value_to_string(value.clone(), "")
+}
+
+/// Redis 值转成字符串。嵌套结构用空格隔开，给选项和扩展字段用。
+fn text_sep(value: &Value) -> String {
+    redis_value_to_string(value.clone(), " ")
+}
+
+/// 把整数回复读成 `u64`。解析失败按回复无效处理。
+fn as_u64(value: &Value) -> AnyResult<u64> {
+    match value {
+        Value::Int(n) if *n >= 0 => Ok(*n as u64),
+        Value::BigNumber(n) => n.to_string().parse().map_err(|_| invalid("total")),
+        other => text(other).parse::<u64>().map_err(|_| invalid("total")),
+    }
+}
+
+/// RESP2 扁平键值数组，或 RESP3 Map。
+fn as_pairs(value: Value) -> AnyResult<Vec<(String, Value)>> {
+    match value {
+        Value::Array(arr) => {
+            if arr.len() % 2 != 0 {
+                bail!(invalid("pairs"));
+            }
+            let mut out = Vec::with_capacity(arr.len() / 2);
+            let mut i = 0;
+            while i < arr.len() {
+                out.push((text(&arr[i]), arr[i + 1].clone()));
+                i += 2;
+            }
+            Ok(out)
+        }
+        Value::Map(map) => Ok(map.into_iter().map(|(k, v)| (text(&k), v)).collect()),
+        _ => bail!(invalid("pairs")),
+    }
+}
+
+/// 这个属性键会带走下一个词。裸标志（如 `WITHSUFFIXTRIE`）不在这里。
+fn takes_value(token: &str) -> bool {
+    matches!(
+        token.to_ascii_lowercase().as_str(),
+        "identifier"
+            | "attribute"
+            | "type"
+            | "weight"
+            | "separator"
+            | "phonetic"
+            | "algorithm"
+            | "dim"
+            | "distance_metric"
+            | "m"
+            | "ef_construction"
+            | "ef_runtime"
+            | "initial_cap"
+            | "block_size"
+    )
+}
+
+/// 把一个字段定义摊成词序列。Map 按键、值交替展开。
+fn tokens_of(value: Value) -> Vec<String> {
+    match value {
+        Value::Array(arr) => arr.iter().map(text).collect(),
+        Value::Map(map) => {
+            let mut tokens = Vec::with_capacity(map.len() * 2);
+            for (k, v) in map {
+                tokens.push(text(&k));
+                tokens.push(text(&v));
+            }
+            tokens
+        }
+        other => vec![text(&other)],
+    }
+}
+
+/// 属性数组里裸标志（WITHSUFFIXTRIE 等）不能吃掉下一个词。
+fn parse_one_attr(value: Value) -> SearchIndexField {
+    let tokens = tokens_of(value);
+    let mut identifier = String::new();
+    let mut attribute = String::new();
+    let mut field_type = String::new();
+    let mut options = Vec::new();
+    let mut i = 0;
+    while i < tokens.len() {
+        let token = &tokens[i];
+        if takes_value(token) && i + 1 < tokens.len() {
+            let val = &tokens[i + 1];
+            let key = token.to_ascii_lowercase();
+            if key == "identifier" && identifier.is_empty() {
+                identifier = val.clone();
+            } else if key == "attribute" && attribute.is_empty() {
+                attribute = val.clone();
+            } else if key == "type" && field_type.is_empty() {
+                field_type = val.clone();
+            } else {
+                options.push(format!("{token} {val}"));
+            }
+            i += 2;
+        } else {
+            options.push(token.clone());
+            i += 1;
+        }
+    }
+    SearchIndexField {
+        identifier,
+        attribute,
+        field_type,
+        options: options.join(" "),
+    }
+}
+
+/// `attributes` 数组。空回复当成没有字段。
+fn parse_attributes(value: Value) -> AnyResult<Vec<SearchIndexField>> {
+    match value {
+        Value::Nil => Ok(Vec::new()),
+        Value::Array(items) => Ok(items.into_iter().map(parse_one_attr).collect()),
+        other => bail!(invalid(&format!("attributes {}", text_sep(&other)))),
+    }
+}
+
+/// 前缀列表拼成逗号分隔的一行。
+fn join_prefixes(value: &Value) -> String {
+    match value {
+        Value::Array(items) | Value::Set(items) => items
+            .iter()
+            .map(text)
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join(", "),
+        other => text(other),
+    }
+}
+
+/// `index_definition`：取出 `key_type` 和 `prefixes`。
+fn parse_definition(value: Value) -> AnyResult<(String, String)> {
+    let pairs = as_pairs(value)?;
+    let mut key_type = String::new();
+    let mut prefixes = String::new();
+    for (k, v) in pairs {
+        match k.to_ascii_lowercase().as_str() {
+            "key_type" => key_type = text(&v),
+            "prefixes" => prefixes = join_prefixes(&v),
+            _ => {}
+        }
+    }
+    Ok((key_type, prefixes))
+}
+
+/// 文档字段：RESP2 交替数组，或 RESP3 Map。
+fn field_pairs(value: &Value, vectors: &HashSet<String>) -> AnyResult<Vec<SearchKv>> {
+    match value {
+        Value::Nil => Ok(Vec::new()),
+        Value::Array(arr) => {
+            if arr.len() % 2 != 0 {
+                bail!(invalid("FT.SEARCH fields"));
+            }
+            let mut out = Vec::with_capacity(arr.len() / 2);
+            let mut i = 0;
+            while i < arr.len() {
+                let field = text(&arr[i]);
+                out.push(SearchKv {
+                    value: field_text(&field, &arr[i + 1], vectors),
+                    field,
+                });
+                i += 2;
+            }
+            Ok(out)
+        }
+        Value::Map(map) => Ok(map
+            .iter()
+            .map(|(k, v)| {
+                let field = text(k);
+                SearchKv {
+                    value: field_text(&field, v, vectors),
+                    field,
+                }
+            })
+            .collect()),
+        _ => bail!(invalid("FT.SEARCH fields")),
+    }
+}
+
+/// Hash 的 VECTOR 是小端 FLOAT32 二进制。JSON 数组仍是文本，不拆字节。
+fn field_text(name: &str, value: &Value, vectors: &HashSet<String>) -> String {
+    if vectors.contains(name) {
+        if let Value::BulkString(bytes) = value {
+            if let Ok(text) = std::str::from_utf8(bytes) {
+                if text.trim_start().starts_with('[') {
+                    return text.to_string();
+                }
+            }
+            if let Some(text) = format_f32_le(bytes) {
+                return text;
+            }
+        }
+    }
+    text_sep(value)
+}
+
+/// 长度是 4 的倍数时，按小端 FLOAT32 拼成 JSON 数组，和 JSON 文档里的向量一样。
+fn format_f32_le(bytes: &[u8]) -> Option<String> {
+    if bytes.is_empty() || bytes.len() % 4 != 0 {
+        return None;
+    }
+    let mut parts = Vec::with_capacity(bytes.len() / 4);
+    for chunk in bytes.chunks_exact(4) {
+        let n = f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+        parts.push(format_f32(n));
+    }
+    Some(format!("[{}]", parts.join(", ")))
+}
+
+fn format_f32(n: f32) -> String {
+    if !n.is_finite() {
+        return "null".to_string();
+    }
+    let text = format!("{n:.4}");
+    let text = text.trim_end_matches('0').trim_end_matches('.');
+    if text == "-0" {
+        "0".to_string()
+    } else {
+        text.to_string()
+    }
+}
+
+/// RESP2 的 `FT.SEARCH`：`[total, key, fields]`，带分数时是 `key, score, fields`。
+fn parse_search_array(
+    arr: Vec<Value>,
+    with_scores: bool,
+    vectors: &HashSet<String>,
+) -> AnyResult<SearchQueryResult> {
+    if arr.is_empty() {
+        bail!(invalid("FT.SEARCH"));
+    }
+    let total = as_u64(&arr[0])?;
+    let mut hits = Vec::new();
+    let mut i = 1;
+    while i < arr.len() {
+        let key = text(&arr[i]);
+        i += 1;
+        let mut score = None;
+        if with_scores {
+            if i >= arr.len() {
+                bail!(invalid("FT.SEARCH score"));
+            }
+            score = Some(text(&arr[i]));
+            i += 1;
+        }
+        if i >= arr.len() {
+            bail!(invalid("FT.SEARCH fields"));
+        }
+        let fields = field_pairs(&arr[i], vectors)?;
+        i += 1;
+        hits.push(SearchHit { key, score, fields });
+    }
+    Ok(SearchQueryResult { total, hits })
+}
+
+/// RESP3 的 `FT.SEARCH`：`total_results` 加 `results` 里的 `id` / `score` / `extra_attributes`。
+fn parse_search_map(
+    map: Vec<(Value, Value)>,
+    vectors: &HashSet<String>,
+) -> AnyResult<SearchQueryResult> {
+    let mut total = 0u64;
+    let mut raw_hits: Option<Value> = None;
+    for (k, v) in map {
+        match text(&k).as_str() {
+            "total_results" => total = as_u64(&v)?,
+            "results" => raw_hits = Some(v),
+            _ => {}
+        }
+    }
+    let Some(Value::Array(items)) = raw_hits else {
+        bail!(invalid("FT.SEARCH results"));
+    };
+    let mut hits = Vec::with_capacity(items.len());
+    for item in items {
+        let pairs = as_pairs(item)?;
+        let mut key = String::new();
+        let mut score = None;
+        let mut fields = Vec::new();
+        for (k, v) in pairs {
+            match k.as_str() {
+                "id" => key = text(&v),
+                "score" => score = Some(text(&v)),
+                "extra_attributes" => fields = field_pairs(&v, vectors)?,
+                _ => {}
+            }
+        }
+        if key.is_empty() {
+            bail!(invalid("FT.SEARCH id"));
+        }
+        hits.push(SearchHit { key, score, fields });
+    }
+    Ok(SearchQueryResult { total, hits })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 测试里把字面量收成 bulk string。
+    fn b(s: &str) -> Value {
+        Value::BulkString(s.as_bytes().to_vec())
+    }
+
+    /// 裸标志留在选项里，不把下一个词吃掉。
+    #[test]
+    fn attribute_keeps_bare_flags() {
+        let field = parse_one_attr(Value::Array(vec![
+            b("identifier"),
+            b("$.title"),
+            b("attribute"),
+            b("title"),
+            b("type"),
+            b("TEXT"),
+            b("WITHSUFFIXTRIE"),
+            b("SORTABLE"),
+        ]));
+        assert_eq!(field.identifier, "$.title");
+        assert_eq!(field.attribute, "title");
+        assert_eq!(field.field_type, "TEXT");
+        assert!(field.options.contains("WITHSUFFIXTRIE"));
+        assert!(field.options.split_whitespace().any(|w| w == "SORTABLE"));
+    }
+
+    /// 读出列表用到的标量和字段，原文按终端 JSON 保留。
+    #[test]
+    fn ft_info_reads_scalars_and_keeps_raw_json() {
+        let raw = Value::Array(vec![
+            b("index_name"),
+            b("idx"),
+            b("index_definition"),
+            Value::Array(vec![
+                b("key_type"),
+                b("HASH"),
+                b("prefixes"),
+                Value::Array(vec![b("user:")]),
+            ]),
+            b("attributes"),
+            Value::Array(vec![Value::Array(vec![
+                b("identifier"),
+                b("name"),
+                b("attribute"),
+                b("name"),
+                b("type"),
+                b("TEXT"),
+                b("WITHSUFFIXTRIE"),
+            ])]),
+            b("num_docs"),
+            Value::Int(3),
+            b("num_records"),
+            b("9"),
+            b("num_terms"),
+            b("12"),
+            b("gc_stats"),
+            Value::Array(vec![b("bytes_collected"), b("0")]),
+        ]);
+        let info = parse_ft_info("idx", raw).unwrap();
+        assert_eq!(info.key_type, "HASH");
+        assert_eq!(info.prefixes, "user:");
+        assert_eq!(info.num_docs, "3");
+        assert_eq!(info.num_records, "9");
+        assert_eq!(info.num_terms, "12");
+        assert_eq!(info.fields.len(), 1);
+        assert!(info.fields[0].options.contains("WITHSUFFIXTRIE"));
+        let parsed: serde_json::Value = serde_json::from_str(&info.raw).unwrap();
+        assert!(parsed.as_array().is_some());
+        assert!(info.raw.contains("bytes_collected"));
+    }
+
+    /// Hash 向量按小端 FLOAT32 解开成 JSON 数组；已是数组的文本和普通字段不动。
+    #[test]
+    fn vector_blob_becomes_float_list() {
+        let mut bytes = Vec::new();
+        bytes.extend(1.5f32.to_le_bytes());
+        bytes.extend((-0.25f32).to_le_bytes());
+        bytes.extend(0.0f32.to_le_bytes());
+        let raw = Value::Array(vec![
+            Value::Int(1),
+            b("bikes:1"),
+            Value::Array(vec![
+                b("description_embeddings"),
+                Value::BulkString(bytes),
+                b("material"),
+                b("carbon"),
+                b("embedding"),
+                b("[0.1, 0.2]"),
+            ]),
+        ]);
+        let mut vectors = HashSet::new();
+        vectors.insert("description_embeddings".to_string());
+        vectors.insert("embedding".to_string());
+        let page = parse_ft_search(raw, false, &vectors).unwrap();
+        assert_eq!(page.hits[0].fields[0].value, "[1.5, -0.25, 0]");
+        assert_eq!(page.hits[0].fields[1].value, "carbon");
+        assert_eq!(page.hits[0].fields[2].value, "[0.1, 0.2]");
+    }
+
+    /// RESP2 带 `WITHSCORES` 时，分数夹在键和字段之间。
+    #[test]
+    fn ft_search_resp2_with_scores() {
+        let raw = Value::Array(vec![
+            Value::Int(2),
+            b("user:1"),
+            b("1.5"),
+            Value::Array(vec![b("name"), b("ann")]),
+            b("user:2"),
+            b("0.2"),
+            Value::Array(vec![b("name"), b("bob")]),
+        ]);
+        let page = parse_ft_search(raw, true, &HashSet::new()).unwrap();
+        assert_eq!(page.total, 2);
+        assert_eq!(page.hits.len(), 2);
+        assert_eq!(page.hits[0].key, "user:1");
+        assert_eq!(page.hits[0].score.as_deref(), Some("1.5"));
+        assert_eq!(page.hits[0].fields[0].value, "ann");
+    }
+
+    /// RESP3 Map 从 `results` 里取 id 和 extra_attributes。
+    #[test]
+    fn ft_search_resp3_map() {
+        let raw = Value::Map(vec![
+            (b("total_results"), Value::Int(1)),
+            (
+                b("results"),
+                Value::Array(vec![Value::Map(vec![
+                    (b("id"), b("doc:1")),
+                    (b("score"), b("1")),
+                    (
+                        b("extra_attributes"),
+                        Value::Map(vec![(b("title"), b("redis"))]),
+                    ),
+                ])]),
+            ),
+        ]);
+        let page = parse_ft_search(raw, true, &HashSet::new()).unwrap();
+        assert_eq!(page.total, 1);
+        assert_eq!(page.hits[0].key, "doc:1");
+        assert_eq!(page.hits[0].fields[0].field, "title");
+        assert_eq!(page.hits[0].fields[0].value, "redis");
+    }
+
+    /// 集群第二个分片上的「索引已存在」不能当成导入失败。
+    #[test]
+    fn index_exists_error_is_recognized() {
+        assert!(index_already_exists(
+            "SEARCH_INDEX_EXISTS: Index already exists"
+        ));
+        assert!(index_already_exists("Index already exists"));
+        assert!(!index_already_exists("unknown command"));
+    }
+
+    /// 自行车样例是 111 条 Hash，向量为 768 维 float32。
+    #[test]
+    fn bikes_lines_are_hset_with_768_floats() {
+        let mut n = 0;
+        for line in BIKES.lines() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            let (cmd, args) = parse_command(line).unwrap();
+            assert_eq!(cmd, "HSET");
+            assert!(args[0].starts_with(b"bikes:"));
+            assert_eq!(args.last().unwrap().len(), 768 * 4);
+            n += 1;
+        }
+        assert_eq!(n, 111);
+        assert_eq!(sample_index_name("bikes").unwrap(), "idx:bikes_vss");
+        let packed = sample_create_cmd("bikes").unwrap().get_packed_command();
+        let text = String::from_utf8_lossy(&packed);
+        assert!(text.contains("description_embeddings"));
+        assert!(text.contains("768"));
+    }
+
+    /// 电影样例是 JSON.SET，索引名与 Insight 的 idx:movies_vss 一致。
+    #[test]
+    fn movies_lines_are_json_set() {
+        let mut n = 0;
+        for line in MOVIES.lines() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            let (cmd, args) = parse_command(line).unwrap();
+            assert_eq!(cmd, "JSON.SET");
+            assert!(args[0].starts_with(b"movie:"));
+            assert_eq!(&args[1], b"$");
+            n += 1;
+        }
+        assert_eq!(n, 55);
+        assert_eq!(sample_index_name("movies").unwrap(), "idx:movies_vss");
+        assert!(sample_index_name("nope").is_err());
+    }
+}

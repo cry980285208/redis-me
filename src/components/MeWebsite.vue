@@ -21,6 +21,11 @@ const DOC_PATHS = {
     redis: '/docs/latest/operate/oss_and_stack/management/security/acl/',
     valkey: '/topics/acl/',
   },
+  // 中英文文档路径不同；Valkey 没有对应页面，下拉里不显示
+  search: {
+    redis: '/docs/latest/develop/ai/search-and-query/query/',
+    redisZh: '/docs/latest/develop/interact/search-and-query/query/',
+  },
 } as const
 
 type DocTopic = keyof typeof DOC_PATHS
@@ -47,8 +52,6 @@ const WEB_ORIGIN = {
 } as const
 
 type SiteCmd = keyof typeof WEB_ORIGIN
-
-type Vendor = keyof (typeof DOC_PATHS)['info']
 // #endregion
 
 // #region 面板操作
@@ -57,13 +60,20 @@ function commandSlug(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, '-')
 }
 
+function sitePath(site: SiteCmd): string | undefined {
+  const entry = DOC_PATHS[props.to] as Partial<Record<SiteCmd, string>>
+  if (site === 'redisZh') return entry.redisZh ?? entry.redis
+  if (site === 'valkeyZh') return entry.valkeyZh ?? entry.valkey
+  return entry[site]
+}
+
 function handleCommand(cmd: string): void {
   const site = cmd as SiteCmd
-  const vendor = (site.endsWith('Zh') ? site.slice(0, -2) : site) as Vendor
+  const path = sitePath(site)
+  if (!path) return
   const base = WEB_ORIGIN[site]
-  let path = DOC_PATHS[props.to][vendor]
-  if (props.command) path += `${commandSlug(props.command)}/`
-  meOpenUrl(base + path)
+  const suffix = props.command ? `${commandSlug(props.command)}/` : ''
+  meOpenUrl(base + path + suffix)
 }
 // #endregion
 </script>
@@ -80,10 +90,10 @@ function handleCommand(cmd: string): void {
         <el-dropdown-item v-if="isZh" command="redisZh">
           <me-icon icon="me-icon-redis" name="Redis 中文" />
         </el-dropdown-item>
-        <el-dropdown-item command="valkey">
+        <el-dropdown-item v-if="sitePath('valkey')" command="valkey">
           <me-icon icon="me-icon-valkey" name="Valkey" />
         </el-dropdown-item>
-        <el-dropdown-item v-if="isZh" command="valkeyZh">
+        <el-dropdown-item v-if="isZh && sitePath('valkeyZh')" command="valkeyZh">
           <me-icon icon="me-icon-valkey" name="Valkey 中文" />
         </el-dropdown-item>
       </el-dropdown-menu>

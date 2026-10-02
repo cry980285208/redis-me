@@ -466,6 +466,62 @@ impl MeClient for MeSingle {
     }
 
     me_client_forwards!();
+
+    fn search_index_list(&self) -> AnyResult<Vec<SearchIndexInfo>> {
+        use crate::client::ops::search::{parse_ft_info, parse_ft_list};
+
+        let mut conn = self.get_conn()?;
+        let listed: Value = redis::cmd("FT._LIST").query(&mut conn)?;
+        let mut names = parse_ft_list(listed)?;
+        names.sort();
+        names.dedup();
+        let mut indexes = Vec::with_capacity(names.len());
+        for name in names {
+            let info: Value = redis::cmd("FT.INFO").arg(&name).query(&mut conn)?;
+            indexes.push(parse_ft_info(&name, info)?);
+        }
+        Ok(indexes)
+    }
+
+    fn search_query(&self, param: SearchQueryParam) -> AnyResult<SearchQueryResult> {
+        use crate::client::ops::search::{parse_ft_search, prepare_search};
+
+        let mut conn = self.get_conn()?;
+        let prepared = prepare_search(&param)?;
+        let value: Value = prepared.cmd.query(&mut conn)?;
+        parse_ft_search(value, param.with_scores, &prepared.vectors)
+    }
+
+    fn search_index_drop(&self, index: String) -> AnyResult<()> {
+        use crate::client::ops::search::drop_cmd;
+
+        let mut conn = self.get_conn()?;
+        let _: Value = drop_cmd(&index)?.query(&mut conn)?;
+        Ok(())
+    }
+
+    fn search_sample_load(&self, kind: String) -> AnyResult<SearchSampleResult> {
+        use crate::client::ops::search::{
+            apply_sample_data, parse_ft_list, sample_create_cmd, sample_index_name,
+        };
+
+        let mut conn = self.get_conn()?;
+        let index = sample_index_name(&kind)?.to_string();
+        let listed: Value = redis::cmd("FT._LIST").query(&mut conn)?;
+        if parse_ft_list(listed)?.iter().any(|name| name == &index) {
+            return Ok(SearchSampleResult {
+                created: false,
+                index,
+            });
+        }
+        apply_sample_data(&mut conn, &kind)?;
+        let cmd = sample_create_cmd(&kind)?;
+        let _: Value = cmd.query(&mut conn)?;
+        Ok(SearchSampleResult {
+            created: true,
+            index,
+        })
+    }
 }
 
 // 个性化方法

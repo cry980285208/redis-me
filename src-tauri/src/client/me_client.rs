@@ -66,6 +66,13 @@ pub trait MeClient: Send + Sync {
     // TimeSeries
     fn ts_info(&self, key: RedisKey) -> AnyResult<Vec<RedisArInfoItem>>;
 
+    // RedisSearch（索引工作区，不是键类型）
+    fn search_index_list(&self) -> AnyResult<Vec<SearchIndexInfo>>;
+    fn search_query(&self, param: SearchQueryParam) -> AnyResult<SearchQueryResult>;
+    fn search_index_drop(&self, index: String) -> AnyResult<()>;
+    /// `kind` 为 `bikes` 或 `movies`。索引已存在时不写数据。
+    fn search_sample_load(&self, kind: String) -> AnyResult<SearchSampleResult>;
+
     // Stream
     fn xinfo_groups(&self, key: RedisKey) -> AnyResult<Vec<XInfoGroup>>;
     fn xinfo_consumers(&self, key: RedisKey, group: String) -> AnyResult<Vec<XInfoConsumer>>;

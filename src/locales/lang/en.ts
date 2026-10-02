@@ -407,12 +407,13 @@ export default {
   tabMain: {
     info: 'Info',
     value: 'Value',
-    terminal: 'Terminal',
+    terminal: 'CLI',
     memory: 'Memory',
-    slow: 'SlowLog',
+    slow: 'Slow',
     monitor: 'Monitor',
     pubsub: 'Pub/Sub',
     chart: 'Chart',
+    search: 'Search',
   },
 
   keyHeader: {
@@ -898,6 +899,45 @@ export default {
     slowerMaxLenRequired: 'Count is required',
   },
 
+  redisSearch: {
+    drop: 'Drop Index',
+    name: 'Index Name',
+    prefixes: 'Index Prefix',
+    prefixTip: 'Keys matching this prefix are automatically indexed.',
+    docsTip: 'Number of documents currently indexed.',
+    recordsTip:
+      'Total indexed field-value pairs across all documents. One document with 5 fields = 5 records.',
+    termsTip: 'Unique words extracted from TEXT fields for full-text search.',
+    fieldsTip: 'Total number of fields defined in the index schema.',
+    numDocs: 'Docs',
+    records: 'Records',
+    terms: 'Terms',
+    identifier: 'Identifier',
+    attribute: 'Attribute',
+    fieldType: 'Field Type',
+    fields: 'Fields',
+    info: 'Index info',
+    filter: 'Filter (Name, Prefix)',
+    sample: 'Sample index',
+    sampleTitle: 'Getting your sample data ready for Search',
+    sampleHint:
+      "Select a sample dataset. We'll load the data and generate the index needed for search.",
+    sampleBikes: 'E-commerce Discovery',
+    sampleBikesHint: 'Discover products that match intent, not just text',
+    sampleMovies: 'Content recommendations',
+    sampleMoviesHint: 'Discover content by theme or plot.',
+    sampleCreated: 'Sample index {name} is ready',
+    sampleExists: 'Sample index {name} already exists. You can query it directly.',
+    query: 'Query',
+    back: 'Back',
+    queryPlaceholder: "* or {'@'}title:redis or {'@'}status:{'{'}paid{'}'}",
+    withScores: 'Scores',
+    docKey: 'Key',
+    score: 'Score',
+    dropConfirm: 'Drop index "{name}"? Documents are kept.',
+    dropOk: 'Index dropped',
+  },
+
   redisTerminal: {
     broadcastHint: `
 ① When automatic broadcasting is enabled and no node is selected, commands such as CONFIG SET will be executed on all nodes<br>
@@ -1287,5 +1327,6 @@ Once an operation prevents Redis from keeping the space-saving encoding, special
     proxy_tls_to_proxy_failed: 'TLS to proxy failed; use HTTP for Clash and similar proxies',
     file_read_failed: 'File read failed: {filename} ({detail})',
     file_write_failed: 'File write failed: {filename} ({detail})',
+    search_reply_invalid: 'Could not parse the RedisSearch reply ({detail})',
   },
 }

@@ -8,6 +8,7 @@ import RedisInfo from '@/views/tab/RedisInfo/index.vue'
 import RedisMemory from '@/views/tab/RedisMemory.vue'
 import RedisMonitor from '@/views/tab/RedisMonitor.vue'
 import RedisPubsub from '@/views/tab/RedisPubsub.vue'
+import RedisSearch from '@/views/tab/RedisSearch.vue'
 import RedisSlow from '@/views/tab/RedisSlow.vue'
 import RedisTerminal from '@/views/tab/RedisTerminal.vue'
 import RedisValue from '@/views/tab/RedisValue/index.vue'
@@ -15,6 +16,7 @@ import RedisValue from '@/views/tab/RedisValue/index.vue'
 const share = inject(shareProvideKey)!
 const minimalMode = computed(() => isConnMinimalMode(share.conn))
 const infoSupported = computed(() => share.capabilities.infoSupported)
+const searchSupported = computed(() => share.capabilities.redisSearchSupported)
 </script>
 
 <template>
@@ -39,6 +41,9 @@ const infoSupported = computed(() => share.capabilities.infoSupported)
 
     <!-- 内存、慢查询、监控、发布订阅和图表界面 -->
     <template v-if="!minimalMode">
+      <me-tab-pane v-if="searchSupported" name="search" icon="el-icon-search" lazy>
+        <RedisSearch />
+      </me-tab-pane>
       <me-tab-pane name="memory" icon="me-icon-memory" lazy>
         <RedisMemory />
       </me-tab-pane>
@@ -69,9 +74,8 @@ const infoSupported = computed(() => share.capabilities.infoSupported)
     height: 100%;
   }
 
-  // 调整标签页的宽度以便可以显示更多标签（默认20px）
   :deep(.el-tabs__item) {
-    padding: 0 15px;
+    padding: 0 12px;
   }
 }
 </style>

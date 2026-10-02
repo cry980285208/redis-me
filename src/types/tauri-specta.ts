@@ -46,6 +46,10 @@ export const commands = {
 	arInfo: (id: string, key: RedisKey_Deserialize) => typedError<RedisArInfoItem[], string>(__TAURI_INVOKE("ar_info", { id, key })),
 	vInfo: (id: string, key: RedisKey_Deserialize) => typedError<RedisArInfoItem[], string>(__TAURI_INVOKE("v_info", { id, key })),
 	tsInfo: (id: string, key: RedisKey_Deserialize) => typedError<RedisArInfoItem[], string>(__TAURI_INVOKE("ts_info", { id, key })),
+	searchIndexList: (id: string) => typedError<SearchIndexInfo[], string>(__TAURI_INVOKE("search_index_list", { id })),
+	searchQuery: (id: string, param: SearchQueryParam) => typedError<SearchQueryResult, string>(__TAURI_INVOKE("search_query", { id, param })),
+	searchIndexDrop: (id: string, index: string) => typedError<null, string>(__TAURI_INVOKE("search_index_drop", { id, index })),
+	searchSampleLoad: (id: string, kind: string) => typedError<SearchSampleResult, string>(__TAURI_INVOKE("search_sample_load", { id, kind })),
 	vGetattr: (id: string, param: RedisVAttr_Deserialize) => typedError<string, string>(__TAURI_INVOKE("v_getattr", { id, param })),
 	vSetattr: (id: string, param: RedisVAttr_Deserialize) => typedError<null, string>(__TAURI_INVOKE("v_setattr", { id, param })),
 	vSim: (id: string, param: RedisVSim_Deserialize) => typedError<RedisVSimItem[], string>(__TAURI_INVOKE("v_sim", { id, param })),
@@ -940,6 +944,56 @@ export type ScanResult_Serialize = {
 	cursor: ScanCursor_Serialize,
 };
 
+export type SearchHit = {
+	key: string,
+	score: string | null,
+	fields: SearchKv[],
+};
+
+export type SearchIndexField = {
+	identifier: string,
+	attribute: string,
+	fieldType: string,
+	options: string,
+};
+
+export type SearchIndexInfo = {
+	name: string,
+	keyType: string,
+	prefixes: string,
+	numDocs: string,
+	numRecords: string,
+	numTerms: string,
+	fields: SearchIndexField[],
+	/**  `FT.INFO` 原文，格式与终端 JSON 输出一致 */
+	raw: string,
+};
+
+export type SearchKv = {
+	field: string,
+	value: string,
+};
+
+export type SearchQueryParam = {
+	index: string,
+	query: string,
+	offset: number,
+	count: number,
+	withScores: boolean,
+	/**  按 FLOAT32 解开的字段名。页面已有 schema，查询时不再为这个打 FT.INFO。 */
+	vectorFields: string[],
+};
+
+export type SearchQueryResult = {
+	total: number,
+	hits: SearchHit[],
+};
+
+export type SearchSampleResult = {
+	created: boolean,
+	index: string,
+};
+
 export type SentinelOption = {
 	masterName: string,
 	masterUsername: string,
@@ -956,6 +1010,8 @@ export type ServerCapabilities = {
 	httlSupported: boolean,
 	/**  集群模式是否支持编号数据库（Valkey 9+） */
 	clusterDbSupported: boolean,
+	/**  当前连接能执行 FT._LIST。未装 RedisSearch 时不展示搜索页。 */
+	redisSearchSupported: boolean,
 };
 
 export type SshOption = {

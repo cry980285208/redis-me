@@ -69,6 +69,9 @@ pub enum AppError {
     InvalidZsetScoreBound {
         bound: String,
     },
+    SearchReplyInvalid {
+        detail: String,
+    },
 
     // 配置相关
     InvalidNodeFormat {
