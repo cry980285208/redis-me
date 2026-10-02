@@ -67,6 +67,8 @@ pub trait MeClient: Send + Sync {
     fn ts_info(&self, key: RedisKey) -> AnyResult<Vec<RedisArInfoItem>>;
 
     // RedisSearch（索引工作区，不是键类型）
+    /// 只要索引名。键树选择框用，不打 `FT.INFO`。
+    fn search_index_names(&self) -> AnyResult<Vec<String>>;
     fn search_index_list(&self) -> AnyResult<Vec<SearchIndexInfo>>;
     fn search_query(&self, param: SearchQueryParam) -> AnyResult<SearchQueryResult>;
     fn search_index_drop(&self, index: String) -> AnyResult<()>;

@@ -1200,7 +1200,11 @@ Once an operation prevents Redis from keeping the space-saving encoding, special
   },
 
   keyMain: {
-    keyword: 'Enter to Search',
+    keyword: 'Enter to search key names',
+    searchQuery: 'Enter for full-text search',
+    searchIndex: 'Select index',
+    searchIndexEmpty: 'No index',
+    searchIndexRefresh: 'Refresh indexes',
     exactSearch:
       '<b>Scan</b> (unchecked)<br/>app: contains app<br/>app*: starts with app<br/>*app: ends with app<br/>With * ? [: use pattern as typed<br/><br/><b>Exact</b> (checked)<br/>Check if key name exactly matches input',
     refreshKey: 'Refresh List (F5)',

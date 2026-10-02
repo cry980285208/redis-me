@@ -467,14 +467,22 @@ impl MeClient for MeSingle {
 
     me_client_forwards!();
 
-    fn search_index_list(&self) -> AnyResult<Vec<SearchIndexInfo>> {
-        use crate::client::ops::search::{parse_ft_info, parse_ft_list};
+    fn search_index_names(&self) -> AnyResult<Vec<String>> {
+        use crate::client::ops::search::parse_ft_list;
 
         let mut conn = self.get_conn()?;
         let listed: Value = redis::cmd("FT._LIST").query(&mut conn)?;
         let mut names = parse_ft_list(listed)?;
         names.sort();
         names.dedup();
+        Ok(names)
+    }
+
+    fn search_index_list(&self) -> AnyResult<Vec<SearchIndexInfo>> {
+        use crate::client::ops::search::parse_ft_info;
+
+        let names = self.search_index_names()?;
+        let mut conn = self.get_conn()?;
         let mut indexes = Vec::with_capacity(names.len());
         for name in names {
             let info: Value = redis::cmd("FT.INFO").arg(&name).query(&mut conn)?;

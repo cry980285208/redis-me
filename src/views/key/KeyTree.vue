@@ -78,6 +78,8 @@ const props = withDefaults(
     folderLoadingPaths?: string[]
     // 为 false 时右键不提供「多选模式」（另一区已在多选时）
     allowEnterCheckedMode?: boolean
+    // 索引查询的目录只是结果分组，没有 SCAN 游标可续
+    searchMode?: boolean
   }>(),
   {
     color: 'var(--el-color-primary)',
@@ -94,6 +96,7 @@ const props = withDefaults(
     folderLoadMorePaths: () => [],
     folderLoadingPaths: () => [],
     allowEnterCheckedMode: true,
+    searchMode: false,
   },
 )
 
@@ -741,20 +744,20 @@ function folderIconName(node: TreeNode): string {
 
           <!-- 仅普通模式：只加载该目录 / 加载目录所有（后者扫完全部键） -->
           <el-dropdown-item
-            v-if="!favoriteMode && !isContextFavoriteFolderRoot"
+            v-if="!favoriteMode && !isContextFavoriteFolderRoot && !searchMode"
             command="loadFolder"
             divided>
             <me-icon icon="el-icon-search" :name="t('keyTree.loadFolder')" />
           </el-dropdown-item>
           <el-dropdown-item
-            v-if="!favoriteMode && !isContextFavoriteFolderRoot"
+            v-if="!favoriteMode && !isContextFavoriteFolderRoot && !searchMode"
             command="loadFolderAll">
             <me-icon icon="me-icon-search-all" :name="t('keyTree.loadFolderAll')" />
           </el-dropdown-item>
           <!-- 收藏模式（含根）在上方项后分隔；普通模式已有「只加载」分隔 -->
           <el-dropdown-item
             command="memoryUsage"
-            :divided="favoriteMode || isContextFavoriteFolderRoot">
+            :divided="favoriteMode || isContextFavoriteFolderRoot || searchMode">
             <me-icon icon="me-icon-memory" :name="t('keyTree.memoryUsage')" />
           </el-dropdown-item>
           <el-dropdown-item command="exportFolder" :disabled="share.exportImporting" divided>

@@ -46,6 +46,7 @@ export const commands = {
 	arInfo: (id: string, key: RedisKey_Deserialize) => typedError<RedisArInfoItem[], string>(__TAURI_INVOKE("ar_info", { id, key })),
 	vInfo: (id: string, key: RedisKey_Deserialize) => typedError<RedisArInfoItem[], string>(__TAURI_INVOKE("v_info", { id, key })),
 	tsInfo: (id: string, key: RedisKey_Deserialize) => typedError<RedisArInfoItem[], string>(__TAURI_INVOKE("ts_info", { id, key })),
+	searchIndexNames: (id: string) => typedError<string[], string>(__TAURI_INVOKE("search_index_names", { id })),
 	searchIndexList: (id: string) => typedError<SearchIndexInfo[], string>(__TAURI_INVOKE("search_index_list", { id })),
 	searchQuery: (id: string, param: SearchQueryParam) => typedError<SearchQueryResult, string>(__TAURI_INVOKE("search_query", { id, param })),
 	searchIndexDrop: (id: string, index: string) => typedError<null, string>(__TAURI_INVOKE("search_index_drop", { id, index })),
@@ -1010,7 +1011,7 @@ export type ServerCapabilities = {
 	httlSupported: boolean,
 	/**  集群模式是否支持编号数据库（Valkey 9+） */
 	clusterDbSupported: boolean,
-	/**  当前连接能执行 FT._LIST。未装 RedisSearch 时不展示搜索页。 */
+	/**  当前连接能执行 FT._LIST。集群要打到 master 上探测，query() 路由不了这条命令。 */
 	redisSearchSupported: boolean,
 };
 

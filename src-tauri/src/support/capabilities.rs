@@ -18,7 +18,7 @@ api_model!(
         httl_supported: bool,
         /// 集群模式是否支持编号数据库（Valkey 9+）
         cluster_db_supported: bool,
-        /// 当前连接能执行 FT._LIST。未装 RedisSearch 时不展示搜索页。
+        /// 当前连接能执行 FT._LIST。集群要打到 master 上探测，query() 路由不了这条命令。
         redis_search_supported: bool,
     }
 );
@@ -41,8 +41,11 @@ pub fn detect_server_capabilities(
         base.capabilities.httl_supported = detect_httl_by_command(conn);
         base.capabilities.cluster_db_supported = false;
     }
-    base.capabilities.redis_search_supported = detect_redis_search(conn);
-    log::info!("服务能力: {:?}", base.capabilities);
+    // 集群的 FT._LIST 在 MeCluster::init 里打到 master。这里 query() 没有键，路由会失败。
+    if !is_cluster {
+        base.capabilities.redis_search_supported = detect_redis_search(conn);
+        log::info!("服务能力: {:?}", base.capabilities);
+    }
 }
 
 // ------------------------------ 仅本文件使用 ------------------------------

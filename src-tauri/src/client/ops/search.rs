@@ -9,16 +9,13 @@ use anyhow::bail;
 use redis::{Commands, Value};
 use std::collections::HashSet;
 
-/// 单次 FT.SEARCH 最多取这么多条，与设置里字段扫描的上限一致。
-pub const SEARCH_COUNT_MAX: u64 = 1000;
-
 /// 一次查询要发出的命令，以及要按向量解开的字段。
 pub struct PreparedSearch {
     pub cmd: redis::Cmd,
     pub vectors: HashSet<String>,
 }
 
-/// 拼 `FT.SEARCH`。空查询按 `*`，条数钳在上限内。
+/// 拼 `FT.SEARCH`。空查询按 `*`。条数用调用方传入的值，不再封顶。
 pub fn prepare_search(param: &SearchQueryParam) -> AnyResult<PreparedSearch> {
     let index = param.index.trim();
     if index.is_empty() {
@@ -31,9 +28,7 @@ pub fn prepare_search(param: &SearchQueryParam) -> AnyResult<PreparedSearch> {
     if param.with_scores {
         cmd.arg("WITHSCORES");
     }
-    cmd.arg("LIMIT")
-        .arg(param.offset)
-        .arg(param.count.clamp(1, SEARCH_COUNT_MAX));
+    cmd.arg("LIMIT").arg(param.offset).arg(param.count);
     Ok(PreparedSearch {
         cmd,
         vectors: param.vector_fields.iter().cloned().collect(),

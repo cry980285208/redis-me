@@ -674,8 +674,8 @@ impl MeClient for MeCluster {
 
     me_client_forwards!();
 
-    fn search_index_list(&self) -> AnyResult<Vec<SearchIndexInfo>> {
-        use crate::client::ops::search::{parse_ft_info, parse_ft_list};
+    fn search_index_names(&self) -> AnyResult<Vec<String>> {
+        use crate::client::ops::search::parse_ft_list;
         use std::collections::BTreeSet;
 
         let targets = self.search_targets();
@@ -689,8 +689,16 @@ impl MeClient for MeCluster {
                 names.insert(name);
             }
         }
-        let info_node = targets.first().cloned().flatten();
+        Ok(names.into_iter().collect())
+    }
+
+    fn search_index_list(&self) -> AnyResult<Vec<SearchIndexInfo>> {
+        use crate::client::ops::search::parse_ft_info;
+
+        let names = self.search_index_names()?;
+        let info_node = self.search_targets().first().cloned().flatten();
         let (info_route, _) = self.get_node_route(info_node)?;
+        let mut conn = self.get_conn()?;
         let mut indexes = Vec::with_capacity(names.len());
         for name in names {
             let mut cmd = redis::cmd("FT.INFO");
@@ -780,6 +788,8 @@ impl MeCluster {
         );
         set_client_name_unless_minimal(&mut conn, redis_conn);
         detect_server_capabilities(&mut conn, &mut base, true);
+        base.capabilities.redis_search_supported = Self::ft_list_on_primary(&mut conn);
+        info!("服务能力: {:?}", base.capabilities);
         let cluster_nodes: String = redis::cmd("cluster").arg("nodes").query(&mut conn)?;
         let node_list = Self::parse_node_list(cluster_nodes)?;
         info!("Redis集群连接初始化成功: {}", redis_conn.name);
@@ -920,6 +930,18 @@ impl MeCluster {
             .filter(|node| node.flags.contains("master"))
             .map(|node| node.node.clone())
             .collect::<Vec<String>>()
+    }
+
+    /// FT._LIST 没有键。建连时尚无节点表，打到任意 master，能执行才算装了 RedisSearch。
+    fn ft_list_on_primary(conn: &mut LoggingClusterConnection) -> bool {
+        let route = RoutingInfo::SingleNode(SingleNodeRoutingInfo::RandomPrimary);
+        match conn.route_command(&redis::cmd("FT._LIST"), route) {
+            Ok(_) => true,
+            Err(e) => {
+                info!("FT._LIST 不可用，搜索页不展示: {e}");
+                false
+            }
+        }
     }
 
     /// 搜索命令要打到的节点。有 master 就逐个发；列表为空时退回随机主节点一次。

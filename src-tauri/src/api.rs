@@ -44,7 +44,8 @@ api_commands!(
     ar_info(key: RedisKey) -> Vec<RedisArInfoItem>;               // Array ARINFO 元数据
     v_info(key: RedisKey) -> Vec<RedisArInfoItem>;                // Vector Set VINFO 元数据（行结构同 ARINFO）
     ts_info(key: RedisKey) -> Vec<RedisArInfoItem>;               // TimeSeries TS.INFO 元数据（行结构同 ARINFO）
-    search_index_list() -> Vec<SearchIndexInfo>;                 // RedisSearch 索引列表
+    search_index_names() -> Vec<String>;                         // FT._LIST，只要索引名
+    search_index_list() -> Vec<SearchIndexInfo>;                 // RedisSearch 索引列表（含 FT.INFO）
     search_query(param: SearchQueryParam) -> SearchQueryResult;  // FT.SEARCH
     search_index_drop(index: String) -> ();                      // FT.DROPINDEX（不带 DD）
     search_sample_load(kind: String) -> SearchSampleResult;     // 写入 Redis Insight 样例并 FT.CREATE

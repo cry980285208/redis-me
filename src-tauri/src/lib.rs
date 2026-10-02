@@ -193,6 +193,7 @@ fn tauri_specta_commands() -> Commands<tauri::Wry> {
         ar_info,
         v_info,
         ts_info,
+        search_index_names,
         search_index_list,
         search_query,
         search_index_drop,
