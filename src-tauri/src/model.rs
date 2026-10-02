@@ -897,6 +897,8 @@ api_model!(SearchIndexField {
     identifier: String,
     attribute: String,
     field_type: String,
+    /// 仅 TEXT 有。空串表示这项不存在。
+    weight: String,
     options: String,
 });
 

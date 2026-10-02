@@ -65,6 +65,19 @@ function fieldValue(hit: SearchHit, name: string): string {
   return hit.fields.find(field => field.field === name)?.value ?? ''
 }
 
+// 只用 el-tag 自带的几种颜色。
+function fieldTypeTag(fieldType: string): 'primary' | 'success' | 'info' | 'warning' | 'danger' {
+  const known = {
+    TEXT: 'primary',
+    NUMERIC: 'warning',
+    TAG: 'success',
+    GEO: 'info',
+    GEOSHAPE: 'info',
+    VECTOR: 'danger',
+  } as const
+  return known[fieldType.toUpperCase() as keyof typeof known] ?? 'info'
+}
+
 // 结果里的字段名可能是 attribute，也可能是 identifier，两种都交给后端认向量。
 function vectorFieldNames(index: SearchIndexInfo): string[] {
   const names: string[] = []
@@ -444,7 +457,7 @@ watch(
       </div>
     </template>
 
-    <!-- 字段定义：标识、属性名、类型 -->
+    <!-- 字段定义：标识、属性名、类型、权重 -->
     <el-dialog v-model="detailVisible" width="720px" align-center draggable destroy-on-close>
       <template #header>
         <me-icon icon="el-icon-info-filled" :name="indexTitle(t('redisSearch.fields'))" />
@@ -452,7 +465,18 @@ watch(
       <el-table :data="selected?.fields ?? []" border stripe max-height="420" show-overflow-tooltip>
         <el-table-column prop="identifier" :label="t('redisSearch.identifier')" min-width="140" />
         <el-table-column prop="attribute" :label="t('redisSearch.attribute')" min-width="120" />
-        <el-table-column prop="fieldType" :label="t('redisSearch.fieldType')" width="110" />
+        <el-table-column :label="t('redisSearch.fieldType')" width="120">
+          <template #default="{ row }">
+            <el-tag
+              v-if="row.fieldType"
+              size="small"
+              effect="plain"
+              :type="fieldTypeTag(row.fieldType)">
+              {{ row.fieldType }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="weight" :label="t('redisSearch.weight')" width="90" />
       </el-table>
     </el-dialog>
 

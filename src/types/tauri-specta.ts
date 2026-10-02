@@ -955,6 +955,8 @@ export type SearchIndexField = {
 	identifier: string,
 	attribute: string,
 	fieldType: string,
+	/**  仅 TEXT 有。空串表示这项不存在。 */
+	weight: string,
 	options: string,
 };
 

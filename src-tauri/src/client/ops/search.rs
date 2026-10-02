@@ -355,6 +355,7 @@ fn parse_one_attr(value: Value) -> SearchIndexField {
     let mut identifier = String::new();
     let mut attribute = String::new();
     let mut field_type = String::new();
+    let mut weight = String::new();
     let mut options = Vec::new();
     let mut i = 0;
     while i < tokens.len() {
@@ -368,6 +369,8 @@ fn parse_one_attr(value: Value) -> SearchIndexField {
                 attribute = val.clone();
             } else if key == "type" && field_type.is_empty() {
                 field_type = val.clone();
+            } else if key == "weight" && weight.is_empty() {
+                weight = val.clone();
             } else {
                 options.push(format!("{token} {val}"));
             }
@@ -381,6 +384,7 @@ fn parse_one_attr(value: Value) -> SearchIndexField {
         identifier,
         attribute,
         field_type,
+        weight,
         options: options.join(" "),
     }
 }
@@ -600,12 +604,16 @@ mod tests {
             b("title"),
             b("type"),
             b("TEXT"),
+            b("WEIGHT"),
+            b("1"),
             b("WITHSUFFIXTRIE"),
             b("SORTABLE"),
         ]));
         assert_eq!(field.identifier, "$.title");
         assert_eq!(field.attribute, "title");
         assert_eq!(field.field_type, "TEXT");
+        assert_eq!(field.weight, "1");
+        assert!(!field.options.to_ascii_lowercase().contains("weight"));
         assert!(field.options.contains("WITHSUFFIXTRIE"));
         assert!(field.options.split_whitespace().any(|w| w == "SORTABLE"));
     }
