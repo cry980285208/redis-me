@@ -266,7 +266,7 @@ export default {
 
     nameHint: '【可选】默认自动根据主机和端口生成',
     advancedTitle: '高级选项',
-    advancedLabelWidth: '100px',
+    advancedLabelWidth: '120px',
     keySeparator: '键分隔符',
     keySeparatorPlaceholder: ':',
     keySeparatorTip: '树形浏览按此分隔命名空间；默认 : ；连续相同分隔符视为一次（如 user::id）',

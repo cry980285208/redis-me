@@ -254,7 +254,7 @@ export default {
     loginType: 'Login',
     nameHint: '[Optional] Automatically generated',
     advancedTitle: 'Advanced',
-    advancedLabelWidth: '120px',
+    advancedLabelWidth: '150px',
     keySeparator: 'Key Separator',
     keySeparatorPlaceholder: ':',
     keySeparatorTip:
