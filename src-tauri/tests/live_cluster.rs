@@ -6,12 +6,12 @@
 //!
 //! 新增集群特有行为时加在本文件；单机和集群共用的往返加在 `common/check.rs`。
 
-#[path = "common/live.rs"]
-#[allow(dead_code)]
-mod live;
 #[path = "common/check.rs"]
 #[allow(dead_code)]
 mod check;
+#[path = "common/live.rs"]
+#[allow(dead_code)]
+mod live;
 
 use redis_me_lib::client::me_client::MeClient;
 

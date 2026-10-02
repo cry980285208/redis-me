@@ -56,7 +56,11 @@ pub fn live_conns() -> Vec<ConnConfig> {
         as_ssl(open("ssl", PORT_SINGLE_SSL, SINGLE_DB)),
         as_ssh(open("ssh_pwd", PORT_SINGLE, SINGLE_DB)),
         as_sentinel(open("sentinel", PORT_SENTINEL, SINGLE_DB)),
-        as_ssl(as_sentinel(open("sentinel_ssl", PORT_SENTINEL_SSL, SINGLE_DB))),
+        as_ssl(as_sentinel(open(
+            "sentinel_ssl",
+            PORT_SENTINEL_SSL,
+            SINGLE_DB,
+        ))),
         as_ssl(as_cluster(open("cluster_ssl", PORT_CLUSTER_SSL, 0))),
         as_ssh(as_cluster(open("cluster_ssh", PORT_CLUSTER, 0))),
     ]

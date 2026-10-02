@@ -8,12 +8,12 @@
 //!
 //! 新增一种基础键类型或翻页规则时，在 `check.rs` 加断言，并在这里挂上。
 
-#[path = "common/live.rs"]
-#[allow(dead_code)]
-mod live;
 #[path = "common/check.rs"]
 #[allow(dead_code)]
 mod check;
+#[path = "common/live.rs"]
+#[allow(dead_code)]
+mod live;
 
 use redis_me_lib::client::me_client::MeClient;
 

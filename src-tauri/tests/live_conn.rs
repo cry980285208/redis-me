@@ -9,12 +9,12 @@
 //!
 //! 新增一种连法（例如新的代理类型）时，在 `conn.rs` 加一项，并在本文件加同名测试。
 
-#[path = "common/live.rs"]
-#[allow(dead_code)]
-mod live;
 #[path = "common/check.rs"]
 #[allow(dead_code)]
 mod check;
+#[path = "common/live.rs"]
+#[allow(dead_code)]
+mod live;
 
 use redis_me_lib::client::me_client::MeClient;
 use redis_me_lib::model::{CliOutputMode, ConnConfig, RedisCommand};

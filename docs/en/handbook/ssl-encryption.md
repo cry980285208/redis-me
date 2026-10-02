@@ -29,12 +29,12 @@ Cluster mode uses the host network. Write the IP that is actually reachable on t
 
 Have a CA sign the server certificate. `tls-ca-cert-file` points at `ca.crt`. `redis.crt` is the server certificate, not the CA.
 
-| File        | Role                                                                                          |
-| ----------- | --------------------------------------------------------------------------------------------- |
+| File        | Role                                                                                                     |
+| ----------- | -------------------------------------------------------------------------------------------------------- |
 | `ca.key`    | CA private key. Keep it on the machine that signs certificates. Do not put it in an image or on a client |
-| `ca.crt`    | CA. Redis `tls-ca-cert-file`, used to verify client certificates                              |
-| `redis.key` | Server private key. Clients use it as well when mutual TLS is on                             |
-| `redis.crt` | Server certificate. Extended key usage includes `serverAuth` and `clientAuth`                |
+| `ca.crt`    | CA. Redis `tls-ca-cert-file`, used to verify client certificates                                         |
+| `redis.key` | Server private key. Clients use it as well when mutual TLS is on                                         |
+| `redis.crt` | Server certificate. Extended key usage includes `serverAuth` and `clientAuth`                            |
 
 Put every name a client actually connects with into the SAN: each node IP, `127.0.0.1`, `localhost`, and the DNS aliases in application config (such as `redis-ssl-1`).
 
@@ -97,14 +97,14 @@ Hand the address to applications and to the sync tool only after `cluster_state:
 
 Pick two scenarios from how the application actually uses Redis. Skip a full regression. If the address is configured but the code never calls Redis, leave it off the schedule. Applications already slated for retirement are noted in the release notes and left unchanged.
 
-| Usage            | What you need to see                                                                 |
-| ---------------- | ------------------------------------------------------------------------------------ |
-| Connect only     | The process starts and the health check passes                                      |
-| Cache read       | One read path returns the same hit as the old cluster, or misses and refills        |
-| Cache write      | A write can be read back                                                             |
+| Usage            | What you need to see                                                                       |
+| ---------------- | ------------------------------------------------------------------------------------------ |
+| Connect only     | The process starts and the health check passes                                             |
+| Cache read       | One read path returns the same hit as the old cluster, or misses and refills               |
+| Cache write      | A write can be read back                                                                   |
 | Distributed lock | Two concurrent attempts: the second is blocked, and a later attempt succeeds after release |
-| ID / increment   | Consecutive IDs are monotonic, unique, and do not go backwards                      |
-| Idempotency      | The same business id returns the first result on the second call                    |
+| ID / increment   | Consecutive IDs are monotonic, unique, and do not go backwards                             |
+| Idempotency      | The same business id returns the first result on the second call                           |
 
 Prefer locks, ID generation, login state, and gateway auth. For caches with a TTL, confirm the TTL is still set after the cutover.
 
