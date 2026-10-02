@@ -80,10 +80,11 @@ pub fn parse_ft_list(value: Value) -> AnyResult<Vec<String>> {
     Ok(names)
 }
 
-/// `FT.INFO`：列表用到的标量和字段定义单独取出，整份回复按终端 JSON 放进 `raw`。
+/// `FT.INFO`：列表用到的标量和字段定义单独取出。
+/// `raw` 给索引信息弹框。RESP2 的交替数组收成对象，和 RESP3 同一形状；终端仍按 redis-cli `--json`。
 pub fn parse_ft_info(name: &str, value: Value) -> AnyResult<SearchIndexInfo> {
     let raw = redis_value_to_cli_display(
-        value.clone(),
+        ft_info_display_value(value.clone()),
         Some(CliOutputMode::Json),
         "FT.INFO",
         &[name.as_bytes().to_vec()],
@@ -398,6 +399,82 @@ fn parse_attributes(value: Value) -> AnyResult<Vec<SearchIndexField>> {
     }
 }
 
+/// RESP2 的 `FT.INFO` 顶层是键值交替数组。收成 Map 后，JSON 才和 RESP3 一样可读。
+fn ft_info_display_value(value: Value) -> Value {
+    match value {
+        Value::Array(arr) => fold_info_map(arr),
+        other => other,
+    }
+}
+
+fn fold_info_map(arr: Vec<Value>) -> Value {
+    if arr.len() % 2 != 0 {
+        return Value::Array(arr);
+    }
+    let mut pairs = Vec::with_capacity(arr.len() / 2);
+    let mut i = 0;
+    while i < arr.len() {
+        let name = text(&arr[i]).to_ascii_lowercase();
+        pairs.push((arr[i].clone(), normalize_info_child(&name, arr[i + 1].clone())));
+        i += 2;
+    }
+    Value::Map(pairs)
+}
+
+fn normalize_info_child(key: &str, value: Value) -> Value {
+    match key {
+        "index_definition" | "gc_stats" | "cursor_stats" | "dialect_stats" | "index errors"
+        | "index_errors" => match value {
+            Value::Array(arr) if arr.len() % 2 == 0 => fold_info_map(arr),
+            other => other,
+        },
+        "attributes" | "field statistics" | "field_statistics" => match value {
+            Value::Array(items) => {
+                Value::Array(items.into_iter().map(normalize_info_record).collect())
+            }
+            other => other,
+        },
+        _ => value,
+    }
+}
+
+/// 字段定义里 `SORTABLE` 这类裸标志没有值。收成 `flags`，避免和后一个标志配成一对。
+fn normalize_info_record(value: Value) -> Value {
+    let Value::Array(arr) = value else {
+        return value;
+    };
+    let mut pairs = Vec::new();
+    let mut flags = Vec::new();
+    let mut i = 0;
+    while i < arr.len() {
+        let key = text(&arr[i]);
+        let bare = is_info_flag(&key);
+        if !bare && i + 1 < arr.len() {
+            let name = key.to_ascii_lowercase();
+            pairs.push((
+                arr[i].clone(),
+                normalize_info_child(&name, arr[i + 1].clone()),
+            ));
+            i += 2;
+        } else {
+            flags.push(arr[i].clone());
+            i += 1;
+        }
+    }
+    if !flags.is_empty() {
+        pairs.push((Value::BulkString(b"flags".to_vec()), Value::Array(flags)));
+    }
+    Value::Map(pairs)
+}
+
+fn is_info_flag(token: &str) -> bool {
+    !token.is_empty()
+        && !takes_value(token)
+        && token
+            .chars()
+            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+}
+
 /// 前缀列表拼成逗号分隔的一行。
 fn join_prefixes(value: &Value) -> String {
     match value {
@@ -659,8 +736,12 @@ mod tests {
         assert_eq!(info.fields.len(), 1);
         assert!(info.fields[0].options.contains("WITHSUFFIXTRIE"));
         let parsed: serde_json::Value = serde_json::from_str(&info.raw).unwrap();
-        assert!(parsed.as_array().is_some());
-        assert!(info.raw.contains("bytes_collected"));
+        assert_eq!(parsed["index_definition"]["key_type"], "HASH");
+        assert_eq!(parsed["index_definition"]["prefixes"][0], "user:");
+        assert_eq!(parsed["attributes"][0]["identifier"], "name");
+        assert_eq!(parsed["attributes"][0]["flags"][0], "WITHSUFFIXTRIE");
+        assert_eq!(parsed["num_docs"], 3);
+        assert_eq!(parsed["gc_stats"]["bytes_collected"], "0");
     }
 
     /// Hash 向量按小端 FLOAT32 解开成 JSON 数组；已是数组的文本和普通字段不动。
