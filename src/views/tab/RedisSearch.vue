@@ -30,14 +30,17 @@ const sampleVisible = ref(false)
 const sampleKind = ref('')
 const loadingSample = ref(false)
 
+// 只按名称、前缀模糊匹配，大小写不敏感。
 const filteredIndexes = computed(() => {
   const q = keyword.value.trim().toLowerCase()
   if (!q) return indexes.value
   return indexes.value.filter(row => [row.name, row.prefixes].join('\n').toLowerCase().includes(q))
 })
 
+// FT.INFO 原文。走终端的展示格式，避免 JSON.parse 碰到裸 NaN。
 const infoText = computed(() => meFormatDisplayValue(selected.value?.raw ?? '', true))
 
+// 弹框标题：有选中索引时是「标签 索引名」。
 function indexTitle(label: string): string {
   return selected.value ? `${label} ${selected.value.name}` : label
 }
@@ -53,6 +56,7 @@ const resultColumns = computed(() => {
   return names
 })
 
+// 这一列在当前命中里的值，没有则为空。
 function fieldValue(hit: SearchHit, name: string): string {
   return hit.fields.find(field => field.field === name)?.value ?? ''
 }
@@ -127,6 +131,7 @@ async function runSearch(): Promise<void> {
   }
 }
 
+// prefer 用来在导入样例后仍停在该索引。索引没了就退回列表。
 async function loadIndexes(prefer?: string): Promise<void> {
   loadingList.value = true
   try {
@@ -144,12 +149,14 @@ async function loadIndexes(prefer?: string): Promise<void> {
   }
 }
 
+// 字段定义和原文共用 selected，同时只开一个弹框。
 function openIndex(row: SearchIndexInfo, which: 'fields' | 'info'): void {
   selected.value = row
   detailVisible.value = which === 'fields'
   infoVisible.value = which === 'info'
 }
 
+// 进入查询页时清空条件和分数，马上搜一次。
 function openQuery(row: SearchIndexInfo): void {
   selected.value = row
   queryText.value = ''
@@ -168,6 +175,13 @@ function openDoc(key: string): void {
   connUi.scrollKeyToTree(redisKey)
 }
 
+// 每次打开都重选样例。
+function openSample(): void {
+  sampleKind.value = ''
+  sampleVisible.value = true
+}
+
+// 同名索引已在时只提示，不覆盖。成功后刷新列表并停在该索引。
 async function loadSample(): Promise<void> {
   if (!sampleKind.value) return
   loadingSample.value = true
@@ -185,6 +199,7 @@ async function loadSample(): Promise<void> {
   }
 }
 
+// 退出查询页，并关掉字段、原文两个弹框。
 function leaveIndex(): void {
   selected.value = null
   pageMode.value = 'list'
@@ -193,6 +208,7 @@ function leaveIndex(): void {
   infoVisible.value = false
 }
 
+// 不带 DD，文档键保留。删的是当前索引就退回列表。
 function dropIndex(row: SearchIndexInfo): void {
   const name = row.name
   meConfirm(t('redisSearch.dropConfirm', { name }), async () => {
@@ -218,16 +234,12 @@ watch(
 
 <template>
   <div class="redis-search">
+    <!-- 索引列表 -->
     <template v-if="pageMode === 'list'">
       <div class="me-flex header">
         <div>
-          <el-button
-            v-if="canEdit"
-            icon="el-icon-document-add"
-            @click="
-              sampleKind = ''
-              sampleVisible = true
-            ">
+          <!-- 只读不提供写入样例 -->
+          <el-button v-if="canEdit" icon="el-icon-document-add" @click="openSample">
             {{ t('redisSearch.sample') }}
           </el-button>
         </div>
@@ -306,6 +318,7 @@ watch(
             <template #default="{ row }">{{ row.numTerms || '—' }}</template>
           </el-table-column>
 
+          <!-- 点数字打开字段定义，不单独占一列操作 -->
           <el-table-column :label="t('redisSearch.fields')" width="90" align="center">
             <template #header>
               <me-icon
@@ -322,6 +335,7 @@ watch(
             </template>
           </el-table-column>
 
+          <!-- 查询、原文始终可看；删除只在可写时出现 -->
           <el-table-column :label="t('action')" width="80" fixed="right" align="center">
             <template #default="{ row }">
               <div class="action-icons">
@@ -356,6 +370,7 @@ watch(
       </div>
     </template>
 
+    <!-- 单个索引的 FT.SEARCH。返回后仍留在列表，不拆页面 -->
     <template v-else-if="selected">
       <div class="me-flex header">
         <div class="me-flex query-side">
@@ -366,6 +381,7 @@ watch(
           <span class="index-name">{{ selected.name }}</span>
         </div>
         <div class="query-tools">
+          <!-- 勾选变化立刻重查，空输入按 * -->
           <el-checkbox v-model="withScores" @change="runSearch">
             {{ t('redisSearch.withScores') }}
           </el-checkbox>
@@ -385,6 +401,7 @@ watch(
 
       <div class="table hits" v-loading="loadingQuery">
         <me-table :data="hits" export-name="search-hits" :export-rows="exportHits">
+          <!-- 点键打开键值页，不走键树的 chooseKey -->
           <el-table-column
             :label="t('redisSearch.docKey')"
             width="180"
@@ -399,6 +416,7 @@ watch(
           <el-table-column v-if="withScores" :label="t('redisSearch.score')" width="200">
             <template #default="{ row }">{{ row.score }}</template>
           </el-table-column>
+          <!-- 列跟本次命中走，不跟 schema 对齐；不换行，超出由表格提示 -->
           <el-table-column
             v-for="col in resultColumns"
             :key="col"
@@ -411,6 +429,7 @@ watch(
       </div>
     </template>
 
+    <!-- 字段定义：标识、属性名、类型 -->
     <el-dialog v-model="detailVisible" width="720px" align-center draggable destroy-on-close>
       <template #header>
         <me-icon icon="el-icon-info-filled" :name="indexTitle(t('redisSearch.fields'))" />
@@ -422,6 +441,7 @@ watch(
       </el-table>
     </el-dialog>
 
+    <!-- FT.INFO 原文 -->
     <me-dialog
       v-model="infoVisible"
       :title="indexTitle(t('redisSearch.info'))"
@@ -430,6 +450,7 @@ watch(
       <me-code :model-value="infoText" read-only />
     </me-dialog>
 
+    <!-- 样例：已有同名索引时不覆盖 -->
     <el-dialog v-model="sampleVisible" width="520px" align-center draggable destroy-on-close>
       <template #header>
         <me-icon icon="el-icon-document-add" :name="t('redisSearch.sampleTitle')" />
