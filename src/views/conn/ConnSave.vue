@@ -694,10 +694,11 @@ function applyAdvanced() {
           </div>
         </el-form-item>
 
-        <el-button
+        <me-button
           class="conn-advanced-btn"
           icon="el-icon-more-filled"
-          :title="t('conn.advancedTitle')"
+          :info="t('conn.advancedTitle')"
+          placement="top"
           @click="openAdvanced" />
       </div>
 
@@ -1086,7 +1087,8 @@ function applyAdvanced() {
   flex-shrink: 0;
 }
 
-.conn-advanced-btn {
+/* class 落在 me-button 内部的 el-button 上，需穿透才能保持原来的图标按钮宽度 */
+:deep(.conn-advanced-btn) {
   min-width: 32px;
   padding: 8px 10px;
   flex-shrink: 0;
