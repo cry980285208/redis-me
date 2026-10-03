@@ -221,6 +221,7 @@ fn tauri_specta_commands() -> Commands<tauri::Wry> {
         acl_dryrun,
         slow_log,
         memory_usage,
+        key_memory,
         config_get,
         config_set,
         client_list,

@@ -20,6 +20,8 @@ api_model!(
         cluster_db_supported: bool,
         /// 当前连接能执行 FT._LIST。集群要打到 master 上探测，query() 路由不了这条命令。
         redis_search_supported: bool,
+        /// 能执行 MEMORY USAGE。云厂商代理常禁用，不能靠版本号判断。
+        memory_usage_supported: bool,
     }
 );
 
@@ -41,10 +43,27 @@ pub fn detect_server_capabilities(
         base.capabilities.httl_supported = detect_httl_by_command(conn);
         base.capabilities.cluster_db_supported = false;
     }
-    // 集群的 FT._LIST 在 MeCluster::init 里打到 master。这里 query() 没有键，路由会失败。
+    // 集群的 FT._LIST / MEMORY USAGE 在 MeCluster::init 里打到 master。
+    // 这里 query() 对无键命令会路由失败；MEMORY USAGE 的键也不在第一个参数。
     if !is_cluster {
         base.capabilities.redis_search_supported = detect_redis_search(conn);
+        base.capabilities.memory_usage_supported = probe_memory_usage(conn);
         log::info!("服务能力: {:?}", base.capabilities);
+    }
+}
+
+/// 对一个不存在的键执行 `MEMORY USAGE`。返回空值说明命令可用；未知命令或无权限则不可用。
+fn probe_memory_usage(conn: &mut impl ConnectionLike) -> bool {
+    let result: redis::RedisResult<Value> = redis::cmd("memory")
+        .arg("usage")
+        .arg(b"__redis_me_memory_probe__")
+        .query(conn);
+    match result {
+        Ok(_) => true,
+        Err(e) => {
+            log::info!("MEMORY USAGE 不可用: {e}");
+            false
+        }
     }
 }
 
@@ -96,6 +115,8 @@ fn detect_capabilities(version: &str, is_valkey: bool, is_cluster: bool) -> Serv
         cluster_db_supported: is_cluster && is_valkey && major >= 9,
         // 是否装了 RedisSearch 要发命令看，不能从版本号推断
         redis_search_supported: false,
+        // 云代理可能报着高版本却禁用 MEMORY，探测结果另填
+        memory_usage_supported: false,
     }
 }
 
@@ -179,5 +200,6 @@ mod tests {
         let caps = detect_capabilities("", false, true);
         assert!(!caps.acl_supported);
         assert!(!caps.cluster_db_supported);
+        assert!(!caps.memory_usage_supported);
     }
 }

@@ -74,6 +74,7 @@ export const commands = {
 	aclDryrun: (id: string, username: string, command: string) => typedError<string, string>(__TAURI_INVOKE("acl_dryrun", { id, username, command })),
 	slowLog: (id: string, count: number | null, node: string | null) => typedError<RedisSlowLog[], string>(__TAURI_INVOKE("slow_log", { id, count, node })),
 	memoryUsage: (id: string, param: RedisMemoryParam_Deserialize) => typedError<RedisMemoryResult_Serialize, string>(__TAURI_INVOKE("memory_usage", { id, param })),
+	keyMemory: (id: string, keys: RedisKey_Deserialize[]) => typedError<(number | null)[], string>(__TAURI_INVOKE("key_memory", { id, keys })),
 	configGet: (id: string, pattern: string, node: string | null) => typedError<{ [key in string]: string }, string>(__TAURI_INVOKE("config_get", { id, pattern, node })),
 	configSet: (id: string, key: string, value: string, node: string | null) => typedError<null, string>(__TAURI_INVOKE("config_set", { id, key, value, node })),
 	clientList: (id: string, node: string | null, clientType: string | null) => typedError<RedisClientInfo[], string>(__TAURI_INVOKE("client_list", { id, node, clientType })),
@@ -1025,6 +1026,8 @@ export type ServerCapabilities = {
 	clusterDbSupported: boolean,
 	/**  当前连接能执行 FT._LIST。集群要打到 master 上探测，query() 路由不了这条命令。 */
 	redisSearchSupported: boolean,
+	/**  能执行 MEMORY USAGE。云厂商代理常禁用，不能靠版本号判断。 */
+	memoryUsageSupported: boolean,
 };
 
 export type SshOption = {

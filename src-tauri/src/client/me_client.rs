@@ -32,6 +32,8 @@ pub trait MeClient: Send + Sync {
     fn copy(&self, param: RedisCopyParam) -> AnyResult<RedisKey>;
     fn object_info(&self, key: RedisKey) -> AnyResult<RedisObjectInfo>;
     fn key_type(&self, key: RedisKey) -> AnyResult<String>;
+    /// 批量 MEMORY USAGE，与入参等长；键不存在为 None。不支持时直接报错，不发命令。
+    fn key_memory(&self, keys: Vec<RedisKey>) -> AnyResult<Vec<Option<u64>>>;
     fn key_slot(&self, key: RedisKey) -> AnyResult<u64>;
     fn key_node(&self, key: RedisKey) -> AnyResult<Vec<RedisNode>>;
     fn batch_del(&self, param: RedisBatchKey) -> AnyResult<()>;
@@ -140,6 +142,9 @@ pub trait MeClient: Send + Sync {
 
     /// 按模式扫描一页键，再估算这些键的内存占用。
     fn memory_usage(&self, param: RedisMemoryParam) -> AnyResult<RedisMemoryResult> {
+        if !self.base().capabilities.memory_usage_supported {
+            bail!("MEMORY USAGE is not supported");
+        }
         let scan = self.scan(ScanParam {
             pattern: param.pattern.clone().unwrap_or_else(|| "*".into()),
             scan_type: None,

@@ -15,8 +15,9 @@ import {
   splitKeyPath,
 } from '@/utils/conn'
 import { redisKeyId, sameRedisKey } from '@/utils/redis-key'
-import { meDeleteKey, TREE_KEY_ID_PREFIX } from '@/utils/util'
+import { TREE_KEY_ID_PREFIX } from '@/utils/util'
 
+import KeyMemorySize from './KeyMemorySize.vue'
 import KeyTypeTag from './KeyTypeTag.vue'
 // #endregion
 
@@ -184,6 +185,10 @@ const rootTreeData = computed((): KeyBuildNode[] => {
 
 // 键高度配置
 const keyHeight = computed(() => meTauri.settings.keyHeight ?? 20)
+// 菜单开关 + 服务端支持 MEMORY USAGE 才显示，避免不支持时还去请求
+const showKeyMemory = computed(
+  () => !!meTauri.settings.keyShowMemory && share.capabilities.memoryUsageSupported,
+)
 
 const isContextNodeFavorited = computed(() => {
   if (!contextMenuNode.value?.isLeaf) return false
@@ -556,11 +561,6 @@ function setCurrentKey(redisKey: RedisKey_Deserialize) {
   })
 }
 
-function quickDeleteKey(redisKey: RedisKey_Deserialize): void {
-  if (!share.conn) return
-  meDeleteKey(share.conn.id, redisKey)
-}
-
 function isFavoritedLocal(redisKey: RedisKey_Deserialize | undefined): boolean {
   if (!redisKey) return false
   return props.favorites.some(f => sameRedisKey(f, redisKey))
@@ -631,19 +631,17 @@ function folderIconName(node: TreeNode): string {
                 <span v-else style="color: var(--el-color-info-light-3)">[EMPTY]</span>
               </div>
             </div>
-            <div class="key-leaf-actions">
-              <me-icon
-                v-if="canEdit && !showCheckbox && !favoriteMode"
-                :info="t('keyTree.deleteKey')"
-                icon="el-icon-delete"
-                class="key-delete-btn"
-                @click.stop="quickDeleteKey(node.data.redisKey)" />
+            <div
+              v-if="showKeyMemory || isFavoritedLocal(node.data.redisKey)"
+              class="key-leaf-actions"
+              :class="{ 'is-star-only': !showKeyMemory }">
               <me-icon
                 v-if="isFavoritedLocal(node.data.redisKey)"
                 icon="el-icon-star-filled"
                 style="color: #f7ba2a"
                 class="key-favorite-btn"
                 @click.stop="emit('contextKey', 'unfavoriteKey', node.data.redisKey)" />
+              <KeyMemorySize v-if="showKeyMemory" :redis-key="node.data.redisKey" />
             </div>
           </div>
           <div v-else :class="getNodeClass(node)" class="me-flex folder-row">
@@ -675,14 +673,17 @@ function folderIconName(node: TreeNode): string {
           <el-dropdown-item v-if="!favoriteMode && canEdit" command="addKey">
             <me-icon icon="el-icon-circle-plus" :name="t('keyTree.addKey')" />
           </el-dropdown-item>
-          <el-dropdown-item command="copyKey">
-            <me-icon icon="el-icon-document-copy" :name="t('keyTree.copyKey')" />
-          </el-dropdown-item>
           <el-dropdown-item v-if="!showCheckbox && allowEnterCheckedMode" command="checkedMode">
             <me-icon icon="me-icon-checked" :name="t('keyMain.checkedMode')" />
           </el-dropdown-item>
           <el-dropdown-item v-if="showCheckbox" command="exitCheckedMode">
             <me-icon icon="el-icon-circle-close" :name="t('keyMain.exitCheckedMode')" />
+          </el-dropdown-item>
+          <el-dropdown-item command="copyKey">
+            <me-icon icon="el-icon-document-copy" :name="t('keyTree.copyKey')" />
+          </el-dropdown-item>
+          <el-dropdown-item v-if="canEdit && !showCheckbox && !favoriteMode" command="deleteKey">
+            <me-icon icon="el-icon-delete" :name="t('keyTree.deleteKey')" />
           </el-dropdown-item>
           <el-dropdown-item :command="isContextNodeFavorited ? 'unfavoriteKey' : 'favoriteKey'">
             <me-icon
@@ -756,6 +757,7 @@ function folderIconName(node: TreeNode): string {
           </el-dropdown-item>
           <!-- 收藏模式（含根）在上方项后分隔；普通模式已有「只加载」分隔 -->
           <el-dropdown-item
+            v-if="share.capabilities.memoryUsageSupported"
             command="memoryUsage"
             :divided="favoriteMode || isContextFavoriteFolderRoot || searchMode">
             <me-icon icon="me-icon-memory" :name="t('keyTree.memoryUsage')" />
@@ -866,31 +868,15 @@ function folderIconName(node: TreeNode): string {
   height: 100%;
 }
 
+/* 开内存：右缘与目录 [ n ] 的括号对齐。关内存：只剩星标，15px 对齐到数字 */
 .key-leaf-actions {
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 5px;
-  margin-right: 15px;
-}
+  margin-right: 10px;
 
-/* 删除图标：hover 行时显示 */
-:deep(.el-tree-node__content:hover) .key-delete-btn {
-  visibility: visible;
-}
-
-.key-delete-btn {
-  flex-shrink: 0;
-  visibility: hidden;
-  cursor: pointer;
-  color: var(--el-color-info);
-
-  :deep(.el-icon) {
-    color: inherit;
-  }
-
-  &:hover {
-    color: var(--el-color-info-light-3);
+  &.is-star-only {
+    margin-right: 15px;
   }
 }
 

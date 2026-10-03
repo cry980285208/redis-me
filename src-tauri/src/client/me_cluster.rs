@@ -347,6 +347,23 @@ impl MeClient for MeCluster {
         Ok(tuple_to_key_size(out))
     }
 
+    /// 列表右侧内存列。ClusterPipeline 按槽拆开；默认 SAMPLES，不扫完整集合。
+    fn key_memory(&self, keys: Vec<RedisKey>) -> AnyResult<Vec<Option<u64>>> {
+        if !self.base().capabilities.memory_usage_supported {
+            bail!("MEMORY USAGE is not supported");
+        }
+        if keys.is_empty() {
+            return Ok(vec![]);
+        }
+        let mut conn = self.get_conn()?;
+        let mut pipe = ClusterPipeline::with_capacity(keys.len());
+        for key in &keys {
+            pipe.cmd("memory").arg("usage").arg(key.to_bytes());
+        }
+        let sizes: Vec<Option<u64>> = conn.cluster_pipe_query(&pipe, keys.len())?;
+        Ok(sizes)
+    }
+
     fn client_list(
         &self,
         node: Option<String>,
@@ -838,6 +855,7 @@ impl MeCluster {
         set_client_name_unless_minimal(&mut conn, redis_conn);
         detect_server_capabilities(&mut conn, &mut base, true);
         base.capabilities.redis_search_supported = Self::ft_list_on_primary(&mut conn);
+        base.capabilities.memory_usage_supported = Self::memory_usage_on_primary(&mut conn);
         info!("服务能力: {:?}", base.capabilities);
         let cluster_nodes: String = redis::cmd("cluster").arg("nodes").query(&mut conn)?;
         let node_list = Self::parse_node_list(cluster_nodes)?;
@@ -979,6 +997,20 @@ impl MeCluster {
             .filter(|node| node.flags.contains("master"))
             .map(|node| node.node.clone())
             .collect::<Vec<String>>()
+    }
+
+    /// MEMORY USAGE 的键不在第一个参数，query() 会按错误的槽路由。打到任意 master 探测。
+    fn memory_usage_on_primary(conn: &mut LoggingClusterConnection) -> bool {
+        let route = RoutingInfo::SingleNode(SingleNodeRoutingInfo::RandomPrimary);
+        let mut cmd = redis::cmd("memory");
+        cmd.arg("usage").arg(b"__redis_me_memory_probe__");
+        match conn.route_command(&cmd, route) {
+            Ok(_) => true,
+            Err(e) => {
+                info!("MEMORY USAGE 不可用: {e}");
+                false
+            }
+        }
     }
 
     /// FT._LIST 没有键。建连时尚无节点表，打到任意 master，能执行才算装了 RedisSearch。

@@ -32,6 +32,7 @@ import {
   removeFavoriteFolder,
   clearFavoriteFoldersForDb,
 } from '@/utils/favorite'
+import { clearKeyMemoryCacheForConn } from '@/utils/key-memory-cache'
 import { clearKeyTypeCacheForConn } from '@/utils/key-type-cache'
 import { KEY_TYPE_LIST, meKeyShort, toRedisTypeName } from '@/utils/redis-display'
 import {
@@ -325,6 +326,7 @@ async function onRefreshKey() {
   hideSearchHistory()
   // 收藏模式 F5：重载已展开的收藏目录，不触发主列表 SCAN
   if (favoriteMode.value) {
+    if (share.conn) clearKeyMemoryCacheForConn(share.conn.id)
     await favFolderPanelRef.value?.reloadExpanded()
     return
   }
@@ -459,6 +461,8 @@ async function scanKey(useCursor = false, loadAll = false, restart = false): Pro
       cursor.value = null
       scanBatchCount.value = 0
       scanBuffer = []
+      // 整表重扫时丢掉内存缓存，可见行会按新列表再查
+      clearKeyMemoryCacheForConn(share.conn.id)
     }
 
     const firstScanKeys = await scanKeyCore()
@@ -902,9 +906,21 @@ const sortByCount = computed({
     meTauri.settings.keySort = newValue ? 'count' : 'alphabet'
   },
 })
+
+const showKeyMemory = computed({
+  get() {
+    return !!meTauri.settings.keyShowMemory
+  },
+  set(newValue: boolean) {
+    meTauri.settings.keyShowMemory = newValue
+  },
+})
+
 async function handleCommand(command: string): Promise<void> {
   if (command === 'toggleKeyShow') {
     keyShowTree.value = !keyShowTree.value
+  } else if (command === 'toggleKeyMemory') {
+    showKeyMemory.value = !showKeyMemory.value
   } else if (command === 'toggleKeySort') {
     sortByCount.value = !sortByCount.value
   } else if ('mockData' === command) {
@@ -941,6 +957,7 @@ function flushDb(): void {
   meConfirm(t('keyMain.flushDbConfirm'), async () => {
     await meCommands.flushDb(share.conn!.id)
     clearKeyTypeCacheForConn(share.conn!.id)
+    clearKeyMemoryCacheForConn(share.conn!.id)
     meOk(t('keyMain.flushDbOk'))
     bus.emit(CONN_REFRESH)
     bus.emit(INFO_REFRESH)
@@ -1440,6 +1457,7 @@ async function runSearchKeys(append = false, loadAll = false, restart = false): 
     scanPaused.value = false
     scanBatchCount.value = 0
     clearSearchHits()
+    clearKeyMemoryCacheForConn(share.conn.id)
   }
   try {
     if (loadAll) await searchKeysAll()
@@ -1945,7 +1963,17 @@ async function searchKeysAll(): Promise<void> {
                 </el-dropdown-item>
               </template>
 
-              <el-dropdown-item command="toggleKeyShow" :divided="!favoriteMode">
+              <el-dropdown-item command="toggleKeyMemory" :divided="!favoriteMode">
+                <me-icon
+                  :name="showKeyMemory ? t('keyMain.hideKeyMemory') : t('keyMain.showKeyMemory')"
+                  :info="
+                    share.capabilities.memoryUsageSupported
+                      ? ''
+                      : t('keyMain.memoryUsageUnsupported')
+                  "
+                  icon="me-icon-memory" />
+              </el-dropdown-item>
+              <el-dropdown-item command="toggleKeyShow">
                 <me-icon
                   :name="keyShowTree ? t('keyMain.listView') : t('keyMain.treeView')"
                   :icon="keyShowTree ? 'me-icon-list' : 'me-icon-tree'"></me-icon>

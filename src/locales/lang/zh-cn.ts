@@ -1227,6 +1227,9 @@ export default {
     importData: '导入数据',
     listView: '平铺展示',
     treeView: '树形展示',
+    showKeyMemory: '显示内存',
+    hideKeyMemory: '隐藏内存',
+    memoryUsageUnsupported: '当前服务不支持 MEMORY USAGE',
     sortByCount: '数量排序',
     sortByAlphabet: '字母排序',
 

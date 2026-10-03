@@ -28,6 +28,7 @@
 
 ### 已完成
 
+- 键列表显示内存占用（菜单开关，默认关；不支持 MEMORY USAGE 则不显示）✅️
 - TimeSeries 键详情：浏览 / 增删改 / Info / 当前样本折线图 ✅️
 - 网络代理：HTTP / HTTPS / SOCKS5 / SOCKS5H + 系统代理 ✅️
 - SSH 隧道支持集群和哨兵 ✅️

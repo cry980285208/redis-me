@@ -59,8 +59,13 @@ macro_rules! api_commands {
 macro_rules! me_client_forwards {
     () => {
         fn field_scan(&self, param: FieldScanParam) -> AnyResult<FieldScanResult> {
-            let httl_supported = self.base().capabilities.httl_supported;
-            $crate::client::ops::field_scan::field_scan0(self.get_conn()?, param, httl_supported)
+            let caps = &self.base().capabilities;
+            $crate::client::ops::field_scan::field_scan0(
+                self.get_conn()?,
+                param,
+                caps.httl_supported,
+                caps.memory_usage_supported,
+            )
         }
 
         fn ttl(&self, key: RedisKey, ttl: i64) -> AnyResult<()> {

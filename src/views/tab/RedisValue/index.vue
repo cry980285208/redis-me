@@ -51,6 +51,7 @@ import {
   viewFmtForField,
   type ViewBytesFormat,
 } from '@/utils/format'
+import { captureKeyMemoryWrite } from '@/utils/key-memory-cache'
 import { resolveKeyType } from '@/utils/key-type-cache'
 import { toKeyTypeLabel } from '@/utils/redis-display'
 import {
@@ -902,7 +903,10 @@ async function fieldScanCore(
   useCursor: boolean,
 ): Promise<{ count: number; replaceData?: FieldScanResult }> {
   const includeMeta = fieldScanIncludeMeta()
+  // 首屏带 MEMORY USAGE。写回列表缓存，编辑后的新大小盖掉列表里的旧值。
+  const writeMemory = captureKeyMemoryWrite(share.conn?.id, share.conn?.db, share.redisKey)
   const data = await meCommands.fieldScan(share.conn!.id, buildFieldScanParam())
+  if (includeMeta) writeMemory(data.size)
   cursor.value = data.cursor
   scanBatchCount.value++
 

@@ -14,6 +14,7 @@ import i18n from '@/locales'
 import type { MeCommands } from '@/types/me-interface'
 import { commands as spectaCommands } from '@/types/tauri-specta'
 import type { RedisKey_Deserialize } from '@/types/tauri-specta'
+import { invalidateKeyMemory } from '@/utils/key-memory-cache'
 import { invalidateKeyType } from '@/utils/key-type-cache'
 
 /** 全局 `bus` 事件载荷（与 `bus.emit` / `bus.on` 一致） */
@@ -360,6 +361,7 @@ export function meDeleteKey(id: string, redisKey: RedisKey_Deserialize, thenFn?:
   meConfirm(t('util.deleteKey', { key: redisKey.key }), async () => {
     await meCommands.del(id, redisKey)
     invalidateKeyType(id, redisKey)
+    invalidateKeyMemory(id, redisKey)
     bus.emit(KEY_DELETE, redisKey)
     meOk(t('deleteOk'))
     thenFn?.()

@@ -17,6 +17,7 @@ const share = inject(shareProvideKey)!
 const minimalMode = computed(() => isConnMinimalMode(share.conn))
 const infoSupported = computed(() => share.capabilities.infoSupported)
 const searchSupported = computed(() => share.capabilities.redisSearchSupported)
+const memoryUsageSupported = computed(() => share.capabilities.memoryUsageSupported)
 </script>
 
 <template>
@@ -44,7 +45,7 @@ const searchSupported = computed(() => share.capabilities.redisSearchSupported)
       <me-tab-pane v-if="searchSupported" name="search" icon="el-icon-search" lazy>
         <RedisSearch />
       </me-tab-pane>
-      <me-tab-pane name="memory" icon="me-icon-memory" lazy>
+      <me-tab-pane v-if="memoryUsageSupported" name="memory" icon="me-icon-memory" lazy>
         <RedisMemory />
       </me-tab-pane>
       <me-tab-pane name="slow" icon="me-icon-slow" lazy>

@@ -39,6 +39,8 @@ export interface ServerCapabilities {
   httlSupported: boolean
   clusterDbSupported: boolean
   redisSearchSupported: boolean
+  /** 连接时探测 MEMORY USAGE；不支持则列表、目录分析和内存页都不发这条命令 */
+  memoryUsageSupported: boolean
 }
 
 export interface AppMainShare {

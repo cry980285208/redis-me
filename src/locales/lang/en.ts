@@ -1249,6 +1249,9 @@ Once an operation prevents Redis from keeping the space-saving encoding, special
     importData: 'Import Data',
     listView: 'List View',
     treeView: 'Tree View',
+    showKeyMemory: 'Show Memory',
+    hideKeyMemory: 'Hide Memory',
+    memoryUsageUnsupported: 'This server does not support MEMORY USAGE',
     sortByCount: 'Key Count',
     sortByAlphabet: 'Alphabet',
 

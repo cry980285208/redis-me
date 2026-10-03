@@ -244,6 +244,23 @@ impl MeClient for MeSingle {
         Ok(tuple_to_key_size(out))
     }
 
+    /// 列表右侧内存列：默认 SAMPLES，不扫完整集合。顺序与入参一致，缺失键为 None。
+    fn key_memory(&self, keys: Vec<RedisKey>) -> AnyResult<Vec<Option<u64>>> {
+        if !self.base().capabilities.memory_usage_supported {
+            bail!("MEMORY USAGE is not supported");
+        }
+        if keys.is_empty() {
+            return Ok(vec![]);
+        }
+        let mut conn = self.get_conn()?;
+        let mut pipe = Pipeline::with_capacity(keys.len());
+        for key in &keys {
+            pipe.cmd("memory").arg("usage").arg(key.to_bytes());
+        }
+        let sizes: Vec<Option<u64>> = pipe.query(&mut conn)?;
+        Ok(sizes)
+    }
+
     fn client_list(
         &self,
         _node: Option<String>,

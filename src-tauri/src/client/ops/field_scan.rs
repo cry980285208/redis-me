@@ -36,6 +36,7 @@ pub fn field_scan0(
     mut conn: MutexGuard<impl Commands>,
     param: FieldScanParam,
     httl_supported: bool,
+    memory_usage_supported: bool,
 ) -> AnyResult<FieldScanResult> {
     let bytes_format = param.bytes_format.as_ref().cloned().unwrap_or_default();
     let include_field_ttl = field_scan_include_field_ttl(&param, httl_supported);
@@ -93,6 +94,7 @@ pub fn field_scan0(
         length,
         value_truncated,
         include_meta,
+        memory_usage_supported,
     )
 }
 
@@ -1031,14 +1033,20 @@ fn field_scan_4_return(
     length: usize,
     value_truncated: bool,
     include_meta: bool,
+    memory_usage_supported: bool,
 ) -> AnyResult<FieldScanResult> {
     let (ttl, size, length, logical_length, vector_dim) = if include_meta {
         let ttl: i64 = conn.ttl(&key)?;
-        let size: u64 = redis::cmd("memory")
-            .arg("usage")
-            .arg(&key)
-            .query(&mut conn)
-            .unwrap_or(0);
+        // 不支持时不发命令，size 保持 0，String 由前端按键名+值长度粗估
+        let size: u64 = if memory_usage_supported {
+            redis::cmd("memory")
+                .arg("usage")
+                .arg(&key)
+                .query(&mut conn)
+                .unwrap_or(0)
+        } else {
+            0
+        };
         let length = resolve_field_scan_length(&mut conn, &key, &key_type, length)?;
         // Array 额外返回 ARLEN（逻辑长度）；升级 redis-rs 时同步检查 is_array_type
         let logical_length = if is_array_type(&key_type) {

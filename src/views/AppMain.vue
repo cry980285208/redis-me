@@ -34,6 +34,7 @@ import {
   isConnMinimalMode,
   mergeConnGroupsFromList,
 } from '@/utils/conn'
+import { clearKeyMemoryCacheForConn, onMemoryUsageUnsupported } from '@/utils/key-memory-cache'
 import { clearKeyTypeCacheForConn } from '@/utils/key-type-cache'
 import { mergeImportedConnList } from '@/utils/rdm'
 import {
@@ -89,7 +90,14 @@ const share = reactive<AppMainShare>({
     httlSupported: false,
     clusterDbSupported: false,
     redisSearchSupported: false,
+    memoryUsageSupported: false,
   },
+})
+// 列表批量 MEMORY USAGE 若发现命令不可用，关掉本连接能力，内存页和目录分析一起停
+onMemoryUsageUnsupported(connId => {
+  if (share.conn?.id !== connId) return
+  share.capabilities.memoryUsageSupported = false
+  if (share.tabName === 'memory') share.tabName = 'value'
 })
 provide(shareProvideKey, share)
 // #endregion
@@ -135,6 +143,7 @@ watch(
     try {
       if (oldConn) {
         clearKeyTypeCacheForConn(oldConn.id)
+        clearKeyMemoryCacheForConn(oldConn.id)
         await meCommands.disconnect(oldConn.id)
       }
 
