@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 搜索页两层：索引表，点「查询」进入该索引的 FT.SEARCH。字段定义和 FT.INFO 原文各一个弹框。
-import { computed, inject, onMounted, ref, watch } from 'vue'
+import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { connUiProvideKey, shareProvideKey } from '@/types/me-interface'
@@ -15,7 +15,9 @@ import { indexDdl } from '@/utils/search-ddl'
 import { defaultSettings } from '@/utils/settings-defaults'
 import {
   KEY_REFRESH,
+  SEARCH_CREATE,
   bus,
+  takeSearchCreateDraft,
   meCommands,
   meConfirm,
   meFormatDisplayValue,
@@ -64,6 +66,20 @@ const savingSyn = ref(false)
 const sampleVisible = ref(false)
 const sampleKind = ref('')
 const loadingSample = ref(false)
+const createVisible = ref(false)
+const createDraft = ref('')
+const creating = ref(false)
+
+/** 新建索引的起步命令。用户改完再执行，这里不发到服务器。 */
+const CREATE_DRAFT = [
+  'FT.CREATE idx:name',
+  '    ON HASH',
+  '    PREFIX 1 user:',
+  '    SCHEMA',
+  '      name  TEXT',
+  '      type  TAG',
+  '      score NUMERIC',
+].join('\n')
 
 // 只按名称、前缀模糊匹配，大小写不敏感。
 const filteredIndexes = computed(() => {
@@ -439,6 +455,33 @@ function openDoc(key: string): void {
   connUi.scrollKeyToTree(redisKey)
 }
 
+// 不传草稿就用起步命令。键详情进来时带上预填的 FT.CREATE。
+function openCreate(draft?: string): void {
+  createDraft.value = typeof draft === 'string' ? draft : CREATE_DRAFT
+  createVisible.value = true
+}
+
+function onSearchCreate(draft: string): void {
+  takeSearchCreateDraft()
+  pageMode.value = 'list'
+  openCreate(draft)
+}
+
+// 只发一条 FT.CREATE。集群由后端打到每个 master。失败时弹框留着，方便改完再执行。
+async function runCreate(): Promise<void> {
+  const text = createDraft.value.trim()
+  if (!text) return
+  creating.value = true
+  try {
+    await meCommands.searchIndexCreate(share.conn!.id, text)
+    createVisible.value = false
+    meOk(t('redisSearch.createOk'))
+    await loadIndexes()
+  } finally {
+    creating.value = false
+  }
+}
+
 // 每次打开都重选样例。
 function openSample(): void {
   sampleKind.value = ''
@@ -492,20 +535,15 @@ function dropIndex(row: SearchIndexInfo): void {
 }
 
 onMounted(() => {
+  bus.on(SEARCH_CREATE, onSearchCreate)
   void loadIndexes()
+  // 搜索页是懒加载，事件可能在挂载前就发出了。
+  const draft = takeSearchCreateDraft()
+  if (draft) onSearchCreate(draft)
 })
 
-// 换库不重建页面。索引跟当前库走，库号变了要重拉。
-watch(
-  () => share.conn!.db,
-  () => {
-    void loadIndexes()
-  },
-)
-
-// 列表弹框关掉时，新增框不要留在上面。
-watch(synVisible, shown => {
-  if (!shown) synAddVisible.value = false
+onUnmounted(() => {
+  bus.off(SEARCH_CREATE, onSearchCreate)
 })
 </script>
 
@@ -514,13 +552,16 @@ watch(synVisible, shown => {
     <!-- 索引列表 -->
     <template v-if="pageMode === 'list'">
       <div class="me-flex header">
-        <div class="me-flex list-side">
-          <!-- 只读不提供写入样例 -->
+        <div class="list-side">
+          <!-- 只读不提供新建和样例 -->
+          <el-button v-if="canEdit" type="primary" icon="el-icon-plus" @click="openCreate()">
+            {{ t('redisSearch.create') }}
+          </el-button>
           <el-button v-if="canEdit" icon="el-icon-document-add" @click="openSample">
             {{ t('redisSearch.sample') }}
           </el-button>
           <!-- 列表上就能进官网，不必先打开某个索引的查询 -->
-          <me-website to="search" :margin-left="canEdit ? '10px' : '0'" />
+          <me-website to="search" margin-left="0" />
         </div>
         <div>
           <el-input
@@ -892,6 +933,34 @@ watch(synVisible, shown => {
       </template>
     </el-dialog>
 
+    <!-- 起步命令可改。不用 MeDialog，标题旁要跟文档入口、不要图标 -->
+    <el-dialog
+      v-model="createVisible"
+      width="720px"
+      align-center
+      draggable
+      destroy-on-close
+      append-to-body>
+      <template #header>
+        <div class="create-header">
+          <span class="create-title">{{ t('redisSearch.create') }}</span>
+          <me-website to="ftCreate" margin-left="8px" />
+        </div>
+      </template>
+      <p class="sample-hint">{{ t('redisSearch.createHint') }}</p>
+      <me-code v-model="createDraft" mode="redis" copyable style="height: 52vh" />
+      <template #footer>
+        <el-button @click="createVisible = false">{{ t('cancel') }}</el-button>
+        <el-button
+          type="primary"
+          :disabled="!createDraft.trim()"
+          :loading="creating"
+          @click="runCreate">
+          {{ t('redisSearch.createRun') }}
+        </el-button>
+      </template>
+    </el-dialog>
+
     <!-- 由 FT.INFO 还原的 FT.CREATE，不是服务器保存的原文 -->
     <me-dialog
       v-model="ddlVisible"
@@ -963,6 +1032,27 @@ watch(synVisible, shown => {
 .query-side,
 .query-tools {
   align-items: center;
+}
+
+.list-side {
+  display: flex;
+  gap: 10px;
+
+  /* Element Plus 给相邻按钮加了 margin，和 gap 叠在一起会把两个按钮撑开 */
+  :deep(.el-button + .el-button) {
+    margin-left: 0;
+  }
+}
+
+.create-header {
+  display: flex;
+  align-items: center;
+}
+
+.create-title {
+  font-size: var(--el-dialog-title-font-size);
+  line-height: var(--el-dialog-font-line-height);
+  color: var(--el-text-color-primary);
 }
 
 .query-tools {

@@ -525,6 +525,14 @@ impl MeClient for MeSingle {
         Ok(())
     }
 
+    fn search_index_create(&self, command: String) -> AnyResult<()> {
+        use crate::client::ops::search::create_cmd;
+
+        let mut conn = self.get_conn()?;
+        let _: Value = create_cmd(&command)?.query(&mut conn)?;
+        Ok(())
+    }
+
     fn search_tag_vals(&self, index: String, field: String) -> AnyResult<Vec<String>> {
         use crate::client::ops::search::{parse_ft_tagvals, tagvals_cmd};
 

@@ -197,6 +197,7 @@ fn tauri_specta_commands() -> Commands<tauri::Wry> {
         search_index_list,
         search_query,
         search_index_drop,
+        search_index_create,
         search_tag_vals,
         search_syn_dump,
         search_syn_update,

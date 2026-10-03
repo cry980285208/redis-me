@@ -73,6 +73,7 @@ pub trait MeClient: Send + Sync {
     fn search_index_list(&self) -> AnyResult<Vec<SearchIndexInfo>>;
     fn search_query(&self, param: SearchQueryParam) -> AnyResult<SearchQueryResult>;
     fn search_index_drop(&self, index: String) -> AnyResult<()>;
+    fn search_index_create(&self, command: String) -> AnyResult<()>;
     fn search_tag_vals(&self, index: String, field: String) -> AnyResult<Vec<String>>;
     fn search_syn_dump(&self, index: String) -> AnyResult<Vec<SearchSynGroup>>;
     fn search_syn_update(&self, index: String, group: String, terms: Vec<String>) -> AnyResult<()>;

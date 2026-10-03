@@ -922,6 +922,10 @@ export default {
     synAddOk: '已添加',
     synTermsKept: '已有的词去不掉，只会追加新词',
     filter: '模糊筛选（名称、前缀）',
+    create: '新建索引',
+    createHint: '改索引名、前缀和字段类型后再执行。停用词、向量参数也写在这条命令里',
+    createRun: '执行',
+    createOk: '已创建索引',
     sample: '索引样例',
     sampleTitle: '准备搜索样例数据',
     sampleHint: '选择一套样例。会写入数据并创建搜索所需的索引',
@@ -1338,5 +1342,6 @@ export default {
     file_read_failed: '文件读取失败: {filename} ({detail})',
     file_write_failed: '文件写入失败: {filename} ({detail})',
     search_reply_invalid: 'RedisSearch 回复无法解析（{detail}）',
+    search_create_not_ft_create: '只接受一条 FT.CREATE',
   },
 }

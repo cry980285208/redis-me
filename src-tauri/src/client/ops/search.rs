@@ -171,6 +171,25 @@ pub fn apply_sample_data(conn: &mut impl Commands, kind: &str) -> AnyResult<()> 
     exec_lines(conn, sample_of(kind)?.data)
 }
 
+/// 把编辑器里的一条 `FT.CREATE` 收成命令。换行当空格。其它命令拒绝。
+pub fn create_cmd(text: &str) -> AnyResult<redis::Cmd> {
+    let text = text.trim();
+    if text.is_empty() {
+        bail!(AppError::EmptyParameters);
+    }
+    let (name, args) = parse_command(text)?;
+    if !name.eq_ignore_ascii_case("FT.CREATE") {
+        bail!(AppError::SearchCreateNotFtCreate);
+    }
+    // 至少要有索引名。类型、前缀、SCHEMA 交给 Redis 自己验。
+    if args.first().is_none_or(|arg| arg.is_empty()) {
+        bail!(AppError::EmptyParameters);
+    }
+    let mut cmd = redis::cmd("FT.CREATE");
+    cmd.arg(&args);
+    Ok(cmd)
+}
+
 /// `FT.CREATE` 命令。集群要对每个 master 各发一次。
 pub fn sample_create_cmd(kind: &str) -> AnyResult<redis::Cmd> {
     let mut cmd = redis::cmd("FT.CREATE");
@@ -1084,5 +1103,56 @@ mod tests {
         assert_eq!(n, 55);
         assert_eq!(sample_index_name("movies").unwrap(), "idx:movies_vss");
         assert!(sample_index_name("nope").is_err());
+    }
+
+    /// 把命令参数收成字符串。命令名以 redis 实际发出的为准。
+    fn cmd_args(cmd: &redis::Cmd) -> Vec<String> {
+        cmd.args_iter()
+            .map(|arg| match arg {
+                redis::Arg::Simple(bytes) => String::from_utf8(bytes.to_vec()).unwrap(),
+                _ => unreachable!("FT.CREATE args are plain bytes"),
+            })
+            .collect()
+    }
+
+    /// 换行和引号收成一条 FT.CREATE。空文本、没有索引名、其它命令都拒绝。
+    #[test]
+    fn create_cmd_parses_one_ft_create() {
+        let cmd =
+            create_cmd("ft.create idx\n    ON HASH\n    PREFIX 1 \"user: \"\n    SCHEMA name TEXT")
+                .unwrap();
+        assert_eq!(
+            cmd_args(&cmd),
+            [
+                "FT.CREATE",
+                "idx",
+                "ON",
+                "HASH",
+                "PREFIX",
+                "1",
+                "user: ",
+                "SCHEMA",
+                "name",
+                "TEXT",
+            ]
+        );
+        assert!(
+            create_cmd("  ")
+                .unwrap_err()
+                .to_string()
+                .contains("empty_parameters")
+        );
+        assert!(
+            create_cmd("FT.CREATE")
+                .unwrap_err()
+                .to_string()
+                .contains("empty_parameters")
+        );
+        assert!(
+            create_cmd("FT.DROPINDEX idx")
+                .unwrap_err()
+                .to_string()
+                .contains("search_create_not_ft_create")
+        );
     }
 }

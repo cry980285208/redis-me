@@ -24,8 +24,10 @@ const DOC_PATHS = {
   // 中英文文档路径不同；Valkey 没有对应页面，下拉里不显示
   search: {
     redis: '/docs/latest/develop/ai/search-and-query/query/',
-    redisZh: '/docs/latest/develop/interact/search-and-query/query/',
+    redisZh: '/docs/latest/develop/interact/search-and-query/',
   },
+  // Valkey 没有这条命令文档，下拉里不显示
+  ftCreate: { redis: '/docs/latest/commands/ft.create/' },
 } as const
 
 type DocTopic = keyof typeof DOC_PATHS

@@ -939,6 +939,11 @@ export default {
     synAddOk: 'Added',
     synTermsKept: 'Existing terms stay. Only new terms are added.',
     filter: 'Filter (Name, Prefix)',
+    create: 'Create index',
+    createHint:
+      'Edit the index name, prefix, and field types, then run. Stopwords and vector options go in this command too',
+    createRun: 'Run',
+    createOk: 'Index created',
     sample: 'Sample index',
     sampleTitle: 'Getting your sample data ready for Search',
     sampleHint:
@@ -1363,5 +1368,6 @@ Once an operation prevents Redis from keeping the space-saving encoding, special
     file_read_failed: 'File read failed: {filename} ({detail})',
     file_write_failed: 'File write failed: {filename} ({detail})',
     search_reply_invalid: 'Could not parse the RedisSearch reply ({detail})',
+    search_create_not_ft_create: 'Only a single FT.CREATE command is accepted',
   },
 }

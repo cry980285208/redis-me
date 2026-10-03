@@ -74,7 +74,29 @@ const REDIS_ARGS = new Set([
   'DISABLE',
 ])
 
-type RedisHighlightState = { indexDone: boolean; words: number }
+/** 向量参数独占一行时比字段更缩进。和字段名撞车的 TYPE、M 只在这种行上当参数。 */
+const VECTOR_LINE = new Set([
+  'TYPE',
+  'DIM',
+  'DISTANCE_METRIC',
+  'M',
+  'EF_CONSTRUCTION',
+  'EF_RUNTIME',
+  'EPSILON',
+  'INITIAL_CAP',
+  'BLOCK_SIZE',
+])
+
+type RedisHighlightState = {
+  indexDone: boolean
+  words: number
+  inSchema: boolean
+  /** 上一词是 AS，下一个词是别名，按字符串上色 */
+  afterAs: boolean
+  lineIndent: number
+  /** 第一条字段行的缩进。-1 表示还没遇到字段。 */
+  schemaIndent: number
+}
 
 /** 同一次调用结果要复用。tags.special 每次都会新建 tag，高亮规则对不上。 */
 const indexTag = tags.special(tags.variableName)
@@ -96,9 +118,24 @@ export const redisHighlighting = syntaxHighlighting(redisHighlight)
 
 export const redisLang = new LanguageSupport(
   StreamLanguage.define<RedisHighlightState>({
-    startState: () => ({ indexDone: false, words: 0 }),
+    startState: () => ({
+      indexDone: false,
+      words: 0,
+      inSchema: false,
+      afterAs: false,
+      lineIndent: 0,
+      schemaIndent: -1,
+    }),
     token(stream, state) {
-      if (stream.sol()) state.words = 0
+      if (stream.sol()) {
+        state.words = 0
+        state.lineIndent = 0
+        while (stream.peek() === ' ' || stream.peek() === '\t') {
+          state.lineIndent += stream.peek() === '\t' ? 2 : 1
+          stream.next()
+        }
+        if (state.lineIndent > 0) return null
+      }
       if (stream.eatSpace()) return null
       if (stream.peek() === '"') {
         stream.next()
@@ -110,17 +147,46 @@ export const redisLang = new LanguageSupport(
           }
           if (ch === '"') break
         }
+        state.words++
+        // 引号里的别名仍是字符串。引号里的索引名要标成索引，否则下一行的 HASH 会被当成索引名。
+        if (state.afterAs) {
+          state.afterAs = false
+          return 'string'
+        }
+        if (!state.indexDone && state.words === 2) {
+          state.indexDone = true
+          return 'index'
+        }
+        // 第一条字段行记下缩进，后面更深的 TYPE、DIM 不当成字段名。
+        if (state.inSchema && state.words === 1 && state.schemaIndent < 0) {
+          state.schemaIndent = state.lineIndent
+        }
         return 'string'
       }
       stream.match(/[^\s"]+/)
       const word = stream.current().toUpperCase()
       state.words++
+      // 别名不论写不写引号，都跟字符串一个颜色
+      if (state.afterAs) {
+        state.afterAs = false
+        return 'string'
+      }
       if (!state.indexDone && state.words === 1 && word === 'FT.CREATE') return 'keyword'
       if (!state.indexDone && state.words === 2) {
         state.indexDone = true
         return 'index'
       }
-      if (REDIS_KEYWORDS.has(word)) return 'keyword'
+      // 字段名在类型前面，就算叫 type、score 也按字符串上色。更深缩进的 TYPE、DIM 仍是参数。
+      if (state.inSchema && state.words === 1 && word !== 'SCHEMA') {
+        if (state.schemaIndent < 0) state.schemaIndent = state.lineIndent
+        const nestedParam = state.lineIndent > state.schemaIndent && VECTOR_LINE.has(word)
+        if (!nestedParam) return 'string'
+      }
+      if (REDIS_KEYWORDS.has(word)) {
+        if (word === 'SCHEMA') state.inSchema = true
+        if (word === 'AS') state.afterAs = true
+        return 'keyword'
+      }
       if (REDIS_ARGS.has(word)) return 'arg'
       return null
     },

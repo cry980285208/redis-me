@@ -72,6 +72,8 @@ pub enum AppError {
     SearchReplyInvalid {
         detail: String,
     },
+    /// 新建索引只接受一条 FT.CREATE
+    SearchCreateNotFtCreate,
 
     // 配置相关
     InvalidNodeFormat {

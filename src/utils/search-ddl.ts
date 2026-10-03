@@ -48,7 +48,7 @@ const FLAG_ORDER = [
 const DATA_TYPES = new Set(['FLOAT32', 'FLOAT64', 'FLOAT16', 'BFLOAT16'])
 const ALGOS = new Set(['FLAT', 'HNSW', 'BF', 'SVS', 'TIERED'])
 
-/** 和 RedisInsight 样例命令一致：ON / SCHEMA 4 格，选项 8 格，字段 6 格，向量参数 8 格。 */
+/** 和 RedisInsight 样例命令一致：ON / PREFIX / SCHEMA 4 格，其余选项 8 格，字段 6 格，向量参数 8 格。 */
 const PAD_ON = 4
 const PAD_OPT = 8
 const PAD_SCHEMA = 4
@@ -126,7 +126,7 @@ function stringList(value: unknown): string[] {
   return s ? [s] : []
 }
 
-/** 有 ON 时选项缩进 8，否则 4。SCHEMA 始终和 ON 对齐。 */
+/** 有 ON 时，PREFIX 与 ON 对齐，其余选项缩进 8。SCHEMA 始终和 ON 对齐。 */
 function pushDefinition(lines: string[], value: unknown): number {
   if (value == null) return PAD_ON
   const pairs = asPairs(value)
@@ -142,7 +142,7 @@ function pushDefinition(lines: string[], value: unknown): number {
   const optPad = keyType ? PAD_OPT : PAD_ON
   if (keyType) lines.push(pad(PAD_ON, `ON ${keyType.toUpperCase()}`))
   if (prefixes.length) {
-    lines.push(pad(optPad, `PREFIX ${prefixes.length} ${prefixes.map(quoteName).join(' ')}`))
+    lines.push(pad(PAD_ON, `PREFIX ${prefixes.length} ${prefixes.map(quoteName).join(' ')}`))
   }
   if (filter) lines.push(pad(optPad, `FILTER ${quoteName(filter)}`))
   if (language && language.toLowerCase() !== 'english') {
@@ -294,6 +294,45 @@ function omitFlag(flag: string, keyType: string, type: string, flags: Set<string
   if (keyType === 'JSON') return true
   if (type === 'NUMERIC') return true
   return type === 'TAG' && flags.has('CASESENSITIVE')
+}
+
+/**
+ * 从键详情预填一条 FT.CREATE。前缀是键名里最后一个冒号及其前面的部分。
+ * 字段一律先写成 TEXT，JSON 用 `$.字段`。没有字段时留一行 field，方便改。
+ */
+export function indexCreateDraft(keyType: 'HASH' | 'JSON', key: string, fields: string[]): string {
+  const prefix = keyPrefix(key)
+  const index = indexName(prefix)
+  const lines = [`FT.CREATE ${quoteArg(index)}`, `    ON ${keyType}`]
+  if (prefix) lines.push(`    PREFIX 1 ${quoteArg(prefix)}`)
+  lines.push('    SCHEMA')
+  const seen = new Set<string>()
+  for (const field of fields) {
+    const name = field.trim()
+    if (!name || seen.has(name)) continue
+    seen.add(name)
+    const ident = keyType === 'JSON' ? jsonPath(name) : name
+    lines.push(`      ${quoteArg(ident)} TEXT`)
+  }
+  if (!seen.size) lines.push('      field TEXT')
+  return lines.join('\n')
+}
+
+/** `user:1001` → `user:`；没有冒号就用整个键名。 */
+function keyPrefix(key: string): string {
+  const i = key.lastIndexOf(':')
+  return i < 0 ? key : key.slice(0, i + 1)
+}
+
+function indexName(prefix: string): string {
+  const base = prefix.replace(/:+$/, '')
+  return base ? `idx:${base}` : 'idx:name'
+}
+
+function jsonPath(name: string): string {
+  if (name.startsWith('$.')) return name
+  if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) return `$.${name}`
+  return `$["${name.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"]`
 }
 
 function quoteName(s: string): string {

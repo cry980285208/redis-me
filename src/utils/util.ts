@@ -24,6 +24,8 @@ export type MeBusEvents = {
   KEY_RENAME: { oldKey: RedisKey_Deserialize; newKey: RedisKey_Deserialize }
   /** 载荷未使用；监听器应 `() => refreshKey()` 包装，避免与多参函数签名冲突 */
   KEY_REFRESH: undefined
+  /** Hash/JSON 键详情预填的 FT.CREATE。搜索页可能尚未挂载，配合 takeSearchCreateDraft */
+  SEARCH_CREATE: string
   INFO_REFRESH: boolean | undefined
   CONN_REFRESH: void
 }
@@ -45,6 +47,22 @@ export const bus = mitt<MeBusEvents>()
 export const KEY_DELETE = 'KEY_DELETE'
 export const KEY_RENAME = 'KEY_RENAME'
 export const KEY_REFRESH = 'KEY_REFRESH'
+export const SEARCH_CREATE = 'SEARCH_CREATE'
+
+/** 搜索页还没挂载时先记下草稿，挂载后再打开新建索引。 */
+let searchCreateDraft: string | null = null
+
+export function requestSearchCreate(draft: string): void {
+  searchCreateDraft = draft
+  bus.emit(SEARCH_CREATE, draft)
+}
+
+export function takeSearchCreateDraft(): string | null {
+  const draft = searchCreateDraft
+  searchCreateDraft = null
+  return draft
+}
+
 export const INFO_REFRESH = 'INFO_REFRESH'
 export const CONN_REFRESH = 'CONN_REFRESH'
 export const CONN_LIST_WINDOWS_SYNC = 'CONN_LIST_WINDOWS_SYNC'

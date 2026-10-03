@@ -25,6 +25,7 @@ import type {
   RedisKey_Deserialize,
   ScanCursor,
 } from '@/types/tauri-specta'
+import { isConnMinimalMode } from '@/utils/conn'
 import {
   detectViewFormatAuto,
   detectedViewLabel,
@@ -60,12 +61,14 @@ import {
   compileRedisGlobFilter,
   computeScanProgress,
 } from '@/utils/redis-glob'
+import { indexCreateDraft } from '@/utils/search-ddl'
 import { defaultSettings } from '@/utils/settings-defaults'
 import { meTtlFromAt, meTtlToAt } from '@/utils/ttl'
 import {
   bus,
   KEY_DELETE,
   KEY_REFRESH,
+  requestSearchCreate,
   meCommands,
   meConfirm,
   meCopy,
@@ -1585,6 +1588,38 @@ function openCommandHelp() {
   const group = type ? KEY_TYPE_TO_GROUP[type] : ''
   commandHelpRef.value?.open({ group })
 }
+
+// 搜索页新建索引。只带当前已加载的 Hash 字段，或 JSON 顶层字段，类型先写 TEXT。
+const canCreateIndex = computed(
+  () =>
+    canEdit.value &&
+    share.capabilities.redisSearchSupported &&
+    !isConnMinimalMode(share.conn) &&
+    (hashType.value || jsonType.value),
+)
+
+function loadedIndexFields(): string[] {
+  if (hashType.value) {
+    return dataList.value.flatMap(row => {
+      try {
+        const name = meFormatViewValue(String(row.key ?? ''), 'utf8').trim()
+        return name ? [name] : []
+      } catch {
+        return []
+      }
+    })
+  }
+  const doc = redisValue.value?.value
+  if (!doc || typeof doc !== 'object' || Array.isArray(doc)) return []
+  return Object.keys(doc as Record<string, unknown>)
+}
+
+function openCreateIndex(): void {
+  const key = share.redisKey?.key ?? ''
+  const keyType = jsonType.value ? 'JSON' : 'HASH'
+  requestSearchCreate(indexCreateDraft(keyType, key, loadedIndexFields()))
+  share.tabName = 'search'
+}
 async function onKeyMoreCommand(command: string) {
   if (command === 'refreshKey') {
     await onFooterRefreshKey()
@@ -1604,6 +1639,8 @@ async function onKeyMoreCommand(command: string) {
     void showSlot()
   } else if (command === 'showLocation') {
     void showLocation()
+  } else if (command === 'createIndex') {
+    openCreateIndex()
   } else if (command === 'commandHelp') {
     openCommandHelp()
   } else if (command === 'keyShort') {
@@ -1877,6 +1914,9 @@ onUnmounted(() => {
                 </el-dropdown-item>
                 <el-dropdown-item v-if="canEdit" command="duplicateKey">
                   <me-icon icon="el-icon-copy-document" :name="t('redisValue.duplicateKey')" />
+                </el-dropdown-item>
+                <el-dropdown-item v-if="canCreateIndex" command="createIndex">
+                  <me-icon icon="el-icon-plus" :name="t('redisSearch.create')" />
                 </el-dropdown-item>
                 <el-dropdown-item v-if="share.conn?.cluster" command="showSlot" divided>
                   <me-icon icon="me-icon-slot" :name="t('redisValue.slotTitle')" />

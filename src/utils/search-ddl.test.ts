@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test'
 
-import { indexDdl } from '@/utils/search-ddl'
+import { indexCreateDraft, indexDdl } from '@/utils/search-ddl'
 
 describe('indexDdl', () => {
   it('RESP2 交替数组还原 FT.CREATE，统计里的 NaN 不影响', () => {
@@ -16,7 +16,7 @@ describe('indexDdl', () => {
       [
         'FT.CREATE idx',
         '    ON HASH',
-        '        PREFIX 1 "user:"',
+        '    PREFIX 1 "user:"',
         '    SCHEMA',
         '      "name" TEXT WITHSUFFIXTRIE',
       ].join('\n'),
@@ -44,7 +44,7 @@ describe('indexDdl', () => {
       [
         'FT.CREATE idx:movies_vss',
         '    ON JSON',
-        '        PREFIX 1 "movie:"',
+        '    PREFIX 1 "movie:"',
         '        NOOFFSETS',
         '    SCHEMA',
         '      "$.title" AS "title" TEXT',
@@ -86,7 +86,7 @@ describe('indexDdl', () => {
       [
         'FT.CREATE idx:bikes_vss',
         '    ON HASH',
-        '        PREFIX 1 "bikes:"',
+        '    PREFIX 1 "bikes:"',
         '    SCHEMA',
         '      "model" TEXT NOSTEM SORTABLE',
         '      "price" NUMERIC SORTABLE',
@@ -139,6 +139,38 @@ describe('indexDdl', () => {
         '    ON JSON',
         '    SCHEMA',
         '      "$.title" AS "title" TEXT SORTABLE',
+      ].join('\n'),
+    )
+  })
+
+  it('键详情预填：前缀取到最后一个冒号，字段先写 TEXT', () => {
+    expect(indexCreateDraft('HASH', 'user:1001', ['name', 'name', ' score '])).toBe(
+      [
+        'FT.CREATE idx:user',
+        '    ON HASH',
+        '    PREFIX 1 user:',
+        '    SCHEMA',
+        '      name TEXT',
+        '      score TEXT',
+      ].join('\n'),
+    )
+    expect(indexCreateDraft('JSON', 'order:2024:9', ['title', 'a.b'])).toBe(
+      [
+        'FT.CREATE idx:order:2024',
+        '    ON JSON',
+        '    PREFIX 1 order:2024:',
+        '    SCHEMA',
+        '      $.title TEXT',
+        `      ${JSON.stringify('$["a.b"]')} TEXT`,
+      ].join('\n'),
+    )
+    expect(indexCreateDraft('HASH', 'lonely', [])).toBe(
+      [
+        'FT.CREATE idx:lonely',
+        '    ON HASH',
+        '    PREFIX 1 lonely',
+        '    SCHEMA',
+        '      field TEXT',
       ].join('\n'),
     )
   })
