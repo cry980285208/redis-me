@@ -10,7 +10,7 @@ Although the RedisME GUI supports most scenarios, running commands in the termin
 - **Command List**: Click the icon to view command groups, syntax, descriptions, etc.
 - **Shortcuts**: Ctrl+L/C/A/E for clear screen/stop current command/move cursor to start/end; F11 for fullscreen
 - **Extended Features**: Collapsible command output, selection copy, right-click paste, auto-copy results, etc.
-- **Multi-line Paste**: A newline runs that line immediately; a final line without a newline stays in the input
+- **Multi-line Paste**: Choose whether to run the text as one command or run each line
 - **Built-in Commands**: clear to clear screen, help for help, open to open a URL
 - **Cluster Mode**: Automatic command broadcasting, execution on specified nodes
   - When auto-broadcast is enabled and no node is selected, commands such as `CONFIG SET` and `SLOWLOG RESET` are

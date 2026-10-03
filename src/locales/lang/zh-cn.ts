@@ -950,6 +950,10 @@ export default {
 ② 正常情况下无需指定节点，仅在查看特定节点配置等特殊场景可手动指定节点
     `,
     welcome: '欢迎使用 {RedisME} Terminal',
+    pasteMultiTitle: '检测到多行文本',
+    pasteMultiHint: '请确认作为单条命令执行，还是每行命令单独执行（共{n}条）',
+    pasteAsOne: '单条命令',
+    pastePerLine: '多条命令',
     autoBroadcast: '自动广播',
     readonlyHint: '只读模式下暂不支持执行命令',
     readonlyWriteHint: '只读模式下不允许执行写入或非只读命令',

@@ -968,6 +968,10 @@ export default {
 ② Usually there is no need to specify a node. Manual node specification is only required in special scenarios such as viewing the configuration of a specific node
     `,
     welcome: 'Welcome to {RedisME} Terminal',
+    pasteMultiTitle: 'Multiple lines detected',
+    pasteMultiHint: 'Run as one command, or run each line ({n} in total)',
+    pasteAsOne: 'One command',
+    pastePerLine: 'Each line',
     autoBroadcast: 'Auto Broadcast',
     readonlyHint: 'Executing commands is temporarily not supported in read-only mode',
     readonlyWriteHint: 'Write or non-readonly commands are not allowed in read-only mode',

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // #region 导入
-import { computed, inject, nextTick, ref, watch } from 'vue'
+import { computed, inject, nextTick, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import MeIcon from '@/components/MeIcon.vue'
@@ -57,13 +57,16 @@ function formatCommandResult(data: string): string {
   return colorText('var(--el-color-success)', html)
 }
 
-// 定制化执行命令
-async function execCommand(command: string): Promise<string> {
-  if (!canEdit.value && !isReadonlyCommand(command)) {
-    return colorText('var(--el-color-warning)', t('redisTerminal.readonlyWriteHint'))
-  }
+// 定制化执行命令。pasteEntered 同步置位，供多行粘贴判断有没有进到这里
+let pasteEntered = false
+let pasteDone: (() => void) | null = null
 
+async function execCommand(command: string): Promise<string> {
+  pasteEntered = true
   try {
+    if (!canEdit.value && !isReadonlyCommand(command)) {
+      return colorText('var(--el-color-warning)', t('redisTerminal.readonlyWriteHint'))
+    }
     const param = {
       command,
       node: node.value,
@@ -77,6 +80,12 @@ async function execCommand(command: string): Promise<string> {
     autoCopyIfNeed(e)
     return colorText('var(--el-color-error)', `(error) ${String(e)}`)
   }
+}
+
+function finishCommand(): void {
+  const done = pasteDone
+  pasteDone = null
+  done?.()
 }
 
 // 自动复制命令结果
@@ -112,19 +121,162 @@ function openKeyShortDialog() {
 }
 
 const keyShortcuts = computed(() => getTerminalShortcuts(t))
+
+// 多行粘贴：单条命令或每行一条。关掉弹框则取消。
+type XtermExpose = {
+  getCommand: () => string
+  setCommand: (command: string) => void
+  execute: (command: string) => boolean
+}
+const xtermRef = useTemplateRef<XtermExpose>('xtermRef')
+
+type PasteMode = 'one' | 'lines'
+const pasteAskVisible = ref(false)
+const pasteLineCount = ref(0)
+let pasteAskMode: PasteMode | null = null
+let pasteAskResolve: ((mode: PasteMode | null) => void) | null = null
+
+function choosePasteMode(mode: PasteMode): void {
+  pasteAskMode = mode
+  pasteAskVisible.value = false
+}
+
+function settlePasteAsk(mode: PasteMode | null): void {
+  const resolve = pasteAskResolve
+  pasteAskResolve = null
+  pasteAskMode = null
+  resolve?.(mode)
+}
+
+function askPasteMode(count: number): Promise<PasteMode | null> {
+  pasteLineCount.value = count
+  pasteAskMode = null
+  pasteAskVisible.value = true
+  return new Promise(resolve => {
+    pasteAskResolve = resolve
+  })
+}
+
+let pasteQueue: Promise<void> = Promise.resolve()
+
+function enqueue(task: () => Promise<void> | void): void {
+  pasteQueue = pasteQueue.then(task).catch((error: unknown) => console.error(error))
+}
+
+function runCommand(cmd: string): Promise<void> {
+  const term = xtermRef.value
+  if (!term) return Promise.resolve()
+  return new Promise(resolve => {
+    pasteEntered = false
+    pasteDone = resolve
+    term.execute(cmd)
+    // help / clear / open 不进 execCommand
+    if (!pasteEntered) {
+      pasteDone = null
+      resolve()
+    }
+  })
+}
+
+function normalizePaste(text: string): string {
+  return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+}
+
+function commandLines(text: string): string[] {
+  return text
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+}
+
+// 不足两行返回 false，调用方继续走原来的粘贴。单条命令保留原文换行。
+function enqueueMultiPaste(text: string): boolean {
+  const normalized = normalizePaste(text)
+  const lines = commandLines(normalized)
+  if (lines.length < 2) return false
+  enqueue(() => pasteLines(normalized, lines))
+  return true
+}
+
+async function pasteLines(text: string, lines: string[]): Promise<void> {
+  const term = xtermRef.value
+  if (!term) return
+  const mode = await askPasteMode(lines.length)
+  if (!mode) return
+  const typed = term.getCommand().trim()
+  const cmds =
+    mode === 'one'
+      ? [[typed, text.trim()].filter(Boolean).join(' ')]
+      : lines.map((line, i) => (i === 0 && typed ? `${typed} ${line}` : line))
+  for (const cmd of cmds) await runCommand(cmd)
+  term.setCommand('')
+}
+
+function onPaste(event: ClipboardEvent): void {
+  const data = event.clipboardData
+  const text = data?.getData('text/plain') || data?.getData('text') || ''
+  if (!enqueueMultiPaste(text)) return
+  event.preventDefault()
+}
+
+// 右键按下时选区还在；到 contextmenu 时可能已被清掉，有选区则留给组件复制
+let selectedOnPointer = ''
+
+function onMouseDown(): void {
+  selectedOnPointer = document.getSelection()?.toString() ?? ''
+}
+
+function insertAtCursor(root: HTMLElement, text: string): void {
+  const term = xtermRef.value
+  if (!term) return
+  const input = root.querySelector('textarea')
+  const current = term.getCommand()
+  const at = input instanceof HTMLTextAreaElement ? input.selectionStart : current.length
+  term.setCommand(current.slice(0, at) + text.trim() + current.slice(at))
+}
+
+function onContextMenu(event: MouseEvent): void {
+  const selected = document.getSelection()?.toString() || selectedOnPointer
+  selectedOnPointer = ''
+  if (selected) return
+  event.preventDefault()
+  event.stopPropagation()
+  const root = event.currentTarget
+  if (!(root instanceof HTMLElement)) return
+  void navigator.clipboard
+    .readText()
+    .then(text => {
+      if (!text || enqueueMultiPaste(text)) return
+      enqueue(() => insertAtCursor(root, text))
+    })
+    .catch((error: unknown) => console.error(error))
+}
+
+onUnmounted(() => {
+  settlePasteAsk(null)
+  finishCommand()
+})
 // #endregion
 </script>
 
 <template>
   <div class="redis-terminal">
     <!-- 命令输入 -->
-    <me-xterm
+    <div
       v-if="showCode"
       class="terminal"
-      :exec-command="execCommand"
-      :prefix
-      :welcome
-      :command-help="commandHelp" />
+      @paste.capture="onPaste"
+      @mousedown.capture="onMouseDown"
+      @contextmenu.capture="onContextMenu">
+      <me-xterm
+        ref="xtermRef"
+        class="terminal"
+        :exec-command="execCommand"
+        :on-command-done="finishCommand"
+        :prefix
+        :welcome
+        :command-help="commandHelp" />
+    </div>
 
     <!-- 集群节点 -->
     <div class="node me-flex" v-if="share.conn?.cluster">
@@ -182,6 +334,32 @@ const keyShortcuts = computed(() => getTerminalShortcuts(t))
 
     <!-- 命令帮助 -->
     <CommandHelp ref="commandHelpRef" />
+
+    <!-- 多行粘贴 -->
+    <el-dialog
+      v-model="pasteAskVisible"
+      width="440px"
+      align-center
+      append-to-body
+      @closed="settlePasteAsk(pasteAskMode)">
+      <template #header>
+        <me-icon
+          class="paste-ask-title"
+          icon="el-icon-warning-filled"
+          :name="t('redisTerminal.pasteMultiTitle')" />
+      </template>
+      <p class="paste-ask">{{ t('redisTerminal.pasteMultiHint', { n: pasteLineCount }) }}</p>
+      <template #footer>
+        <div class="paste-ask-actions">
+          <el-button @click="choosePasteMode('one')" type="primary">
+            {{ t('redisTerminal.pasteAsOne') }}
+          </el-button>
+          <el-button @click="choosePasteMode('lines')" type="success">
+            {{ t('redisTerminal.pastePerLine') }}
+          </el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -220,6 +398,29 @@ const keyShortcuts = computed(() => getTerminalShortcuts(t))
       height: 30px;
       padding: 4px;
     }
+  }
+}
+
+.paste-ask-title {
+  font-weight: 600;
+
+  :deep(.el-icon) {
+    color: var(--el-color-warning);
+    font-size: 18px;
+  }
+}
+
+.paste-ask {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.paste-ask-actions {
+  display: flex;
+  justify-content: space-between;
+
+  .el-button {
+    margin: 0;
   }
 }
 
