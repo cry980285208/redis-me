@@ -130,7 +130,7 @@ defineExpose({ open })
       <div class="ar-last-main">
         <me-table
           v-if="filteredList.length"
-          layout="sizes, prev, pager, next, jumper"
+          layout="sizes, prev, pager, next"
           :data="filteredList"
           export-name="ar-last-items"
           :export-rows="exportRows"

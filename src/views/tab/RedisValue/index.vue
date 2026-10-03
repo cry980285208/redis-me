@@ -2154,7 +2154,7 @@ onUnmounted(() => {
             <!-- 类型或键变化时重建，页码回到第 1 页 -->
             <me-table
               :key="`${redisValue?.type ?? ''}\0${share.redisKey?.key ?? ''}`"
-              layout="sizes, prev, pager, next, jumper"
+              layout="sizes, prev, pager, next"
               :data="tableDisplayList"
               :default-sort="tableDefaultSort"
               border
