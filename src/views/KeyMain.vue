@@ -1549,6 +1549,25 @@ async function searchKeysAll(): Promise<void> {
               </template>
             </el-dropdown>
           </template>
+          <!-- 问号、精确复选框在左侧，和右侧刷新对称 -->
+          <template #prefix>
+            <el-tooltip
+              v-if="searchMode"
+              :content="t('redisSearch.queryHint')"
+              placement="bottom"
+              raw-content
+              popper-style="max-width: 420px">
+              <el-icon class="query-help"><el-icon-question-filled /></el-icon>
+            </el-tooltip>
+            <el-tooltip
+              v-else
+              :content="t('keyMain.exactSearch')"
+              placement="bottom"
+              raw-content
+              :show-after="1000">
+              <el-checkbox size="small" v-model="exact" class="suffix-exact-checkbox" />
+            </el-tooltip>
+          </template>
           <template #suffix>
             <div class="keyword-suffix">
               <me-scan-control
@@ -1557,22 +1576,6 @@ async function searchKeysAll(): Promise<void> {
                 :loading="loading"
                 :tip="scanToggleTip"
                 @click="onScanAction" />
-              <el-tooltip
-                v-if="searchMode"
-                :content="t('redisSearch.queryHint')"
-                placement="bottom"
-                raw-content
-                popper-style="max-width: 420px">
-                <el-icon class="query-help"><el-icon-question-filled /></el-icon>
-              </el-tooltip>
-              <el-tooltip
-                v-else
-                :content="t('keyMain.exactSearch')"
-                placement="bottom"
-                raw-content
-                :show-after="1000">
-                <el-checkbox size="small" v-model="exact" class="suffix-exact-checkbox" />
-              </el-tooltip>
               <me-icon
                 icon="me-icon-search"
                 class="suffix-icon-btn"
@@ -2045,13 +2048,8 @@ async function searchKeysAll(): Promise<void> {
       flex-shrink: 0;
     }
 
-    // 输入框内右侧：暂停/继续，然后精确查询或问号，最后是刷新
-    .keyword-suffix {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      margin-left: 6px;
-
+    // 左侧问号或精确复选框；右侧暂停/继续和刷新
+    :deep(.el-input__prefix) {
       .query-help {
         color: var(--el-text-color-secondary);
         cursor: help;
@@ -2061,7 +2059,6 @@ async function searchKeysAll(): Promise<void> {
         }
       }
 
-      // 与 suffix 图标同色，选中时用主题色
       :deep(.suffix-exact-checkbox) {
         height: auto;
 
@@ -2079,6 +2076,13 @@ async function searchKeysAll(): Promise<void> {
           border-color: var(--el-color-primary);
         }
       }
+    }
+
+    .keyword-suffix {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-left: 6px;
     }
 
     .suffix-icon-btn {
