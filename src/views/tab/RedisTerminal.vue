@@ -236,11 +236,17 @@ function insertAtCursor(root: HTMLElement, text: string): void {
 }
 
 function onContextMenu(event: MouseEvent): void {
-  const selected = document.getSelection()?.toString() || selectedOnPointer
+  const selected = (document.getSelection()?.toString() || selectedOnPointer).replaceAll(
+    '\u00a0',
+    ' ',
+  )
   selectedOnPointer = ''
-  if (selected) return
   event.preventDefault()
   event.stopPropagation()
+  if (selected) {
+    meCopy(selected)
+    return
+  }
   const root = event.currentTarget
   if (!(root instanceof HTMLElement)) return
   void navigator.clipboard
