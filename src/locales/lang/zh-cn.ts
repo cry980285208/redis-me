@@ -916,7 +916,9 @@ export default {
     query: '查询',
     actionWidth: '100',
     back: '返回',
-    queryPlaceholder: "* 或 {'@'}title:redis 或 {'@'}status:{'{'}paid{'}'}",
+    queryPlaceholder: '查询条件',
+    queryHint:
+      "<b>bike</b> 所有文本字段包含这个词<br/><br/><b>{'@'}description:bike</b> 只在该文本字段里找<br/><b>{'@'}description:\"road bike\"</b> 短语，按词序<br/><b>{'@'}description:bik*</b> 前缀<br/><b>{'@'}type:{'{'}road{'}'}</b> 标签，精确匹配<br/><b>{'@'}type:{'{'}road{'|'}mountain{'}'}</b> 多个标签取其一<br/><b>{'@'}price:[100 500]</b> 数值范围，含两端<br/><b>{'@'}price:[100 +inf]</b> 大于等于 100<br/><b>{'@'}location:[15.87 32.08 10 km]</b> 地理范围，半径 10 公里<br/><br/><b>bike {'@'}type:{'{'}road{'}'}</b> 并且（空格）<br/><b>bike{'|'}helmet</b> 或者<br/><b>{'@'}description:(bike{'|'}helmet)</b> 或者，只在该字段<br/><b>-{'@'}type:{'{'}road{'}'}</b> 排除",
     withScores: '分数',
     docKey: '键',
     score: '分数',

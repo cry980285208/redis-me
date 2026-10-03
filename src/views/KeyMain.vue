@@ -1557,6 +1557,22 @@ async function searchKeysAll(): Promise<void> {
                 :loading="loading"
                 :tip="scanToggleTip"
                 @click="onScanAction" />
+              <el-tooltip
+                v-if="searchMode"
+                :content="t('redisSearch.queryHint')"
+                placement="bottom"
+                raw-content
+                popper-style="max-width: 420px">
+                <el-icon class="query-help"><el-icon-question-filled /></el-icon>
+              </el-tooltip>
+              <el-tooltip
+                v-else
+                :content="t('keyMain.exactSearch')"
+                placement="bottom"
+                raw-content
+                :show-after="1000">
+                <el-checkbox size="small" v-model="exact" class="suffix-exact-checkbox" />
+              </el-tooltip>
               <me-icon
                 icon="me-icon-search"
                 class="suffix-icon-btn"
@@ -1564,14 +1580,6 @@ async function searchKeysAll(): Promise<void> {
                 :info="t('keyMain.refreshKey')"
                 placement="bottom"
                 @click.stop="onRefreshKey" />
-              <el-tooltip
-                v-if="!searchMode"
-                :content="t('keyMain.exactSearch')"
-                placement="bottom"
-                raw-content
-                :show-after="1000">
-                <el-checkbox size="small" v-model="exact" class="suffix-exact-checkbox" />
-              </el-tooltip>
             </div>
           </template>
           <template v-if="canEdit" #append>
@@ -2037,12 +2045,21 @@ async function searchKeysAll(): Promise<void> {
       flex-shrink: 0;
     }
 
-    // 输入框内右侧：暂停/继续 + 刷新 + 精确查询
+    // 输入框内右侧：暂停/继续，然后精确查询或问号，最后是刷新
     .keyword-suffix {
       display: flex;
       align-items: center;
       gap: 6px;
       margin-left: 6px;
+
+      .query-help {
+        color: var(--el-text-color-secondary);
+        cursor: help;
+
+        &:hover {
+          color: var(--el-color-primary);
+        }
+      }
 
       // 与 suffix 图标同色，选中时用主题色
       :deep(.suffix-exact-checkbox) {

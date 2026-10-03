@@ -934,7 +934,9 @@ export default {
     query: 'Query',
     actionWidth: '106',
     back: 'Back',
-    queryPlaceholder: "* or {'@'}title:redis or {'@'}status:{'{'}paid{'}'}",
+    queryPlaceholder: 'Query condition',
+    queryHint:
+      "<b>bike</b> this word in every text field<br/><br/><b>{'@'}description:bike</b> only in that text field<br/><b>{'@'}description:\"road bike\"</b> phrase, in order<br/><b>{'@'}description:bik*</b> prefix<br/><b>{'@'}type:{'{'}road{'}'}</b> tag, exact<br/><b>{'@'}type:{'{'}road{'|'}mountain{'}'}</b> any of these tags<br/><b>{'@'}price:[100 500]</b> numeric range, inclusive<br/><b>{'@'}price:[100 +inf]</b> 100 or more<br/><b>{'@'}location:[15.87 32.08 10 km]</b> within 10 km<br/><br/><b>bike {'@'}type:{'{'}road{'}'}</b> and (space)<br/><b>bike{'|'}helmet</b> or<br/><b>{'@'}description:(bike{'|'}helmet)</b> or, only in that field<br/><b>-{'@'}type:{'{'}road{'}'}</b> not",
     withScores: 'Scores',
     docKey: 'Key',
     score: 'Score',

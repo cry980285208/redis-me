@@ -271,11 +271,13 @@ watch(
     <!-- 索引列表 -->
     <template v-if="pageMode === 'list'">
       <div class="me-flex header">
-        <div>
+        <div class="me-flex list-side">
           <!-- 只读不提供写入样例 -->
           <el-button v-if="canEdit" icon="el-icon-document-add" @click="openSample">
             {{ t('redisSearch.sample') }}
           </el-button>
+          <!-- 列表上就能进官网，不必先打开某个索引的查询 -->
+          <me-website to="search" :margin-left="canEdit ? '10px' : '0'" />
         </div>
         <div>
           <el-input
@@ -416,7 +418,6 @@ watch(
           <el-button icon="el-icon-back" @click="pageMode = 'list'">{{
             t('redisSearch.back')
           }}</el-button>
-          <me-website to="search" />
           <span class="index-name">{{ selected.name }}</span>
         </div>
         <div class="query-tools">
@@ -426,10 +427,21 @@ watch(
           </el-checkbox>
           <el-input
             v-model="queryText"
+            class="query-input"
             :placeholder="t('redisSearch.queryPlaceholder')"
             style="width: 300px"
             clearable
-            @keyup.enter="runSearch" />
+            @keyup.enter="runSearch">
+            <template #suffix>
+              <el-tooltip
+                :content="t('redisSearch.queryHint')"
+                placement="bottom"
+                raw-content
+                popper-style="max-width: 420px">
+                <el-icon class="query-help"><el-icon-question-filled /></el-icon>
+              </el-tooltip>
+            </template>
+          </el-input>
           <el-button
             type="primary"
             icon="el-icon-search"
@@ -558,6 +570,7 @@ watch(
   }
 }
 
+.list-side,
 .query-side,
 .query-tools {
   align-items: center;
@@ -571,6 +584,21 @@ watch(
 .index-name {
   margin-left: 10px;
   font-weight: 600;
+}
+
+.query-input {
+  :deep(.el-input__suffix-inner) {
+    gap: 8px;
+  }
+}
+
+.query-help {
+  color: var(--el-text-color-secondary);
+  cursor: help;
+
+  &:hover {
+    color: var(--el-color-primary);
+  }
 }
 
 :deep(th.is-right .cell > .icon-main) {
