@@ -72,6 +72,8 @@ pub trait MeClient: Send + Sync {
     fn search_index_list(&self) -> AnyResult<Vec<SearchIndexInfo>>;
     fn search_query(&self, param: SearchQueryParam) -> AnyResult<SearchQueryResult>;
     fn search_index_drop(&self, index: String) -> AnyResult<()>;
+    /// `FT.TAGVALS`。`field` 用 schema 里的属性名（查询名），不是 JSON 路径。
+    fn search_tag_vals(&self, index: String, field: String) -> AnyResult<Vec<String>>;
     /// `kind` 为 `bikes` 或 `movies`。索引已存在时不写数据。
     fn search_sample_load(&self, kind: String) -> AnyResult<SearchSampleResult>;
 

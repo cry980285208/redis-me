@@ -764,6 +764,25 @@ impl MeClient for MeCluster {
         conn.route_command(&drop_cmd(&index)?, route)?;
         Ok(())
     }
+
+    fn search_tag_vals(&self, index: String, field: String) -> AnyResult<Vec<String>> {
+        use crate::client::ops::search::{parse_ft_tagvals, tagvals_cmd};
+        use std::collections::BTreeSet;
+
+        let cmd = tagvals_cmd(&index, &field)?;
+        let targets = self.search_targets();
+        let mut conn = self.get_conn()?;
+        // 文档按槽分片，FT.TAGVALS 只看本分片。逐个 master 取并集；若协调节点已汇总，去重后结果相同。
+        let mut tags = BTreeSet::new();
+        for node in targets {
+            let (route, _) = self.get_node_route(node)?;
+            let value = conn.route_command(&cmd, route)?;
+            for tag in parse_ft_tagvals(value)? {
+                tags.insert(tag);
+            }
+        }
+        Ok(tags.into_iter().collect())
+    }
 }
 
 // 个性化方法

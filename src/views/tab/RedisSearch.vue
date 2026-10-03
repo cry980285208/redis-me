@@ -4,7 +4,7 @@ import { computed, inject, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { connUiProvideKey, shareProvideKey } from '@/types/me-interface'
-import type { SearchHit, SearchIndexInfo } from '@/types/tauri-specta'
+import type { SearchHit, SearchIndexField, SearchIndexInfo } from '@/types/tauri-specta'
 import type { TableExportMatrix } from '@/utils/export'
 import { indexDdl } from '@/utils/search-ddl'
 import { defaultSettings } from '@/utils/settings-defaults'
@@ -28,6 +28,13 @@ const hits = ref<SearchHit[]>([])
 const detailVisible = ref(false)
 const infoVisible = ref(false)
 const ddlVisible = ref(false)
+const tagVisible = ref(false)
+const tagField = ref('')
+const tagValues = ref<string[]>([])
+const tagKeyword = ref('')
+const loadingTags = ref(false)
+// 切换字段或关掉弹框后，丢掉还在飞的上一次 FT.TAGVALS。
+let tagSeq = 0
 const sampleVisible = ref(false)
 const sampleKind = ref('')
 const loadingSample = ref(false)
@@ -79,6 +86,35 @@ function fieldTypeTag(fieldType: string): 'primary' | 'success' | 'info' | 'warn
     VECTOR: 'danger',
   } as const
   return known[fieldType.toUpperCase() as keyof typeof known] ?? 'info'
+}
+
+// FT.TAGVALS 的字段名就是属性名。没有别名时才退回 identifier，下拉和命令用同一个名字。
+function tagFieldName(field: SearchIndexField): string {
+  return field.attribute || field.identifier
+}
+
+const tagFields = computed(() =>
+  (selected.value?.fields ?? []).filter(field => field.fieldType.toUpperCase() === 'TAG'),
+)
+
+const filteredTagRows = computed(() => {
+  const q = tagKeyword.value.trim().toLowerCase()
+  const values = q
+    ? tagValues.value.filter(value => value.toLowerCase().includes(q))
+    : tagValues.value
+  return values.map(value => ({ value }))
+})
+
+const tagEmptyText = computed(() =>
+  tagFields.value.length ? t('redisSearch.tagValsNone') : t('redisSearch.tagValsEmpty'),
+)
+
+// 与表格列定义一致（改列时同步改这里）
+function exportTagRows(data: unknown[]): TableExportMatrix {
+  return {
+    headers: ['#', t('redisSearch.tagValsValue')],
+    rows: (data as { value: string }[]).map((row, index) => [String(index + 1), row.value]),
+  }
 }
 
 // 结果里的字段名可能是 attribute，也可能是 identifier，两种都交给后端认向量。
@@ -170,7 +206,7 @@ async function loadIndexes(prefer?: string): Promise<void> {
   }
 }
 
-// 字段、原文、DDL 共用 selected，同时只开一个弹框。
+// 字段、原文、DDL、Tag 集合共用 selected，同时只开一个弹框。
 function openIndex(row: SearchIndexInfo, which: 'fields' | 'info' | 'ddl'): void {
   selected.value = row
   // 先写入选中索引，computed 才是这份原文；草稿只活在本次弹框里。
@@ -179,14 +215,66 @@ function openIndex(row: SearchIndexInfo, which: 'fields' | 'info' | 'ddl'): void
   detailVisible.value = which === 'fields'
   infoVisible.value = which === 'info'
   ddlVisible.value = which === 'ddl'
+  tagVisible.value = false
 }
 
-// 更多菜单：浏览、信息、DDL 谁都能看，删除只在可写时出现。
+// 更多菜单：浏览、信息、DDL、Tag 集合谁都能看，删除只在可写时出现。
 function onMore(row: SearchIndexInfo, cmd: string): void {
   if (cmd === 'browse') connUi.browseSearchIndex(row.name)
   else if (cmd === 'info') openIndex(row, 'info')
   else if (cmd === 'ddl') openIndex(row, 'ddl')
+  else if (cmd === 'tags') openTagVals(row)
   else if (cmd === 'drop') dropIndex(row)
+}
+
+// 打开时选中字段并立刻拉 FT.TAGVALS。fieldName 为空时用第一个 TAG 字段。
+// 从字段详情点进来时不关那个弹框，关掉 Tag 集合后还能再点别的 TAG。
+function openTagVals(row: SearchIndexInfo, fieldName?: string): void {
+  selected.value = row
+  if (!fieldName) detailVisible.value = false
+  infoVisible.value = false
+  ddlVisible.value = false
+  tagKeyword.value = ''
+  tagValues.value = []
+  const match = fieldName
+    ? row.fields.find(
+        field => field.fieldType.toUpperCase() === 'TAG' && tagFieldName(field) === fieldName,
+      )
+    : row.fields.find(field => field.fieldType.toUpperCase() === 'TAG')
+  tagField.value = match ? tagFieldName(match) : ''
+  tagVisible.value = true
+  const req = ++tagSeq
+  if (tagField.value) void loadTagVals(req)
+}
+
+function openTagField(field: SearchIndexField): void {
+  if (field.fieldType.toUpperCase() !== 'TAG' || !selected.value) return
+  openTagVals(selected.value, tagFieldName(field))
+}
+
+// 换字段时清掉上一个字段的筛选和结果。
+function onTagFieldChange(): void {
+  tagKeyword.value = ''
+  tagValues.value = []
+  void loadTagVals()
+}
+
+async function loadTagVals(req = ++tagSeq): Promise<void> {
+  const index = selected.value?.name
+  const field = tagField.value
+  if (!index || !field) {
+    tagValues.value = []
+    loadingTags.value = false
+    return
+  }
+  loadingTags.value = true
+  try {
+    const values = await meCommands.searchTagVals(share.conn!.id, index, field)
+    if (req !== tagSeq) return
+    tagValues.value = values
+  } finally {
+    if (req === tagSeq) loadingTags.value = false
+  }
 }
 
 // 进入查询页时清空条件和分数，马上搜一次。
@@ -195,6 +283,7 @@ function openQuery(row: SearchIndexInfo): void {
   queryText.value = ''
   withScores.value = false
   hits.value = []
+  tagVisible.value = false
   pageMode.value = 'query'
   void runSearch()
 }
@@ -232,7 +321,7 @@ async function loadSample(): Promise<void> {
   }
 }
 
-// 退出查询页，并关掉字段、原文、DDL 三个弹框。
+// 退出查询页，并关掉字段、原文、DDL、Tag 集合弹框。
 function leaveIndex(): void {
   selected.value = null
   pageMode.value = 'list'
@@ -240,6 +329,9 @@ function leaveIndex(): void {
   detailVisible.value = false
   infoVisible.value = false
   ddlVisible.value = false
+  tagVisible.value = false
+  tagSeq += 1
+  loadingTags.value = false
 }
 
 // 不带 DD，文档键保留。删的是当前索引就退回列表。
@@ -371,7 +463,7 @@ watch(
             </template>
           </el-table-column>
 
-          <!-- 查询做成按钮；浏览、信息、DDL 在更多里，删除只在可写时出现 -->
+          <!-- 查询做成按钮；浏览、信息、DDL、Tag 集合在更多里，删除只在可写时出现 -->
           <el-table-column
             :label="t('action')"
             :width="t('redisSearch.actionWidth')"
@@ -397,6 +489,9 @@ watch(
                       </el-dropdown-item>
                       <el-dropdown-item command="ddl">
                         <me-icon icon="me-icon-copy-command" :name="t('redisSearch.ddl')" />
+                      </el-dropdown-item>
+                      <el-dropdown-item command="tags">
+                        <me-icon icon="el-icon-collection-tag" :name="t('redisSearch.tagVals')" />
                       </el-dropdown-item>
                       <el-dropdown-item v-if="canEdit" command="drop">
                         <me-icon icon="el-icon-delete" :name="t('redisSearch.drop')" />
@@ -480,10 +575,10 @@ watch(
       </div>
     </template>
 
-    <!-- 字段定义：标识、属性名、类型、权重 -->
+    <!-- 字段详情：标识、属性名、类型、权重。TAG 可点开 Tag 集合。 -->
     <el-dialog v-model="detailVisible" width="720px" align-center draggable destroy-on-close>
       <template #header>
-        <me-icon icon="el-icon-info-filled" :name="indexTitle(t('redisSearch.fields'))" />
+        <me-icon icon="el-icon-info-filled" :name="indexTitle(t('redisSearch.fieldDetail'))" />
       </template>
       <el-table :data="selected?.fields ?? []" border stripe max-height="420" show-overflow-tooltip>
         <el-table-column prop="identifier" :label="t('redisSearch.identifier')" min-width="140" />
@@ -493,8 +588,10 @@ watch(
             <el-tag
               v-if="row.fieldType"
               size="small"
-              effect="plain"
-              :type="fieldTypeTag(row.fieldType)">
+              :effect="row.fieldType.toUpperCase() === 'TAG' ? 'dark' : 'plain'"
+              :class="{ 'tag-type-link': row.fieldType.toUpperCase() === 'TAG' }"
+              :type="fieldTypeTag(row.fieldType)"
+              @click="openTagField(row)">
               {{ row.fieldType }}
             </el-tag>
           </template>
@@ -502,6 +599,52 @@ watch(
         <el-table-column prop="weight" :label="t('redisSearch.weight')" width="90" />
       </el-table>
     </el-dialog>
+
+    <!-- FT.TAGVALS。左下拉、右输入框 + 搜索，表用 me-table，条数由分页自己显示。 -->
+    <me-dialog
+      v-model="tagVisible"
+      :title="indexTitle(t('redisSearch.tagVals'))"
+      icon="el-icon-collection-tag"
+      width="700">
+      <div v-loading="loadingTags" class="table-tag-vals">
+        <div v-if="tagFields.length" class="tag-toolbar">
+          <el-select v-model="tagField" style="width: 220px" @change="onTagFieldChange">
+            <el-option
+              v-for="field in tagFields"
+              :key="`${field.identifier}\0${field.attribute}`"
+              :label="tagFieldName(field)"
+              :value="tagFieldName(field)" />
+          </el-select>
+          <div class="toolbar-right">
+            <el-input
+              v-model="tagKeyword"
+              :placeholder="t('redisSearch.tagValsFilter')"
+              clearable
+              style="width: 220px" />
+            <el-button icon="el-icon-search" type="primary" @click="loadTagVals()" />
+          </div>
+        </div>
+        <div class="tag-main">
+          <me-table
+            v-if="filteredTagRows.length"
+            :data="filteredTagRows"
+            export-name="tag-vals"
+            :export-rows="exportTagRows"
+            height="100%"
+            stripe
+            border
+            :default-sort="{ prop: 'value', order: 'ascending' }">
+            <el-table-column type="index" label="#" width="60" align="center" />
+            <el-table-column
+              :label="t('redisSearch.tagValsValue')"
+              prop="value"
+              show-overflow-tooltip
+              sortable />
+          </me-table>
+          <el-empty v-else-if="!loadingTags" :description="tagEmptyText" />
+        </div>
+      </div>
+    </me-dialog>
 
     <!-- 由 FT.INFO 还原的 FT.CREATE，不是服务器保存的原文 -->
     <me-dialog
@@ -607,6 +750,36 @@ watch(
 
 .sample-hint {
   margin: 0 0 12px;
+}
+
+.tag-type-link {
+  cursor: pointer;
+}
+
+.table-tag-vals {
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+
+  .tag-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    gap: 10px;
+  }
+
+  .toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .tag-main {
+    flex: 1;
+    min-height: 0;
+  }
 }
 
 .sample-list {

@@ -38,6 +38,27 @@ pub fn prepare_search(param: &SearchQueryParam) -> AnyResult<PreparedSearch> {
     })
 }
 
+/// `FT.TAGVALS`。空索引名或空字段名当参数错误。字段名是 schema 属性名。
+pub fn tagvals_cmd(index: &str, field: &str) -> AnyResult<redis::Cmd> {
+    let index = index.trim();
+    let field = field.trim();
+    if index.is_empty() || field.is_empty() {
+        bail!(AppError::EmptyParameters);
+    }
+    let mut cmd = redis::cmd("FT.TAGVALS");
+    cmd.arg(index).arg(field);
+    Ok(cmd)
+}
+
+/// `FT.TAGVALS`：RESP2 数组，或 RESP3 的数组 / 集合。空回复当成没有标签。
+pub fn parse_ft_tagvals(value: Value) -> AnyResult<Vec<String>> {
+    match value {
+        Value::Nil => Ok(Vec::new()),
+        Value::Array(arr) | Value::Set(arr) => Ok(arr.into_iter().map(|v| text(&v)).collect()),
+        _ => bail!(invalid("FT.TAGVALS")),
+    }
+}
+
 /// `FT.DROPINDEX`，不带 `DD`。空名当参数错误。
 pub fn drop_cmd(index: &str) -> AnyResult<redis::Cmd> {
     let index = index.trim();
@@ -415,7 +436,10 @@ fn fold_info_map(arr: Vec<Value>) -> Value {
     let mut i = 0;
     while i < arr.len() {
         let name = text(&arr[i]).to_ascii_lowercase();
-        pairs.push((arr[i].clone(), normalize_info_child(&name, arr[i + 1].clone())));
+        pairs.push((
+            arr[i].clone(),
+            normalize_info_child(&name, arr[i + 1].clone()),
+        ));
         i += 2;
     }
     Value::Map(pairs)
@@ -826,6 +850,29 @@ mod tests {
         assert_eq!(page.hits[0].key, "doc:1");
         assert_eq!(page.hits[0].fields[0].field, "title");
         assert_eq!(page.hits[0].fields[0].value, "redis");
+    }
+
+    /// 标签列表是字符串数组或集合。别的形状整页报错，不猜。
+    #[test]
+    fn ft_tagvals_reads_array_set_and_nil() {
+        let arr = parse_ft_tagvals(Value::Array(vec![b("road"), b("mountain")])).unwrap();
+        assert_eq!(arr, vec!["road".to_string(), "mountain".to_string()]);
+        let set = parse_ft_tagvals(Value::Set(vec![b("carbon")])).unwrap();
+        assert_eq!(set, vec!["carbon".to_string()]);
+        assert!(parse_ft_tagvals(Value::Nil).unwrap().is_empty());
+        assert!(parse_ft_tagvals(Value::Int(1)).is_err());
+    }
+
+    /// 索引名和字段名都要有，命令是 FT.TAGVALS。
+    #[test]
+    fn tagvals_cmd_needs_index_and_field() {
+        assert!(tagvals_cmd("  ", "type").is_err());
+        assert!(tagvals_cmd("idx", " ").is_err());
+        let packed = tagvals_cmd(" idx ", " type ").unwrap().get_packed_command();
+        let text = String::from_utf8_lossy(&packed);
+        assert!(text.contains("FT.TAGVALS"));
+        assert!(text.contains("idx"));
+        assert!(text.contains("type"));
     }
 
     /// 集群第二个分片上的「索引已存在」不能当成导入失败。

@@ -508,6 +508,17 @@ impl MeClient for MeSingle {
         Ok(())
     }
 
+    fn search_tag_vals(&self, index: String, field: String) -> AnyResult<Vec<String>> {
+        use crate::client::ops::search::{parse_ft_tagvals, tagvals_cmd};
+
+        let mut conn = self.get_conn()?;
+        let value: Value = tagvals_cmd(&index, &field)?.query(&mut conn)?;
+        let mut tags = parse_ft_tagvals(value)?;
+        tags.sort();
+        tags.dedup();
+        Ok(tags)
+    }
+
     fn search_sample_load(&self, kind: String) -> AnyResult<SearchSampleResult> {
         use crate::client::ops::search::{
             apply_sample_data, parse_ft_list, sample_create_cmd, sample_index_name,

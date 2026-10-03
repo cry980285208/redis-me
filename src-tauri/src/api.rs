@@ -48,6 +48,7 @@ api_commands!(
     search_index_list() -> Vec<SearchIndexInfo>;                 // RedisSearch 索引列表（含 FT.INFO）
     search_query(param: SearchQueryParam) -> SearchQueryResult;  // FT.SEARCH
     search_index_drop(index: String) -> ();                      // FT.DROPINDEX（不带 DD）
+    search_tag_vals(index: String, field: String) -> Vec<String>; // FT.TAGVALS
     search_sample_load(kind: String) -> SearchSampleResult;     // 写入 Redis Insight 样例并 FT.CREATE
     v_getattr(param: RedisVAttr) -> String;                       // Vector Set VGETATTR（按需，不随 VRANGE）
     v_setattr(param: RedisVAttr) -> ();                           // Vector Set VSETATTR（空串删除）

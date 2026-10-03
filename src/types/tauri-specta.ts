@@ -50,6 +50,7 @@ export const commands = {
 	searchIndexList: (id: string) => typedError<SearchIndexInfo[], string>(__TAURI_INVOKE("search_index_list", { id })),
 	searchQuery: (id: string, param: SearchQueryParam) => typedError<SearchQueryResult, string>(__TAURI_INVOKE("search_query", { id, param })),
 	searchIndexDrop: (id: string, index: string) => typedError<null, string>(__TAURI_INVOKE("search_index_drop", { id, index })),
+	searchTagVals: (id: string, index: string, field: string) => typedError<string[], string>(__TAURI_INVOKE("search_tag_vals", { id, index, field })),
 	searchSampleLoad: (id: string, kind: string) => typedError<SearchSampleResult, string>(__TAURI_INVOKE("search_sample_load", { id, kind })),
 	vGetattr: (id: string, param: RedisVAttr_Deserialize) => typedError<string, string>(__TAURI_INVOKE("v_getattr", { id, param })),
 	vSetattr: (id: string, param: RedisVAttr_Deserialize) => typedError<null, string>(__TAURI_INVOKE("v_setattr", { id, param })),
