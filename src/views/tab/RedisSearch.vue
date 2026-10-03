@@ -181,9 +181,10 @@ function openIndex(row: SearchIndexInfo, which: 'fields' | 'info' | 'ddl'): void
   ddlVisible.value = which === 'ddl'
 }
 
-// 更多菜单：DDL 谁都能看，删除只在可写时出现。
+// 更多菜单：浏览和 DDL 谁都能看，删除只在可写时出现。
 function onMore(row: SearchIndexInfo, cmd: string): void {
-  if (cmd === 'ddl') openIndex(row, 'ddl')
+  if (cmd === 'browse') connUi.browseSearchIndex(row.name)
+  else if (cmd === 'ddl') openIndex(row, 'ddl')
   else if (cmd === 'drop') dropIndex(row)
 }
 
@@ -367,7 +368,7 @@ watch(
             </template>
           </el-table-column>
 
-          <!-- 查询、原文、DDL 始终可看；删除只在可写时出现 -->
+          <!-- 查询、原文、浏览、DDL 始终可看；删除只在可写时出现 -->
           <el-table-column :label="t('action')" width="80" fixed="right" align="center">
             <template #default="{ row }">
               <div class="action-icons">
@@ -388,6 +389,9 @@ watch(
                   <me-icon icon="el-icon-more-filled" class="icon-btn" />
                   <template #dropdown>
                     <el-dropdown-menu>
+                      <el-dropdown-item command="browse">
+                        <me-icon icon="me-icon-list" :name="t('redisSearch.browse')" />
+                      </el-dropdown-item>
                       <el-dropdown-item command="ddl">
                         <me-icon icon="me-icon-copy-command" :name="t('redisSearch.ddl')" />
                       </el-dropdown-item>

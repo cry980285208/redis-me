@@ -901,6 +901,7 @@ export default {
     weight: '权重',
     fields: '字段数',
     info: '索引信息',
+    browse: '浏览数据',
     ddl: '索引DDL',
     filter: '模糊筛选（名称、前缀）',
     sample: '索引样例',

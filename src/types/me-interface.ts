@@ -88,6 +88,8 @@ export interface ConnUiInject {
   openKeyCopy: (redisKey: RedisKey_Deserialize) => void
   /** 由 KeyMain 挂载时赋值，左侧键树滚动到指定键（复用新建键定位） */
   scrollKeyToTree: (redisKey: RedisKey_Deserialize) => void
+  /** 由 KeyMain 挂载时赋值，键区切到索引查询并选中该索引 */
+  browseSearchIndex: (name: string) => void
   runConnAction: (action: ConnShortcutAction) => void
 }
 

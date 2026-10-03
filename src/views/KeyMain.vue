@@ -759,6 +759,9 @@ onMounted(() => {
   connUi.scrollKeyToTree = (redisKey: RedisKey_Deserialize) => {
     scrollKeyToTrees(redisKey)
   }
+  connUi.browseSearchIndex = (name: string) => {
+    void browseSearchIndex(name)
+  }
 })
 onUnmounted(() => {
   bus.off(KEY_DELETE, deleteKey)
@@ -1025,6 +1028,16 @@ function clearFavoriteChecked(): void {
   favFolderPathsChecked.value = []
 }
 
+/** 退出收藏，不在这里重查。浏览数据会自己切到索引查询。 */
+function leaveFavoriteMode(): void {
+  if (!favoriteMode.value) return
+  favFolderPanelRef.value?.resetScans()
+  favoriteMode.value = false
+  showCheckbox.value = false
+  favoriteCheckedZone.value = 'none'
+  clearFavoriteChecked()
+}
+
 function toggleChecked(): void {
   if (favoriteMode.value) {
     if (favoriteCheckedZone.value === 'none') return
@@ -1037,11 +1050,7 @@ function toggleChecked(): void {
 
 async function toggleFavoriteMode(): Promise<void> {
   if (favoriteMode.value) {
-    favFolderPanelRef.value?.resetScans()
-    favoriteMode.value = false
-    showCheckbox.value = false
-    favoriteCheckedZone.value = 'none'
-    clearFavoriteChecked()
+    leaveFavoriteMode()
     // 进入收藏时关键字被清空，退出后按空查询重新拉一页，避免列表还是上一次的值查询
     if (searchMode.value) void runSearchKeys(false, false)
   } else {
@@ -1316,25 +1325,50 @@ function rememberSearchIndex(name: string): void {
   lastSearchIndex.value = { ...lastSearchIndex.value, [key]: name }
 }
 
-/** 只拉索引名。赋值时忽略选择框的 change，避免和紧接着的查询打两次。 */
-async function loadSearchIndexes(): Promise<void> {
+/** 只拉索引名。赋值时忽略选择框的 change，避免和紧接着的查询打两次。传入 prefer 时只选这个索引，没有就留空。 */
+async function loadSearchIndexes(prefer?: string): Promise<void> {
   if (!share.conn) return
   loadingIndexes.value = true
   ignoreIndexChange = true
   try {
     searchIndexes.value = await meCommands.searchIndexNames(share.conn.id)
     const remembered = lastSearchIndex.value[searchMemoryKey()]
-    searchIndex.value =
-      searchIndexes.value.find(name => name === searchIndex.value) ??
-      searchIndexes.value.find(name => name === remembered) ??
-      searchIndexes.value[0] ??
-      ''
+    // 指定了索引却不在列表里时留空，避免浏览数据落到别的索引上
+    if (prefer) {
+      searchIndex.value = searchIndexes.value.includes(prefer) ? prefer : ''
+    } else {
+      searchIndex.value =
+        searchIndexes.value.find(name => name === searchIndex.value) ??
+        searchIndexes.value.find(name => name === remembered) ??
+        searchIndexes.value[0] ??
+        ''
+    }
     if (searchIndex.value) rememberSearchIndex(searchIndex.value)
   } finally {
     loadingIndexes.value = false
     await nextTick()
     ignoreIndexChange = false
   }
+}
+
+/** 搜索页「浏览数据」：键区切到索引查询，选中该索引，按空条件查出键。 */
+async function browseSearchIndex(name: string): Promise<void> {
+  if (!share.conn || !name || !searchSupported.value) return
+  leaveFavoriteMode()
+  keyword.value = ''
+  const already = searchMode.value
+  if (!already) keyType.value = SEARCH_TYPE
+  await stopScanIfRunning()
+  exact.value = false
+  cursor.value = null
+  scanPaused.value = false
+  if (!already) clearSearchHits()
+  await loadSearchIndexes(name)
+  if (searchIndex.value !== name) {
+    clearSearchHits()
+    return
+  }
+  await runSearchKeys(false, false)
 }
 
 /** 停掉 SCAN，先清空键列表再拉索引。拉索引期间不要留着上一轮扫描结果。 */

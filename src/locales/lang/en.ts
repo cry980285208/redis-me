@@ -918,6 +918,7 @@ export default {
     weight: 'Weight',
     fields: 'Fields',
     info: 'Index info',
+    browse: 'Browse dataset',
     ddl: 'Index DDL',
     filter: 'Filter (Name, Prefix)',
     sample: 'Sample index',

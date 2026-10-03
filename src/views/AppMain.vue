@@ -233,6 +233,8 @@ const connUi = reactive({
   openKeyCopy(_redisKey: RedisKey_Deserialize): void {},
   /** KeyMain onMounted 时注入，供键值页定位当前键 */
   scrollKeyToTree(_redisKey: RedisKey_Deserialize): void {},
+  /** KeyMain onMounted 时注入，搜索页切到键区索引查询 */
+  browseSearchIndex(_name: string): void {},
   runConnAction(action: ConnShortcutAction): void {
     if (action === 'add') connUi.openConnSave('add')
     else if (action === 'import') connUi.openConnImport()
