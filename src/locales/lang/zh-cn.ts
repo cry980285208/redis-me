@@ -944,8 +944,10 @@ export default {
     withScores: '分数',
     docKey: '键',
     score: '分数',
-    dropConfirm: '删除索引 "{name}"？文档键会保留。',
+    dropConfirm: '删除索引 "{name}"？',
+    dropDocs: '同时删除文档键',
     dropOk: '已删除索引',
+    dropDocsOk: '已删除索引和文档键',
   },
 
   redisTerminal: {

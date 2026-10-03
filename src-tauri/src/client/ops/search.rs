@@ -150,14 +150,17 @@ pub fn group_synonyms(pairs: Vec<(String, String)>) -> Vec<SearchSynGroup> {
         .collect()
 }
 
-/// `FT.DROPINDEX`，不带 `DD`。空名当参数错误。
-pub fn drop_cmd(index: &str) -> AnyResult<redis::Cmd> {
+/// `FT.DROPINDEX`。`delete_docs` 为真时带 `DD`，连文档键一起删。空名当参数错误。
+pub fn drop_cmd(index: &str, delete_docs: bool) -> AnyResult<redis::Cmd> {
     let index = index.trim();
     if index.is_empty() {
         bail!(AppError::EmptyParameters);
     }
     let mut cmd = redis::cmd("FT.DROPINDEX");
     cmd.arg(index);
+    if delete_docs {
+        cmd.arg("DD");
+    }
     Ok(cmd)
 }
 
@@ -1154,5 +1157,19 @@ mod tests {
                 .to_string()
                 .contains("search_create_not_ft_create")
         );
+    }
+
+    /// 默认不带 DD。勾选同时删除文档才附上。
+    #[test]
+    fn drop_cmd_dd_is_opt_in() {
+        assert_eq!(
+            cmd_args(&drop_cmd("idx", false).unwrap()),
+            ["FT.DROPINDEX", "idx"]
+        );
+        assert_eq!(
+            cmd_args(&drop_cmd("idx", true).unwrap()),
+            ["FT.DROPINDEX", "idx", "DD"]
+        );
+        assert!(drop_cmd("  ", false).is_err());
     }
 }

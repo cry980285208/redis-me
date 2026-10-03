@@ -963,8 +963,10 @@ export default {
     withScores: 'Scores',
     docKey: 'Key',
     score: 'Score',
-    dropConfirm: 'Drop index "{name}"? Documents are kept.',
+    dropConfirm: 'Drop index "{name}"?',
+    dropDocs: 'Also delete document keys',
     dropOk: 'Index dropped',
+    dropDocsOk: 'Index and document keys deleted',
   },
 
   redisTerminal: {

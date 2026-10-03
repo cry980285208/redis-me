@@ -773,12 +773,13 @@ impl MeClient for MeCluster {
         Ok(SearchSampleResult { created, index })
     }
 
-    fn search_index_drop(&self, index: String) -> AnyResult<()> {
+    fn search_index_drop(&self, index: String, delete_docs: bool) -> AnyResult<()> {
         use crate::client::ops::search::drop_cmd;
 
+        // 和查询一样打到一个 master。delete_docs 只决定命令里有没有 DD。
         let (route, _) = self.get_node_route(self.search_targets().into_iter().flatten().next())?;
         let mut conn = self.get_conn()?;
-        conn.route_command(&drop_cmd(&index)?, route)?;
+        conn.route_command(&drop_cmd(&index, delete_docs)?, route)?;
         Ok(())
     }
 

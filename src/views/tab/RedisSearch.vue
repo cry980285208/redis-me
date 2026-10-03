@@ -19,7 +19,6 @@ import {
   bus,
   takeSearchCreateDraft,
   meCommands,
-  meConfirm,
   meFormatDisplayValue,
   meOk,
   meWarn,
@@ -66,6 +65,10 @@ const savingSyn = ref(false)
 const sampleVisible = ref(false)
 const sampleKind = ref('')
 const loadingSample = ref(false)
+const dropVisible = ref(false)
+const dropName = ref('')
+const dropDocs = ref(false)
+const dropping = ref(false)
 const createVisible = ref(false)
 const createDraft = ref('')
 const creating = ref(false)
@@ -523,15 +526,28 @@ function leaveIndex(): void {
   loadingSyn.value = false
 }
 
-// 不带 DD，文档键保留。删的是当前索引就退回列表。
+// 每次打开都回到不勾。不勾是 FT.DROPINDEX，勾选才带 DD。
 function dropIndex(row: SearchIndexInfo): void {
-  const name = row.name
-  meConfirm(t('redisSearch.dropConfirm', { name }), async () => {
-    await meCommands.searchIndexDrop(share.conn!.id, name)
-    meOk(t('redisSearch.dropOk'))
+  dropName.value = row.name
+  dropDocs.value = false
+  dropping.value = false
+  dropVisible.value = true
+}
+
+async function confirmDrop(): Promise<void> {
+  const name = dropName.value
+  const deleteDocs = dropDocs.value
+  if (!name || dropping.value) return
+  dropping.value = true
+  try {
+    await meCommands.searchIndexDrop(share.conn!.id, name, deleteDocs)
+    dropVisible.value = false
+    meOk(t(deleteDocs ? 'redisSearch.dropDocsOk' : 'redisSearch.dropOk'))
     if (selected.value?.name === name) leaveIndex()
     await loadIndexes()
-  })
+  } finally {
+    dropping.value = false
+  }
 }
 
 onMounted(() => {
@@ -979,6 +995,37 @@ onUnmounted(() => {
       <me-code v-model="infoDraft" />
     </me-dialog>
 
+    <!-- 默认不删文档。复选框靠对话框左侧，勾上才发 DD -->
+    <el-dialog
+      v-model="dropVisible"
+      width="440px"
+      align-center
+      draggable
+      append-to-body
+      body-class="drop-dialog-body"
+      footer-class="drop-dialog-footer"
+      :close-on-click-modal="!dropping">
+      <template #header>
+        <me-icon icon="el-icon-warning-filled" :name="t('warn')" />
+      </template>
+      <p class="drop-msg">{{ t('redisSearch.dropConfirm', { name: dropName }) }}</p>
+      <template #footer>
+        <div class="drop-footer">
+          <el-checkbox v-model="dropDocs" :disabled="dropping">
+            {{ t('redisSearch.dropDocs') }}
+          </el-checkbox>
+          <div class="drop-actions">
+            <el-button :disabled="dropping" @click="dropVisible = false">
+              {{ t('cancel') }}
+            </el-button>
+            <el-button type="danger" :loading="dropping" @click="confirmDrop">
+              {{ t('ok') }}
+            </el-button>
+          </div>
+        </div>
+      </template>
+    </el-dialog>
+
     <!-- 样例：已有同名索引时不覆盖 -->
     <el-dialog v-model="sampleVisible" width="520px" align-center draggable destroy-on-close>
       <template #header>
@@ -1088,6 +1135,26 @@ onUnmounted(() => {
   margin: 0 0 12px;
 }
 
+.drop-msg {
+  margin: 0;
+}
+
+.drop-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.drop-actions {
+  display: flex;
+  gap: 10px;
+
+  :deep(.el-button + .el-button) {
+    margin-left: 0;
+  }
+}
+
 .tag-type-link {
   cursor: pointer;
 }
@@ -1160,5 +1227,16 @@ onUnmounted(() => {
   .icon-btn {
     font-size: 16px;
   }
+}
+</style>
+
+<!-- append-to-body 后类名在 EP 节点上，scoped 盖不到。去掉正文和底栏叠出来的空隙 -->
+<style lang="scss">
+.drop-dialog-body {
+  padding-bottom: 0;
+}
+
+.drop-dialog-footer {
+  padding-top: 12px;
 }
 </style>

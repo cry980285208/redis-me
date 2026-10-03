@@ -517,11 +517,11 @@ impl MeClient for MeSingle {
         parse_ft_search(value, param.with_scores, &prepared.vectors)
     }
 
-    fn search_index_drop(&self, index: String) -> AnyResult<()> {
+    fn search_index_drop(&self, index: String, delete_docs: bool) -> AnyResult<()> {
         use crate::client::ops::search::drop_cmd;
 
         let mut conn = self.get_conn()?;
-        let _: Value = drop_cmd(&index)?.query(&mut conn)?;
+        let _: Value = drop_cmd(&index, delete_docs)?.query(&mut conn)?;
         Ok(())
     }
 

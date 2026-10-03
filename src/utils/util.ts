@@ -174,12 +174,16 @@ async function invokeSpectaCommand<T>(
 
 type SpectaCommandFn = (...a: unknown[]) => Promise<SpectaResult<unknown>>
 
-/** 与 Specta `commands` 同键；末尾多传 `false` 时失败不弹窗 */
+/**
+ * 与 Specta `commands` 同键。比原函数多传一个末尾 `false` 时失败不弹窗。
+ * 原参数本身是 `false`（如 deleteDocs）时不能剥掉，否则 Tauri 会报缺参。
+ */
 function bindMeCommand(name: string, fn: unknown): unknown {
   if (typeof fn !== 'function') return fn
   const spectaFn = fn as SpectaCommandFn
+  const arity = spectaFn.length
   return (...args: unknown[]) => {
-    const silent = args.length > 0 && args[args.length - 1] === false
+    const silent = args.length > arity && args[args.length - 1] === false
     const pass = silent ? args.slice(0, -1) : args
     return invokeSpectaCommand(String(name), pass, () => spectaFn(...pass), !silent)
   }
