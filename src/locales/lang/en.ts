@@ -423,7 +423,7 @@ export default {
     mockOk: 'Mock Data Insert Done',
     connHint: 'Select Connection',
 
-    refreshConn: 'Refresh Conn',
+    refreshConn: 'Reload Conn',
     closeConn: 'Close Conn',
     commandLog: 'Command Log',
     commandLogNeedConn: 'Please select a connection first',

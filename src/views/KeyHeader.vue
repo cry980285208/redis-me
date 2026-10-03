@@ -98,13 +98,13 @@ async function handleCommand(command: string): Promise<void> {
         <el-dropdown-menu>
           <template v-if="share.conn">
             <el-dropdown-item command="refreshConn">
-              <me-icon :name="t('keyHeader.refreshConn')" icon="el-icon-refresh" />
+              <me-icon :name="t('keyHeader.refreshConn')" icon="el-icon-refresh-right" />
             </el-dropdown-item>
             <el-dropdown-item command="closeConn">
               <me-icon :name="t('keyHeader.closeConn')" icon="el-icon-circle-close" />
             </el-dropdown-item>
             <el-dropdown-item command="commandLog">
-              <me-icon :name="t('keyHeader.commandLog')" icon="me-icon-log" />
+              <me-icon :name="t('keyHeader.commandLog')" icon="el-icon-document" />
             </el-dropdown-item>
           </template>
 

@@ -413,7 +413,7 @@ export default {
     mockOk: '模拟数据插入完成',
     connHint: '请选择连接',
 
-    refreshConn: '刷新连接',
+    refreshConn: '重载连接',
     closeConn: '关闭连接',
     commandLog: '命令日志',
     commandLogNeedConn: '请先选择连接',
