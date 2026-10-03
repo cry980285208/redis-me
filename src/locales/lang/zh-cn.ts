@@ -914,6 +914,7 @@ export default {
     sampleCreated: '样例索引 {name} 已创建',
     sampleExists: '样例索引 {name} 已存在，可以直接查询',
     query: '查询',
+    actionWidth: '100',
     back: '返回',
     queryPlaceholder: "* 或 {'@'}title:redis 或 {'@'}status:{'{'}paid{'}'}",
     withScores: '分数',

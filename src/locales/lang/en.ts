@@ -932,6 +932,7 @@ export default {
     sampleCreated: 'Sample index {name} is ready',
     sampleExists: 'Sample index {name} already exists. You can query it directly.',
     query: 'Query',
+    actionWidth: '106',
     back: 'Back',
     queryPlaceholder: "* or {'@'}title:redis or {'@'}status:{'{'}paid{'}'}",
     withScores: 'Scores',

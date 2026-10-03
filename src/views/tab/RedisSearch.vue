@@ -181,9 +181,10 @@ function openIndex(row: SearchIndexInfo, which: 'fields' | 'info' | 'ddl'): void
   ddlVisible.value = which === 'ddl'
 }
 
-// 更多菜单：浏览和 DDL 谁都能看，删除只在可写时出现。
+// 更多菜单：浏览、信息、DDL 谁都能看，删除只在可写时出现。
 function onMore(row: SearchIndexInfo, cmd: string): void {
   if (cmd === 'browse') connUi.browseSearchIndex(row.name)
+  else if (cmd === 'info') openIndex(row, 'info')
   else if (cmd === 'ddl') openIndex(row, 'ddl')
   else if (cmd === 'drop') dropIndex(row)
 }
@@ -368,20 +369,17 @@ watch(
             </template>
           </el-table-column>
 
-          <!-- 查询、原文、浏览、DDL 始终可看；删除只在可写时出现 -->
-          <el-table-column :label="t('action')" width="80" fixed="right" align="center">
+          <!-- 查询做成按钮；浏览、信息、DDL 在更多里，删除只在可写时出现 -->
+          <el-table-column
+            :label="t('action')"
+            :width="t('redisSearch.actionWidth')"
+            fixed="right"
+            align="center">
             <template #default="{ row }">
-              <div class="action-icons">
-                <me-icon
-                  icon="el-icon-search"
-                  class="icon-btn"
-                  :info="t('redisSearch.query')"
-                  @click="openQuery(row)" />
-                <me-icon
-                  icon="el-icon-info-filled"
-                  class="icon-btn"
-                  :info="t('redisSearch.info')"
-                  @click="openIndex(row, 'info')" />
+              <div class="me-flex action-icons">
+                <el-button type="primary" plain size="small" @click="openQuery(row)">
+                  {{ t('redisSearch.query') }}
+                </el-button>
                 <el-dropdown
                   trigger="click"
                   placement="bottom-end"
@@ -391,6 +389,9 @@ watch(
                     <el-dropdown-menu>
                       <el-dropdown-item command="browse">
                         <me-icon icon="me-icon-list" :name="t('redisSearch.browse')" />
+                      </el-dropdown-item>
+                      <el-dropdown-item command="info">
+                        <me-icon icon="el-icon-info-filled" :name="t('redisSearch.info')" />
                       </el-dropdown-item>
                       <el-dropdown-item command="ddl">
                         <me-icon icon="me-icon-copy-command" :name="t('redisSearch.ddl')" />
@@ -606,10 +607,8 @@ watch(
 }
 
 .action-icons {
-  display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
+  width: 100%;
 
   .icon-btn {
     font-size: 16px;
