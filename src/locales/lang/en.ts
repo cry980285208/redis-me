@@ -1232,7 +1232,7 @@ Once an operation prevents Redis from keeping the space-saving encoding, special
   },
 
   keyMain: {
-    keyword: 'Enter to search key names',
+    keyword: 'Enter to scan key names',
     searchQuery: 'Enter for full-text search',
     searchIndex: 'Select index',
     searchIndexEmpty: 'No index',

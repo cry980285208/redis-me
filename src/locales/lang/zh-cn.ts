@@ -1210,7 +1210,7 @@ export default {
   },
 
   keyMain: {
-    keyword: 'Enter 搜索键名',
+    keyword: 'Enter 扫描键名',
     searchQuery: 'Enter 全文检索',
     searchIndex: '选择索引',
     searchIndexEmpty: '没有索引',
