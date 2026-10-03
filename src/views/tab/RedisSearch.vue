@@ -43,6 +43,9 @@ const filteredIndexes = computed(() => {
 const infoText = computed(() => meFormatDisplayValue(selected.value?.raw ?? '', true))
 // 由原文还原 FT.CREATE，不另存一份。
 const ddlText = computed(() => indexDdl(selected.value?.raw ?? '', selected.value?.name ?? ''))
+// 弹框草稿：可改、可复制，不写回索引。每次打开从原文重填。
+const infoDraft = ref('')
+const ddlDraft = ref('')
 
 // 弹框标题：有选中索引时是「标签 索引名」。
 function indexTitle(label: string): string {
@@ -170,6 +173,9 @@ async function loadIndexes(prefer?: string): Promise<void> {
 // 字段、原文、DDL 共用 selected，同时只开一个弹框。
 function openIndex(row: SearchIndexInfo, which: 'fields' | 'info' | 'ddl'): void {
   selected.value = row
+  // 先写入选中索引，computed 才是这份原文；草稿只活在本次弹框里。
+  if (which === 'info') infoDraft.value = infoText.value
+  if (which === 'ddl') ddlDraft.value = ddlText.value
   detailVisible.value = which === 'fields'
   infoVisible.value = which === 'info'
   ddlVisible.value = which === 'ddl'
@@ -486,7 +492,7 @@ watch(
       :title="indexTitle(t('redisSearch.ddl'))"
       icon="me-icon-copy-command"
       width="720px">
-      <me-code :model-value="ddlText" mode="redis" read-only copyable />
+      <me-code v-model="ddlDraft" mode="redis" copyable />
     </me-dialog>
 
     <!-- FT.INFO 原文 -->
@@ -495,7 +501,7 @@ watch(
       :title="indexTitle(t('redisSearch.info'))"
       icon="el-icon-info-filled"
       width="720px">
-      <me-code :model-value="infoText" read-only />
+      <me-code v-model="infoDraft" />
     </me-dialog>
 
     <!-- 样例：已有同名索引时不覆盖 -->
