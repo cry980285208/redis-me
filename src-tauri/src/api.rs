@@ -49,6 +49,8 @@ api_commands!(
     search_query(param: SearchQueryParam) -> SearchQueryResult;  // FT.SEARCH
     search_index_drop(index: String) -> ();                      // FT.DROPINDEX（不带 DD）
     search_tag_vals(index: String, field: String) -> Vec<String>; // FT.TAGVALS
+    search_syn_dump(index: String) -> Vec<SearchSynGroup>;       // FT.SYNDUMP，按组号收拢
+    search_syn_update(index: String, group: String, terms: Vec<String>) -> (); // FT.SYNUPDATE，往组里追加词
     search_sample_load(kind: String) -> SearchSampleResult;     // 写入 Redis Insight 样例并 FT.CREATE
     v_getattr(param: RedisVAttr) -> String;                       // Vector Set VGETATTR（按需，不随 VRANGE）
     v_setattr(param: RedisVAttr) -> ();                           // Vector Set VSETATTR（空串删除）

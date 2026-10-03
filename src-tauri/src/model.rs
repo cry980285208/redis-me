@@ -943,6 +943,12 @@ api_model!(SearchSampleResult {
     index: String,
 });
 
+// FT.SYNDUMP 按组号收拢。同一组里的词已去重，并按字序排好。
+api_model!(SearchSynGroup {
+    group: String,
+    terms: Vec<String>,
+});
+
 // 内存分析：一轮 SCAN + MEMORY USAGE，循环/暂停由前端控制（与键列表 SCAN 同构）
 api_model!(RedisMemoryParam {
     #[serde(rename = "match")]

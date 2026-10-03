@@ -51,6 +51,8 @@ export const commands = {
 	searchQuery: (id: string, param: SearchQueryParam) => typedError<SearchQueryResult, string>(__TAURI_INVOKE("search_query", { id, param })),
 	searchIndexDrop: (id: string, index: string) => typedError<null, string>(__TAURI_INVOKE("search_index_drop", { id, index })),
 	searchTagVals: (id: string, index: string, field: string) => typedError<string[], string>(__TAURI_INVOKE("search_tag_vals", { id, index, field })),
+	searchSynDump: (id: string, index: string) => typedError<SearchSynGroup[], string>(__TAURI_INVOKE("search_syn_dump", { id, index })),
+	searchSynUpdate: (id: string, index: string, group: string, terms: string[]) => typedError<null, string>(__TAURI_INVOKE("search_syn_update", { id, index, group, terms })),
 	searchSampleLoad: (id: string, kind: string) => typedError<SearchSampleResult, string>(__TAURI_INVOKE("search_sample_load", { id, kind })),
 	vGetattr: (id: string, param: RedisVAttr_Deserialize) => typedError<string, string>(__TAURI_INVOKE("v_getattr", { id, param })),
 	vSetattr: (id: string, param: RedisVAttr_Deserialize) => typedError<null, string>(__TAURI_INVOKE("v_setattr", { id, param })),
@@ -998,6 +1000,11 @@ export type SearchQueryResult = {
 export type SearchSampleResult = {
 	created: boolean,
 	index: string,
+};
+
+export type SearchSynGroup = {
+	group: string,
+	terms: string[],
 };
 
 export type SentinelOption = {

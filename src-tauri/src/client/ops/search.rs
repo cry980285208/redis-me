@@ -59,6 +59,97 @@ pub fn parse_ft_tagvals(value: Value) -> AnyResult<Vec<String>> {
     }
 }
 
+/// `FT.SYNDUMP`。空索引名当参数错误。
+pub fn syndump_cmd(index: &str) -> AnyResult<redis::Cmd> {
+    let index = index.trim();
+    if index.is_empty() {
+        bail!(AppError::EmptyParameters);
+    }
+    let mut cmd = redis::cmd("FT.SYNDUMP");
+    cmd.arg(index);
+    Ok(cmd)
+}
+
+/// `FT.SYNDUMP`：RESP2 是「词、组号数组」交替，RESP3 是词到组号数组的 Map。
+/// 组号也可能是单个字符串。一个词可以同时属于多组。空回复当成没有同义词。
+pub fn parse_ft_syndump(value: Value) -> AnyResult<Vec<(String, String)>> {
+    match value {
+        Value::Nil => Ok(Vec::new()),
+        Value::Array(arr) => {
+            if arr.len() % 2 != 0 {
+                bail!(invalid("FT.SYNDUMP"));
+            }
+            let mut out = Vec::new();
+            let mut i = 0;
+            while i < arr.len() {
+                push_syn_pairs(&mut out, &arr[i], &arr[i + 1]);
+                i += 2;
+            }
+            Ok(out)
+        }
+        Value::Map(map) => {
+            let mut out = Vec::new();
+            for (term, groups) in map {
+                push_syn_pairs(&mut out, &term, &groups);
+            }
+            Ok(out)
+        }
+        _ => bail!(invalid("FT.SYNDUMP")),
+    }
+}
+
+/// 把一个词和它的组号展开成多对。组号是数组或集合时，每个组号一对。
+fn push_syn_pairs(out: &mut Vec<(String, String)>, term: &Value, groups: &Value) {
+    let term = text(term);
+    match groups {
+        Value::Array(ids) | Value::Set(ids) => {
+            for id in ids {
+                out.push((term.clone(), text(id)));
+            }
+        }
+        other => out.push((term, text(other))),
+    }
+}
+
+/// `FT.SYNUPDATE`。空索引、空组号或没有词，都当参数错误。词两边的空白去掉，空词丢掉。
+pub fn synupdate_cmd(index: &str, group: &str, terms: &[String]) -> AnyResult<redis::Cmd> {
+    let index = index.trim();
+    let group = group.trim();
+    let terms: Vec<&str> = terms
+        .iter()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if index.is_empty() || group.is_empty() || terms.is_empty() {
+        bail!(AppError::EmptyParameters);
+    }
+    let mut cmd = redis::cmd("FT.SYNUPDATE");
+    cmd.arg(index).arg(group);
+    for term in terms {
+        cmd.arg(term);
+    }
+    Ok(cmd)
+}
+
+/// 把「词、组号」收成一组一行。组号、组内的词都按字序排，重复的词只留一次。
+pub fn group_synonyms(pairs: Vec<(String, String)>) -> Vec<SearchSynGroup> {
+    use std::collections::{BTreeMap, BTreeSet};
+
+    let mut map: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for (term, group) in pairs {
+        if term.is_empty() || group.is_empty() {
+            continue;
+        }
+        map.entry(group).or_default().insert(term);
+    }
+    map.into_iter()
+        .map(|(group, terms)| SearchSynGroup {
+            group,
+            terms: terms.into_iter().collect(),
+        })
+        .collect()
+}
+
 /// `FT.DROPINDEX`，不带 `DD`。空名当参数错误。
 pub fn drop_cmd(index: &str) -> AnyResult<redis::Cmd> {
     let index = index.trim();
@@ -873,6 +964,73 @@ mod tests {
         assert!(text.contains("FT.TAGVALS"));
         assert!(text.contains("idx"));
         assert!(text.contains("type"));
+    }
+
+    /// 同义词是「词 + 组号数组」。一个词可以进多组。收成组后，组号和词都按字序，重复词去掉。
+    #[test]
+    fn ft_syndump_groups_terms() {
+        let raw = Value::Array(vec![
+            b("shalom"),
+            Value::Array(vec![b("synonym1"), b("synonym2")]),
+            b("hi"),
+            Value::Array(vec![b("synonym1")]),
+            b("hello"),
+            Value::Array(vec![b("synonym1")]),
+            b("hello"),
+            Value::Array(vec![b("synonym1")]),
+            b("bike"),
+            b("cycle"),
+        ]);
+        let groups = group_synonyms(parse_ft_syndump(raw).unwrap());
+        assert_eq!(groups.len(), 3);
+        assert_eq!(groups[0].group, "cycle");
+        assert_eq!(groups[0].terms, vec!["bike".to_string()]);
+        assert_eq!(groups[1].group, "synonym1");
+        assert_eq!(
+            groups[1].terms,
+            vec!["hello".to_string(), "hi".to_string(), "shalom".to_string()]
+        );
+        assert_eq!(groups[2].group, "synonym2");
+        assert_eq!(groups[2].terms, vec!["shalom".to_string()]);
+    }
+
+    /// Map 和空回复也能读。组号数组要拆开。奇数个元素不算成对，整页报错。
+    #[test]
+    fn ft_syndump_map_nil_and_odd_array() {
+        let raw = Value::Map(vec![(
+            b("hello"),
+            Value::Array(vec![b("greet"), b("cycle")]),
+        )]);
+        let groups = group_synonyms(parse_ft_syndump(raw).unwrap());
+        assert_eq!(groups[0].group, "cycle");
+        assert_eq!(groups[0].terms, vec!["hello".to_string()]);
+        assert_eq!(groups[1].group, "greet");
+        assert_eq!(groups[1].terms, vec!["hello".to_string()]);
+        assert!(parse_ft_syndump(Value::Nil).unwrap().is_empty());
+        assert!(parse_ft_syndump(Value::Array(vec![b("only")])).is_err());
+        assert!(syndump_cmd(" ").is_err());
+        let packed = syndump_cmd(" idx ").unwrap().get_packed_command();
+        let text = String::from_utf8_lossy(&packed);
+        assert!(text.contains("FT.SYNDUMP"));
+        assert!(text.contains("idx"));
+    }
+
+    /// 组号和至少一个词都要有。命令是 FT.SYNUPDATE，空白词不发出去。
+    #[test]
+    fn synupdate_cmd_needs_group_and_terms() {
+        assert!(synupdate_cmd(" ", "cycle", &["bike".into()]).is_err());
+        assert!(synupdate_cmd("idx", " ", &["bike".into()]).is_err());
+        assert!(synupdate_cmd("idx", "cycle", &[]).is_err());
+        assert!(synupdate_cmd("idx", "cycle", &[" ".into()]).is_err());
+        let packed = synupdate_cmd(" idx ", " cycle ", &[" bike ".into(), "bicycle".into()])
+            .unwrap()
+            .get_packed_command();
+        let text = String::from_utf8_lossy(&packed);
+        assert!(text.contains("FT.SYNUPDATE"));
+        assert!(text.contains("idx"));
+        assert!(text.contains("cycle"));
+        assert!(text.contains("bike"));
+        assert!(text.contains("bicycle"));
     }
 
     /// 集群第二个分片上的「索引已存在」不能当成导入失败。

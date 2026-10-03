@@ -783,6 +783,36 @@ impl MeClient for MeCluster {
         }
         Ok(tags.into_iter().collect())
     }
+
+    fn search_syn_dump(&self, index: String) -> AnyResult<Vec<SearchSynGroup>> {
+        use crate::client::ops::search::{group_synonyms, parse_ft_syndump, syndump_cmd};
+
+        let cmd = syndump_cmd(&index)?;
+        let targets = self.search_targets();
+        let mut conn = self.get_conn()?;
+        // 同义词写在各分片自己的索引上。逐个 master 取并集，同一组里的词再去重。
+        let mut pairs = Vec::new();
+        for node in targets {
+            let (route, _) = self.get_node_route(node)?;
+            let value = conn.route_command(&cmd, route)?;
+            pairs.extend(parse_ft_syndump(value)?);
+        }
+        Ok(group_synonyms(pairs))
+    }
+
+    fn search_syn_update(&self, index: String, group: String, terms: Vec<String>) -> AnyResult<()> {
+        use crate::client::ops::search::synupdate_cmd;
+
+        let cmd = synupdate_cmd(&index, &group, &terms)?;
+        let targets = self.search_targets();
+        let mut conn = self.get_conn()?;
+        // 同义词写在各分片自己的索引上。每个 master 都追加一次；词已经在组里时再写一次结果相同。
+        for node in targets {
+            let (route, _) = self.get_node_route(node)?;
+            conn.route_command(&cmd, route)?;
+        }
+        Ok(())
+    }
 }
 
 // 个性化方法

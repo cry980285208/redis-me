@@ -4,11 +4,24 @@ import { computed, inject, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { connUiProvideKey, shareProvideKey } from '@/types/me-interface'
-import type { SearchHit, SearchIndexField, SearchIndexInfo } from '@/types/tauri-specta'
+import type {
+  SearchHit,
+  SearchIndexField,
+  SearchIndexInfo,
+  SearchSynGroup,
+} from '@/types/tauri-specta'
 import type { TableExportMatrix } from '@/utils/export'
 import { indexDdl } from '@/utils/search-ddl'
 import { defaultSettings } from '@/utils/settings-defaults'
-import { KEY_REFRESH, bus, meCommands, meConfirm, meFormatDisplayValue, meOk } from '@/utils/util'
+import {
+  KEY_REFRESH,
+  bus,
+  meCommands,
+  meConfirm,
+  meFormatDisplayValue,
+  meOk,
+  meWarn,
+} from '@/utils/util'
 
 const { t } = useI18n()
 const share = inject(shareProvideKey)!
@@ -35,6 +48,19 @@ const tagKeyword = ref('')
 const loadingTags = ref(false)
 // 切换字段或关掉弹框后，丢掉还在飞的上一次 FT.TAGVALS。
 let tagSeq = 0
+const synVisible = ref(false)
+const synGroups = ref<SearchSynGroup[]>([])
+const synKeyword = ref('')
+const loadingSyn = ref(false)
+// 关掉弹框后，丢掉还在飞的上一次 FT.SYNDUMP。
+let synSeq = 0
+const synAddVisible = ref(false)
+const synEditing = ref(false)
+const synAddGroup = ref('')
+const synAddTerms = ref('')
+// 编辑前这一组里的词。FT.SYNUPDATE 只会追加，用来判断哪些是新词。
+const synEditOriginal = ref<string[]>([])
+const savingSyn = ref(false)
 const sampleVisible = ref(false)
 const sampleKind = ref('')
 const loadingSample = ref(false)
@@ -114,6 +140,28 @@ function exportTagRows(data: unknown[]): TableExportMatrix {
   return {
     headers: ['#', t('redisSearch.tagValsValue')],
     rows: (data as { value: string }[]).map((row, index) => [String(index + 1), row.value]),
+  }
+}
+
+// 一组一行。词在界面上用逗号拼开，导出同一份文本。
+const filteredSynRows = computed(() => {
+  const q = synKeyword.value.trim().toLowerCase()
+  const rows = synGroups.value.map(item => ({ group: item.group, terms: item.terms.join(', ') }))
+  if (!q) return rows
+  return rows.filter(
+    row => row.group.toLowerCase().includes(q) || row.terms.toLowerCase().includes(q),
+  )
+})
+
+// 与表格列定义一致（操作列不导出）
+function exportSynRows(data: unknown[]): TableExportMatrix {
+  return {
+    headers: ['#', t('redisSearch.synGroup'), t('redisSearch.synTerms')],
+    rows: (data as { group: string; terms: string }[]).map((row, index) => [
+      String(index + 1),
+      row.group,
+      row.terms,
+    ]),
   }
 }
 
@@ -206,7 +254,7 @@ async function loadIndexes(prefer?: string): Promise<void> {
   }
 }
 
-// 字段、原文、DDL、Tag 集合共用 selected，同时只开一个弹框。
+// 字段、原文、DDL、Tag 集合、同义词组共用 selected，同时只开一个弹框。
 function openIndex(row: SearchIndexInfo, which: 'fields' | 'info' | 'ddl'): void {
   selected.value = row
   // 先写入选中索引，computed 才是这份原文；草稿只活在本次弹框里。
@@ -216,14 +264,16 @@ function openIndex(row: SearchIndexInfo, which: 'fields' | 'info' | 'ddl'): void
   infoVisible.value = which === 'info'
   ddlVisible.value = which === 'ddl'
   tagVisible.value = false
+  synVisible.value = false
 }
 
-// 更多菜单：浏览、信息、DDL、Tag 集合谁都能看，删除只在可写时出现。
+// 更多菜单：浏览、信息、DDL、Tag 集合、同义词组谁都能看，删除只在可写时出现。
 function onMore(row: SearchIndexInfo, cmd: string): void {
   if (cmd === 'browse') connUi.browseSearchIndex(row.name)
   else if (cmd === 'info') openIndex(row, 'info')
   else if (cmd === 'ddl') openIndex(row, 'ddl')
   else if (cmd === 'tags') openTagVals(row)
+  else if (cmd === 'syn') openSynDump(row)
   else if (cmd === 'drop') dropIndex(row)
 }
 
@@ -234,6 +284,7 @@ function openTagVals(row: SearchIndexInfo, fieldName?: string): void {
   if (!fieldName) detailVisible.value = false
   infoVisible.value = false
   ddlVisible.value = false
+  synVisible.value = false
   tagKeyword.value = ''
   tagValues.value = []
   const match = fieldName
@@ -277,6 +328,96 @@ async function loadTagVals(req = ++tagSeq): Promise<void> {
   }
 }
 
+// 打开就拉 FT.SYNDUMP。同义词组跟索引走，不挑字段。
+function openSynDump(row: SearchIndexInfo): void {
+  selected.value = row
+  detailVisible.value = false
+  infoVisible.value = false
+  ddlVisible.value = false
+  tagVisible.value = false
+  synAddVisible.value = false
+  synKeyword.value = ''
+  synGroups.value = []
+  synVisible.value = true
+  const req = ++synSeq
+  void loadSynDump(req)
+}
+
+// 词按空白或逗号切开，空的和重复的丢掉。组号本身不自动算成一个词。
+function splitSynTerms(raw: string): string[] {
+  const seen = new Set<string>()
+  const terms: string[] = []
+  for (const part of raw.split(/[\s,，]+/)) {
+    const term = part.trim()
+    if (!term || seen.has(term)) continue
+    seen.add(term)
+    terms.push(term)
+  }
+  return terms
+}
+
+function openSynAdd(): void {
+  synEditing.value = false
+  synEditOriginal.value = []
+  synAddGroup.value = ''
+  synAddTerms.value = ''
+  synAddVisible.value = true
+}
+
+function openSynEdit(row: { group: string }): void {
+  const found = synGroups.value.find(item => item.group === row.group)
+  synEditing.value = true
+  synEditOriginal.value = [...(found?.terms ?? [])]
+  synAddGroup.value = row.group
+  synAddTerms.value = synEditOriginal.value.join(' ')
+  synAddVisible.value = true
+}
+
+// FT.SYNUPDATE：组不存在就新建，已有的组只追加新词。
+async function saveSynGroup(): Promise<void> {
+  const index = selected.value?.name
+  const group = synAddGroup.value.trim()
+  const terms = splitSynTerms(synAddTerms.value)
+  if (!index || !group || !terms.length) return
+  const had = new Set(synEditOriginal.value)
+  const added = synEditing.value ? terms.filter(term => !had.has(term)) : terms
+  const removed = synEditing.value && synEditOriginal.value.some(term => !terms.includes(term))
+  // 没有新词就不用打命令。划掉的旧词去不掉，只提示这一次。
+  if (!added.length) {
+    synAddVisible.value = false
+    if (removed) meWarn(t('redisSearch.synTermsKept'))
+    return
+  }
+  savingSyn.value = true
+  try {
+    await meCommands.searchSynUpdate(share.conn!.id, index, group, added)
+    synAddVisible.value = false
+    // 追加成功时，旧词留着的说明已经包含结果，不再叠一条「保存成功」。
+    if (removed) meWarn(t('redisSearch.synTermsKept'))
+    else meOk(synEditing.value ? t('editOk') : t('redisSearch.synAddOk'))
+    await loadSynDump()
+  } finally {
+    savingSyn.value = false
+  }
+}
+
+async function loadSynDump(req = ++synSeq): Promise<void> {
+  const index = selected.value?.name
+  if (!index) {
+    synGroups.value = []
+    loadingSyn.value = false
+    return
+  }
+  loadingSyn.value = true
+  try {
+    const groups = await meCommands.searchSynDump(share.conn!.id, index)
+    if (req !== synSeq) return
+    synGroups.value = groups
+  } finally {
+    if (req === synSeq) loadingSyn.value = false
+  }
+}
+
 // 进入查询页时清空条件和分数，马上搜一次。
 function openQuery(row: SearchIndexInfo): void {
   selected.value = row
@@ -284,6 +425,7 @@ function openQuery(row: SearchIndexInfo): void {
   withScores.value = false
   hits.value = []
   tagVisible.value = false
+  synVisible.value = false
   pageMode.value = 'query'
   void runSearch()
 }
@@ -321,7 +463,7 @@ async function loadSample(): Promise<void> {
   }
 }
 
-// 退出查询页，并关掉字段、原文、DDL、Tag 集合弹框。
+// 退出查询页，并关掉字段、原文、DDL、Tag 集合、同义词组弹框。
 function leaveIndex(): void {
   selected.value = null
   pageMode.value = 'list'
@@ -332,6 +474,10 @@ function leaveIndex(): void {
   tagVisible.value = false
   tagSeq += 1
   loadingTags.value = false
+  synVisible.value = false
+  synAddVisible.value = false
+  synSeq += 1
+  loadingSyn.value = false
 }
 
 // 不带 DD，文档键保留。删的是当前索引就退回列表。
@@ -356,6 +502,11 @@ watch(
     void loadIndexes()
   },
 )
+
+// 列表弹框关掉时，新增框不要留在上面。
+watch(synVisible, shown => {
+  if (!shown) synAddVisible.value = false
+})
 </script>
 
 <template>
@@ -463,7 +614,7 @@ watch(
             </template>
           </el-table-column>
 
-          <!-- 查询做成按钮；浏览、信息、DDL、Tag 集合在更多里，删除只在可写时出现 -->
+          <!-- 查询做成按钮；浏览、信息、DDL、Tag 集合、同义词组在更多里，删除只在可写时出现 -->
           <el-table-column
             :label="t('action')"
             :width="t('redisSearch.actionWidth')"
@@ -492,6 +643,9 @@ watch(
                       </el-dropdown-item>
                       <el-dropdown-item command="tags">
                         <me-icon icon="el-icon-collection-tag" :name="t('redisSearch.tagVals')" />
+                      </el-dropdown-item>
+                      <el-dropdown-item command="syn">
+                        <me-icon icon="el-icon-connection" :name="t('redisSearch.synDump')" />
                       </el-dropdown-item>
                       <el-dropdown-item v-if="canEdit" command="drop">
                         <me-icon icon="el-icon-delete" :name="t('redisSearch.drop')" />
@@ -646,6 +800,98 @@ watch(
       </div>
     </me-dialog>
 
+    <!-- FT.SYNDUMP。一组一行，词用逗号拼开。条数由分页自己显示。 -->
+    <me-dialog
+      v-model="synVisible"
+      :title="indexTitle(t('redisSearch.synDump'))"
+      icon="el-icon-connection"
+      width="700">
+      <div v-loading="loadingSyn" class="table-tag-vals">
+        <div class="tag-toolbar" :class="{ 'is-end': !canEdit }">
+          <el-button v-if="canEdit" icon="el-icon-plus" @click="openSynAdd" type="primary">
+            {{ t('redisSearch.synAdd') }}
+          </el-button>
+          <div class="toolbar-right">
+            <el-input
+              v-model="synKeyword"
+              :placeholder="t('redisSearch.synFilter')"
+              clearable
+              style="width: 220px" />
+            <el-button icon="el-icon-search" type="primary" @click="loadSynDump()" />
+          </div>
+        </div>
+        <div class="tag-main">
+          <me-table
+            v-if="filteredSynRows.length"
+            :data="filteredSynRows"
+            export-name="synonyms"
+            :export-rows="exportSynRows"
+            height="100%"
+            stripe
+            border
+            :default-sort="{ prop: 'group', order: 'ascending' }">
+            <el-table-column type="index" label="#" width="60" align="center" />
+            <el-table-column
+              :label="t('redisSearch.synGroup')"
+              prop="group"
+              width="160"
+              show-overflow-tooltip
+              sortable />
+            <el-table-column
+              :label="t('redisSearch.synTerms')"
+              prop="terms"
+              show-overflow-tooltip
+              sortable />
+            <el-table-column v-if="canEdit" :label="t('action')" width="80" align="center">
+              <template #default="{ row }">
+                <div class="syn-actions">
+                  <me-icon
+                    icon="el-icon-edit"
+                    class="icon-btn"
+                    hint
+                    :name="t('edit')"
+                    @click="openSynEdit(row)" />
+                </div>
+              </template>
+            </el-table-column>
+          </me-table>
+          <el-empty v-else-if="!loadingSyn" :description="t('redisSearch.synEmpty')" />
+        </div>
+      </div>
+    </me-dialog>
+
+    <!-- FT.SYNUPDATE。组号和词分开填，词里的空格、逗号只用来切开。 -->
+    <el-dialog
+      v-model="synAddVisible"
+      :title="synEditing ? t('redisSearch.synEditTitle') : t('redisSearch.synAddTitle')"
+      width="480px"
+      align-center
+      draggable
+      destroy-on-close
+      append-to-body>
+      <el-form label-position="right" label-width="auto" @submit.prevent>
+        <el-form-item :label="t('redisSearch.synGroup')">
+          <el-input
+            v-model="synAddGroup"
+            :placeholder="t('redisSearch.synGroupPh')"
+            :disabled="synEditing" />
+        </el-form-item>
+        <el-form-item :label="t('redisSearch.synTerms')">
+          <el-input v-model="synAddTerms" :placeholder="t('redisSearch.synTermsPh')" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="synAddVisible = false">{{ t('cancel') }}</el-button>
+        <el-button
+          type="primary"
+          :disabled="!synAddGroup.trim() || !splitSynTerms(synAddTerms).length"
+          :loading="savingSyn"
+          @click="saveSynGroup">
+          {{ t('ok') }}
+        </el-button>
+      </template>
+    </el-dialog>
+
     <!-- 由 FT.INFO 还原的 FT.CREATE，不是服务器保存的原文 -->
     <me-dialog
       v-model="ddlVisible"
@@ -768,6 +1014,10 @@ watch(
     justify-content: space-between;
     margin-bottom: 10px;
     gap: 10px;
+
+    &.is-end {
+      justify-content: flex-end;
+    }
   }
 
   .toolbar-right {
@@ -780,6 +1030,12 @@ watch(
     flex: 1;
     min-height: 0;
   }
+}
+
+.syn-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
 }
 
 .sample-list {

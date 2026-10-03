@@ -519,6 +519,22 @@ impl MeClient for MeSingle {
         Ok(tags)
     }
 
+    fn search_syn_dump(&self, index: String) -> AnyResult<Vec<SearchSynGroup>> {
+        use crate::client::ops::search::{group_synonyms, parse_ft_syndump, syndump_cmd};
+
+        let mut conn = self.get_conn()?;
+        let value: Value = syndump_cmd(&index)?.query(&mut conn)?;
+        Ok(group_synonyms(parse_ft_syndump(value)?))
+    }
+
+    fn search_syn_update(&self, index: String, group: String, terms: Vec<String>) -> AnyResult<()> {
+        use crate::client::ops::search::synupdate_cmd;
+
+        let mut conn = self.get_conn()?;
+        let _: Value = synupdate_cmd(&index, &group, &terms)?.query(&mut conn)?;
+        Ok(())
+    }
+
     fn search_sample_load(&self, kind: String) -> AnyResult<SearchSampleResult> {
         use crate::client::ops::search::{
             apply_sample_data, parse_ft_list, sample_create_cmd, sample_index_name,

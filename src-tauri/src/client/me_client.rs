@@ -66,15 +66,14 @@ pub trait MeClient: Send + Sync {
     // TimeSeries
     fn ts_info(&self, key: RedisKey) -> AnyResult<Vec<RedisArInfoItem>>;
 
-    // RedisSearch（索引工作区，不是键类型）
-    /// 只要索引名。键树选择框用，不打 `FT.INFO`。
+    // RedisSearch
     fn search_index_names(&self) -> AnyResult<Vec<String>>;
     fn search_index_list(&self) -> AnyResult<Vec<SearchIndexInfo>>;
     fn search_query(&self, param: SearchQueryParam) -> AnyResult<SearchQueryResult>;
     fn search_index_drop(&self, index: String) -> AnyResult<()>;
-    /// `FT.TAGVALS`。`field` 用 schema 里的属性名（查询名），不是 JSON 路径。
     fn search_tag_vals(&self, index: String, field: String) -> AnyResult<Vec<String>>;
-    /// `kind` 为 `bikes` 或 `movies`。索引已存在时不写数据。
+    fn search_syn_dump(&self, index: String) -> AnyResult<Vec<SearchSynGroup>>;
+    fn search_syn_update(&self, index: String, group: String, terms: Vec<String>) -> AnyResult<()>;
     fn search_sample_load(&self, kind: String) -> AnyResult<SearchSampleResult>;
 
     // Stream
