@@ -598,6 +598,7 @@ function folderIconName(node: TreeNode): string {
     <template #default="{ height }">
       <el-tree-v2
         ref="tree"
+        :class="{ 'is-key-list': !keyShowTree && !showCheckbox && !useFolderGroups }"
         :data="rootTreeData"
         :default-expanded-keys="defaultExpandedKeys"
         @check-change="checkChange"
@@ -622,9 +623,7 @@ function folderIconName(node: TreeNode): string {
             v-else-if="node.isLeaf && !node.data.isFavoriteFolderRoot"
             :class="getNodeClass(node)"
             class="me-flex key-leaf-row">
-            <div
-              class="me-flex key-leaf-main"
-              :class="{ 'list-key': !keyShowTree && !showCheckbox }">
+            <div class="me-flex key-leaf-main">
               <KeyTypeTag :redis-key="node.data.redisKey" />
               <div class="key-leaf-label">
                 <span v-if="node.label">{{ node.label }}</span>
@@ -791,9 +790,13 @@ function folderIconName(node: TreeNode): string {
   outline-offset: 1px;
 }
 
-/* 列表展示时左侧空白处理 */
-.list-key {
-  margin-left: -20px;
+/* 平铺键列表没有目录。藏掉只占位的叶子箭头。收藏目录树仍要展开箭头，不走这套 */
+.is-key-list :deep(.el-tree-node__expand-icon) {
+  display: none;
+}
+
+.is-key-list .key-leaf-row {
+  padding-left: 6px;
 }
 
 /* 占满 content 剩余宽度（勿用 width:100%，会和展开图标叠宽溢出） */
@@ -868,7 +871,7 @@ function folderIconName(node: TreeNode): string {
   height: 100%;
 }
 
-/* 开内存：右缘与目录 [ n ] 的括号对齐。关内存：只剩星标，15px 对齐到数字 */
+/* 开内存：右缘与目录 [ n ] 的括号对齐。关内存：树形 16px 对齐数字；平铺没有括号，8px 靠右 */
 .key-leaf-actions {
   flex-shrink: 0;
   display: flex;
@@ -876,8 +879,12 @@ function folderIconName(node: TreeNode): string {
   margin-right: 10px;
 
   &.is-star-only {
-    margin-right: 15px;
+    margin-right: 16px;
   }
+}
+
+.is-key-list .key-leaf-actions.is-star-only {
+  margin-right: 8px;
 }
 
 /* 收藏星标图标 */
