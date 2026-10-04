@@ -835,7 +835,7 @@ onUnmounted(() => {
       v-model="tagVisible"
       :title="t('redisSearch.tagVals')"
       icon="el-icon-collection-tag"
-      width="700">
+      width="720px">
       <template #title-extra>
         <el-text v-if="selected" type="info" style="margin-left: 8px">{{ selected.name }}</el-text>
       </template>
@@ -882,7 +882,7 @@ onUnmounted(() => {
       v-model="synVisible"
       :title="t('redisSearch.synDump')"
       icon="el-icon-connection"
-      width="700">
+      width="720px">
       <template #title-extra>
         <el-text v-if="selected" type="info" style="margin-left: 8px">{{ selected.name }}</el-text>
       </template>
