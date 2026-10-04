@@ -479,7 +479,7 @@ function openAlter(row: SearchIndexInfo): void {
   alterVisible.value = true
 }
 
-// 只发一条 FT.ALTER。集群由后端打到每个 master。失败时弹框留着，方便改完再执行。
+// 只发一条 FT.ALTER。集群也只打到一个主节点。失败时弹框留着，方便改完再执行。
 async function runAlter(): Promise<void> {
   const text = alterDraft.value.trim()
   if (!text) return
@@ -495,7 +495,7 @@ async function runAlter(): Promise<void> {
   }
 }
 
-// 只发一条 FT.CREATE。集群由后端打到每个 master。失败时弹框留着，方便改完再执行。
+// 只发一条 FT.CREATE。集群也只打到一个主节点。失败时弹框留着，方便改完再执行。
 async function runCreate(): Promise<void> {
   const text = createDraft.value.trim()
   if (!text) return

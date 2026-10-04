@@ -48,8 +48,8 @@ api_commands!(
     search_index_list() -> Vec<SearchIndexInfo>;                 // RedisSearch 索引列表（含 FT.INFO）
     search_query(param: SearchQueryParam) -> SearchQueryResult;  // FT.SEARCH
     search_index_drop(index: String, delete_docs: bool) -> ();   // FT.DROPINDEX；delete_docs 时带 DD
-    search_index_create(command: String) -> ();                 // 用户编辑的一条 FT.CREATE；集群每个 master 一次
-    search_index_alter(command: String) -> ();                  // 用户编辑的一条 FT.ALTER；集群每个 master 一次
+    search_index_create(command: String) -> ();                 // 用户编辑的一条 FT.CREATE；集群打到一个主节点
+    search_index_alter(command: String) -> ();                  // 用户编辑的一条 FT.ALTER；集群打到一个主节点
     search_tag_vals(index: String, field: String) -> Vec<String>; // FT.TAGVALS
     search_syn_dump(index: String) -> Vec<SearchSynGroup>;       // FT.SYNDUMP，按组号收拢
     search_syn_update(index: String, group: String, terms: Vec<String>) -> (); // FT.SYNUPDATE，往组里追加词

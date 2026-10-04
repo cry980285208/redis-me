@@ -5,6 +5,7 @@ use crate::client::ops::imp::{import_cmd_0_thread, import_csv_0_thread};
 use crate::client::ops::info::{parse_client_info, redis_value_to_log};
 use crate::client::ops::key_scan::{batch_key0, scan_0_batch_count, scan_0_exact, scan_1_cmd};
 use crate::client::ops::pubsub::{monitor0, subscribe0};
+use crate::client::ops::search::SearchCmd;
 use crate::client::state::MeBase;
 use crate::me_client_forwards;
 use crate::model::*;
@@ -57,6 +58,14 @@ impl Drop for MeCluster {
         self.subscribe_stop().unwrap_or(());
         self.monitor_stop().unwrap_or(());
         self.export_import_running.store(false, Relaxed);
+    }
+}
+
+impl SearchCmd for LoggingClusterConnection {
+    fn search_cmd(&mut self, cmd: &redis::Cmd) -> redis::RedisResult<Value> {
+        // 没有键，query() 会按参数算槽。打到任意主节点，由 Redis 8 协调器处理。
+        let route = RoutingInfo::SingleNode(SingleNodeRoutingInfo::RandomPrimary);
+        self.route_command(cmd, route)
     }
 }
 
@@ -692,204 +701,73 @@ impl MeClient for MeCluster {
     me_client_forwards!();
 
     fn search_index_names(&self) -> AnyResult<Vec<String>> {
-        use crate::client::ops::search::parse_ft_list;
-        use std::collections::BTreeSet;
+        use crate::client::ops::search::list_index_names;
 
-        let targets = self.search_targets();
         let mut conn = self.get_conn()?;
-        let mut names = BTreeSet::new();
-        for node in &targets {
-            let (route, _) = self.get_node_route(node.clone())?;
-            let cmd = redis::cmd("FT._LIST");
-            let value = conn.route_command(&cmd, route)?;
-            for name in parse_ft_list(value)? {
-                names.insert(name);
-            }
-        }
-        Ok(names.into_iter().collect())
+        list_index_names(&mut *conn)
     }
 
     fn search_index_list(&self) -> AnyResult<Vec<SearchIndexInfo>> {
-        use crate::client::ops::search::parse_ft_info;
+        use crate::client::ops::search::list_indexes;
 
-        let names = self.search_index_names()?;
-        let info_node = self.search_targets().first().cloned().flatten();
-        let (info_route, _) = self.get_node_route(info_node)?;
         let mut conn = self.get_conn()?;
-        let mut indexes = Vec::with_capacity(names.len());
-        for name in names {
-            let mut cmd = redis::cmd("FT.INFO");
-            cmd.arg(&name);
-            let value = conn.route_command(&cmd, info_route.clone())?;
-            indexes.push(parse_ft_info(&name, value)?);
-        }
-        Ok(indexes)
+        list_indexes(&mut *conn)
     }
 
     fn search_query(&self, param: SearchQueryParam) -> AnyResult<SearchQueryResult> {
-        use crate::client::ops::search::{parse_ft_search, prepare_search};
+        use crate::client::ops::search::run_search;
 
-        // 打到一个 master，由协调节点汇总。单机 node_list 为空时不会走到这里。
-        let (route, _) = self.get_node_route(self.search_targets().into_iter().flatten().next())?;
         let mut conn = self.get_conn()?;
-        let prepared = prepare_search(&param)?;
-        let value = conn.route_command(&prepared.cmd, route)?;
-        parse_ft_search(value, param.with_scores, &prepared.vectors)
+        run_search(&mut *conn, &param)
     }
 
     fn search_sample_load(&self, kind: String) -> AnyResult<SearchSampleResult> {
-        use crate::client::ops::search::{
-            apply_sample_data, index_already_exists, parse_ft_list, sample_create_cmd,
-            sample_index_name,
-        };
+        use crate::client::ops::search::run_sample_load;
 
-        let index = sample_index_name(&kind)?.to_string();
-        let targets = self.search_targets();
         let mut conn = self.get_conn()?;
-        // 任一 master 上已有同名索引就整次跳过，避免盖掉已有文档
-        for node in &targets {
-            let (route, _) = self.get_node_route(node.clone())?;
-            let cmd = redis::cmd("FT._LIST");
-            let value = conn.route_command(&cmd, route)?;
-            if parse_ft_list(value)?.iter().any(|name| name == &index) {
-                return Ok(SearchSampleResult {
-                    created: false,
-                    index,
-                });
-            }
-        }
-        apply_sample_data(&mut conn, &kind)?;
-        // 每个 master 都建一次：旧版要逐个建，Redis 8 建一次就会同步，其余节点回已存在。
-        let mut created = false;
-        for node in &targets {
-            let (route, _) = self.get_node_route(node.clone())?;
-            let cmd = sample_create_cmd(&kind)?;
-            match conn.route_command(&cmd, route) {
-                Ok(_) => created = true,
-                Err(e) if index_already_exists(&e.to_string()) => {}
-                Err(e) => return Err(e.into()),
-            }
-        }
-        Ok(SearchSampleResult { created, index })
+        run_sample_load(&mut *conn, &kind)
     }
 
     fn search_index_drop(&self, index: String, delete_docs: bool) -> AnyResult<()> {
-        use crate::client::ops::search::drop_cmd;
+        use crate::client::ops::search::run_index_drop;
 
-        // 和查询一样打到一个 master。delete_docs 只决定命令里有没有 DD。
-        let (route, _) = self.get_node_route(self.search_targets().into_iter().flatten().next())?;
         let mut conn = self.get_conn()?;
-        conn.route_command(&drop_cmd(&index, delete_docs)?, route)?;
-        Ok(())
+        run_index_drop(&mut *conn, &index, delete_docs)
     }
 
     fn search_index_create(&self, command: String) -> AnyResult<()> {
-        use crate::client::ops::search::{create_cmd, index_already_exists};
+        use crate::client::ops::search::run_index_create;
 
-        let targets = self.search_targets();
         let mut conn = self.get_conn()?;
-        // Redis 8 建一次会同步到其它分片，后一个 master 常回已存在。全部都是已存在才把这个错交出去。
-        let mut created = false;
-        let mut exists: Option<String> = None;
-        for node in &targets {
-            let (route, _) = self.get_node_route(node.clone())?;
-            let cmd = create_cmd(&command)?;
-            match conn.route_command(&cmd, route) {
-                Ok(_) => created = true,
-                Err(e) if index_already_exists(&e.to_string()) => {
-                    if exists.is_none() {
-                        exists = Some(e.to_string());
-                    }
-                }
-                Err(e) => return Err(e.into()),
-            }
-        }
-        if created {
-            return Ok(());
-        }
-        match exists {
-            Some(msg) => bail!(msg),
-            None => bail!(AppError::EmptyParameters),
-        }
+        run_index_create(&mut *conn, &command)
     }
 
     fn search_index_alter(&self, command: String) -> AnyResult<()> {
-        use crate::client::ops::search::{alter_cmd, schema_field_exists};
+        use crate::client::ops::search::run_index_alter;
 
-        let targets = self.search_targets();
         let mut conn = self.get_conn()?;
-        // Redis 8 改一次会同步到其它分片，后一个 master 常回字段已存在。全部都是已存在才把这个错交出去。
-        let mut altered = false;
-        let mut exists: Option<String> = None;
-        for node in &targets {
-            let (route, _) = self.get_node_route(node.clone())?;
-            let cmd = alter_cmd(&command)?;
-            match conn.route_command(&cmd, route) {
-                Ok(_) => altered = true,
-                Err(e) if schema_field_exists(&e.to_string()) => {
-                    if exists.is_none() {
-                        exists = Some(e.to_string());
-                    }
-                }
-                Err(e) => return Err(e.into()),
-            }
-        }
-        if altered {
-            return Ok(());
-        }
-        match exists {
-            Some(msg) => bail!(msg),
-            None => bail!(AppError::EmptyParameters),
-        }
+        run_index_alter(&mut *conn, &command)
     }
 
     fn search_tag_vals(&self, index: String, field: String) -> AnyResult<Vec<String>> {
-        use crate::client::ops::search::{parse_ft_tagvals, tagvals_cmd};
-        use std::collections::BTreeSet;
+        use crate::client::ops::search::run_tag_vals;
 
-        let cmd = tagvals_cmd(&index, &field)?;
-        let targets = self.search_targets();
         let mut conn = self.get_conn()?;
-        // 文档按槽分片，FT.TAGVALS 只看本分片。逐个 master 取并集；若协调节点已汇总，去重后结果相同。
-        let mut tags = BTreeSet::new();
-        for node in targets {
-            let (route, _) = self.get_node_route(node)?;
-            let value = conn.route_command(&cmd, route)?;
-            for tag in parse_ft_tagvals(value)? {
-                tags.insert(tag);
-            }
-        }
-        Ok(tags.into_iter().collect())
+        run_tag_vals(&mut *conn, &index, &field)
     }
 
     fn search_syn_dump(&self, index: String) -> AnyResult<Vec<SearchSynGroup>> {
-        use crate::client::ops::search::{group_synonyms, parse_ft_syndump, syndump_cmd};
+        use crate::client::ops::search::run_syn_dump;
 
-        let cmd = syndump_cmd(&index)?;
-        let targets = self.search_targets();
         let mut conn = self.get_conn()?;
-        // 同义词写在各分片自己的索引上。逐个 master 取并集，同一组里的词再去重。
-        let mut pairs = Vec::new();
-        for node in targets {
-            let (route, _) = self.get_node_route(node)?;
-            let value = conn.route_command(&cmd, route)?;
-            pairs.extend(parse_ft_syndump(value)?);
-        }
-        Ok(group_synonyms(pairs))
+        run_syn_dump(&mut *conn, &index)
     }
 
     fn search_syn_update(&self, index: String, group: String, terms: Vec<String>) -> AnyResult<()> {
-        use crate::client::ops::search::synupdate_cmd;
+        use crate::client::ops::search::run_syn_update;
 
-        let cmd = synupdate_cmd(&index, &group, &terms)?;
-        let targets = self.search_targets();
         let mut conn = self.get_conn()?;
-        // 同义词写在各分片自己的索引上。每个 master 都追加一次；词已经在组里时再写一次结果相同。
-        for node in targets {
-            let (route, _) = self.get_node_route(node)?;
-            conn.route_command(&cmd, route)?;
-        }
-        Ok(())
+        run_syn_update(&mut *conn, &index, &group, &terms)
     }
 }
 
@@ -1083,16 +961,6 @@ impl MeCluster {
                 info!("FT._LIST 不可用，搜索页不展示: {e}");
                 false
             }
-        }
-    }
-
-    /// 搜索命令要打到的节点。有 master 就逐个发；列表为空时退回随机主节点一次。
-    fn search_targets(&self) -> Vec<Option<String>> {
-        let masters = self.get_node_list_master();
-        if masters.is_empty() {
-            vec![None]
-        } else {
-            masters.into_iter().map(Some).collect()
         }
     }
 

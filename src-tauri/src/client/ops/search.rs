@@ -1,4 +1,10 @@
-//! RedisSearch 的解析和样例拼装。发命令在单机、集群各自做：集群要按节点路由。
+//! RedisSearch 的命令拼装、发送和回复解析。
+//!
+//! Redis 8 集群上，这些命令打到任意一个主节点即可。协调器会把
+//! `FT.CREATE`、`FT.ALTER`、`FT.DROPINDEX`、`FT.SYNUPDATE` 同步到各分片；
+//! `FT.SEARCH`、`FT.INFO`、`FT.TAGVALS`、`FT.SYNDUMP`、`FT._LIST` 也由该节点汇总。
+//! 单机就是当前连接。集群不要走 `query()`：命令没有键，redis-rs 会按参数算槽。
+//! 样例文档的 `HSET` / `JSON.SET` 有键，仍按槽位转发。
 
 use crate::model::*;
 use crate::support::error::AppError;
@@ -164,7 +170,7 @@ pub fn drop_cmd(index: &str, delete_docs: bool) -> AnyResult<redis::Cmd> {
     Ok(cmd)
 }
 
-/// 样例索引名。集群先用它在各 master 上查重。
+/// 样例索引名。已有同名索引时整次跳过，避免盖掉文档。
 pub fn sample_index_name(kind: &str) -> AnyResult<&'static str> {
     Ok(sample_of(kind)?.index)
 }
@@ -213,7 +219,7 @@ pub fn alter_cmd(text: &str) -> AnyResult<redis::Cmd> {
     Ok(cmd)
 }
 
-/// `FT.CREATE` 命令。集群要对每个 master 各发一次。
+/// 样例的 `FT.CREATE`。单机和集群都只发一次。
 pub fn sample_create_cmd(kind: &str) -> AnyResult<redis::Cmd> {
     let mut cmd = redis::cmd("FT.CREATE");
     cmd.arg(sample_of(kind)?.create);
@@ -289,19 +295,106 @@ pub fn parse_ft_search(
     }
 }
 
-/// 同名索引已经在。集群上一条 `FT.CREATE` 会同步到其他分片，后一个 master 常回这个错。
-pub fn index_already_exists(err: &str) -> bool {
-    let err = err.to_lowercase();
-    err.contains("index already exists") || err.contains("search_index_exists")
+/// 发送一条没有键的搜索命令。
+///
+/// 单机实现是 `query`。集群实现是 `route_command` 到任意一个主节点。
+/// 见文件顶部：Redis 8 由协调器同步或汇总，客户端不再逐个主节点发。
+pub trait SearchCmd: Commands {
+    fn search_cmd(&mut self, cmd: &redis::Cmd) -> redis::RedisResult<Value>;
 }
 
-/// 字段已经在 schema 里。集群上一条 `FT.ALTER` 会同步到其他分片，后一个 master 常回这个错。
-pub fn schema_field_exists(err: &str) -> bool {
-    let err = err.to_lowercase();
-    err.contains("duplicate field")
-        || err.contains("already exists in schema")
-        || err.contains("schema already")
-        || (err.contains("already exists") && (err.contains("field") || err.contains("attribute")))
+/// `FT._LIST`。名字排序去重。
+pub fn list_index_names(conn: &mut impl SearchCmd) -> AnyResult<Vec<String>> {
+    let listed = conn.search_cmd(&redis::cmd("FT._LIST"))?;
+    let mut names = parse_ft_list(listed)?;
+    names.sort();
+    names.dedup();
+    Ok(names)
+}
+
+/// 索引列表：`FT._LIST` 之后逐个 `FT.INFO`。
+pub fn list_indexes(conn: &mut impl SearchCmd) -> AnyResult<Vec<SearchIndexInfo>> {
+    let names = list_index_names(conn)?;
+    let mut indexes = Vec::with_capacity(names.len());
+    for name in names {
+        let mut cmd = redis::cmd("FT.INFO");
+        cmd.arg(&name);
+        indexes.push(parse_ft_info(&name, conn.search_cmd(&cmd)?)?);
+    }
+    Ok(indexes)
+}
+
+/// `FT.SEARCH`。
+pub fn run_search(
+    conn: &mut impl SearchCmd,
+    param: &SearchQueryParam,
+) -> AnyResult<SearchQueryResult> {
+    let prepared = prepare_search(param)?;
+    let value = conn.search_cmd(&prepared.cmd)?;
+    parse_ft_search(value, param.with_scores, &prepared.vectors)
+}
+
+/// `FT.DROPINDEX`。`delete_docs` 只决定命令里有没有 `DD`。
+pub fn run_index_drop(conn: &mut impl SearchCmd, index: &str, delete_docs: bool) -> AnyResult<()> {
+    let _: Value = conn.search_cmd(&drop_cmd(index, delete_docs)?)?;
+    Ok(())
+}
+
+/// 用户编辑的一条 `FT.CREATE`。重复创建把服务端错误原样交出去。
+pub fn run_index_create(conn: &mut impl SearchCmd, command: &str) -> AnyResult<()> {
+    let _: Value = conn.search_cmd(&create_cmd(command)?)?;
+    Ok(())
+}
+
+/// 用户编辑的一条 `FT.ALTER`。字段已存在把服务端错误原样交出去。
+pub fn run_index_alter(conn: &mut impl SearchCmd, command: &str) -> AnyResult<()> {
+    let _: Value = conn.search_cmd(&alter_cmd(command)?)?;
+    Ok(())
+}
+
+/// `FT.TAGVALS`。结果排序去重。
+pub fn run_tag_vals(conn: &mut impl SearchCmd, index: &str, field: &str) -> AnyResult<Vec<String>> {
+    let value = conn.search_cmd(&tagvals_cmd(index, field)?)?;
+    let mut tags = parse_ft_tagvals(value)?;
+    tags.sort();
+    tags.dedup();
+    Ok(tags)
+}
+
+/// `FT.SYNDUMP`，按组号收拢。
+pub fn run_syn_dump(conn: &mut impl SearchCmd, index: &str) -> AnyResult<Vec<SearchSynGroup>> {
+    let value = conn.search_cmd(&syndump_cmd(index)?)?;
+    Ok(group_synonyms(parse_ft_syndump(value)?))
+}
+
+/// `FT.SYNUPDATE`，往组里追加词。
+pub fn run_syn_update(
+    conn: &mut impl SearchCmd,
+    index: &str,
+    group: &str,
+    terms: &[String],
+) -> AnyResult<()> {
+    let _: Value = conn.search_cmd(&synupdate_cmd(index, group, terms)?)?;
+    Ok(())
+}
+
+/// 写入样例文档并 `FT.CREATE`。同名索引已在时不写键、不重建。
+pub fn run_sample_load(conn: &mut impl SearchCmd, kind: &str) -> AnyResult<SearchSampleResult> {
+    let index = sample_index_name(kind)?.to_string();
+    let listed = conn.search_cmd(&redis::cmd("FT._LIST"))?;
+    if parse_ft_list(listed)?.iter().any(|name| name == &index) {
+        return Ok(SearchSampleResult {
+            created: false,
+            index,
+        });
+    }
+    // 文档命令带键，集群按槽位转发，不走 search_cmd。
+    apply_sample_data(conn, kind)?;
+    let _: Value = conn.search_cmd(&sample_create_cmd(kind)?)?;
+    Ok(SearchSampleResult {
+        created: true,
+        index,
+    })
 }
 
 // ------------------------------ 仅本文件使用 ------------------------------
@@ -1084,16 +1177,6 @@ mod tests {
         assert!(text.contains("bicycle"));
     }
 
-    /// 集群第二个分片上的「索引已存在」不能当成导入失败。
-    #[test]
-    fn index_exists_error_is_recognized() {
-        assert!(index_already_exists(
-            "SEARCH_INDEX_EXISTS: Index already exists"
-        ));
-        assert!(index_already_exists("Index already exists"));
-        assert!(!index_already_exists("unknown command"));
-    }
-
     /// 自行车样例是 111 条 Hash，向量为 768 维 float32。
     #[test]
     fn bikes_lines_are_hset_with_768_floats() {
@@ -1217,10 +1300,6 @@ mod tests {
                 .to_string()
                 .contains("search_alter_not_ft_alter")
         );
-        assert!(schema_field_exists("Duplicate field in schema - city"));
-        assert!(schema_field_exists("Attribute already exists in schema"));
-        assert!(!schema_field_exists("Unknown Index name"));
-        assert!(!schema_field_exists("Index already exists"));
     }
 
     /// 默认不带 DD。勾选同时删除文档才附上。

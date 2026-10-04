@@ -6,6 +6,7 @@ use crate::client::ops::info::{parse_client_info, redis_value_to_log};
 use crate::client::ops::key::copy0;
 use crate::client::ops::key_scan::{batch_key0, scan_0_batch_count, scan_0_exact, scan_1_cmd};
 use crate::client::ops::pubsub::{monitor0, subscribe0};
+use crate::client::ops::search::SearchCmd;
 use crate::client::state::MeBase;
 use crate::me_client_forwards;
 use crate::model::*;
@@ -48,6 +49,12 @@ impl Drop for MeSingle {
         let _ = self.subscribe_stop();
         let _ = self.monitor_stop();
         self.export_import_running.store(false, Relaxed);
+    }
+}
+
+impl SearchCmd for LoggingConnection {
+    fn search_cmd(&mut self, cmd: &redis::Cmd) -> redis::RedisResult<Value> {
+        cmd.query(self)
     }
 }
 
@@ -485,110 +492,73 @@ impl MeClient for MeSingle {
     me_client_forwards!();
 
     fn search_index_names(&self) -> AnyResult<Vec<String>> {
-        use crate::client::ops::search::parse_ft_list;
+        use crate::client::ops::search::list_index_names;
 
         let mut conn = self.get_conn()?;
-        let listed: Value = redis::cmd("FT._LIST").query(&mut conn)?;
-        let mut names = parse_ft_list(listed)?;
-        names.sort();
-        names.dedup();
-        Ok(names)
+        list_index_names(&mut *conn)
     }
 
     fn search_index_list(&self) -> AnyResult<Vec<SearchIndexInfo>> {
-        use crate::client::ops::search::parse_ft_info;
+        use crate::client::ops::search::list_indexes;
 
-        let names = self.search_index_names()?;
         let mut conn = self.get_conn()?;
-        let mut indexes = Vec::with_capacity(names.len());
-        for name in names {
-            let info: Value = redis::cmd("FT.INFO").arg(&name).query(&mut conn)?;
-            indexes.push(parse_ft_info(&name, info)?);
-        }
-        Ok(indexes)
+        list_indexes(&mut *conn)
     }
 
     fn search_query(&self, param: SearchQueryParam) -> AnyResult<SearchQueryResult> {
-        use crate::client::ops::search::{parse_ft_search, prepare_search};
+        use crate::client::ops::search::run_search;
 
         let mut conn = self.get_conn()?;
-        let prepared = prepare_search(&param)?;
-        let value: Value = prepared.cmd.query(&mut conn)?;
-        parse_ft_search(value, param.with_scores, &prepared.vectors)
+        run_search(&mut *conn, &param)
     }
 
     fn search_index_drop(&self, index: String, delete_docs: bool) -> AnyResult<()> {
-        use crate::client::ops::search::drop_cmd;
+        use crate::client::ops::search::run_index_drop;
 
         let mut conn = self.get_conn()?;
-        let _: Value = drop_cmd(&index, delete_docs)?.query(&mut conn)?;
-        Ok(())
+        run_index_drop(&mut *conn, &index, delete_docs)
     }
 
     fn search_index_create(&self, command: String) -> AnyResult<()> {
-        use crate::client::ops::search::create_cmd;
+        use crate::client::ops::search::run_index_create;
 
         let mut conn = self.get_conn()?;
-        let _: Value = create_cmd(&command)?.query(&mut conn)?;
-        Ok(())
+        run_index_create(&mut *conn, &command)
     }
 
     fn search_index_alter(&self, command: String) -> AnyResult<()> {
-        use crate::client::ops::search::alter_cmd;
+        use crate::client::ops::search::run_index_alter;
 
         let mut conn = self.get_conn()?;
-        let _: Value = alter_cmd(&command)?.query(&mut conn)?;
-        Ok(())
+        run_index_alter(&mut *conn, &command)
     }
 
     fn search_tag_vals(&self, index: String, field: String) -> AnyResult<Vec<String>> {
-        use crate::client::ops::search::{parse_ft_tagvals, tagvals_cmd};
+        use crate::client::ops::search::run_tag_vals;
 
         let mut conn = self.get_conn()?;
-        let value: Value = tagvals_cmd(&index, &field)?.query(&mut conn)?;
-        let mut tags = parse_ft_tagvals(value)?;
-        tags.sort();
-        tags.dedup();
-        Ok(tags)
+        run_tag_vals(&mut *conn, &index, &field)
     }
 
     fn search_syn_dump(&self, index: String) -> AnyResult<Vec<SearchSynGroup>> {
-        use crate::client::ops::search::{group_synonyms, parse_ft_syndump, syndump_cmd};
+        use crate::client::ops::search::run_syn_dump;
 
         let mut conn = self.get_conn()?;
-        let value: Value = syndump_cmd(&index)?.query(&mut conn)?;
-        Ok(group_synonyms(parse_ft_syndump(value)?))
+        run_syn_dump(&mut *conn, &index)
     }
 
     fn search_syn_update(&self, index: String, group: String, terms: Vec<String>) -> AnyResult<()> {
-        use crate::client::ops::search::synupdate_cmd;
+        use crate::client::ops::search::run_syn_update;
 
         let mut conn = self.get_conn()?;
-        let _: Value = synupdate_cmd(&index, &group, &terms)?.query(&mut conn)?;
-        Ok(())
+        run_syn_update(&mut *conn, &index, &group, &terms)
     }
 
     fn search_sample_load(&self, kind: String) -> AnyResult<SearchSampleResult> {
-        use crate::client::ops::search::{
-            apply_sample_data, parse_ft_list, sample_create_cmd, sample_index_name,
-        };
+        use crate::client::ops::search::run_sample_load;
 
         let mut conn = self.get_conn()?;
-        let index = sample_index_name(&kind)?.to_string();
-        let listed: Value = redis::cmd("FT._LIST").query(&mut conn)?;
-        if parse_ft_list(listed)?.iter().any(|name| name == &index) {
-            return Ok(SearchSampleResult {
-                created: false,
-                index,
-            });
-        }
-        apply_sample_data(&mut conn, &kind)?;
-        let cmd = sample_create_cmd(&kind)?;
-        let _: Value = cmd.query(&mut conn)?;
-        Ok(SearchSampleResult {
-            created: true,
-            index,
-        })
+        run_sample_load(&mut *conn, &kind)
     }
 }
 
