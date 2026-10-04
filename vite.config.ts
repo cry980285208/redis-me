@@ -1,11 +1,20 @@
-import * as path from 'path'
+// 配置不引入 @types/node；node:url 由运行时提供
+// @ts-expect-error TS2591
+import { fileURLToPath } from 'node:url'
 
 import vue from '@vitejs/plugin-vue'
 // import AutoImport from 'unplugin-auto-import/vite'
 import UnpluginSvgComponent from 'unplugin-svg-component/vite'
 import { defineConfig } from 'vite-plus'
 
+declare const process: { env: { TAURI_DEV_HOST?: string }; platform: string }
+
 const host = process.env.TAURI_DEV_HOST
+
+// 见 scripts/win-drive-letter.mjs。只加在 Vitest worker 上，不影响 tauri dev。
+const winDriveHook = new URL('./scripts/win-drive-letter.mjs', import.meta.url).href
+const testConfig =
+  process.platform === 'win32' ? { test: { execArgv: ['--import', winDriveHook] } } : {}
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -33,7 +42,7 @@ export default defineConfig({
   resolve: {
     alias: {
       // 配置绝对路径别名@
-      '@': path.resolve(import.meta.dirname, 'src'),
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
 
@@ -69,4 +78,6 @@ export default defineConfig({
       ignored: ['**/dist/**', '**/src-tauri/**'],
     },
   },
+
+  ...testConfig,
 })
