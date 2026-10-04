@@ -96,11 +96,6 @@ const ddlText = computed(() => indexDdl(selected.value?.raw ?? '', selected.valu
 const infoDraft = ref('')
 const ddlDraft = ref('')
 
-// 弹框标题：有选中索引时是「标签 索引名」。
-function indexTitle(label: string): string {
-  return selected.value ? `${label} ${selected.value.name}` : label
-}
-
 // 本页命中的字段名，按第一次出现的顺序。列是动态的，不跟 schema 对齐。
 const resultColumns = computed(() => {
   const names: string[] = []
@@ -146,10 +141,6 @@ const filteredTagRows = computed(() => {
     : tagValues.value
   return values.map(value => ({ value }))
 })
-
-const tagEmptyText = computed(() =>
-  tagFields.value.length ? t('redisSearch.tagValsNone') : t('redisSearch.tagValsEmpty'),
-)
 
 // 与表格列定义一致（改列时同步改这里）
 function exportTagRows(data: unknown[]): TableExportMatrix {
@@ -552,7 +543,7 @@ onUnmounted(() => {
     <!-- 索引列表 -->
     <template v-if="pageMode === 'list'">
       <div class="me-flex header">
-        <div class="list-side">
+        <div class="me-flex header-left">
           <!-- 只读不提供新建和样例 -->
           <el-button v-if="canEdit" type="primary" icon="el-icon-plus" @click="openCreate()">
             {{ t('redisSearch.create') }}
@@ -561,7 +552,7 @@ onUnmounted(() => {
             {{ t('redisSearch.sample') }}
           </el-button>
           <!-- 列表上就能进官网，不必先打开某个索引的查询 -->
-          <me-website to="search" margin-left="0" />
+          <me-website to="search" />
         </div>
         <div>
           <el-input
@@ -662,7 +653,7 @@ onUnmounted(() => {
             fixed="right"
             align="center">
             <template #default="{ row }">
-              <div class="me-flex action-icons">
+              <div class="action-icons">
                 <el-button type="primary" plain size="small" @click="openQuery(row)">
                   {{ t('redisSearch.query') }}
                 </el-button>
@@ -704,22 +695,21 @@ onUnmounted(() => {
     <!-- 单个索引的 FT.SEARCH。返回后仍留在列表，不拆页面 -->
     <template v-else-if="selected">
       <div class="me-flex header">
-        <div class="me-flex query-side">
+        <div>
           <el-button icon="el-icon-back" @click="pageMode = 'list'">{{
             t('redisSearch.back')
           }}</el-button>
-          <span class="index-name">{{ selected.name }}</span>
+          <el-text tag="b" style="margin-left: 10px">{{ selected.name }}</el-text>
         </div>
-        <div class="query-tools">
+        <div class="me-flex">
           <!-- 勾选变化立刻重查，空输入按 * -->
           <el-checkbox v-model="withScores" @change="runSearch">
             {{ t('redisSearch.withScores') }}
           </el-checkbox>
           <el-input
             v-model="queryText"
-            class="query-input"
             :placeholder="t('redisSearch.queryPlaceholder')"
-            style="width: 300px"
+            style="width: 300px; margin: 0 10px"
             clearable
             @keyup.enter="runSearch">
             <template #suffix>
@@ -740,7 +730,7 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div class="table hits" v-loading="loadingQuery">
+      <div class="table" v-loading="loadingQuery">
         <me-table :data="hits" export-name="search-hits" :export-rows="exportHits">
           <!-- 点键打开键值页，不走键树的 chooseKey -->
           <el-table-column
@@ -771,11 +761,15 @@ onUnmounted(() => {
     </template>
 
     <!-- 字段详情：标识、属性名、类型、权重。TAG 可点开 Tag 集合。 -->
-    <el-dialog v-model="detailVisible" width="720px" align-center draggable destroy-on-close>
-      <template #header>
-        <me-icon icon="el-icon-info-filled" :name="indexTitle(t('redisSearch.fieldDetail'))" />
+    <me-dialog
+      v-model="detailVisible"
+      :title="t('redisSearch.fieldDetail')"
+      icon="el-icon-info-filled"
+      width="720px">
+      <template #title-extra>
+        <el-text v-if="selected" type="info" style="margin-left: 8px">{{ selected.name }}</el-text>
       </template>
-      <el-table :data="selected?.fields ?? []" border stripe max-height="420" show-overflow-tooltip>
+      <el-table :data="selected?.fields ?? []" border stripe height="100%" show-overflow-tooltip>
         <el-table-column prop="identifier" :label="t('redisSearch.identifier')" min-width="140" />
         <el-table-column prop="attribute" :label="t('redisSearch.attribute')" min-width="120" />
         <el-table-column :label="t('redisSearch.fieldType')" width="120">
@@ -793,16 +787,19 @@ onUnmounted(() => {
         </el-table-column>
         <el-table-column prop="weight" :label="t('redisSearch.weight')" width="90" />
       </el-table>
-    </el-dialog>
+    </me-dialog>
 
     <!-- FT.TAGVALS。左下拉、右输入框 + 搜索，表用 me-table，条数由分页自己显示。 -->
     <me-dialog
       v-model="tagVisible"
-      :title="indexTitle(t('redisSearch.tagVals'))"
+      :title="t('redisSearch.tagVals')"
       icon="el-icon-collection-tag"
       width="700">
-      <div v-loading="loadingTags" class="table-tag-vals">
-        <div v-if="tagFields.length" class="tag-toolbar">
+      <template #title-extra>
+        <el-text v-if="selected" type="info" style="margin-left: 8px">{{ selected.name }}</el-text>
+      </template>
+      <div v-loading="loadingTags" class="dialog-table">
+        <div v-if="tagFields.length" class="me-flex">
           <el-select v-model="tagField" style="width: 220px" @change="onTagFieldChange">
             <el-option
               v-for="field in tagFields"
@@ -810,18 +807,17 @@ onUnmounted(() => {
               :label="tagFieldName(field)"
               :value="tagFieldName(field)" />
           </el-select>
-          <div class="toolbar-right">
+          <div>
             <el-input
               v-model="tagKeyword"
               :placeholder="t('redisSearch.tagValsFilter')"
               clearable
-              style="width: 220px" />
+              style="width: 220px; margin-right: 10px" />
             <el-button icon="el-icon-search" type="primary" @click="loadTagVals()" />
           </div>
         </div>
-        <div class="tag-main">
+        <div class="dialog-table-main">
           <me-table
-            v-if="filteredTagRows.length"
             :data="filteredTagRows"
             export-name="tag-vals"
             :export-rows="exportTagRows"
@@ -836,7 +832,6 @@ onUnmounted(() => {
               show-overflow-tooltip
               sortable />
           </me-table>
-          <el-empty v-else-if="!loadingTags" :description="tagEmptyText" />
         </div>
       </div>
     </me-dialog>
@@ -844,26 +839,28 @@ onUnmounted(() => {
     <!-- FT.SYNDUMP。一组一行，词用逗号拼开。条数由分页自己显示。 -->
     <me-dialog
       v-model="synVisible"
-      :title="indexTitle(t('redisSearch.synDump'))"
+      :title="t('redisSearch.synDump')"
       icon="el-icon-connection"
       width="700">
-      <div v-loading="loadingSyn" class="table-tag-vals">
-        <div class="tag-toolbar" :class="{ 'is-end': !canEdit }">
+      <template #title-extra>
+        <el-text v-if="selected" type="info" style="margin-left: 8px">{{ selected.name }}</el-text>
+      </template>
+      <div v-loading="loadingSyn" class="dialog-table">
+        <div class="me-flex">
           <el-button v-if="canEdit" icon="el-icon-plus" @click="openSynAdd" type="primary">
             {{ t('redisSearch.synAdd') }}
           </el-button>
-          <div class="toolbar-right">
+          <div style="margin-left: auto">
             <el-input
               v-model="synKeyword"
               :placeholder="t('redisSearch.synFilter')"
               clearable
-              style="width: 220px" />
+              style="width: 220px; margin-right: 10px" />
             <el-button icon="el-icon-search" type="primary" @click="loadSynDump()" />
           </div>
         </div>
-        <div class="tag-main">
+        <div class="dialog-table-main">
           <me-table
-            v-if="filteredSynRows.length"
             :data="filteredSynRows"
             export-name="synonyms"
             :export-rows="exportSynRows"
@@ -885,7 +882,7 @@ onUnmounted(() => {
               sortable />
             <el-table-column v-if="canEdit" :label="t('action')" width="80" align="center">
               <template #default="{ row }">
-                <div class="syn-actions">
+                <div class="action-icons">
                   <me-icon
                     icon="el-icon-edit"
                     class="icon-btn"
@@ -896,12 +893,11 @@ onUnmounted(() => {
               </template>
             </el-table-column>
           </me-table>
-          <el-empty v-else-if="!loadingSyn" :description="t('redisSearch.synEmpty')" />
         </div>
       </div>
     </me-dialog>
 
-    <!-- FT.SYNUPDATE。组号和词分开填，词里的空格、逗号只用来切开。 -->
+    <!-- FT.SYNUPDATE。叠在同义词组上面。填了一半时不用 Esc 和点外部关掉 -->
     <el-dialog
       v-model="synAddVisible"
       :title="synEditing ? t('redisSearch.synEditTitle') : t('redisSearch.synAddTitle')"
@@ -909,7 +905,9 @@ onUnmounted(() => {
       align-center
       draggable
       destroy-on-close
-      append-to-body>
+      append-to-body
+      :close-on-press-escape="false"
+      :close-on-click-modal="false">
       <el-form label-position="right" label-width="auto" @submit.prevent>
         <el-form-item :label="t('redisSearch.synGroup')">
           <el-input
@@ -933,22 +931,26 @@ onUnmounted(() => {
       </template>
     </el-dialog>
 
-    <!-- 起步命令可改。不用 MeDialog，标题旁要跟文档入口、不要图标 -->
-    <el-dialog
+    <!-- 新建、DDL、信息。编辑区撑满弹框正文 -->
+    <!-- 草稿可能写了一半，不用 Esc 和点外部关掉 -->
+    <me-dialog
       v-model="createVisible"
+      :title="t('redisSearch.create')"
+      icon="el-icon-plus"
       width="720px"
-      align-center
-      draggable
-      destroy-on-close
-      append-to-body>
-      <template #header>
-        <div class="create-header">
-          <span class="create-title">{{ t('redisSearch.create') }}</span>
-          <me-website to="ftCreate" margin-left="8px" />
+      :close-on-press-escape="false"
+      :close-on-click-modal="false">
+      <div class="create-body">
+        <div style="margin-bottom: 12px">
+          <el-text type="info">{{ t('redisSearch.createHint') }}</el-text>
+          <me-website to="ftCreate" />
         </div>
-      </template>
-      <p class="sample-hint">{{ t('redisSearch.createHint') }}</p>
-      <me-code v-model="createDraft" mode="redis" copyable style="height: 52vh" />
+        <me-code
+          v-model="createDraft"
+          mode="redis"
+          copyable
+          style="flex: 1; min-height: 0; height: auto" />
+      </div>
       <template #footer>
         <el-button @click="createVisible = false">{{ t('cancel') }}</el-button>
         <el-button
@@ -959,32 +961,42 @@ onUnmounted(() => {
           {{ t('redisSearch.createRun') }}
         </el-button>
       </template>
-    </el-dialog>
+    </me-dialog>
 
     <!-- 由 FT.INFO 还原的 FT.CREATE，不是服务器保存的原文 -->
     <me-dialog
       v-model="ddlVisible"
-      :title="indexTitle(t('redisSearch.ddl'))"
+      :title="t('redisSearch.ddl')"
       icon="me-icon-copy-command"
       width="720px">
-      <me-code v-model="ddlDraft" mode="redis" copyable />
+      <template #title-extra>
+        <el-text v-if="selected" type="info" style="margin-left: 8px">{{ selected.name }}</el-text>
+      </template>
+      <me-code v-model="ddlDraft" mode="redis" copyable style="height: 100%" />
     </me-dialog>
 
     <!-- FT.INFO 原文 -->
     <me-dialog
       v-model="infoVisible"
-      :title="indexTitle(t('redisSearch.info'))"
+      :title="t('redisSearch.info')"
       icon="el-icon-info-filled"
       width="720px">
-      <me-code v-model="infoDraft" />
+      <template #title-extra>
+        <el-text v-if="selected" type="info" style="margin-left: 8px">{{ selected.name }}</el-text>
+      </template>
+      <me-code v-model="infoDraft" style="height: 100%" />
     </me-dialog>
 
     <!-- 样例：已有同名索引时不覆盖 -->
-    <el-dialog v-model="sampleVisible" width="520px" align-center draggable destroy-on-close>
-      <template #header>
-        <me-icon icon="el-icon-document-add" :name="t('redisSearch.sampleTitle')" />
-      </template>
-      <p class="sample-hint">{{ t('redisSearch.sampleHint') }}</p>
+    <me-dialog
+      v-model="sampleVisible"
+      :title="t('redisSearch.sampleTitle')"
+      icon="el-icon-document-add"
+      width="520px"
+      body-height="auto">
+      <div style="margin-bottom: 12px">
+        <el-text type="info">{{ t('redisSearch.sampleHint') }}</el-text>
+      </div>
       <el-radio-group v-model="sampleKind" class="sample-list">
         <el-radio value="bikes" border>
           <div>{{ t('redisSearch.sampleBikes') }}</div>
@@ -1005,7 +1017,7 @@ onUnmounted(() => {
           {{ t('ok') }}
         </el-button>
       </template>
-    </el-dialog>
+    </me-dialog>
   </div>
 </template>
 
@@ -1016,116 +1028,31 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
 
+  .header,
+  .header-left {
+    align-items: center;
+  }
+
+  /* 右对齐、居中列里的说明图标跟着列走 */
+  :deep(th.is-right .cell > .icon-main) {
+    justify-content: flex-end;
+  }
+
+  :deep(th.is-center .cell > .icon-main) {
+    justify-content: center;
+  }
+
   .table {
     margin-top: 10px;
     flex-grow: 1;
     height: 0;
   }
-
-  :deep(th .cell),
-  .hits :deep(td .cell) {
-    white-space: nowrap;
-  }
 }
 
-.list-side,
-.query-side,
-.query-tools {
-  align-items: center;
-}
-
-.list-side {
-  display: flex;
-  gap: 10px;
-
-  /* Element Plus 给相邻按钮加了 margin，和 gap 叠在一起会把两个按钮撑开 */
-  :deep(.el-button + .el-button) {
-    margin-left: 0;
-  }
-}
-
-.create-header {
-  display: flex;
-  align-items: center;
-}
-
-.create-title {
-  font-size: var(--el-dialog-title-font-size);
-  line-height: var(--el-dialog-font-line-height);
-  color: var(--el-text-color-primary);
-}
-
-.query-tools {
-  display: flex;
-  gap: 10px;
-}
-
-.index-name {
-  margin-left: 10px;
-  font-weight: 600;
-}
-
-.query-input {
-  :deep(.el-input__suffix-inner) {
-    gap: 8px;
-  }
-}
-
-.query-help {
-  color: var(--el-text-color-secondary);
-  cursor: help;
-
-  &:hover {
-    color: var(--el-color-primary);
-  }
-}
-
-:deep(th.is-right .cell > .icon-main) {
-  justify-content: flex-end;
-}
-
-.sample-hint {
-  margin: 0 0 12px;
-}
-
-.tag-type-link {
-  cursor: pointer;
-}
-
-.table-tag-vals {
+.create-body {
   height: 100%;
-  overflow: hidden;
   display: flex;
   flex-direction: column;
-
-  .tag-toolbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 10px;
-    gap: 10px;
-
-    &.is-end {
-      justify-content: flex-end;
-    }
-  }
-
-  .toolbar-right {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-
-  .tag-main {
-    flex: 1;
-    min-height: 0;
-  }
-}
-
-.syn-actions {
-  display: flex;
-  justify-content: center;
-  gap: 10px;
 }
 
 .sample-list {
@@ -1153,12 +1080,44 @@ onUnmounted(() => {
   font-weight: 400;
 }
 
+/* 一个操作居中；两个及以上撑开到两端 */
 .action-icons {
+  display: flex;
   align-items: center;
+  justify-content: center;
   width: 100%;
 
-  .icon-btn {
-    font-size: 16px;
+  &:has(> :nth-child(2)) {
+    justify-content: space-between;
+  }
+}
+
+/* 和键区全文检索的问号一样：帮助光标，悬停变主题色 */
+.query-help {
+  color: var(--el-text-color-secondary);
+  cursor: help;
+
+  &:hover {
+    color: var(--el-color-primary);
+  }
+}
+
+/* TAG 类型可点开 Tag 集合 */
+.tag-type-link {
+  cursor: pointer;
+}
+
+/* 表撑满 MeDialog 正文（正文本身是 60vh） */
+.dialog-table {
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+
+  .dialog-table-main {
+    margin-top: 10px;
+    flex: 1;
+    min-height: 0;
   }
 }
 </style>

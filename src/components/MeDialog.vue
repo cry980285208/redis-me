@@ -4,7 +4,12 @@ import { ref } from 'vue'
 // 说明: 自定义弹框，支持最大化；关闭/最大化图标与标题栏一致，不用 EP 自带关闭
 const visible = defineModel<boolean>({ default: false })
 const fullscreen = ref(false)
-withDefaults(defineProps<{ title?: string; icon?: string }>(), { title: '', icon: '' })
+// bodyHeight 默认 60vh。短表单传 auto，避免正文被撑出大块空白
+const props = withDefaults(defineProps<{ title?: string; icon?: string; bodyHeight?: string }>(), {
+  title: '',
+  icon: '',
+  bodyHeight: '60vh',
+})
 </script>
 
 <template>
@@ -21,7 +26,11 @@ withDefaults(defineProps<{ title?: string; icon?: string }>(), { title: '', icon
     append-to-body>
     <template #header>
       <div class="me-dialog-header">
-        <me-icon :name="title" :icon="icon" />
+        <div class="me-dialog-heading">
+          <me-icon :name="title" :icon="icon" />
+          <!-- 紧挨标题的补充，如索引名 -->
+          <slot name="title-extra" />
+        </div>
         <!-- 标题栏右侧扩展区（如外链），默认靠右贴近窗口操作按钮 -->
         <slot name="header-extra" />
         <div class="me-dialog-actions">
@@ -36,9 +45,16 @@ withDefaults(defineProps<{ title?: string; icon?: string }>(), { title: '', icon
 
     <template #default>
       <!-- 全屏用 flex 占满剩余高度，避免 100vh 再加 padding/header 撑出滚动条 -->
-      <div class="me-dialog-body" :class="{ 'is-fullscreen': fullscreen }">
+      <div
+        class="me-dialog-body"
+        :class="{ 'is-fullscreen': fullscreen }"
+        :style="fullscreen ? undefined : { height: props.bodyHeight }">
         <slot name="default" />
       </div>
+    </template>
+
+    <template v-if="$slots.footer" #footer>
+      <slot name="footer" />
     </template>
   </el-dialog>
 </template>
@@ -50,6 +66,16 @@ withDefaults(defineProps<{ title?: string; icon?: string }>(), { title: '', icon
   justify-content: space-between;
   /* 与弹框右侧 padding 拉开一点，避免贴边 */
   margin-right: 4px;
+}
+
+.me-dialog-heading {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  /* 与 .el-dialog__title 一致。不设的话会停在正文的 14px */
+  font-size: var(--el-dialog-title-font-size);
+  line-height: var(--el-dialog-font-line-height);
+  color: var(--el-text-color-primary);
 }
 
 .me-dialog-actions {
@@ -74,12 +100,8 @@ withDefaults(defineProps<{ title?: string; icon?: string }>(), { title: '', icon
   }
 }
 
-.me-dialog-body {
-  height: 60vh;
-
-  &.is-fullscreen {
-    height: 100%;
-  }
+.me-dialog-body.is-fullscreen {
+  height: 100%;
 }
 </style>
 
