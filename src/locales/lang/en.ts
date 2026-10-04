@@ -921,6 +921,10 @@ export default {
     info: 'Index info',
     browse: 'View data',
     ddl: 'Index DDL',
+    alter: 'Alter index',
+    alterHint:
+      'Edit the field names and types, then run. Existing documents are indexed for the new fields. Add SKIPINITIALSCAN to index only documents written afterward',
+    alterOk: 'Index altered',
     tagVals: 'Tag values',
     tagValsValue: 'Value',
     tagValsFilter: 'Local filter',
@@ -1366,5 +1370,6 @@ Once an operation prevents Redis from keeping the space-saving encoding, special
     file_write_failed: 'File write failed: {filename} ({detail})',
     search_reply_invalid: 'Could not parse the RedisSearch reply ({detail})',
     search_create_not_ft_create: 'Only a single FT.CREATE command is accepted',
+    search_alter_not_ft_alter: 'Only a single FT.ALTER command is accepted',
   },
 }

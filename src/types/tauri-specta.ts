@@ -51,6 +51,7 @@ export const commands = {
 	searchQuery: (id: string, param: SearchQueryParam) => typedError<SearchQueryResult, string>(__TAURI_INVOKE("search_query", { id, param })),
 	searchIndexDrop: (id: string, index: string, deleteDocs: boolean) => typedError<null, string>(__TAURI_INVOKE("search_index_drop", { id, index, deleteDocs })),
 	searchIndexCreate: (id: string, command: string) => typedError<null, string>(__TAURI_INVOKE("search_index_create", { id, command })),
+	searchIndexAlter: (id: string, command: string) => typedError<null, string>(__TAURI_INVOKE("search_index_alter", { id, command })),
 	searchTagVals: (id: string, index: string, field: string) => typedError<string[], string>(__TAURI_INVOKE("search_tag_vals", { id, index, field })),
 	searchSynDump: (id: string, index: string) => typedError<SearchSynGroup[], string>(__TAURI_INVOKE("search_syn_dump", { id, index })),
 	searchSynUpdate: (id: string, index: string, group: string, terms: string[]) => typedError<null, string>(__TAURI_INVOKE("search_syn_update", { id, index, group, terms })),

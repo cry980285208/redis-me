@@ -330,6 +330,17 @@ export function indexCreateDraft(
   return lines.join('\n')
 }
 
+/** 修改索引的起步命令。索引名来自当前行，字段是占位，改完再执行。 */
+export function indexAlterDraft(name: string): string {
+  const index = name.trim() || 'idx:name'
+  return [
+    `FT.ALTER ${quoteArg(index)}`,
+    '    SCHEMA ADD',
+    '      city TEXT',
+    '      year NUMERIC',
+  ].join('\n')
+}
+
 /** Hash 的数字字符串也算 NUMERIC；JSON 只认真正的数字，`"12"` 仍按短串处理。 */
 function inferDraftType(keyType: 'HASH' | 'JSON', value: unknown): 'TEXT' | 'TAG' | 'NUMERIC' {
   if (keyType === 'JSON') {

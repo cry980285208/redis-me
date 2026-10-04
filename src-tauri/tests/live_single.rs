@@ -5,6 +5,7 @@
 //! - 键 SCAN 翻页，多页拼起来不丢不重
 //! - Hash、List、Set、ZSet、Stream 的字段翻页；List、Stream 还核对顺序
 //! - JSON、TimeSeries、Array、VectorSet：服务端没有对应命令就跳过
+//! - RedisSearch：`FT.ALTER` 给 0 号库的临时索引加字段，没装模块就跳过
 //!
 //! 新增一种基础键类型或翻页规则时，在 `check.rs` 加断言，并在这里挂上。
 
@@ -55,4 +56,110 @@ fn hash_list_set_zset_stream_pages() {
 fn optional_modules_when_present() {
     let Some(client) = client() else { return };
     check::optional_modules_when_present(client.as_ref());
+}
+
+/// 没装 RedisSearch 就跳过。结束时删掉临时索引，文档键本来就没写。
+struct AlterIndexGuard<'a> {
+    client: &'a dyn MeClient,
+    index: &'a str,
+}
+
+impl Drop for AlterIndexGuard<'_> {
+    fn drop(&mut self) {
+        let _ = self.client.search_index_drop(self.index.to_string(), false);
+    }
+}
+
+/// 索引修改：一条 FT.ALTER 加上字段；其它命令在本地拒绝，不发到服务器。
+#[test]
+fn search_index_alter_adds_field() {
+    let Some(client) = client() else { return };
+    if let Err(err) = client.search_index_names() {
+        if live::unknown_command(err.as_ref()) {
+            eprintln!("skip: RedisSearch is not loaded");
+            return;
+        }
+        panic!("FT._LIST: {err}");
+    }
+    // RediSearch 只允许在 0 号库建索引。活测试默认连的是 15 号库。
+    client.select_db(0).expect("SELECT 0");
+
+    let index = "idx:redis-me:test:alter";
+    let _guard = AlterIndexGuard {
+        client: client.as_ref(),
+        index,
+    };
+    client
+        .search_index_create(
+            [
+                format!("FT.CREATE {index}"),
+                "    ON HASH".into(),
+                "    PREFIX 1 redis-me:test:alter:".into(),
+                "    SCHEMA".into(),
+                "      name TEXT".into(),
+            ]
+            .join("\n"),
+        )
+        .expect("FT.CREATE");
+
+    client
+        .search_index_alter(
+            [
+                format!("FT.ALTER {index}"),
+                "    SCHEMA ADD".into(),
+                "      city TEXT".into(),
+                "      year NUMERIC".into(),
+            ]
+            .join("\n"),
+        )
+        .expect("FT.ALTER");
+
+    let info = client
+        .search_index_list()
+        .expect("FT.INFO")
+        .into_iter()
+        .find(|row| row.name == index)
+        .expect("index missing after alter");
+    let attrs: Vec<&str> = info
+        .fields
+        .iter()
+        .map(|field| field.attribute.as_str())
+        .collect();
+    assert!(attrs.contains(&"name"), "{attrs:?}");
+    assert!(attrs.contains(&"city"), "{attrs:?}");
+    assert!(attrs.contains(&"year"), "{attrs:?}");
+    assert!(
+        info.fields
+            .iter()
+            .any(|field| field.attribute == "year"
+                && field.field_type.eq_ignore_ascii_case("NUMERIC")),
+        "{:?}",
+        info.fields
+            .iter()
+            .map(|field| (field.attribute.as_str(), field.field_type.as_str()))
+            .collect::<Vec<_>>()
+    );
+
+    let rejected = client
+        .search_index_alter(format!("FT.CREATE {index} ON HASH SCHEMA extra TEXT"))
+        .expect_err("non FT.ALTER must be rejected locally");
+    assert!(
+        rejected.to_string().contains("search_alter_not_ft_alter"),
+        "{rejected}"
+    );
+
+    let duplicate = client
+        .search_index_alter(format!("FT.ALTER {index} SCHEMA ADD city TEXT"))
+        .expect_err("duplicate field");
+    let duplicate = duplicate.to_string().to_lowercase();
+    assert!(
+        duplicate.contains("duplicate") || duplicate.contains("already exists"),
+        "{duplicate}"
+    );
+
+    client
+        .search_index_drop(index.to_string(), false)
+        .expect("FT.DROPINDEX");
+    let names = client.search_index_names().expect("FT._LIST");
+    assert!(!names.iter().any(|name| name == index), "{names:?}");
 }

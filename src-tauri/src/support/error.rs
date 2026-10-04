@@ -74,6 +74,8 @@ pub enum AppError {
     },
     /// 新建索引只接受一条 FT.CREATE
     SearchCreateNotFtCreate,
+    /// 修改索引只接受一条 FT.ALTER
+    SearchAlterNotFtAlter,
 
     // 配置相关
     InvalidNodeFormat {

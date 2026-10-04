@@ -28,6 +28,7 @@ const DOC_PATHS = {
   },
   // Valkey 没有这条命令文档，下拉里不显示
   ftCreate: { redis: '/docs/latest/commands/ft.create/' },
+  ftAlter: { redis: '/docs/latest/commands/ft.alter/' },
 } as const
 
 type DocTopic = keyof typeof DOC_PATHS

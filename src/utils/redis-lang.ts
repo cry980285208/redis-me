@@ -1,4 +1,4 @@
-/** FT.CREATE 高亮。只覆盖 DDL 里会出现的词，颜色在浅色和深色背景上都能看清。 */
+/** FT.CREATE / FT.ALTER 高亮。只覆盖 DDL 里会出现的词，颜色在浅色和深色背景上都能看清。 */
 
 import {
   HighlightStyle,
@@ -10,6 +10,8 @@ import { tags } from '@lezer/highlight'
 
 const REDIS_KEYWORDS = new Set([
   'FT.CREATE',
+  'FT.ALTER',
+  'ADD',
   'ON',
   'PREFIX',
   'FILTER',
@@ -171,13 +173,14 @@ export const redisLang = new LanguageSupport(
         state.afterAs = false
         return 'string'
       }
-      if (!state.indexDone && state.words === 1 && word === 'FT.CREATE') return 'keyword'
+      if (!state.indexDone && state.words === 1 && (word === 'FT.CREATE' || word === 'FT.ALTER'))
+        return 'keyword'
       if (!state.indexDone && state.words === 2) {
         state.indexDone = true
         return 'index'
       }
       // 字段名在类型前面，就算叫 type、score 也按字符串上色。更深缩进的 TYPE、DIM 仍是参数。
-      if (state.inSchema && state.words === 1 && word !== 'SCHEMA') {
+      if (state.inSchema && state.words === 1 && word !== 'SCHEMA' && word !== 'ADD') {
         if (state.schemaIndent < 0) state.schemaIndent = state.lineIndent
         const nestedParam = state.lineIndent > state.schemaIndent && VECTOR_LINE.has(word)
         if (!nestedParam) return 'string'

@@ -193,6 +193,26 @@ pub fn create_cmd(text: &str) -> AnyResult<redis::Cmd> {
     Ok(cmd)
 }
 
+/// 把编辑器里的一条 `FT.ALTER` 收成命令。换行当空格。其它命令拒绝。
+/// 只用来给已有索引加字段；类型和 `SCHEMA ADD` 交给 Redis 自己验。
+pub fn alter_cmd(text: &str) -> AnyResult<redis::Cmd> {
+    let text = text.trim();
+    if text.is_empty() {
+        bail!(AppError::EmptyParameters);
+    }
+    let (name, args) = parse_command(text)?;
+    if !name.eq_ignore_ascii_case("FT.ALTER") {
+        bail!(AppError::SearchAlterNotFtAlter);
+    }
+    // 至少要有索引名。
+    if args.first().is_none_or(|arg| arg.is_empty()) {
+        bail!(AppError::EmptyParameters);
+    }
+    let mut cmd = redis::cmd("FT.ALTER");
+    cmd.arg(&args);
+    Ok(cmd)
+}
+
 /// `FT.CREATE` 命令。集群要对每个 master 各发一次。
 pub fn sample_create_cmd(kind: &str) -> AnyResult<redis::Cmd> {
     let mut cmd = redis::cmd("FT.CREATE");
@@ -273,6 +293,15 @@ pub fn parse_ft_search(
 pub fn index_already_exists(err: &str) -> bool {
     let err = err.to_lowercase();
     err.contains("index already exists") || err.contains("search_index_exists")
+}
+
+/// 字段已经在 schema 里。集群上一条 `FT.ALTER` 会同步到其他分片，后一个 master 常回这个错。
+pub fn schema_field_exists(err: &str) -> bool {
+    let err = err.to_lowercase();
+    err.contains("duplicate field")
+        || err.contains("already exists in schema")
+        || err.contains("schema already")
+        || (err.contains("already exists") && (err.contains("field") || err.contains("attribute")))
 }
 
 // ------------------------------ 仅本文件使用 ------------------------------
@@ -1157,6 +1186,41 @@ mod tests {
                 .to_string()
                 .contains("search_create_not_ft_create")
         );
+    }
+
+    /// 换行收成一条 FT.ALTER。空文本、没有索引名、其它命令都拒绝。
+    #[test]
+    fn alter_cmd_parses_one_ft_alter() {
+        let cmd =
+            alter_cmd("ft.alter idx\n    SCHEMA ADD\n      city TEXT\n      year NUMERIC").unwrap();
+        assert_eq!(
+            cmd_args(&cmd),
+            [
+                "FT.ALTER", "idx", "SCHEMA", "ADD", "city", "TEXT", "year", "NUMERIC",
+            ]
+        );
+        assert!(
+            alter_cmd("  ")
+                .unwrap_err()
+                .to_string()
+                .contains("empty_parameters")
+        );
+        assert!(
+            alter_cmd("FT.ALTER")
+                .unwrap_err()
+                .to_string()
+                .contains("empty_parameters")
+        );
+        assert!(
+            alter_cmd("FT.CREATE idx ON HASH SCHEMA t TEXT")
+                .unwrap_err()
+                .to_string()
+                .contains("search_alter_not_ft_alter")
+        );
+        assert!(schema_field_exists("Duplicate field in schema - city"));
+        assert!(schema_field_exists("Attribute already exists in schema"));
+        assert!(!schema_field_exists("Unknown Index name"));
+        assert!(!schema_field_exists("Index already exists"));
     }
 
     /// 默认不带 DD。勾选同时删除文档才附上。

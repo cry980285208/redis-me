@@ -904,6 +904,10 @@ export default {
     info: '索引信息',
     browse: '浏览数据',
     ddl: '索引DDL',
+    alter: '索引修改',
+    alterHint:
+      '改字段名和类型后再执行。已有文档会按新字段补索引；加上 SKIPINITIALSCAN 则只索引之后写入的文档',
+    alterOk: '已修改索引',
     tagVals: 'Tag集合',
     tagValsValue: '标签值',
     tagValsFilter: '本地过滤',
@@ -1340,5 +1344,6 @@ export default {
     file_write_failed: '文件写入失败: {filename} ({detail})',
     search_reply_invalid: 'RedisSearch 回复无法解析（{detail}）',
     search_create_not_ft_create: '只接受一条 FT.CREATE',
+    search_alter_not_ft_alter: '只接受一条 FT.ALTER',
   },
 }

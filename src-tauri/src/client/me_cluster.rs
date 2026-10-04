@@ -813,6 +813,36 @@ impl MeClient for MeCluster {
         }
     }
 
+    fn search_index_alter(&self, command: String) -> AnyResult<()> {
+        use crate::client::ops::search::{alter_cmd, schema_field_exists};
+
+        let targets = self.search_targets();
+        let mut conn = self.get_conn()?;
+        // Redis 8 改一次会同步到其它分片，后一个 master 常回字段已存在。全部都是已存在才把这个错交出去。
+        let mut altered = false;
+        let mut exists: Option<String> = None;
+        for node in &targets {
+            let (route, _) = self.get_node_route(node.clone())?;
+            let cmd = alter_cmd(&command)?;
+            match conn.route_command(&cmd, route) {
+                Ok(_) => altered = true,
+                Err(e) if schema_field_exists(&e.to_string()) => {
+                    if exists.is_none() {
+                        exists = Some(e.to_string());
+                    }
+                }
+                Err(e) => return Err(e.into()),
+            }
+        }
+        if altered {
+            return Ok(());
+        }
+        match exists {
+            Some(msg) => bail!(msg),
+            None => bail!(AppError::EmptyParameters),
+        }
+    }
+
     fn search_tag_vals(&self, index: String, field: String) -> AnyResult<Vec<String>> {
         use crate::client::ops::search::{parse_ft_tagvals, tagvals_cmd};
         use std::collections::BTreeSet;

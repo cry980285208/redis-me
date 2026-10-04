@@ -11,7 +11,7 @@ import type {
   SearchSynGroup,
 } from '@/types/tauri-specta'
 import type { TableExportMatrix } from '@/utils/export'
-import { indexDdl } from '@/utils/search-ddl'
+import { indexAlterDraft, indexDdl } from '@/utils/search-ddl'
 import { defaultSettings } from '@/utils/settings-defaults'
 import {
   KEY_REFRESH,
@@ -69,6 +69,9 @@ const loadingSample = ref(false)
 const createVisible = ref(false)
 const createDraft = ref('')
 const creating = ref(false)
+const alterVisible = ref(false)
+const alterDraft = ref('')
+const altering = ref(false)
 
 /** 新建索引的起步命令。用户改完再执行，这里不发到服务器。 */
 const CREATE_DRAFT = [
@@ -261,7 +264,7 @@ async function loadIndexes(prefer?: string): Promise<void> {
   }
 }
 
-// 字段、原文、DDL、Tag 集合、同义词组共用 selected，同时只开一个弹框。
+// 字段、原文、DDL、修改、Tag 集合、同义词组共用 selected，同时只开一个弹框。
 function openIndex(row: SearchIndexInfo, which: 'fields' | 'info' | 'ddl'): void {
   selected.value = row
   // 先写入选中索引，computed 才是这份原文；草稿只活在本次弹框里。
@@ -270,15 +273,17 @@ function openIndex(row: SearchIndexInfo, which: 'fields' | 'info' | 'ddl'): void
   detailVisible.value = which === 'fields'
   infoVisible.value = which === 'info'
   ddlVisible.value = which === 'ddl'
+  alterVisible.value = false
   tagVisible.value = false
   synVisible.value = false
 }
 
-// 更多菜单：浏览、信息、DDL、Tag 集合、同义词组谁都能看，删除只在可写时出现。
+// 更多菜单：浏览、信息、DDL、Tag 集合、同义词组谁都能看，修改和删除只在可写时出现。
 function onMore(row: SearchIndexInfo, cmd: string): void {
   if (cmd === 'browse') connUi.browseSearchIndex(row.name)
   else if (cmd === 'info') openIndex(row, 'info')
   else if (cmd === 'ddl') openIndex(row, 'ddl')
+  else if (cmd === 'alter') openAlter(row)
   else if (cmd === 'tags') openTagVals(row)
   else if (cmd === 'syn') openSynDump(row)
   else if (cmd === 'drop') dropIndex(row)
@@ -291,6 +296,7 @@ function openTagVals(row: SearchIndexInfo, fieldName?: string): void {
   if (!fieldName) detailVisible.value = false
   infoVisible.value = false
   ddlVisible.value = false
+  alterVisible.value = false
   synVisible.value = false
   tagKeyword.value = ''
   tagValues.value = []
@@ -341,6 +347,7 @@ function openSynDump(row: SearchIndexInfo): void {
   detailVisible.value = false
   infoVisible.value = false
   ddlVisible.value = false
+  alterVisible.value = false
   tagVisible.value = false
   synAddVisible.value = false
   synKeyword.value = ''
@@ -449,6 +456,7 @@ function openDoc(key: string): void {
 // 不传草稿就用起步命令。键详情进来时带上预填的 FT.CREATE。
 function openCreate(draft?: string): void {
   createDraft.value = typeof draft === 'string' ? draft : CREATE_DRAFT
+  alterVisible.value = false
   createVisible.value = true
 }
 
@@ -456,6 +464,35 @@ function onSearchCreate(draft: string): void {
   takeSearchCreateDraft()
   pageMode.value = 'list'
   openCreate(draft)
+}
+
+// 索引名来自当前行。字段是占位，用户改完再执行。
+function openAlter(row: SearchIndexInfo): void {
+  selected.value = row
+  alterDraft.value = indexAlterDraft(row.name)
+  detailVisible.value = false
+  infoVisible.value = false
+  ddlVisible.value = false
+  tagVisible.value = false
+  synVisible.value = false
+  createVisible.value = false
+  alterVisible.value = true
+}
+
+// 只发一条 FT.ALTER。集群由后端打到每个 master。失败时弹框留着，方便改完再执行。
+async function runAlter(): Promise<void> {
+  const text = alterDraft.value.trim()
+  if (!text) return
+  const name = selected.value?.name
+  altering.value = true
+  try {
+    await meCommands.searchIndexAlter(share.conn!.id, text)
+    alterVisible.value = false
+    meOk(t('redisSearch.alterOk'))
+    await loadIndexes(name)
+  } finally {
+    altering.value = false
+  }
 }
 
 // 只发一条 FT.CREATE。集群由后端打到每个 master。失败时弹框留着，方便改完再执行。
@@ -497,7 +534,7 @@ async function loadSample(): Promise<void> {
   }
 }
 
-// 退出查询页，并关掉字段、原文、DDL、Tag 集合、同义词组弹框。
+// 退出查询页，并关掉字段、原文、DDL、修改、Tag 集合、同义词组弹框。
 function leaveIndex(): void {
   selected.value = null
   pageMode.value = 'list'
@@ -505,6 +542,7 @@ function leaveIndex(): void {
   detailVisible.value = false
   infoVisible.value = false
   ddlVisible.value = false
+  alterVisible.value = false
   tagVisible.value = false
   tagSeq += 1
   loadingTags.value = false
@@ -646,7 +684,7 @@ onUnmounted(() => {
             </template>
           </el-table-column>
 
-          <!-- 查询做成按钮；浏览、信息、DDL、Tag 集合、同义词组在更多里，删除只在可写时出现 -->
+          <!-- 查询做成按钮；浏览、信息、DDL、修改、Tag 集合、同义词组在更多里，修改和删除只在可写时出现 -->
           <el-table-column
             :label="t('action')"
             :width="t('redisSearch.actionWidth')"
@@ -672,6 +710,9 @@ onUnmounted(() => {
                       </el-dropdown-item>
                       <el-dropdown-item command="ddl">
                         <me-icon icon="me-icon-copy-command" :name="t('redisSearch.ddl')" />
+                      </el-dropdown-item>
+                      <el-dropdown-item v-if="canEdit" command="alter">
+                        <me-icon icon="el-icon-edit" :name="t('redisSearch.alter')" />
                       </el-dropdown-item>
                       <el-dropdown-item command="tags">
                         <me-icon icon="el-icon-collection-tag" :name="t('redisSearch.tagVals')" />
@@ -931,7 +972,7 @@ onUnmounted(() => {
       </template>
     </el-dialog>
 
-    <!-- 新建、DDL、信息。编辑区撑满弹框正文 -->
+    <!-- 新建、修改、DDL、信息。编辑区撑满弹框正文 -->
     <!-- 草稿可能写了一半，不用 Esc 和点外部关掉 -->
     <me-dialog
       v-model="createVisible"
@@ -958,6 +999,40 @@ onUnmounted(() => {
           :disabled="!createDraft.trim()"
           :loading="creating"
           @click="runCreate">
+          {{ t('redisSearch.createRun') }}
+        </el-button>
+      </template>
+    </me-dialog>
+
+    <!-- 草稿可能写了一半，不用 Esc 和点外部关掉 -->
+    <me-dialog
+      v-model="alterVisible"
+      :title="t('redisSearch.alter')"
+      icon="el-icon-edit"
+      width="720px"
+      :close-on-press-escape="false"
+      :close-on-click-modal="false">
+      <template #title-extra>
+        <el-text v-if="selected" type="info" style="margin-left: 8px">{{ selected.name }}</el-text>
+      </template>
+      <div class="create-body">
+        <div style="margin-bottom: 12px">
+          <el-text type="info">{{ t('redisSearch.alterHint') }}</el-text>
+          <me-website to="ftAlter" />
+        </div>
+        <me-code
+          v-model="alterDraft"
+          mode="redis"
+          copyable
+          style="flex: 1; min-height: 0; height: auto" />
+      </div>
+      <template #footer>
+        <el-button @click="alterVisible = false">{{ t('cancel') }}</el-button>
+        <el-button
+          type="primary"
+          :disabled="!alterDraft.trim()"
+          :loading="altering"
+          @click="runAlter">
           {{ t('redisSearch.createRun') }}
         </el-button>
       </template>

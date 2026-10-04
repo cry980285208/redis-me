@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test'
 
-import { indexCreateDraft, indexDdl } from '@/utils/search-ddl'
+import { indexAlterDraft, indexCreateDraft, indexDdl } from '@/utils/search-ddl'
 
 describe('indexDdl', () => {
   it('RESP2 交替数组还原 FT.CREATE，统计里的 NaN 不影响', () => {
@@ -205,6 +205,18 @@ describe('indexDdl', () => {
         '    SCHEMA',
         '      field TEXT',
       ].join('\n'),
+    )
+  })
+
+  it('修改索引预填当前索引名，特殊字符加引号', () => {
+    expect(indexAlterDraft('idx:user')).toBe(
+      ['FT.ALTER idx:user', '    SCHEMA ADD', '      city TEXT', '      year NUMERIC'].join('\n'),
+    )
+    expect(indexAlterDraft(' a b ')).toBe(
+      ['FT.ALTER "a b"', '    SCHEMA ADD', '      city TEXT', '      year NUMERIC'].join('\n'),
+    )
+    expect(indexAlterDraft('  ')).toBe(
+      ['FT.ALTER idx:name', '    SCHEMA ADD', '      city TEXT', '      year NUMERIC'].join('\n'),
     )
   })
 
