@@ -55,7 +55,10 @@ impl Deref for MeCluster {
 
 impl Drop for MeCluster {
     fn drop(&mut self) {
-        self.subscribe_stop().unwrap_or(());
+        // 未订阅不要 get_conn：空闲超过检查间隔会探活，失败就重连，关闭时白开一条连接。
+        if self.subscribe_running.load(Relaxed) {
+            self.subscribe_stop().unwrap_or(());
+        }
         self.monitor_stop().unwrap_or(());
         self.export_import_running.store(false, Relaxed);
     }

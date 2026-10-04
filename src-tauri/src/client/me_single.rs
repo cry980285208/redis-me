@@ -45,8 +45,10 @@ impl Deref for MeSingle {
 
 impl Drop for MeSingle {
     fn drop(&mut self) {
-        // Drop 时静默忽略错误（连接可能已关闭）
-        let _ = self.subscribe_stop();
+        // 未订阅不要 get_conn：空闲超过检查间隔会探活，失败就重连，关闭时白开一条连接。
+        if self.subscribe_running.load(Relaxed) {
+            let _ = self.subscribe_stop();
+        }
         let _ = self.monitor_stop();
         self.export_import_running.store(false, Relaxed);
     }

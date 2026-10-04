@@ -10,6 +10,7 @@ use log::{debug, info};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU16};
 use std::sync::{Arc, Mutex, RwLock};
+use std::thread;
 use std::time::Duration;
 use tauri::{AppHandle, Manager, State};
 
@@ -170,17 +171,19 @@ impl ClientAccess for AppHandle {
     }
 
     /// 从缓存拿掉客户端。本来就没有也算成功。
+    /// 真正释放放到后台：空闲连接 Drop 时可能探活/重连，不能占着 clients 写锁，否则另一条连接的 connect 会跟着等。
     fn disconnect(&self, id: &str) -> AnyResult<()> {
         let state: State<AppState> = self.state();
-        let mut clients = state.clients.write().unwrap();
-        let client = clients.get(id);
-        match client {
-            Some(client) => {
-                info!("断开连接: {}", client.name());
-                clients.remove(id);
-            }
-            None => info!("未找到连接, 断开忽略: {}", id),
+        let removed = {
+            let mut clients = state.clients.write().unwrap();
+            clients.remove(id)
         };
+        if let Some(client) = removed {
+            info!("断开连接: {}", client.name());
+            thread::spawn(move || drop(client));
+        } else {
+            info!("未找到连接, 断开忽略: {}", id);
+        }
         Ok(())
     }
 }
