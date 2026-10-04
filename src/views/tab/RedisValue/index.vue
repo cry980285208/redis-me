@@ -1923,7 +1923,7 @@ onUnmounted(() => {
                   <me-icon icon="el-icon-copy-document" :name="t('redisValue.duplicateKey')" />
                 </el-dropdown-item>
                 <el-dropdown-item v-if="canCreateIndex" command="createIndex">
-                  <me-icon icon="el-icon-plus" :name="t('redisSearch.create')" />
+                  <me-icon icon="el-icon-circle-plus" :name="t('redisSearch.create')" />
                 </el-dropdown-item>
                 <el-dropdown-item v-if="share.conn?.cluster" command="showSlot" divided>
                   <me-icon icon="me-icon-slot" :name="t('redisValue.slotTitle')" />
