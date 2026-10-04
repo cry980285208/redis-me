@@ -1,7 +1,7 @@
 /**
  * 小端 FLOAT32 向量（RediSearch HASH 的 VECTOR TYPE FLOAT32）。
  * Auto 在 MsgPack 之后才认：不是合法 UTF-8、至少 8 字节、长度是 4 的倍数、每个数有限。
- * 展示与查询页一致，四位小数去掉尾随 0。只读，不把浮点文本编回字节。
+ * 直接用数字转成的字符串。极小或极大时可能是科学计数法。只读，不把浮点文本编回字节。
  */
 
 const MIN_AUTO_BYTES = 8
@@ -10,12 +10,9 @@ function dataViewOf(bytes: Uint8Array): DataView {
   return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
 }
 
-/** 与查询结果的 FLOAT32 展示一致：四位小数，去掉尾随 0 */
 export function formatF32(n: number): string {
   if (!Number.isFinite(n)) return 'null'
-  let text = n.toFixed(4)
-  text = text.replace(/0+$/, '').replace(/\.$/, '')
-  return text === '-0' ? '0' : text
+  return String(n)
 }
 
 /**

@@ -102,10 +102,19 @@ describe('vector32', () => {
     return btoa(binary)
   }
 
-  it('小端 FLOAT32 展示成数组，尾随 0 去掉', () => {
+  it('小端 FLOAT32 按数字本身的字符串展示', () => {
     const wire = f32le([1, -2.5, 0, 0.5])
     expect(meFormatViewValue(wire, 'vector32')).toBe('[1, -2.5, 0, 0.5]')
     expect(meVector32Base64ToDisplay(f32le([0.5]))).toBe('[0.5]')
+    const nums = [0.123456789, 1.23456789e-7]
+    const view = new DataView(new ArrayBuffer(4))
+    const text = nums
+      .map(n => {
+        view.setFloat32(0, n, true)
+        return String(view.getFloat32(0, true))
+      })
+      .join(', ')
+    expect(meFormatViewValue(f32le(nums), 'vector32')).toBe(`[${text}]`)
   })
 
   it('长度不是 4 的倍数或含 NaN 时解码错误，不退回别的编码', () => {

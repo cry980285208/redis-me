@@ -826,17 +826,15 @@ fn format_f32_le(bytes: &[u8]) -> Option<String> {
     Some(format!("[{}]", parts.join(", ")))
 }
 
+/// 普通小数，不用科学计数法，也不截成固定位数。`-0` 写成 `0`。
 fn format_f32(n: f32) -> String {
     if !n.is_finite() {
         return "null".to_string();
     }
-    let text = format!("{n:.4}");
-    let text = text.trim_end_matches('0').trim_end_matches('.');
-    if text == "-0" {
-        "0".to_string()
-    } else {
-        text.to_string()
+    if n == 0.0 {
+        return "0".to_string();
     }
+    format!("{n}")
 }
 
 fn is_field_container(value: &Value) -> bool {
@@ -1010,6 +1008,7 @@ mod tests {
         bytes.extend(1.5f32.to_le_bytes());
         bytes.extend((-0.25f32).to_le_bytes());
         bytes.extend(0.0f32.to_le_bytes());
+        bytes.extend(0.123456789f32.to_le_bytes());
         let raw = Value::Array(vec![
             Value::Int(1),
             b("bikes:1"),
@@ -1026,7 +1025,7 @@ mod tests {
         vectors.insert("description_embeddings".to_string());
         vectors.insert("embedding".to_string());
         let page = parse_ft_search(raw, false, &vectors).unwrap();
-        assert_eq!(page.hits[0].fields[0].value, "[1.5, -0.25, 0]");
+        assert_eq!(page.hits[0].fields[0].value, "[1.5, -0.25, 0, 0.12345679]");
         assert_eq!(page.hits[0].fields[1].value, "carbon");
         assert_eq!(page.hits[0].fields[2].value, "[0.1, 0.2]");
     }
