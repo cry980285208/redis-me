@@ -1167,8 +1167,9 @@ onUnmounted(() => {
   }
 }
 
-/* 和键区全文检索的问号一样：帮助光标，悬停变主题色 */
+/* 和键区全文检索的问号一样：帮助光标，悬停变主题色。左边距与键搜索框后缀一致，和清除按钮隔开 */
 .query-help {
+  margin-left: 6px;
   color: var(--el-text-color-secondary);
   cursor: help;
 
