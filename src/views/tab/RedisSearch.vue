@@ -1,5 +1,6 @@
 <script setup lang="ts">
 // 搜索页两层：索引表，点「查询」进入该索引的 FT.SEARCH。字段定义和 FT.INFO 原文各一个弹框。
+import { useStorage } from '@vueuse/core'
 import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -11,6 +12,7 @@ import type {
   SearchSynGroup,
 } from '@/types/tauri-specta'
 import type { TableExportMatrix } from '@/utils/export'
+import { FT_QUERY_HISTORY_KEY, rememberFtQuery } from '@/utils/query-history'
 import { indexAlterDraft, indexDdl } from '@/utils/search-ddl'
 import { defaultSettings } from '@/utils/settings-defaults'
 import {
@@ -38,6 +40,10 @@ const indexes = ref<SearchIndexInfo[]>([])
 const selected = ref<SearchIndexInfo | null>(null)
 const queryText = ref('')
 const withScores = ref(false)
+// 和键区 Search 模式共用。点输入框展开，空条件和 * 不记。
+const queryHistory = useStorage<string[]>(FT_QUERY_HISTORY_KEY, [])
+const showQueryHistory = ref(false)
+let queryHistoryHideTimer: ReturnType<typeof setTimeout> | null = null
 const hits = ref<SearchHit[]>([])
 
 const detailVisible = ref(false)
@@ -222,6 +228,59 @@ function exportHits(data: unknown[]): TableExportMatrix {
     return cells
   })
   return { headers, rows }
+}
+
+const filteredQueryHistory = computed(() => {
+  const q = queryText.value.trim().toLowerCase()
+  if (!q) return queryHistory.value
+  return queryHistory.value.filter(item => item.toLowerCase().includes(q))
+})
+
+function hideQueryHistory(): void {
+  showQueryHistory.value = false
+  if (queryHistoryHideTimer) {
+    clearTimeout(queryHistoryHideTimer)
+    queryHistoryHideTimer = null
+  }
+}
+
+function handleQueryClick(e: MouseEvent): void {
+  if ((e.target as HTMLElement).classList.contains('el-input__inner')) {
+    showQueryHistory.value = true
+  }
+}
+
+function handleQueryBlur(): void {
+  queryHistoryHideTimer = setTimeout(() => {
+    showQueryHistory.value = false
+  }, 150)
+}
+
+function handleQueryHistoryMouseDown(): void {
+  if (queryHistoryHideTimer) {
+    clearTimeout(queryHistoryHideTimer)
+    queryHistoryHideTimer = null
+  }
+}
+
+function removeQueryHistory(item: string): void {
+  queryHistory.value = queryHistory.value.filter(h => h !== item)
+}
+
+function clearQueryHistory(): void {
+  queryHistory.value = []
+}
+
+function selectQueryHistory(item: string): void {
+  queryText.value = item
+  submitQuery()
+}
+
+// 回车和查询按钮才记历史。勾选分数、刷新索引不记。
+function submitQuery(): void {
+  hideQueryHistory()
+  queryHistory.value = rememberFtQuery(queryHistory.value, queryText.value)
+  void runSearch()
 }
 
 // 空查询按 *。条数用设置里的字段扫描，只取这一页，不再向服务器要后面的。
@@ -747,27 +806,46 @@ onUnmounted(() => {
           <el-checkbox v-model="withScores" @change="runSearch">
             {{ t('redisSearch.withScores') }}
           </el-checkbox>
-          <el-input
-            v-model="queryText"
-            :placeholder="t('redisSearch.queryPlaceholder')"
-            style="width: 300px; margin: 0 10px"
-            clearable
-            @keyup.enter="runSearch">
-            <template #suffix>
-              <el-tooltip
-                :content="t('redisSearch.queryHint')"
-                placement="bottom"
-                raw-content
-                popper-style="max-width: 420px">
-                <el-icon class="query-help"><el-icon-question-filled /></el-icon>
-              </el-tooltip>
-            </template>
-          </el-input>
+          <div class="query-box">
+            <el-input
+              v-model="queryText"
+              :placeholder="t('redisSearch.queryPlaceholder')"
+              clearable
+              @click="handleQueryClick"
+              @blur="handleQueryBlur"
+              @keyup.enter="submitQuery">
+              <template #suffix>
+                <el-tooltip
+                  :content="t('redisSearch.queryHint')"
+                  placement="bottom"
+                  raw-content
+                  popper-style="max-width: 420px">
+                  <el-icon class="query-help"><el-icon-question-filled /></el-icon>
+                </el-tooltip>
+              </template>
+            </el-input>
+            <div
+              v-if="showQueryHistory && filteredQueryHistory.length > 0"
+              class="query-history"
+              @mousedown.prevent="handleQueryHistoryMouseDown">
+              <div
+                v-for="item in filteredQueryHistory"
+                :key="item"
+                class="history-item"
+                @click="selectQueryHistory(item)">
+                <span class="history-text">{{ item }}</span>
+                <span class="history-delete" @click.stop="removeQueryHistory(item)">×</span>
+              </div>
+              <div class="history-clear" @click="clearQueryHistory">
+                {{ t('redisSearch.clearHistory') }}
+              </div>
+            </div>
+          </div>
           <el-button
             type="primary"
             icon="el-icon-search"
             :loading="loadingQuery"
-            @click="runSearch" />
+            @click="submitQuery" />
         </div>
       </div>
 
@@ -1164,6 +1242,80 @@ onUnmounted(() => {
 
   &:has(> :nth-child(2)) {
     justify-content: space-between;
+  }
+}
+
+.query-box {
+  position: relative;
+  z-index: 20;
+  width: 300px;
+  margin: 0 10px;
+}
+
+.query-history {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  background-color: color-mix(in srgb, var(--el-bg-color) 70%, transparent);
+  border: 1px solid var(--el-border-color);
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+  max-height: 300px;
+  overflow-y: auto;
+
+  .history-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--el-text-color-regular);
+
+    &:hover {
+      background-color: var(--el-color-info-light-8);
+    }
+  }
+
+  .history-text {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .history-delete {
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    color: var(--el-text-color-secondary);
+    font-size: 16px;
+    line-height: 1;
+    flex-shrink: 0;
+
+    &:hover {
+      color: var(--el-color-danger);
+      background-color: var(--el-color-danger-light-9);
+    }
+  }
+
+  .history-clear {
+    padding: 8px 12px;
+    text-align: center;
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
+    border-top: 1px solid var(--el-border-color-lighter);
+    cursor: pointer;
+
+    &:hover {
+      color: var(--el-color-primary);
+    }
   }
 }
 

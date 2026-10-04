@@ -34,6 +34,7 @@ import {
 } from '@/utils/favorite'
 import { clearKeyMemoryCacheForConn } from '@/utils/key-memory-cache'
 import { clearKeyTypeCacheForConn } from '@/utils/key-type-cache'
+import { FT_QUERY_HISTORY_KEY, rememberFtQuery } from '@/utils/query-history'
 import { KEY_TYPE_LIST, meKeyShort, toRedisTypeName } from '@/utils/redis-display'
 import {
   buildScanPattern,
@@ -259,17 +260,19 @@ function onScanAction() {
   }
 }
 
-// 搜索历史记录
+// 键名扫描历史。全文检索另记一份，和搜索页共用。
 const SEARCH_HISTORY_KEY = 'redis-me:search-history'
 const searchHistory = useStorage<string[]>(SEARCH_HISTORY_KEY, [])
+const ftQueryHistory = useStorage<string[]>(FT_QUERY_HISTORY_KEY, [])
 const showHistory = ref(false)
 let historyHideTimer: ReturnType<typeof setTimeout> | null = null
 
 // 过滤后的搜索历史（输入时实时过滤）
 const filteredSearchHistory = computed(() => {
+  const source = searchMode.value ? ftQueryHistory.value : searchHistory.value
   const k = keyword.value.toLowerCase().trim()
-  if (!k) return searchHistory.value
-  return searchHistory.value.filter(h => h.toLowerCase().includes(k))
+  if (!k) return source
+  return source.filter(h => h.toLowerCase().includes(k))
 })
 
 function addSearchHistory(query: string) {
@@ -280,22 +283,29 @@ function addSearchHistory(query: string) {
 }
 
 function removeSearchHistory(item: string) {
+  if (searchMode.value) {
+    ftQueryHistory.value = ftQueryHistory.value.filter(h => h !== item)
+    return
+  }
   searchHistory.value = searchHistory.value.filter(h => h !== item)
 }
 
 function clearSearchHistory() {
+  if (searchMode.value) {
+    ftQueryHistory.value = []
+    return
+  }
   searchHistory.value = []
 }
 
 function selectHistory(item: string) {
   keyword.value = item
   showHistory.value = false
-  void scanKey(false, false)
+  queryKeyList(false, false)
 }
 
-// 仅点击输入框本体时展开历史；suffix 内控件（含复选框）不触发
+// 仅点击输入框本体时展开历史；suffix 内控件（含复选框）不触发。Search 模式展开全文检索历史。
 function handleKeywordClick(e: MouseEvent) {
-  if (searchMode.value) return
   if ((e.target as HTMLElement).classList.contains('el-input__inner')) {
     showHistory.value = true
   }
@@ -1312,6 +1322,7 @@ function queryKeyList(append: boolean, loadAll = false, restart = false): void {
 }
 
 function chooseKeyType(keyTypeSelected: string): void {
+  hideSearchHistory()
   const leavingSearch = searchMode.value && keyTypeSelected !== SEARCH_TYPE
   keyType.value = keyTypeSelected
   keyword.value = ''
@@ -1454,6 +1465,7 @@ async function runSearchKeys(append = false, loadAll = false, restart = false): 
   loading.value = true
   scanCancelled.value = false
   if (!append) {
+    ftQueryHistory.value = rememberFtQuery(ftQueryHistory.value, keyword.value)
     scanPaused.value = false
     scanBatchCount.value = 0
     clearSearchHits()

@@ -44,6 +44,7 @@
 - PhpSerial（PHP 序列化）查看 ✅️（只读，与 Another Redis Desktop Manager 同源 php-serialize 库）
 - 命令执行日志✅️
 - 搜索历史记录✅️
+- RedisSearch 查询条件历史记录✅️
 - 全局快捷键✅️
 - 自定义序列化 ✅️
 - 终端: 只读命令的识别 ✅️
