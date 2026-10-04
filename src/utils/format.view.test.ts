@@ -15,6 +15,7 @@ import {
   isViewDecodeError,
   meFormatViewValue,
   meJsonToMsgpackBase64,
+  meVector32Base64ToDisplay,
   meMsgpackBase64ToJson,
   meViewToWire,
   needsJsonNormalize,
@@ -36,6 +37,7 @@ describe('view flags', () => {
     for (const view of [
       'auto',
       'msgpack',
+      'vector32',
       'strjson',
       'javaserial',
       'pickle',
@@ -51,6 +53,7 @@ describe('view flags', () => {
     expect(isReadonlyView('javaserial')).toBe(true)
     expect(isReadonlyView('pickle')).toBe(true)
     expect(isReadonlyView('phpserial')).toBe(true)
+    expect(isReadonlyView('vector32')).toBe(true)
     expect(isReadonlyView('utf8')).toBe(false)
     expect(needsJsonNormalize('msgpack')).toBe(true)
     expect(needsJsonNormalize('strjson')).toBe(false)
@@ -59,6 +62,7 @@ describe('view flags', () => {
   it('非 STRING 键把 string-only 视图降成 utf8', () => {
     expect(viewFmtForField('auto')).toBe('utf8')
     expect(viewFmtForField('msgpack')).toBe('utf8')
+    expect(viewFmtForField('vector32')).toBe('utf8')
     expect(viewFmtForField('custom:Py')).toBe('utf8')
     expect(viewFmtForField('hex')).toBe('hex')
     expect(viewFmtForField('binary')).toBe('binary')
@@ -79,10 +83,39 @@ describe('view flags', () => {
     expect(readonlyViewTip('javaserial')).toBe(
       'JdkSerial is view-only; saving back is not supported',
     )
+    expect(readonlyViewTip('vector32')).toBe('Vector32 is view-only; saving back is not supported')
     expect(readonlyViewTip('utf8')).toBe('')
     expect(() => meViewToWire('x', 'javaserial')).toThrow(/JdkSerial/)
     expect(() => meViewToWire('x', 'pickle')).toThrow(/Pickle/)
     expect(() => meViewToWire('x', 'phpserial')).toThrow(/PhpSerial/)
+    expect(() => meViewToWire('[1, 2]', 'vector32')).toThrow(/Vector32/)
+  })
+})
+
+describe('vector32', () => {
+  function f32le(nums: number[]): string {
+    const bytes = new Uint8Array(nums.length * 4)
+    const view = new DataView(bytes.buffer)
+    nums.forEach((n, i) => view.setFloat32(i * 4, n, true))
+    let binary = ''
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]!)
+    return btoa(binary)
+  }
+
+  it('小端 FLOAT32 展示成数组，尾随 0 去掉', () => {
+    const wire = f32le([1, -2.5, 0, 0.5])
+    expect(meFormatViewValue(wire, 'vector32')).toBe('[1, -2.5, 0, 0.5]')
+    expect(meVector32Base64ToDisplay(f32le([0.5]))).toBe('[0.5]')
+  })
+
+  it('长度不是 4 的倍数或含 NaN 时解码错误，不退回别的编码', () => {
+    const badLen = btoa('abc')
+    const bad = meVector32Base64ToDisplay(badLen)
+    expect(bad.startsWith(decodeErrTitle('Vector32'))).toBe(true)
+    expect(isViewDecodeError(bad)).toBe(true)
+    const nan = meFormatViewValue(f32le([1, Number.NaN]), 'vector32')
+    expect(nan.startsWith(decodeErrTitle('Vector32'))).toBe(true)
+    expect(meVector32Base64ToDisplay('')).toBe('')
   })
 })
 

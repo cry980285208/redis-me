@@ -126,16 +126,17 @@ const detectedViewText = computed(() =>
 const vectorsetType = computed(() => form.value.type === 'vectorset')
 const timeseriesType = computed(() => form.value.type === 'timeseries')
 const prettyEnabled = computed(
-  // Vector Set / TimeSeries 为明文，始终可美化；其它类型随 utf8/strjson
+  // Vector Set / TimeSeries 为明文，始终可美化；Vector32 是 JSON 数组，可美化
   () =>
     vectorsetType.value ||
     timeseriesType.value ||
     effectiveFieldViewFmt.value === 'utf8' ||
-    effectiveFieldViewFmt.value === 'strjson',
+    effectiveFieldViewFmt.value === 'strjson' ||
+    effectiveFieldViewFmt.value === 'vector32',
 )
 const isViewReadonlyFmt = computed(
   () => isReadonlyView(effectiveFieldViewFmt.value) || gzipReadonly.value,
-) // JdkSerial / Pickle / PhpSerial / Gzip 剥壳不支持写回 → 按钮禁用 + tooltip
+) // JdkSerial / Pickle / PhpSerial / Vector32 / Gzip 剥壳不支持写回 → 按钮禁用 + tooltip
 const canSaveField = computed(
   () =>
     !readonly.value &&
@@ -196,11 +197,8 @@ async function syncFieldEditor() {
   try {
     if (isCustomView(fmt)) {
       form.value.fieldValue = await meFormatViewValueAsync(wire, fmt)
-    } else if (fmt === 'utf8') {
-      form.value.fieldValue = meFormatDisplayValue(
-        meFormatViewValue(wire, 'utf8'),
-        fieldPretty.value,
-      )
+    } else if (fmt === 'utf8' || fmt === 'vector32') {
+      form.value.fieldValue = meFormatDisplayValue(meFormatViewValue(wire, fmt), fieldPretty.value)
     } else {
       form.value.fieldValue = meFormatViewValue(wire, fmt)
     }
