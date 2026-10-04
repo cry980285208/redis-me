@@ -642,7 +642,7 @@ export default {
   keyList: { renameKey: 'Rename Key' },
 
   keyRename: { title: 'Rename Key', newKeyName: 'New key name' },
-  keyCopy: { title: 'Create Duplicate', newKeyName: 'New key name' },
+  keyCopy: { title: 'Duplicate Key', newKeyName: 'New key name' },
 
   keyTree: {
     noData: 'No Data',
@@ -1079,7 +1079,7 @@ export default {
     vectorsetSample: 'Random Sample',
     vectorsetRange: 'Range Query',
     renameKey: 'Rename Key',
-    duplicateKey: 'Create Duplicate',
+    duplicateKey: 'Duplicate Key',
     copyValue: 'Copy Value',
     copyVector: 'Copy Vector',
     copyAttrs: 'Copy Attributes',
@@ -1152,7 +1152,7 @@ export default {
     viewCodec: 'Codec',
     autoDetected: 'Auto-detected codec',
     commandHelp: 'Command Help',
-    objectInfo: 'Object Introspection',
+    objectInfo: 'Object Info',
     objectInfoCommand: 'Command',
     objectInfoItem: 'Item',
     objectInfoValue: 'Value',
@@ -1190,7 +1190,7 @@ export default {
 <b>Streams</b><br/>
 • stream: a radix tree encoded as listpack<br/><br/>
 Once an operation prevents Redis from keeping the space-saving encoding, special encodings are automatically converted to the general type`,
-    keyShortHint: 'CodeMirror Shortcuts',
+    keyShortHint: 'CM Shortcuts',
     keyShort: {
       fullscreen: 'Fullscreen Editor',
       toggleWrap: 'Toggle Line Wrap',
@@ -1255,8 +1255,8 @@ Once an operation prevents Redis from keeping the space-saving encoding, special
     importData: 'Import Data',
     listView: 'List View',
     treeView: 'Tree View',
-    showKeyMemory: 'Show Memory',
-    hideKeyMemory: 'Hide Memory',
+    showKeyMemory: 'Show Mem',
+    hideKeyMemory: 'Hide Mem',
     memoryUsageUnsupported: 'This server does not support MEMORY USAGE',
     sortByCount: 'Key Count',
     sortByAlphabet: 'Alphabet',
