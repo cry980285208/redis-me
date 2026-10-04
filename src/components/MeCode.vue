@@ -113,7 +113,7 @@ const props = withDefaults(
     readOnly?: boolean
     /** 解码失败：danger 描边 */
     error?: boolean
-    /** 右上角内置复制图标（可选展示） */
+    /** 右下角内置复制图标（可选展示） */
     copyable?: boolean
   }>(),
   { modelValue: '', mode: 'json', readOnly: false, error: false, copyable: false },
@@ -187,9 +187,13 @@ const extensions = computed(() => {
       :extensions
       :readonly="props.readOnly"
       :class="rootClass" />
-    <el-tooltip v-if="props.copyable" :content="t('copy')" placement="top">
-      <me-icon class="me-code-copy" icon="el-icon-document-copy" @click="copyCode" />
-    </el-tooltip>
+    <me-icon
+      v-if="props.copyable"
+      class="me-code-copy"
+      icon="el-icon-document-copy"
+      :info="t('copy')"
+      placement="top"
+      @click="copyCode" />
   </div>
 </template>
 
@@ -200,10 +204,10 @@ const extensions = computed(() => {
   min-height: 0;
 }
 
-/* 右上角复制图标（仅 copyable 时展示） */
+/* 右下角复制图标（仅 copyable 时展示） */
 .me-code-copy {
   position: absolute;
-  top: 6px;
+  bottom: 8px;
   right: 8px;
   z-index: 4;
   cursor: pointer;
