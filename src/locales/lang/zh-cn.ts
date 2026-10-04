@@ -908,7 +908,7 @@ export default {
     alterHint:
       '改字段名和类型后再执行。已有文档会按新字段补索引；加上 SKIPINITIALSCAN 则只索引之后写入的文档',
     alterOk: '已修改索引',
-    tagVals: 'Tag集合',
+    tagVals: '标签集合',
     tagValsValue: '标签值',
     tagValsFilter: '本地过滤',
     synDump: '同义词组',
