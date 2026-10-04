@@ -938,7 +938,7 @@ export default {
     filter: 'Filter (Name, Prefix)',
     create: 'Create index',
     createHint:
-      'Edit the index name, prefix, and field types, then run. Stopwords and vector options go in this command too',
+      'Edit the index name, prefix, and field types, then run. Types brought from a key are guessed from that key alone',
     createRun: 'Run',
     createOk: 'Index created',
     sample: 'Sample',

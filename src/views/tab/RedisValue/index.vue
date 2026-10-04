@@ -61,7 +61,7 @@ import {
   compileRedisGlobFilter,
   computeScanProgress,
 } from '@/utils/redis-glob'
-import { indexCreateDraft } from '@/utils/search-ddl'
+import { indexCreateDraft, type IndexDraftField } from '@/utils/search-ddl'
 import { defaultSettings } from '@/utils/settings-defaults'
 import { meTtlFromAt, meTtlToAt } from '@/utils/ttl'
 import {
@@ -1589,7 +1589,7 @@ function openCommandHelp() {
   commandHelpRef.value?.open({ group })
 }
 
-// 搜索页新建索引。只带当前已加载的 Hash 字段，或 JSON 顶层字段，类型先写 TEXT。
+// 搜索页新建索引。只带当前已加载的 Hash 字段，或 JSON 顶层字段，类型按这个键的值猜测。
 const canCreateIndex = computed(
   () =>
     canEdit.value &&
@@ -1598,12 +1598,19 @@ const canCreateIndex = computed(
     (hashType.value || jsonType.value),
 )
 
-function loadedIndexFields(): string[] {
+function loadedIndexFields(): IndexDraftField[] {
   if (hashType.value) {
     return dataList.value.flatMap(row => {
       try {
         const name = meFormatViewValue(String(row.key ?? ''), 'utf8').trim()
-        return name ? [name] : []
+        if (!name) return []
+        let value = ''
+        try {
+          value = meFormatViewValue(String(row.value ?? ''), 'utf8')
+        } catch {
+          // 值解不出来就不当数字或标签，草稿里写成 TEXT
+        }
+        return [{ name, value }]
       } catch {
         return []
       }
@@ -1611,7 +1618,7 @@ function loadedIndexFields(): string[] {
   }
   const doc = redisValue.value?.value
   if (!doc || typeof doc !== 'object' || Array.isArray(doc)) return []
-  return Object.keys(doc as Record<string, unknown>)
+  return Object.entries(doc as Record<string, unknown>).map(([name, value]) => ({ name, value }))
 }
 
 function openCreateIndex(): void {

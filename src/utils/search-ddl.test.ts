@@ -143,25 +143,58 @@ describe('indexDdl', () => {
     )
   })
 
-  it('键详情预填：前缀取到最后一个冒号，字段先写 TEXT', () => {
-    expect(indexCreateDraft('HASH', 'user:1001', ['name', 'name', ' score '])).toBe(
+  it('键详情预填：按当前键的值猜 NUMERIC / TAG，其余 TEXT', () => {
+    expect(
+      indexCreateDraft('HASH', 'user:1001', [
+        { name: 'name', value: 'Ada Lovelace' },
+        { name: 'name', value: 'skipped' },
+        { name: ' score ', value: ' 9.5 ' },
+        { name: 'type', value: 'pro' },
+        { name: 'note', value: '' },
+        { name: 'token', value: '1e10' },
+        { name: 'sku', value: 'A'.repeat(64) },
+        { name: 'blob', value: 'A'.repeat(65) },
+      ]),
+    ).toBe(
       [
         'FT.CREATE idx:user',
         '    ON HASH',
         '    PREFIX 1 user:',
         '    SCHEMA',
         '      name TEXT',
-        '      score TEXT',
+        '      score NUMERIC',
+        '      type TAG',
+        '      note TEXT',
+        '      token TAG',
+        '      sku TAG',
+        '      blob TEXT',
       ].join('\n'),
     )
-    expect(indexCreateDraft('JSON', 'order:2024:9', ['title', 'a.b'])).toBe(
+    expect(
+      indexCreateDraft('JSON', 'order:2024:9', [
+        { name: 'title', value: 'hello' },
+        { name: 'a.b', value: { x: 1 } },
+        { name: 'price', value: 12 },
+        { name: 'priceStr', value: '12' },
+        { name: 'ok', value: true },
+        { name: 'gone', value: null },
+        { name: 'desc', value: 'has space' },
+        { name: 'tags', value: ['a'] },
+      ]),
+    ).toBe(
       [
         'FT.CREATE idx:order:2024',
         '    ON JSON',
         '    PREFIX 1 order:2024:',
         '    SCHEMA',
-        '      $.title TEXT',
+        '      $.title TAG',
         `      ${JSON.stringify('$["a.b"]')} TEXT`,
+        '      $.price NUMERIC',
+        '      $.priceStr TAG',
+        '      $.ok TAG',
+        '      $.gone TAG',
+        '      $.desc TEXT',
+        '      $.tags TEXT',
       ].join('\n'),
     )
     expect(indexCreateDraft('HASH', 'lonely', [])).toBe(

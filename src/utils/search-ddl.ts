@@ -296,11 +296,23 @@ function omitFlag(flag: string, keyType: string, type: string, flags: Set<string
   return type === 'TAG' && flags.has('CASESENSITIVE')
 }
 
+/** 键详情预填的一个字段。value 是当前键里看到的值，用来猜索引类型。 */
+export type IndexDraftField = { name: string; value?: unknown }
+
+/** 无空格的短串当 TAG（状态、枚举、SKU）。再长仍当 TEXT，避免把大段内容建成标签索引。 */
+const TAG_MAX_LEN = 64
+
 /**
  * 从键详情预填一条 FT.CREATE。前缀是键名里最后一个冒号及其前面的部分。
- * 字段一律先写成 TEXT，JSON 用 `$.字段`。没有字段时留一行 field，方便改。
+ * 类型只看这一个键：JSON 数字、Hash 的整数或小数写成 NUMERIC；
+ * JSON 布尔和 null、无空格的短串写成 TAG。嵌套对象、带空格的句子、认不出的仍是 TEXT。
+ * 不猜 GEO / VECTOR，也不加 SORTABLE。JSON 用 `$.字段`。没有字段时留一行 field，方便改。
  */
-export function indexCreateDraft(keyType: 'HASH' | 'JSON', key: string, fields: string[]): string {
+export function indexCreateDraft(
+  keyType: 'HASH' | 'JSON',
+  key: string,
+  fields: IndexDraftField[],
+): string {
   const prefix = keyPrefix(key)
   const index = indexName(prefix)
   const lines = [`FT.CREATE ${quoteArg(index)}`, `    ON ${keyType}`]
@@ -308,14 +320,34 @@ export function indexCreateDraft(keyType: 'HASH' | 'JSON', key: string, fields: 
   lines.push('    SCHEMA')
   const seen = new Set<string>()
   for (const field of fields) {
-    const name = field.trim()
+    const name = field.name.trim()
     if (!name || seen.has(name)) continue
     seen.add(name)
     const ident = keyType === 'JSON' ? jsonPath(name) : name
-    lines.push(`      ${quoteArg(ident)} TEXT`)
+    lines.push(`      ${quoteArg(ident)} ${inferDraftType(keyType, field.value)}`)
   }
   if (!seen.size) lines.push('      field TEXT')
   return lines.join('\n')
+}
+
+/** Hash 的数字字符串也算 NUMERIC；JSON 只认真正的数字，`"12"` 仍按短串处理。 */
+function inferDraftType(keyType: 'HASH' | 'JSON', value: unknown): 'TEXT' | 'TAG' | 'NUMERIC' {
+  if (keyType === 'JSON') {
+    if (value === null || typeof value === 'boolean') return 'TAG'
+    if (typeof value === 'number' && Number.isFinite(value)) return 'NUMERIC'
+    if (typeof value !== 'string') return 'TEXT'
+    return classifyText(value, false)
+  }
+  if (typeof value !== 'string') return 'TEXT'
+  return classifyText(value, true)
+}
+
+function classifyText(value: string, numeric: boolean): 'TEXT' | 'TAG' | 'NUMERIC' {
+  const text = value.trim()
+  if (!text) return 'TEXT'
+  if (numeric && /^-?\d+(\.\d+)?$/.test(text)) return 'NUMERIC'
+  if (text.length <= TAG_MAX_LEN && !/\s/.test(text)) return 'TAG'
+  return 'TEXT'
 }
 
 /** `user:1001` → `user:`；没有冒号就用整个键名。 */

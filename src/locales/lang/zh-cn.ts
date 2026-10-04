@@ -920,7 +920,7 @@ export default {
     synTermsKept: '已有的词去不掉，只会追加新词',
     filter: '模糊筛选（名称、前缀）',
     create: '新建索引',
-    createHint: '改索引名、前缀和字段类型后再执行。停用词、向量参数也写在这条命令里',
+    createHint: '改索引名、前缀和字段类型后再执行。从键详情带入的类型按当前这一个键猜测',
     createRun: '执行',
     createOk: '已创建索引',
     sample: '样例',
