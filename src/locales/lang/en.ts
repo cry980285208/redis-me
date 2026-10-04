@@ -944,7 +944,7 @@ export default {
       'Edit the index name, prefix, and field types, then run. Stopwords and vector options go in this command too',
     createRun: 'Run',
     createOk: 'Index created',
-    sample: 'Sample index',
+    sample: 'Sample',
     sampleTitle: 'Getting your sample data ready for Search',
     sampleHint:
       "Select a sample dataset. We'll load the data and generate the index needed for search.",
@@ -963,10 +963,8 @@ export default {
     withScores: 'Scores',
     docKey: 'Key',
     score: 'Score',
-    dropConfirm: 'Drop index "{name}"?',
-    dropDocs: 'Also delete document keys',
+    dropConfirm: 'Drop index "{name}"? Documents are kept.',
     dropOk: 'Index dropped',
-    dropDocsOk: 'Index and document keys deleted',
   },
 
   redisTerminal: {

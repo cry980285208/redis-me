@@ -926,7 +926,7 @@ export default {
     createHint: '改索引名、前缀和字段类型后再执行。停用词、向量参数也写在这条命令里',
     createRun: '执行',
     createOk: '已创建索引',
-    sample: '索引样例',
+    sample: '样例',
     sampleTitle: '准备搜索样例数据',
     sampleHint: '选择一套样例。会写入数据并创建搜索所需的索引',
     sampleBikes: '电商发现',
@@ -944,10 +944,8 @@ export default {
     withScores: '分数',
     docKey: '键',
     score: '分数',
-    dropConfirm: '删除索引 "{name}"？',
-    dropDocs: '同时删除文档键',
+    dropConfirm: '删除索引 "{name}"？文档键会保留。',
     dropOk: '已删除索引',
-    dropDocsOk: '已删除索引和文档键',
   },
 
   redisTerminal: {
