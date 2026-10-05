@@ -1,5 +1,38 @@
 # 5.x Changelog
 
+## [v5.4.0](https://mp.weixin.qq.com/s/h6S4mnUZvGLu85mztHzxBA) (2026-10-05)
+
+### ✨ New Features
+
+- **RedisSearch** query engine
+  - Basics: list, create, edit, and delete indexes
+  - Query: search by query string, with an option to show scores
+  - Browse: click the keys panel to switch to Search mode and look up document keys
+  - Index info: view raw info and the restored index DDL; field details show type tags and weights
+  - More: view tag sets; view, add, and edit synonym groups; insert samples; jump to documents
+- Keys panel: Search mode for **full-text search by index**
+- Keys panel: toolbar option to **show memory usage**
+- Terminal: **prompt on multi-line paste** to run it as one command or as multiple commands
+- Codec: new **Vector32**; Auto recognizes little-endian FLOAT32 vectors
+- Website: new **Handbook** — Slowlog Governance, SSL Encryption
+- Other details
+  - Exact-match checkbox moved to the left of the query input; placeholders improved
+  - Hover delete icon on the key list moved into the context menu
+  - Terminal shows a success message after copying the selection from the context menu
+  - Code-block copy button moved to the bottom-right
+  - Table pagination no longer includes jump-to-page
+  - Closing a connection releases it in the background, so the UI stays responsive
+  - Connection advanced-options button now uses a tooltip; form labels widened
+  - Empty-page Logo glow restored in dark theme
+  - Frontend and backend dependencies upgraded (Vite+ 1.0.0, Tauri 2.12)
+  - Backend refactor, with more complete tests
+
+### 🐞 Bug Fixes
+
+- Fixed type tags missing on the flat key list
+- Fixed List range scans issuing one extra empty query after reaching the end
+- Fixed Stream paging treating a full page as the end
+
 ## v5.3.1 (2026-09-25)
 
 ### 🐞 Bug Fixes
