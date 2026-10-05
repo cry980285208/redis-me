@@ -14,7 +14,6 @@ use crate::net::conn::{get_client_single, init_single_connection, set_client_nam
 use crate::support::capabilities::detect_server_capabilities;
 use crate::support::command_log::LoggingConnection;
 use crate::support::convert::{tuple_to_key_size, ui_key_list};
-use crate::support::error::AppError;
 use crate::support::format::parse_command;
 use crate::support::tty::redis_value_to_cli_display;
 use crate::support::util::*;
@@ -45,7 +44,7 @@ impl Deref for MeSingle {
 
 impl Drop for MeSingle {
     fn drop(&mut self) {
-        // 未订阅不要 get_conn：空闲超过检查间隔会探活，失败就重连，关闭时白开一条连接。
+        // 未订阅不要 get_conn：空闲超过检查间隔会探活，过久或已关闭会直接重连，关闭时白开一条连接。
         if self.subscribe_running.load(Relaxed) {
             let _ = self.subscribe_stop();
         }
@@ -619,6 +618,7 @@ impl MeSingle {
     }
 
     /// 丢掉当前连接，按当前库号重新建连并写回客户端名。
+    /// 成功后刷新 `last_check_time`，下一轮取连接在检查间隔内直接复用。
     fn reconnect(&self) -> AnyResult<()> {
         let raw_conn = Self::new_raw_conn(
             &self.client,
@@ -635,35 +635,14 @@ impl MeSingle {
         Ok(())
     }
 
-    /// 拿当前连接。超过检查间隔或连接已断时先探测，失败则重连。加锁超过 10 秒报超时。
+    /// 拿当前连接。策略见 `conn_reuse`：短间隔直接用，中间档 PING，过久或已关闭则直接重连。
     fn get_conn(&'_ self) -> AnyResult<MutexGuard<'_, LoggingConnection>> {
-        // match self.conn.lock() {
-        //     Ok(conn) => Ok(conn),
-        //     Err(_) => {
-        //         bail!("获取连接加锁失败");
-        //     }
-        // }
-        // 标准库的Mutex不支持重入及超时时间设置，因此引入parking_lot解决此问题
-        // 备注: parking_lot的 ReentrantMutexGuard 不支持 deref_mut 所以暂不支持重入
-        match self.conn.try_lock_for(Duration::from_secs(10)) {
-            Some(mut conn) => Ok({
-                let curr = Utc::now().timestamp();
-                let last = self.last_check_time.load(Relaxed);
-                if conn.is_open() && curr - last < CONNECTION_CHECK_SECONDS {
-                    conn
-                } else {
-                    self.last_check_time.store(curr, Relaxed);
-                    if self.check_connection_timeout(&mut conn).unwrap_or(false) {
-                        conn
-                    } else {
-                        drop(conn); // 此处一定要释放锁
-                        self.reconnect()?;
-                        self.get_conn()?
-                    }
-                }
-            }),
-            None => bail!(AppError::ConnectionLockTimeout),
-        }
+        get_checked_conn(
+            || self.conn.try_lock_for(CONNECTION_LOCK_TIMEOUT),
+            &self.last_check_time,
+            |conn| self.check_connection_timeout(conn),
+            || self.reconnect(),
+        )
     }
 
     /// 用较短超时做一次存活探测，通过后把读写超时改回正式命令超时。
