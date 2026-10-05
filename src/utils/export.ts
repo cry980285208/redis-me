@@ -3,7 +3,12 @@
 import { save, type DialogFilter } from '@tauri-apps/plugin-dialog'
 import { writeFile, writeTextFile } from '@tauri-apps/plugin-fs'
 import dayjs from 'dayjs'
-import * as XLSX from 'xlsx'
+import {
+  calculateColumnWidth,
+  measureValueWidth,
+  writeXlsxStream,
+  type CellStyle,
+} from 'hucre/xlsx'
 
 import i18n from '@/locales'
 import { meCopy, meErr, meOk } from '@/utils/util'
@@ -54,9 +59,9 @@ export async function saveTextExport(
   }
 }
 
-/** 选路径并写入二进制；MeTable 导出 xlsx */
+/** 选路径并写入二进制；data 可以是整块，也可以是字节流（xlsx 流式写出） */
 export async function saveBinaryExport(
-  bytes: Uint8Array,
+  data: Uint8Array | ReadableStream<Uint8Array> | (() => ReadableStream<Uint8Array>),
   defaultPath: string,
   extensions: string[],
   messages: ExportMessages = { ok: t('meTable.exportOk'), err: t('meTable.exportErr') },
@@ -65,6 +70,8 @@ export async function saveBinaryExport(
   const path = await pickSavePath(defaultPath, extensions, filterName)
   if (!path) return
   try {
+    // 流在用户确认路径之后才创建，取消保存时不扫列宽、不开始压缩
+    const bytes = typeof data === 'function' ? data() : data
     await writeFile(path, bytes)
     meOk(messages.ok)
   } catch (e: unknown) {
@@ -191,12 +198,158 @@ ${table}
 </html>`
 }
 
-export function matrixToXlsxBytes(headers: string[], rows: string[][]): Uint8Array {
-  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows])
-  const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, 'Sheet1')
-  const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
-  return new Uint8Array(buf)
+/** Excel 工作表名上限；非法字符与 Excel 一致：\ / ? * [ ] : */
+const EXCEL_SHEET_NAME_MAX = 31
+const EXCEL_SHEET_NAME_INVALID = /[\\/?*[\]:]/g
+
+/**
+ * 工作表名：去掉非法字符、去掉首尾引号、截到 31 字符。
+ * 空结果退回 Sheet1。导出名（如 info）原样可用。
+ */
+export function excelSheetName(name: string): string {
+  const cleaned = name
+    .replace(EXCEL_SHEET_NAME_INVALID, '')
+    .replace(/^'+|'+$/g, '')
+    .trim()
+  return cleaned.slice(0, EXCEL_SHEET_NAME_MAX) || 'Sheet1'
+}
+
+// 标题/数据样式对齐 ExcelUtil：等线、标题加粗居中灰底、四边细线、冻结首行
+const EXCEL_FONT = '等线'
+const EXCEL_BORDER_SIDE = { style: 'thin' as const, color: { rgb: '000000' } }
+const EXCEL_BORDER = {
+  top: EXCEL_BORDER_SIDE,
+  right: EXCEL_BORDER_SIDE,
+  bottom: EXCEL_BORDER_SIDE,
+  left: EXCEL_BORDER_SIDE,
+}
+const excelBodyStyle: CellStyle = { font: { name: EXCEL_FONT, size: 11 }, border: EXCEL_BORDER }
+const excelTitleStyle: CellStyle = {
+  font: { name: EXCEL_FONT, size: 11, bold: true },
+  fill: { type: 'pattern', pattern: 'solid', fgColor: { rgb: 'C0C0C0' } },
+  alignment: { horizontal: 'center', vertical: 'center' },
+  border: EXCEL_BORDER,
+}
+
+/** 列宽下限（字符）；短标题不挤成一条缝 */
+const EXCEL_COL_MIN_WIDTH = 8
+/**
+ * 列宽上限（字符）。超长单元格不再把列撑到 Excel 的 255。
+ * 单元格里仍是全文，只是显示宽度到此为止。
+ */
+const EXCEL_COL_MAX_WIDTH = 60
+/** 列宽只看表头和前 10 行数据，后面的长文本不参与 */
+const EXCEL_COL_WIDTH_SAMPLE_ROWS = 10
+
+function tableColumnCount(headers: string[], rows: string[][]): number {
+  let count = headers.length
+  for (const row of rows) {
+    if (row.length > count) count = row.length
+  }
+  return count
+}
+
+/** 表头 + 前 10 行里每列最宽的单元格，再换成 Excel 列宽并夹在上下限里 */
+function tableColumnWidths(headers: string[], rows: string[][], colCount: number): number[] {
+  const widest = new Array<string>(colCount).fill('')
+  const widestUnits = new Array<number>(colCount).fill(0)
+  const sampleCount = Math.min(rows.length, EXCEL_COL_WIDTH_SAMPLE_ROWS)
+  for (let rowIndex = 0; rowIndex < sampleCount; rowIndex++) {
+    const row = rows[rowIndex]!
+    for (let index = 0; index < colCount; index++) {
+      const text = row[index] ?? ''
+      const units = measureValueWidth(text)
+      if (units > widestUnits[index]!) {
+        widestUnits[index] = units
+        widest[index] = text
+      }
+    }
+  }
+  return Array.from({ length: colCount }, (_, index) => {
+    const headerWidth = calculateColumnWidth([headers[index] ?? ''], {
+      font: { name: EXCEL_FONT, size: 11, bold: true },
+      minWidth: EXCEL_COL_MIN_WIDTH,
+      maxWidth: EXCEL_COL_MAX_WIDTH,
+    })
+    const bodyWidth = widestUnits[index]
+      ? calculateColumnWidth([widest[index]!], {
+          font: { name: EXCEL_FONT, size: 11 },
+          minWidth: EXCEL_COL_MIN_WIDTH,
+          maxWidth: EXCEL_COL_MAX_WIDTH,
+        })
+      : EXCEL_COL_MIN_WIDTH
+    return Math.max(headerWidth, bodyWidth)
+  })
+}
+
+function* tableXlsxRows(
+  headers: string[],
+  rows: string[][],
+  colCount: number,
+): Generator<Array<string | { value: string; style: CellStyle }>> {
+  yield Array.from({ length: colCount }, (_, index) => ({
+    value: headers[index] ?? '',
+    style: excelTitleStyle,
+  }))
+  for (const row of rows) {
+    const line = new Array<string>(colCount)
+    for (let index = 0; index < colCount; index++) line[index] = row[index] ?? ''
+    yield line
+  }
+}
+
+/**
+ * MeTable 矩阵 → xlsx 字节流。
+ * 列宽只按表头和前 10 行估计，再用 writeXlsxStream 按行拉出。
+ * 字符串内联写入，不建共享字符串表。sheetName 用导出名（文件名中段，如 info）。
+ */
+export function tableXlsxStream(
+  headers: string[],
+  rows: string[][],
+  sheetName = 'Sheet1',
+): ReadableStream<Uint8Array> {
+  const colCount = tableColumnCount(headers, rows)
+  const widths = colCount > 0 ? tableColumnWidths(headers, rows, colCount) : []
+  return writeXlsxStream(tableXlsxRows(headers, rows, colCount), {
+    name: excelSheetName(sheetName),
+    freezePane: colCount > 0 ? { rows: 1 } : undefined,
+    columns: colCount > 0 ? widths.map(width => ({ width, style: excelBodyStyle })) : undefined,
+    // 默认就是内联；写明是为了大表不把全部不同字符串再攒进一张表
+    inlineStrings: true,
+  })
+}
+
+async function concatByteStream(stream: ReadableStream<Uint8Array>): Promise<Uint8Array> {
+  const reader = stream.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (!value?.byteLength) continue
+      chunks.push(value)
+      total += value.byteLength
+    }
+  } finally {
+    reader.releaseLock()
+  }
+  const bytes = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return bytes
+}
+
+/** MeTable 矩阵 → xlsx。测试读回用；界面保存走 tableXlsxStream，不再先拼一整块 */
+export async function matrixToXlsxBytes(
+  headers: string[],
+  rows: string[][],
+  sheetName = 'Sheet1',
+): Promise<Uint8Array> {
+  return concatByteStream(tableXlsxStream(headers, rows, sheetName))
 }
 
 /** MeTable 导出 json/csv/html/md */
@@ -208,13 +361,20 @@ export async function saveTableTextFile(
   await saveTextExport(content, defaultPath, extensions)
 }
 
-/** MeTable 导出 xlsx */
+/** MeTable 导出 xlsx；sheetName 为工作表名（导出名，如 info） */
 export async function saveTableXlsxFile(
   headers: string[],
   rows: string[][],
   defaultPath: string,
+  sheetName?: string,
 ): Promise<void> {
-  await saveBinaryExport(matrixToXlsxBytes(headers, rows), defaultPath, ['xlsx'], undefined, 'XLSX')
+  await saveBinaryExport(
+    () => tableXlsxStream(headers, rows, sheetName),
+    defaultPath,
+    ['xlsx'],
+    undefined,
+    'XLSX',
+  )
 }
 
 // #endregion

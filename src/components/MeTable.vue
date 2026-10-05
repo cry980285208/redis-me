@@ -34,7 +34,7 @@ const props = withDefaults(
     layout?: string
     /** 仅一页时是否隐藏分页条；默认 false（始终显示） */
     hideOnSinglePage?: boolean
-    /** 导出文件名前缀 */
+    /** 导出文件名中段，同时作为 Excel 工作表名（如 info → RedisME_info_时间.xlsx 的表「info」） */
     exportName?: string
     /** 隐藏分页条右侧扩展菜单 */
     hideExport?: boolean
@@ -259,7 +259,7 @@ async function handleExportCommand(command: string): Promise<void> {
       await saveTableTextFile(matrixToTsv(headers, rows), exportFileName('tsv'), ['tsv'])
       break
     case 'exportExcel':
-      await saveTableXlsxFile(headers, rows, exportFileName('xlsx'))
+      await saveTableXlsxFile(headers, rows, exportFileName('xlsx'), props.exportName)
       break
     case 'exportHtml':
       await saveTableTextFile(matrixToHtml(headers, rows), exportFileName('html'), ['html'])
