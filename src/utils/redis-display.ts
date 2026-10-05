@@ -64,9 +64,13 @@ export function toRedisTypeName(displayOrRedis: string): string {
     case 'sortedset':
     case 'zset':
       return 'zset'
-    // 展示名 TimeSeries → IPC/SCAN 用 timeseries（后端再换成 TSDB-TYPE）
+    // 展示名 TimeSeries，以及 TYPE 原始名 TSDB-TYPE → IPC/SCAN 用 timeseries（后端再换成 TSDB-TYPE）
     case 'timeseries':
+    case 'tsdb-type':
       return 'timeseries'
+    // TYPE 原始名 ReJSON-RL → IPC/SCAN 用 json（后端再换成 ReJSON-RL）
+    case 'rejson-rl':
+      return 'json'
     default:
       return displayOrRedis.toLowerCase()
   }

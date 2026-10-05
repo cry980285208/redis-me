@@ -6,6 +6,7 @@ import { useI18n } from 'vue-i18n'
 import { shareProvideKey } from '@/types/me-interface'
 import type { RedisKey_Deserialize, RedisKeySize_Serialize } from '@/types/tauri-specta'
 import type { TableExportMatrix } from '@/utils/export'
+import { clearKeyMemoryCacheForConn } from '@/utils/key-memory-cache'
 import { clearKeyTypeCacheForConn } from '@/utils/key-type-cache'
 import { useMemoryScan } from '@/utils/memory-scan'
 import { meType, toKeyTypeLabel } from '@/utils/redis-display'
@@ -136,6 +137,7 @@ function batchDelKey() {
       }
       await meCommands.batchDel(share.conn!.id, param)
       clearKeyTypeCacheForConn(share.conn!.id)
+      clearKeyMemoryCacheForConn(share.conn!.id)
       meOk(t('deleteOk'))
       dataList.value = dataList.value.filter(
         rk => !param.keyList.some(del => sameRedisKey(rk, del)),

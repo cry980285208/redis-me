@@ -10,3 +10,4 @@ How it differs from the [Guide](/guide/intro/about):
 ## Articles
 
 - [Slowlog Governance](/handbook/slowlog-governance): Production slowlog remediation (baseline → locate → fix → prevent recurrence)
+- [SSL Encryption](/handbook/ssl-encryption): New TLS cluster; two checks per app and a full cutover in one iteration; sync the old cluster to the new one while both run, then stop sync and retire the old cluster only after no application connections remain

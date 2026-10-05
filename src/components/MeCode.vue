@@ -18,6 +18,7 @@ import {
   propertiesEagerParse,
   zhPhrases,
 } from '@/plugins/codemirror'
+import { redisHighlighting, redisLang } from '@/utils/redis-lang'
 import { isZh, meCopy } from '@/utils/util'
 // #endregion
 
@@ -105,18 +106,20 @@ const meCodePrecKeymap = Prec.highest(
 
 const props = withDefaults(
   defineProps<{
-    /** `json` / `json5` 均使用 JSON5 语法高亮；`properties`/`conf` 为行式配置；`shell` / `yaml` 安装帮助产物 */
+    /** 编辑器文本 */
+    modelValue?: string
+    /** `json` / `json5` 均使用 JSON5 语法高亮；`properties`/`conf` 为行式配置；`shell` / `yaml` 安装帮助产物；`redis` 为 FT.CREATE */
     mode?: string
     readOnly?: boolean
     /** 解码失败：danger 描边 */
     error?: boolean
-    /** 右上角内置复制图标（可选展示） */
+    /** 右下角内置复制图标（可选展示） */
     copyable?: boolean
   }>(),
-  { mode: 'json', readOnly: false, error: false, copyable: false },
+  { modelValue: '', mode: 'json', readOnly: false, error: false, copyable: false },
 )
 
-// class/style 落到外层包装（撑高度），其余属性（含 modelValue）透给编辑器
+// class/style 落到外层包装（撑高度），其余属性透给编辑器
 defineOptions({ inheritAttrs: false })
 const attrs = useAttrs()
 // class/style 拆到外层 wrapper，其余透传给 code-mirror
@@ -129,7 +132,7 @@ const restAttrs = computed(() => {
 const { t } = useI18n()
 
 function copyCode(): void {
-  meCopy((restAttrs.value.modelValue as string) ?? '')
+  meCopy(props.modelValue)
 }
 
 const rootClass = computed(() => [
@@ -143,6 +146,7 @@ const lang = computed(() => {
   if (props.mode === 'properties' || props.mode === 'conf') return propertiesLang
   if (props.mode === 'shell') return shellLang
   if (props.mode === 'yaml') return yamlLang
+  if (props.mode === 'redis') return redisLang
   return undefined
 })
 const phrases = computed(() => (isZh.value ? zhPhrases : {}))
@@ -164,6 +168,8 @@ const extensions = computed(() => {
   if (props.mode === 'properties' || props.mode === 'conf') {
     list.push(syntaxHighlighting(propertiesDarkSyntax), propertiesEagerParse)
   }
+  // 跟语言包各挂一次。只放在 LanguageSupport 里时，这个编辑器仍会落到默认高亮。
+  if (props.mode === 'redis') list.push(redisHighlighting)
   return list
 })
 // #endregion
@@ -174,15 +180,20 @@ const extensions = computed(() => {
   <div class="me-code-wrap" :class="wrapClass" :style="wrapStyle">
     <code-mirror
       v-bind="restAttrs"
+      :model-value="props.modelValue"
       :dark
       :lang
       :phrases
       :extensions
       :readonly="props.readOnly"
       :class="rootClass" />
-    <el-tooltip v-if="props.copyable" :content="t('copy')" placement="top">
-      <me-icon class="me-code-copy" icon="el-icon-document-copy" @click="copyCode" />
-    </el-tooltip>
+    <me-icon
+      v-if="props.copyable"
+      class="me-code-copy"
+      icon="el-icon-document-copy"
+      :info="t('copy')"
+      placement="top"
+      @click="copyCode" />
   </div>
 </template>
 
@@ -193,10 +204,10 @@ const extensions = computed(() => {
   min-height: 0;
 }
 
-/* 右上角复制图标（仅 copyable 时展示） */
+/* 右下角复制图标（仅 copyable 时展示） */
 .me-code-copy {
   position: absolute;
-  top: 6px;
+  bottom: 8px;
   right: 8px;
   z-index: 4;
   cursor: pointer;

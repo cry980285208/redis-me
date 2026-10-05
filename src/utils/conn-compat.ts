@@ -4,6 +4,17 @@ import { DEFAULT_KEY_SEPARATOR } from '@/utils/conn'
 /** 本地 store / 旧版数据：字段可能缺失，或含已迁移的扁平哨兵字段 */
 export type ConnFromStore = { [K in keyof ConnConfig]?: ConnConfig[K] } & Record<string, unknown>
 
+/** SSH 默认值；已有 sshOption 时只补缺失字段，不覆盖用户填过的 host/port */
+export const DEFAULT_SSH_OPTION = {
+  host: '',
+  port: 22,
+  loginType: 'pwd', // pwd 用户名/密码, pkfile 私钥文件
+  username: '',
+  password: '',
+  pkfile: '', // 私钥文件
+  passphrase: '', // 私钥密码
+}
+
 /** 代理默认值；勾选后默认系统模式便于立刻检测；系统模式不使用这些 host/port（每次建连实时检测） */
 export const DEFAULT_PROXY_OPTION = {
   proxyMode: 'system',
@@ -81,18 +92,12 @@ export function checkConnList(connList: ConnFromStore[]): void {
     const protocol = meta['protocol']
     if (protocol !== undefined && protocol !== 'resp3') delete meta['protocol']
 
-    // v2.7.0 兼容旧版本，补充SSH属性
+    // v2.7.0 兼容旧版本，补充 SSH 属性。残缺对象按字段补默认，避免缺 port
     if (!('ssh' in conn) || typeof conn.ssh != 'boolean') conn.ssh = false
-    if (!conn.sshOption)
-      conn.sshOption = {
-        host: '',
-        port: 22,
-        loginType: 'pwd', // pwd 用户名/密码, pkfile 私钥文件
-        username: '',
-        password: '',
-        pkfile: '', // 私钥文件
-        passphrase: '', // 私钥密码
-      }
+    const rawSsh = conn.sshOption
+    const sshObj = rawSsh && typeof rawSsh === 'object' && !Array.isArray(rawSsh) ? rawSsh : {}
+    conn.sshOption = { ...DEFAULT_SSH_OPTION, ...sshObj }
+    if (!conn.sshOption.port) conn.sshOption.port = DEFAULT_SSH_OPTION.port
 
     // 网络代理：旧连接缺字段视为未开。RedisME 导入若已有字段则保留；竞品转换不映射代理。
     if (!('proxy' in conn) || typeof conn.proxy != 'boolean') conn.proxy = false

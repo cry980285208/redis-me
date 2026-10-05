@@ -1,15 +1,77 @@
-use crate::client::client_trait::MeClient;
-use crate::client::impl_cluster::MeCluster;
-use crate::client::impl_single::MeSingle;
-use crate::utils::error::AppError;
-use crate::utils::model::{AppSettings, ConnConfig};
-use crate::utils::util::AnyResult;
+use crate::client::me_client::MeClient;
+use crate::client::me_cluster::MeCluster;
+use crate::client::me_single::MeSingle;
+use crate::model::{AppSettings, ConnConfig};
+use crate::support::capabilities::ServerCapabilities;
+use crate::support::error::AppError;
+use crate::support::util::{AnyResult, CONNECTION_CONNECT_TIMEOUT, CONNECTION_NORMAL_TIMEOUT};
+use chrono::Utc;
 use log::{debug, info};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU16};
 use std::sync::{Arc, Mutex, RwLock};
+use std::thread;
 use std::time::Duration;
 use tauri::{AppHandle, Manager, State};
 
+/// 单条连接的运行时状态。只在后端使用，不参与前端类型导出。
+#[derive(Debug, Clone)]
+pub struct MeBase {
+    pub id: String,
+    pub conf: ConnConfig,
+    pub db: Arc<AtomicU16>,
+    pub subscribe_running: Arc<AtomicBool>,
+    pub monitor_running: Arc<AtomicBool>,
+    pub export_import_running: Arc<AtomicBool>,
+    pub last_check_time: Arc<AtomicI64>,
+    /// 已建立连接上的单次命令读写超时（init 时从 AppSettings 快照）
+    pub command_timeout: Duration,
+    /// 建连超时（TCP+握手+PING；init 时从 AppSettings 快照，重连复用）
+    pub connection_timeout: Duration,
+    /// 本连接命令执行日志（环形缓冲）
+    pub command_logger: Arc<crate::support::command_log::CommandLogger>,
+    /// 用于后台线程 emit 事件到前端
+    pub app_handle: Arc<parking_lot::RwLock<Option<AppHandle>>>,
+    /// 连接成功后检测的服务器能力
+    pub capabilities: ServerCapabilities,
+}
+
+impl From<&ConnConfig> for MeBase {
+    /// 用连接配置做出运行时状态。超时先用默认值，真正建连时再按设置覆盖。
+    fn from(conf: &ConnConfig) -> Self {
+        MeBase {
+            id: conf.id.clone(),
+            conf: conf.clone(),
+            db: Arc::new(AtomicU16::new(conf.db)),
+            subscribe_running: Arc::new(AtomicBool::new(false)),
+            monitor_running: Arc::new(AtomicBool::new(false)),
+            export_import_running: Arc::new(AtomicBool::new(false)),
+            last_check_time: Arc::new(AtomicI64::new(Utc::now().timestamp())),
+            command_timeout: CONNECTION_NORMAL_TIMEOUT,
+            connection_timeout: CONNECTION_CONNECT_TIMEOUT,
+            command_logger: Arc::new(crate::support::command_log::CommandLogger::new(
+                conf.id.clone(),
+                conf.name.clone(),
+            )),
+            app_handle: Arc::new(parking_lot::RwLock::new(None::<AppHandle>)),
+            capabilities: ServerCapabilities::default(),
+        }
+    }
+}
+
+impl MeBase {
+    /// 获取绑定的 AppHandle，未初始化时返回错误
+    pub fn get_app_handle(&self) -> AnyResult<AppHandle> {
+        self.app_handle.read().clone().ok_or_else(|| {
+            AppError::Internal {
+                message: "AppHandle not initialized".to_string(),
+            }
+            .into()
+        })
+    }
+}
+
+/// 进程内的连接表、已打开的客户端，以及全局超时设置。
 #[derive(Default)]
 pub struct AppState {
     // 初始化连接列表
@@ -29,15 +91,22 @@ pub fn app_timeouts(app: &AppHandle) -> (Duration, Duration) {
     (s.connection_timeout(), s.command_timeout())
 }
 
+/// 从 `AppHandle` 同步连接列表，并查找、建立或断开客户端。
 pub trait ClientAccess {
+    /// 用前端发来的列表整表替换内存里的连接配置。
     fn conn_list(&self, conn_list: Vec<ConnConfig>) -> AnyResult<()>;
+    /// 同步全局超时。已经打开的连接不改，下次重连才用新值。
     fn app_settings(&self, app_settings: AppSettings) -> AnyResult<()>;
+    /// 取已打开的客户端。没有就建连。
     fn get_client(&self, id: &str) -> AnyResult<Arc<Box<dyn MeClient>>>;
+    /// 按 id 建连并放进缓存。
     fn connect(&self, app_handle: AppHandle, id: &str) -> AnyResult<Arc<Box<dyn MeClient>>>;
+    /// 从缓存拿掉客户端。本来就没有也算成功。
     fn disconnect(&self, id: &str) -> AnyResult<()>;
 }
 
 impl ClientAccess for AppHandle {
+    /// 用前端发来的列表整表替换内存里的连接配置。
     fn conn_list(&self, conn_list: Vec<ConnConfig>) -> AnyResult<()> {
         let state: State<AppState> = self.state();
         let mut map = state.connections.lock().unwrap();
@@ -49,6 +118,7 @@ impl ClientAccess for AppHandle {
         Ok(())
     }
 
+    /// 同步全局超时。已经打开的连接不改，下次重连才用新值。
     fn app_settings(&self, app_settings: AppSettings) -> AnyResult<()> {
         let state: State<AppState> = self.state();
         *state.app_settings.write().unwrap() = app_settings.normalized();
@@ -60,6 +130,7 @@ impl ClientAccess for AppHandle {
         Ok(())
     }
 
+    /// 取已打开的客户端。没有就建连。
     fn get_client(&self, id: &str) -> AnyResult<Arc<Box<dyn MeClient>>> {
         let state: State<AppState> = self.state();
         {
@@ -73,6 +144,7 @@ impl ClientAccess for AppHandle {
         self.connect(self.clone(), id)
     }
 
+    /// 按 id 建连并放进缓存。
     fn connect(&self, app_handle: AppHandle, id: &str) -> AnyResult<Arc<Box<dyn MeClient>>> {
         let state: State<AppState> = self.state();
         let map = state.connections.lock().unwrap();
@@ -98,17 +170,20 @@ impl ClientAccess for AppHandle {
         Ok(client)
     }
 
+    /// 从缓存拿掉客户端。本来就没有也算成功。
+    /// 真正释放放到后台：空闲连接 Drop 时可能探活/重连，不能占着 clients 写锁，否则另一条连接的 connect 会跟着等。
     fn disconnect(&self, id: &str) -> AnyResult<()> {
         let state: State<AppState> = self.state();
-        let mut clients = state.clients.write().unwrap();
-        let client = clients.get(id);
-        match client {
-            Some(client) => {
-                info!("断开连接: {}", client.name());
-                clients.remove(id);
-            }
-            None => info!("未找到连接, 断开忽略: {}", id),
+        let removed = {
+            let mut clients = state.clients.write().unwrap();
+            clients.remove(id)
         };
+        if let Some(client) = removed {
+            info!("断开连接: {}", client.name());
+            thread::spawn(move || drop(client));
+        } else {
+            info!("未找到连接, 断开忽略: {}", id);
+        }
         Ok(())
     }
 }

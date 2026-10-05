@@ -20,15 +20,11 @@
   --vp-c-border: rgba(45, 35, 25, 0.16);
   --vp-c-gutter: rgba(45, 35, 25, 0.08);
 
-  /* Hero：文字渐变保持原版；光晕用更浅的暖色 */
+  /* Hero：标题金紫渐变；光晕对齐 KeyEmpty 换图前的紫/淡青 */
   --vp-home-hero-name-color: transparent;
   --vp-home-hero-name-background: -webkit-linear-gradient(120deg, #c7ba4e 30%, #bd34fe);
-  --vp-home-hero-image-background-image: linear-gradient(
-    -45deg,
-    rgba(240, 236, 207, 0.85) 50%,
-    rgba(253, 248, 242, 0.65) 50%
-  );
-  --vp-home-hero-image-filter: blur(64px);
+  --vp-home-hero-image-background-image: linear-gradient(-45deg, #bd34fe 48%, #47caff 52%);
+  --vp-home-hero-image-filter: blur(30px);
 
   /* 全页环境光 / 网格（顶略亮，向下渐弱至页底仍保留淡暖色） */
   --vp-home-top-light: linear-gradient(
@@ -66,12 +62,6 @@
   --vp-c-border: #42403c;
   --vp-c-gutter: rgba(66, 64, 60, 0.35);
 
-  --vp-home-hero-image-background-image: linear-gradient(
-    -45deg,
-    rgba(249, 115, 22, 0.14) 50%,
-    rgba(189, 52, 254, 0.08) 50%
-  );
-
   --vp-home-top-light: linear-gradient(
     to bottom,
     rgba(249, 115, 22, 0.12) 0%,
@@ -84,13 +74,13 @@
 
 @media (min-width: 640px) {
   :root {
-    --vp-home-hero-image-filter: blur(72px);
+    --vp-home-hero-image-filter: blur(36px);
   }
 }
 
 @media (min-width: 960px) {
   :root {
-    --vp-home-hero-image-filter: blur(84px);
+    --vp-home-hero-image-filter: blur(40px);
   }
 }
 
@@ -135,15 +125,15 @@
   }
 }
 
-/* Logo 光晕：更大、更散、更淡 */
+/* Logo 光晕：贴着图标。宽屏 VitePress 默认 20rem，收成 16rem */
 .VPHero .image-bg {
   opacity: 0.5;
-  transform: translate(-50%, -50%) scale(1.35);
 }
 
-@media (min-width: 960px) {
-  .VPHero .image-bg {
-    transform: translate(-50%, -50%) scale(1.5);
+@media (min-width: 60rem) {
+  .VPHero .image-container .image-bg {
+    width: 16rem;
+    height: 16rem;
   }
 }
 
@@ -217,7 +207,9 @@
   }
 }
 
+/* 首页 Logo 半透明，悬停不改变 */
 .VPHero .VPImage {
+  opacity: 0.8;
   filter: drop-shadow(-2px 4px 6px rgba(0, 0, 0, 0.2));
   padding: 18px;
 }

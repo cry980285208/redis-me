@@ -97,7 +97,7 @@ defineExpose({ open })
       <div class="table-hash-keys-main">
         <me-table
           v-if="displayList.length"
-          layout="sizes, prev, pager, next, jumper"
+          layout="sizes, prev, pager, next"
           :data="displayList"
           :export-name="exportName"
           :export-rows="exportRows"

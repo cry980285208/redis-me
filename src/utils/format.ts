@@ -16,6 +16,7 @@ import { base64ToUtf8Text } from '@/utils/detect-view-format'
 import { formatJavaSerDisplay, javaSerBase64ToValue } from '@/utils/javaserial'
 import { formatPhpSerialDisplay, phpSerialBase64ToValue } from '@/utils/phpserial'
 import { formatPickleDisplay, pickleBase64ToValue } from '@/utils/pickle'
+import { formatVector32Bytes } from '@/utils/vector32'
 
 const t = i18n.global.t
 
@@ -258,6 +259,7 @@ export type ViewBytesFormat =
   | 'binary'
   | 'base64'
   | 'msgpack'
+  | 'vector32'
   | 'strjson'
   | 'javaserial'
   | 'pickle'
@@ -283,11 +285,12 @@ export function customFormatName(view: ViewBytesFormat): string | null {
   return isCustomView(view) ? view.slice(CUSTOM_FORMAT_PREFIX.length) : null
 }
 
-/** 仅 STRING 键级可选（Auto、StrJson、JdkSerial、Pickle、PhpSerial、MsgPack、custom）；非 STRING 键级降为 utf8 */
+/** 仅 STRING 键级可选（Auto、StrJson、JdkSerial、Pickle、PhpSerial、MsgPack、Vector32、custom）；非 STRING 键级降为 utf8 */
 export function isStringOnlyView(view: ViewBytesFormat): boolean {
   return (
     view === 'auto' ||
     view === 'msgpack' ||
+    view === 'vector32' ||
     view === 'strjson' ||
     view === 'javaserial' ||
     view === 'pickle' ||
@@ -298,14 +301,16 @@ export function isStringOnlyView(view: ViewBytesFormat): boolean {
 
 /** 内置只读视图（不可写回）；RedisValue / FieldSet canSave */
 export function isReadonlyView(view: ViewBytesFormat): boolean {
-  return view === 'javaserial' || view === 'pickle' || view === 'phpserial'
+  return view === 'javaserial' || view === 'pickle' || view === 'phpserial' || view === 'vector32'
 }
 
-/** 只读视图的保存按钮 tooltip 文案；RedisValue / FieldSet saveTip */
+/** 只读视图的保存按钮 tooltip 文案；RedisValue / FieldSet saveTip。非只读视图返回空串 */
 export function readonlyViewTip(view: ViewBytesFormat): string {
   if (view === 'pickle') return t('util.pickleReadonly')
   if (view === 'phpserial') return t('util.phpSerialReadonly')
-  return t('util.javaSerialReadonly')
+  if (view === 'javaserial') return t('util.javaSerialReadonly')
+  if (view === 'vector32') return t('util.vector32Readonly')
+  return ''
 }
 
 function resolveCustomCodec(view: ViewBytesFormat): CustomCodec {
@@ -324,6 +329,7 @@ export const VIEW_FORMAT_OPTIONS: ReadonlyArray<{ label: string; value: ViewByte
   { label: 'Pickle', value: 'pickle' },
   { label: 'PhpSerial', value: 'phpserial' },
   { label: 'MsgPack', value: 'msgpack' },
+  { label: 'Vector32', value: 'vector32' },
   { label: 'Hex', value: 'hex' },
   { label: 'Binary', value: 'binary' },
   { label: 'Base64', value: 'base64' },
@@ -413,6 +419,7 @@ export function meFormatViewValue(wire: string, view: ViewBytesFormat): string {
   try {
     if (view === 'hex' || view === 'binary') return meFormatBytes(wire, view)
     if (view === 'msgpack') return meMsgpackBase64ToJson(wire)
+    if (view === 'vector32') return meVector32Base64ToDisplay(wire)
     if (view === 'strjson') return meStrJsonWireToDisplay(wire)
     if (view === 'javaserial') return meJavaSerialBase64ToDisplay(wire)
     if (view === 'pickle') return mePickleBase64ToDisplay(wire)
@@ -449,6 +456,7 @@ export function meViewToWire(text: string, view: ViewBytesFormat): string {
   if (view === 'javaserial') return meDisplayToJavaSerialBase64(text)
   if (view === 'pickle') return meDisplayToPickleBase64(text)
   if (view === 'phpserial') return meDisplayToPhpSerialBase64(text)
+  if (view === 'vector32') return meDisplayToVector32Base64(text)
   if (isCustomView(view)) {
     throw new Error('custom view requires meViewToWireAsync')
   }
@@ -655,6 +663,31 @@ export function mePhpSerialBase64ToDisplay(base64: string): string {
 /** PhpSerial 只读（与 JdkSerial / Pickle 一致），不支持写回 */
 export function meDisplayToPhpSerialBase64(_text: string): string {
   throw new Error(t('util.phpSerialReadonly'))
+}
+
+/** base64 wire → 小端 FLOAT32 的 JSON 数组。长度不齐或含非有限数时报解码错误，不退回 UTF-8/Hex */
+export function meVector32Base64ToDisplay(base64: string): string {
+  if (!base64) return ''
+  const binary = tryAtob(base64)
+  if (binary === null) {
+    return formatViewDecodeError(decodeErrTitle('Vector32'), base64, 'invalid base64')
+  }
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  const text = formatVector32Bytes(bytes)
+  if (text === null) {
+    return formatViewDecodeError(
+      decodeErrTitle('Vector32'),
+      base64,
+      'not a little-endian FLOAT32 vector',
+    )
+  }
+  return text
+}
+
+/** Vector32 只读，不支持把浮点文本写回二进制 */
+export function meDisplayToVector32Base64(_text: string): string {
+  throw new Error(t('util.vector32Readonly'))
 }
 
 // #endregion

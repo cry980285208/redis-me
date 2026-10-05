@@ -36,3 +36,4 @@ RedisME_*.AppImage
 # Python seed scripts
 **/__pycache__/
 *.pyc
+.vitest/

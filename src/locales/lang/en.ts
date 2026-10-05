@@ -254,7 +254,7 @@ export default {
     loginType: 'Login',
     nameHint: '[Optional] Automatically generated',
     advancedTitle: 'Advanced',
-    advancedLabelWidth: '120px',
+    advancedLabelWidth: '150px',
     keySeparator: 'Key Separator',
     keySeparatorPlaceholder: ':',
     keySeparatorTip:
@@ -399,6 +399,7 @@ export default {
     javaSerialReadonly: 'JdkSerial is view-only; saving back is not supported',
     pickleReadonly: 'Pickle is view-only; saving back is not supported',
     phpSerialReadonly: 'PhpSerial is view-only; saving back is not supported',
+    vector32Readonly: 'Vector32 is view-only; saving back is not supported',
     gzipReadonly: 'Gzip-decompressed view is read-only; saving back is not supported',
     saveNoChange: 'No changes to save',
     saveDecodeFailed: 'Decode failed; cannot save',
@@ -407,12 +408,13 @@ export default {
   tabMain: {
     info: 'Info',
     value: 'Value',
-    terminal: 'Terminal',
+    terminal: 'CLI',
     memory: 'Memory',
-    slow: 'SlowLog',
+    slow: 'Slow',
     monitor: 'Monitor',
     pubsub: 'Pub/Sub',
     chart: 'Chart',
+    search: 'Search',
   },
 
   keyHeader: {
@@ -422,7 +424,7 @@ export default {
     mockOk: 'Mock Data Insert Done',
     connHint: 'Select Connection',
 
-    refreshConn: 'Refresh Conn',
+    refreshConn: 'Reload Conn',
     closeConn: 'Close Conn',
     commandLog: 'Command Log',
     commandLogNeedConn: 'Please select a connection first',
@@ -641,7 +643,7 @@ export default {
   keyList: { renameKey: 'Rename Key' },
 
   keyRename: { title: 'Rename Key', newKeyName: 'New key name' },
-  keyCopy: { title: 'Create Duplicate', newKeyName: 'New key name' },
+  keyCopy: { title: 'Duplicate Key', newKeyName: 'New key name' },
 
   keyTree: {
     noData: 'No Data',
@@ -898,12 +900,86 @@ export default {
     slowerMaxLenRequired: 'Count is required',
   },
 
+  redisSearch: {
+    drop: 'Drop Index',
+    name: 'Index Name',
+    prefixes: 'Index Prefix',
+    prefixTip: 'Keys matching this prefix are automatically indexed.',
+    docsTip: 'Number of documents currently indexed.',
+    recordsTip:
+      'Total indexed field-value pairs across all documents. One document with 5 fields = 5 records.',
+    termsTip: 'Unique words extracted from TEXT fields for full-text search.',
+    fieldsTip: 'Total number of fields defined in the index schema.',
+    numDocs: 'Docs',
+    records: 'Records',
+    terms: 'Terms',
+    identifier: 'Identifier',
+    attribute: 'Attribute',
+    fieldType: 'Type',
+    weight: 'Weight',
+    fields: 'Fields',
+    fieldDetail: 'Field details',
+    info: 'Index info',
+    browse: 'View data',
+    ddl: 'Index DDL',
+    alter: 'Alter index',
+    alterHint:
+      'Edit the field names and types, then run. Existing documents are indexed for the new fields. Add SKIPINITIALSCAN to index only documents written afterward',
+    alterOk: 'Index altered',
+    tagVals: 'Tag values',
+    tagValsValue: 'Value',
+    tagValsFilter: 'Local filter',
+    synDump: 'Synonyms',
+    synGroup: 'Group',
+    synTerms: 'Terms',
+    synFilter: 'Local filter',
+    synAdd: 'Add',
+    synAddTitle: 'Add synonyms',
+    synEditTitle: 'Edit synonyms',
+    synGroupPh: 'e.g. cycle',
+    synTermsPh: 'Separate terms with spaces or commas, e.g. bike bicycle',
+    synAddOk: 'Added',
+    synTermsKept: 'Existing terms stay. Only new terms are added.',
+    filter: 'Filter (Name, Prefix)',
+    create: 'Create index',
+    createHint:
+      'Edit the index name, prefix, and field types, then run. Types brought from a key are guessed from that key alone',
+    createRun: 'Run',
+    createOk: 'Index created',
+    sample: 'Sample',
+    sampleTitle: 'Getting your sample data ready for Search',
+    sampleHint:
+      "Select a sample dataset. We'll load the data and generate the index needed for search.",
+    sampleBikes: 'E-commerce Discovery',
+    sampleBikesHint: 'Discover products that match intent, not just text',
+    sampleMovies: 'Content recommendations',
+    sampleMoviesHint: 'Discover content by theme or plot.',
+    sampleCreated: 'Sample index {name} is ready',
+    sampleExists: 'Sample index {name} already exists. You can query it directly.',
+    query: 'Query',
+    actionWidth: '106',
+    back: 'Back',
+    queryPlaceholder: 'Query condition',
+    clearHistory: 'Clear History',
+    queryHint:
+      "<b>bike</b> this word in every text field<br/><br/><b>{'@'}description:bike</b> only in that text field<br/><b>{'@'}description:\"road bike\"</b> phrase, in order<br/><b>{'@'}description:bik*</b> prefix<br/><b>{'@'}type:{'{'}road{'}'}</b> tag, exact<br/><b>{'@'}type:{'{'}road{'|'}mountain{'}'}</b> any of these tags<br/><b>{'@'}price:[100 500]</b> numeric range, inclusive<br/><b>{'@'}price:[100 +inf]</b> 100 or more<br/><b>{'@'}location:[15.87 32.08 10 km]</b> within 10 km<br/><br/><b>bike {'@'}type:{'{'}road{'}'}</b> and (space)<br/><b>bike{'|'}helmet</b> or<br/><b>{'@'}description:(bike{'|'}helmet)</b> or, only in that field<br/><b>-{'@'}type:{'{'}road{'}'}</b> not",
+    withScores: 'Scores',
+    docKey: 'Key',
+    score: 'Score',
+    dropConfirm: 'Drop index "{name}"? Documents are kept.',
+    dropOk: 'Index dropped',
+  },
+
   redisTerminal: {
     broadcastHint: `
 ① When automatic broadcasting is enabled and no node is selected, commands such as CONFIG SET will be executed on all nodes<br>
 ② Usually there is no need to specify a node. Manual node specification is only required in special scenarios such as viewing the configuration of a specific node
     `,
     welcome: 'Welcome to {RedisME} Terminal',
+    pasteMultiTitle: 'Multiple lines detected',
+    pasteMultiHint: 'Run as one command, or run each line ({n} in total)',
+    pasteAsOne: 'One command',
+    pastePerLine: 'Each line',
     autoBroadcast: 'Auto Broadcast',
     readonlyHint: 'Executing commands is temporarily not supported in read-only mode',
     readonlyWriteHint: 'Write or non-readonly commands are not allowed in read-only mode',
@@ -1009,7 +1085,7 @@ export default {
     vectorsetSample: 'Random Sample',
     vectorsetRange: 'Range Query',
     renameKey: 'Rename Key',
-    duplicateKey: 'Create Duplicate',
+    duplicateKey: 'Duplicate Key',
     copyValue: 'Copy Value',
     copyVector: 'Copy Vector',
     copyAttrs: 'Copy Attributes',
@@ -1082,7 +1158,7 @@ export default {
     viewCodec: 'Codec',
     autoDetected: 'Auto-detected codec',
     commandHelp: 'Command Help',
-    objectInfo: 'Object Introspection',
+    objectInfo: 'Object Info',
     objectInfoCommand: 'Command',
     objectInfoItem: 'Item',
     objectInfoValue: 'Value',
@@ -1120,7 +1196,7 @@ export default {
 <b>Streams</b><br/>
 • stream: a radix tree encoded as listpack<br/><br/>
 Once an operation prevents Redis from keeping the space-saving encoding, special encodings are automatically converted to the general type`,
-    keyShortHint: 'CodeMirror Shortcuts',
+    keyShortHint: 'CM Shortcuts',
     keyShort: {
       fullscreen: 'Fullscreen Editor',
       toggleWrap: 'Toggle Line Wrap',
@@ -1159,7 +1235,11 @@ Once an operation prevents Redis from keeping the space-saving encoding, special
   },
 
   keyMain: {
-    keyword: 'Enter to Search',
+    keyword: 'Enter to scan key names',
+    searchQuery: 'Enter for full-text search',
+    searchIndex: 'Select index',
+    searchIndexEmpty: 'No index',
+    searchIndexRefresh: 'Refresh indexes',
     exactSearch:
       '<b>Scan</b> (unchecked)<br/>app: contains app<br/>app*: starts with app<br/>*app: ends with app<br/>With * ? [: use pattern as typed<br/><br/><b>Exact</b> (checked)<br/>Check if key name exactly matches input',
     refreshKey: 'Refresh List (F5)',
@@ -1181,6 +1261,9 @@ Once an operation prevents Redis from keeping the space-saving encoding, special
     importData: 'Import Data',
     listView: 'List View',
     treeView: 'Tree View',
+    showKeyMemory: 'Show Mem',
+    hideKeyMemory: 'Hide Mem',
+    memoryUsageUnsupported: 'This server does not support MEMORY USAGE',
     sortByCount: 'Key Count',
     sortByAlphabet: 'Alphabet',
 
@@ -1287,5 +1370,8 @@ Once an operation prevents Redis from keeping the space-saving encoding, special
     proxy_tls_to_proxy_failed: 'TLS to proxy failed; use HTTP for Clash and similar proxies',
     file_read_failed: 'File read failed: {filename} ({detail})',
     file_write_failed: 'File write failed: {filename} ({detail})',
+    search_reply_invalid: 'Could not parse the RedisSearch reply ({detail})',
+    search_create_not_ft_create: 'Only a single FT.CREATE command is accepted',
+    search_alter_not_ft_alter: 'Only a single FT.ALTER command is accepted',
   },
 }

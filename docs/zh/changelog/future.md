@@ -1,8 +1,12 @@
 ## Future
 
+- 导出Excel更换新组件实现
+- 能力探测是否许需要界面显示
+- 集群的图形: 可以显示所有的
+- 集群的信息: 表格展示
+- 数据编码: 自定义编码支持自动识别
 - 键的数据编码记住(连接内粘住或每个键自定义待进一步确认)
 - TimeSeries：TS.CREATE 全参数、多键 MRANGE 与聚合
-- RedisSearch 的支持
 - 抖音/B站短视频的制作: 每个痛点解决1个小视频
 - Redis实战相关文章的编写
 - 连接级自动解压：优先 GZIP，可选 LZ4 / ZSTD / Snappy（对标 RedisInsight；即此前「自动解压缩」）
@@ -25,6 +29,8 @@
 
 ### 已完成
 
+- RedisSearch 的支持 ✅️
+- 键列表显示内存占用（菜单开关，默认关；不支持 MEMORY USAGE 则不显示）✅️
 - TimeSeries 键详情：浏览 / 增删改 / Info / 当前样本折线图 ✅️
 - 网络代理：HTTP / HTTPS / SOCKS5 / SOCKS5H + 系统代理 ✅️
 - SSH 隧道支持集群和哨兵 ✅️
@@ -40,6 +46,7 @@
 - PhpSerial（PHP 序列化）查看 ✅️（只读，与 Another Redis Desktop Manager 同源 php-serialize 库）
 - 命令执行日志✅️
 - 搜索历史记录✅️
+- RedisSearch 查询条件历史记录✅️
 - 全局快捷键✅️
 - 自定义序列化 ✅️
 - 终端: 只读命令的识别 ✅️

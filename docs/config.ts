@@ -76,7 +76,13 @@ function sidebarGuide() {
 function sidebarHandbook() {
   return [
     { text: 'Overview', items: [{ text: 'Introduction', link: '/intro' }] },
-    { text: 'Articles', items: [{ text: 'Slowlog Governance', link: '/slowlog-governance' }] },
+    {
+      text: 'Articles',
+      items: [
+        { text: 'Slowlog Governance', link: '/slowlog-governance' },
+        { text: 'SSL Encryption', link: '/ssl-encryption' },
+      ],
+    },
   ]
 }
 

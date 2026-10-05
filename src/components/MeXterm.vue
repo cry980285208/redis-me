@@ -18,6 +18,8 @@ const props = withDefaults(
     prefix?: string
     execCommand?: ExecCommandFn
     commandHelp?: MeXtermCommandItem[]
+    /** 回显已经写入终端后调用，多条命令靠它排成「命令、结果」交替 */
+    onCommandDone?: () => void
   }>(),
   {
     welcome: '欢迎使用 Terminal',
@@ -34,7 +36,9 @@ type TerminalExpose = {
   pushMessage: (message: string | Message) => void
   fullscreen: () => void
   clearLog: () => void
+  getCommand: () => string
   setCommand: (command: string) => void
+  execute: (command: string) => boolean
 }
 
 const terminalRef = useTemplateRef<TerminalExpose | null>('terminal')
@@ -52,12 +56,23 @@ async function execCmd(
   _failed: FailedFunc,
   _name: string,
 ): Promise<void> {
-  const data = await props.execCommand(command)
-  const content = typeof data === 'string' ? data : String(data)
-  success({ type: 'html', content })
+  try {
+    const data = await props.execCommand(command)
+    const content = typeof data === 'string' ? data : String(data)
+    success({ type: 'html', content })
+  } finally {
+    props.onCommandDone?.()
+  }
 }
 
 const theme = computed(() => (isDark.value ? 'dark' : 'light'))
+
+// 多行粘贴由 Redis 终端决定。这里只透出命令的读写和执行。
+defineExpose({
+  getCommand: () => terminalRef.value?.getCommand() ?? '',
+  setCommand: (command: string) => terminalRef.value?.setCommand(command),
+  execute: (command: string) => terminalRef.value?.execute(command) ?? false,
+})
 // #endregion
 
 // #region 键盘事件

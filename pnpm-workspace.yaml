@@ -6,8 +6,9 @@ allowBuilds:
   esbuild: true
   # vue-codemirror6 的 Vue2/3 兼容层（postinstall 切换入口）
   vue-demi: true
-  # packageManager 自举：生成原生 pnpm.exe（缺了会导致 vp install 卡住）
-  pnpm: true
+
+# 默认 1440 分钟内新发布的包不能装。vite-plus 1.0.0 当天发布，关掉等待
+minimumReleaseAge: 0
 
 # 统一 Codemirror 版本，避免 @codemirror/view / state 双实例导致 TS2345
 overrides:

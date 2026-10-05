@@ -25,6 +25,7 @@ import type {
   RedisKey_Deserialize,
   ScanCursor,
 } from '@/types/tauri-specta'
+import { isConnMinimalMode } from '@/utils/conn'
 import {
   detectViewFormatAuto,
   detectedViewLabel,
@@ -51,6 +52,7 @@ import {
   viewFmtForField,
   type ViewBytesFormat,
 } from '@/utils/format'
+import { captureKeyMemoryWrite } from '@/utils/key-memory-cache'
 import { resolveKeyType } from '@/utils/key-type-cache'
 import { toKeyTypeLabel } from '@/utils/redis-display'
 import {
@@ -59,12 +61,14 @@ import {
   compileRedisGlobFilter,
   computeScanProgress,
 } from '@/utils/redis-glob'
+import { indexCreateDraft, type IndexDraftField } from '@/utils/search-ddl'
 import { defaultSettings } from '@/utils/settings-defaults'
 import { meTtlFromAt, meTtlToAt } from '@/utils/ttl'
 import {
   bus,
   KEY_DELETE,
   KEY_REFRESH,
+  requestSearchCreate,
   meCommands,
   meConfirm,
   meCopy,
@@ -902,7 +906,10 @@ async function fieldScanCore(
   useCursor: boolean,
 ): Promise<{ count: number; replaceData?: FieldScanResult }> {
   const includeMeta = fieldScanIncludeMeta()
+  // 首屏带 MEMORY USAGE。写回列表缓存，编辑后的新大小盖掉列表里的旧值。
+  const writeMemory = captureKeyMemoryWrite(share.conn?.id, share.conn?.db, share.redisKey)
   const data = await meCommands.fieldScan(share.conn!.id, buildFieldScanParam())
+  if (includeMeta) writeMemory(data.size)
   cursor.value = data.cursor
   scanBatchCount.value++
 
@@ -1581,6 +1588,45 @@ function openCommandHelp() {
   const group = type ? KEY_TYPE_TO_GROUP[type] : ''
   commandHelpRef.value?.open({ group })
 }
+
+// 搜索页新建索引。只带当前已加载的 Hash 字段，或 JSON 顶层字段，类型按这个键的值猜测。
+const canCreateIndex = computed(
+  () =>
+    canEdit.value &&
+    share.capabilities.redisSearchSupported &&
+    !isConnMinimalMode(share.conn) &&
+    (hashType.value || jsonType.value),
+)
+
+function loadedIndexFields(): IndexDraftField[] {
+  if (hashType.value) {
+    return dataList.value.flatMap(row => {
+      try {
+        const name = meFormatViewValue(String(row.key ?? ''), 'utf8').trim()
+        if (!name) return []
+        let value = ''
+        try {
+          value = meFormatViewValue(String(row.value ?? ''), 'utf8')
+        } catch {
+          // 值解不出来就不当数字或标签，草稿里写成 TEXT
+        }
+        return [{ name, value }]
+      } catch {
+        return []
+      }
+    })
+  }
+  const doc = redisValue.value?.value
+  if (!doc || typeof doc !== 'object' || Array.isArray(doc)) return []
+  return Object.entries(doc as Record<string, unknown>).map(([name, value]) => ({ name, value }))
+}
+
+function openCreateIndex(): void {
+  const key = share.redisKey?.key ?? ''
+  const keyType = jsonType.value ? 'JSON' : 'HASH'
+  requestSearchCreate(indexCreateDraft(keyType, key, loadedIndexFields()))
+  share.tabName = 'search'
+}
 async function onKeyMoreCommand(command: string) {
   if (command === 'refreshKey') {
     await onFooterRefreshKey()
@@ -1600,6 +1646,8 @@ async function onKeyMoreCommand(command: string) {
     void showSlot()
   } else if (command === 'showLocation') {
     void showLocation()
+  } else if (command === 'createIndex') {
+    openCreateIndex()
   } else if (command === 'commandHelp') {
     openCommandHelp()
   } else if (command === 'keyShort') {
@@ -1874,6 +1922,9 @@ onUnmounted(() => {
                 <el-dropdown-item v-if="canEdit" command="duplicateKey">
                   <me-icon icon="el-icon-copy-document" :name="t('redisValue.duplicateKey')" />
                 </el-dropdown-item>
+                <el-dropdown-item v-if="canCreateIndex" command="createIndex">
+                  <me-icon icon="el-icon-circle-plus" :name="t('redisSearch.create')" />
+                </el-dropdown-item>
                 <el-dropdown-item v-if="share.conn?.cluster" command="showSlot" divided>
                   <me-icon icon="me-icon-slot" :name="t('redisValue.slotTitle')" />
                 </el-dropdown-item>
@@ -1943,6 +1994,16 @@ onUnmounted(() => {
               clearable
               class="field-scan-input"
               @keyup.enter="onFieldSearch">
+              <!-- 精确勾选在左侧，查询在右侧，与键区一致 -->
+              <template v-if="showFieldExactCheckbox" #prefix>
+                <el-tooltip
+                  :content="fieldExactSearchTip"
+                  placement="bottom"
+                  raw-content
+                  :show-after="1000">
+                  <el-checkbox size="small" v-model="fieldExact" class="suffix-exact-checkbox" />
+                </el-tooltip>
+              </template>
               <template #suffix>
                 <div class="keyword-suffix">
                   <me-scan-control
@@ -1951,14 +2012,10 @@ onUnmounted(() => {
                     :loading="loading"
                     :tip="scanToggleTip"
                     @click="onFieldScanAction" />
-                  <el-tooltip
-                    v-if="showFieldExactCheckbox"
-                    :content="fieldExactSearchTip"
-                    placement="bottom"
-                    raw-content
-                    :show-after="1000">
-                    <el-checkbox size="small" v-model="fieldExact" class="suffix-exact-checkbox" />
-                  </el-tooltip>
+                  <me-icon
+                    icon="me-icon-search"
+                    class="suffix-icon-btn"
+                    @click.stop="onFieldSearch" />
                 </div>
               </template>
             </el-input>
@@ -2150,7 +2207,7 @@ onUnmounted(() => {
             <!-- 类型或键变化时重建，页码回到第 1 页 -->
             <me-table
               :key="`${redisValue?.type ?? ''}\0${share.redisKey?.key ?? ''}`"
-              layout="sizes, prev, pager, next, jumper"
+              layout="sizes, prev, pager, next"
               :data="tableDisplayList"
               :default-sort="tableDefaultSort"
               border
@@ -2781,12 +2838,8 @@ onUnmounted(() => {
         width: 250px;
         flex-shrink: 0;
 
-        .keyword-suffix {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          margin-left: 6px;
-
+        // 左侧精确勾选；右侧暂停/继续和查询
+        :deep(.el-input__prefix) {
           :deep(.suffix-exact-checkbox) {
             height: auto;
 
@@ -2803,6 +2856,22 @@ onUnmounted(() => {
               background-color: var(--el-color-primary);
               border-color: var(--el-color-primary);
             }
+          }
+        }
+
+        .keyword-suffix {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          margin-left: 6px;
+        }
+
+        .suffix-icon-btn {
+          cursor: pointer;
+          font-size: 16px;
+
+          &:hover {
+            opacity: 0.75;
           }
         }
       }

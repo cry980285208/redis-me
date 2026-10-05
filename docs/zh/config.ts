@@ -95,7 +95,13 @@ function sidebarGuide() {
 function sidebarHandbook() {
   return [
     { text: '概览', items: [{ text: '简介', link: '/intro' }] },
-    { text: '实战文章', items: [{ text: '慢日志专项治理', link: '/slowlog-governance' }] },
+    {
+      text: '实战文章',
+      items: [
+        { text: '慢日志专项治理', link: '/slowlog-governance' },
+        { text: 'SSL 加密改造', link: '/ssl-encryption' },
+      ],
+    },
   ]
 }
 

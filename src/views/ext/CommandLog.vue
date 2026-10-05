@@ -386,7 +386,7 @@ function clearLogs() {
     @closed="onDialogClosed">
     <template #header>
       <div class="me-flex" style="align-items: flex-end; gap: 12px">
-        <me-icon icon="me-icon-log" :name="t('commandLog.title')" />
+        <me-icon class="command-log-title" icon="el-icon-document" :name="t('commandLog.title')" />
         <span class="command-log-description">{{ t('commandLog.description') }}</span>
       </div>
     </template>
@@ -482,6 +482,13 @@ function clearLogs() {
     cursor: move;
     margin-right: 0;
     padding-bottom: 8px;
+  }
+
+  /* 与 MeDialog 标题一致（--el-dialog-title-font-size = 18px）；不设会停在正文 14px */
+  .command-log-title {
+    font-size: var(--el-dialog-title-font-size);
+    line-height: var(--el-dialog-font-line-height);
+    color: var(--el-text-color-primary);
   }
 
   .command-log-description {

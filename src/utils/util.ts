@@ -14,6 +14,7 @@ import i18n from '@/locales'
 import type { MeCommands } from '@/types/me-interface'
 import { commands as spectaCommands } from '@/types/tauri-specta'
 import type { RedisKey_Deserialize } from '@/types/tauri-specta'
+import { invalidateKeyMemory } from '@/utils/key-memory-cache'
 import { invalidateKeyType } from '@/utils/key-type-cache'
 
 /** 全局 `bus` 事件载荷（与 `bus.emit` / `bus.on` 一致） */
@@ -23,6 +24,8 @@ export type MeBusEvents = {
   KEY_RENAME: { oldKey: RedisKey_Deserialize; newKey: RedisKey_Deserialize }
   /** 载荷未使用；监听器应 `() => refreshKey()` 包装，避免与多参函数签名冲突 */
   KEY_REFRESH: undefined
+  /** Hash/JSON 键详情预填的 FT.CREATE。搜索页可能尚未挂载，配合 takeSearchCreateDraft */
+  SEARCH_CREATE: string
   INFO_REFRESH: boolean | undefined
   CONN_REFRESH: void
 }
@@ -44,6 +47,22 @@ export const bus = mitt<MeBusEvents>()
 export const KEY_DELETE = 'KEY_DELETE'
 export const KEY_RENAME = 'KEY_RENAME'
 export const KEY_REFRESH = 'KEY_REFRESH'
+export const SEARCH_CREATE = 'SEARCH_CREATE'
+
+/** 搜索页还没挂载时先记下草稿，挂载后再打开新建索引。 */
+let searchCreateDraft: string | null = null
+
+export function requestSearchCreate(draft: string): void {
+  searchCreateDraft = draft
+  bus.emit(SEARCH_CREATE, draft)
+}
+
+export function takeSearchCreateDraft(): string | null {
+  const draft = searchCreateDraft
+  searchCreateDraft = null
+  return draft
+}
+
 export const INFO_REFRESH = 'INFO_REFRESH'
 export const CONN_REFRESH = 'CONN_REFRESH'
 export const CONN_LIST_WINDOWS_SYNC = 'CONN_LIST_WINDOWS_SYNC'
@@ -155,12 +174,16 @@ async function invokeSpectaCommand<T>(
 
 type SpectaCommandFn = (...a: unknown[]) => Promise<SpectaResult<unknown>>
 
-/** 与 Specta `commands` 同键；末尾多传 `false` 时失败不弹窗 */
+/**
+ * 与 Specta `commands` 同键。比原函数多传一个末尾 `false` 时失败不弹窗。
+ * 原参数本身是 `false`（如 deleteDocs）时不能剥掉，否则 Tauri 会报缺参。
+ */
 function bindMeCommand(name: string, fn: unknown): unknown {
   if (typeof fn !== 'function') return fn
   const spectaFn = fn as SpectaCommandFn
+  const arity = spectaFn.length
   return (...args: unknown[]) => {
-    const silent = args.length > 0 && args[args.length - 1] === false
+    const silent = args.length > arity && args[args.length - 1] === false
     const pass = silent ? args.slice(0, -1) : args
     return invokeSpectaCommand(String(name), pass, () => spectaFn(...pass), !silent)
   }
@@ -360,6 +383,7 @@ export function meDeleteKey(id: string, redisKey: RedisKey_Deserialize, thenFn?:
   meConfirm(t('util.deleteKey', { key: redisKey.key }), async () => {
     await meCommands.del(id, redisKey)
     invalidateKeyType(id, redisKey)
+    invalidateKeyMemory(id, redisKey)
     bus.emit(KEY_DELETE, redisKey)
     meOk(t('deleteOk'))
     thenFn?.()

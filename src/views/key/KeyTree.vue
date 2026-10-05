@@ -15,8 +15,9 @@ import {
   splitKeyPath,
 } from '@/utils/conn'
 import { redisKeyId, sameRedisKey } from '@/utils/redis-key'
-import { meDeleteKey, TREE_KEY_ID_PREFIX } from '@/utils/util'
+import { TREE_KEY_ID_PREFIX } from '@/utils/util'
 
+import KeyMemorySize from './KeyMemorySize.vue'
 import KeyTypeTag from './KeyTypeTag.vue'
 // #endregion
 
@@ -78,6 +79,8 @@ const props = withDefaults(
     folderLoadingPaths?: string[]
     // 为 false 时右键不提供「多选模式」（另一区已在多选时）
     allowEnterCheckedMode?: boolean
+    // 索引查询的目录只是结果分组，没有 SCAN 游标可续
+    searchMode?: boolean
   }>(),
   {
     color: 'var(--el-color-primary)',
@@ -94,6 +97,7 @@ const props = withDefaults(
     folderLoadMorePaths: () => [],
     folderLoadingPaths: () => [],
     allowEnterCheckedMode: true,
+    searchMode: false,
   },
 )
 
@@ -181,6 +185,10 @@ const rootTreeData = computed((): KeyBuildNode[] => {
 
 // 键高度配置
 const keyHeight = computed(() => meTauri.settings.keyHeight ?? 20)
+// 菜单开关 + 服务端支持 MEMORY USAGE 才显示，避免不支持时还去请求
+const showKeyMemory = computed(
+  () => !!meTauri.settings.keyShowMemory && share.capabilities.memoryUsageSupported,
+)
 
 const isContextNodeFavorited = computed(() => {
   if (!contextMenuNode.value?.isLeaf) return false
@@ -553,11 +561,6 @@ function setCurrentKey(redisKey: RedisKey_Deserialize) {
   })
 }
 
-function quickDeleteKey(redisKey: RedisKey_Deserialize): void {
-  if (!share.conn) return
-  meDeleteKey(share.conn.id, redisKey)
-}
-
 function isFavoritedLocal(redisKey: RedisKey_Deserialize | undefined): boolean {
   if (!redisKey) return false
   return props.favorites.some(f => sameRedisKey(f, redisKey))
@@ -595,6 +598,7 @@ function folderIconName(node: TreeNode): string {
     <template #default="{ height }">
       <el-tree-v2
         ref="tree"
+        :class="{ 'is-key-list': !keyShowTree && !showCheckbox && !useFolderGroups }"
         :data="rootTreeData"
         :default-expanded-keys="defaultExpandedKeys"
         @check-change="checkChange"
@@ -619,28 +623,24 @@ function folderIconName(node: TreeNode): string {
             v-else-if="node.isLeaf && !node.data.isFavoriteFolderRoot"
             :class="getNodeClass(node)"
             class="me-flex key-leaf-row">
-            <div
-              class="me-flex key-leaf-main"
-              :class="{ 'list-key': !keyShowTree && !showCheckbox }">
+            <div class="me-flex key-leaf-main">
               <KeyTypeTag :redis-key="node.data.redisKey" />
               <div class="key-leaf-label">
                 <span v-if="node.label">{{ node.label }}</span>
                 <span v-else style="color: var(--el-color-info-light-3)">[EMPTY]</span>
               </div>
             </div>
-            <div class="key-leaf-actions">
-              <me-icon
-                v-if="canEdit && !showCheckbox && !favoriteMode"
-                :info="t('keyTree.deleteKey')"
-                icon="el-icon-delete"
-                class="key-delete-btn"
-                @click.stop="quickDeleteKey(node.data.redisKey)" />
+            <div
+              v-if="showKeyMemory || isFavoritedLocal(node.data.redisKey)"
+              class="key-leaf-actions"
+              :class="{ 'is-star-only': !showKeyMemory }">
               <me-icon
                 v-if="isFavoritedLocal(node.data.redisKey)"
                 icon="el-icon-star-filled"
                 style="color: #f7ba2a"
                 class="key-favorite-btn"
                 @click.stop="emit('contextKey', 'unfavoriteKey', node.data.redisKey)" />
+              <KeyMemorySize v-if="showKeyMemory" :redis-key="node.data.redisKey" />
             </div>
           </div>
           <div v-else :class="getNodeClass(node)" class="me-flex folder-row">
@@ -672,14 +672,17 @@ function folderIconName(node: TreeNode): string {
           <el-dropdown-item v-if="!favoriteMode && canEdit" command="addKey">
             <me-icon icon="el-icon-circle-plus" :name="t('keyTree.addKey')" />
           </el-dropdown-item>
-          <el-dropdown-item command="copyKey">
-            <me-icon icon="el-icon-document-copy" :name="t('keyTree.copyKey')" />
-          </el-dropdown-item>
           <el-dropdown-item v-if="!showCheckbox && allowEnterCheckedMode" command="checkedMode">
             <me-icon icon="me-icon-checked" :name="t('keyMain.checkedMode')" />
           </el-dropdown-item>
           <el-dropdown-item v-if="showCheckbox" command="exitCheckedMode">
             <me-icon icon="el-icon-circle-close" :name="t('keyMain.exitCheckedMode')" />
+          </el-dropdown-item>
+          <el-dropdown-item command="copyKey">
+            <me-icon icon="el-icon-document-copy" :name="t('keyTree.copyKey')" />
+          </el-dropdown-item>
+          <el-dropdown-item v-if="canEdit && !showCheckbox && !favoriteMode" command="deleteKey">
+            <me-icon icon="el-icon-delete" :name="t('keyTree.deleteKey')" />
           </el-dropdown-item>
           <el-dropdown-item :command="isContextNodeFavorited ? 'unfavoriteKey' : 'favoriteKey'">
             <me-icon
@@ -741,20 +744,21 @@ function folderIconName(node: TreeNode): string {
 
           <!-- 仅普通模式：只加载该目录 / 加载目录所有（后者扫完全部键） -->
           <el-dropdown-item
-            v-if="!favoriteMode && !isContextFavoriteFolderRoot"
+            v-if="!favoriteMode && !isContextFavoriteFolderRoot && !searchMode"
             command="loadFolder"
             divided>
             <me-icon icon="el-icon-search" :name="t('keyTree.loadFolder')" />
           </el-dropdown-item>
           <el-dropdown-item
-            v-if="!favoriteMode && !isContextFavoriteFolderRoot"
+            v-if="!favoriteMode && !isContextFavoriteFolderRoot && !searchMode"
             command="loadFolderAll">
             <me-icon icon="me-icon-search-all" :name="t('keyTree.loadFolderAll')" />
           </el-dropdown-item>
           <!-- 收藏模式（含根）在上方项后分隔；普通模式已有「只加载」分隔 -->
           <el-dropdown-item
+            v-if="share.capabilities.memoryUsageSupported"
             command="memoryUsage"
-            :divided="favoriteMode || isContextFavoriteFolderRoot">
+            :divided="favoriteMode || isContextFavoriteFolderRoot || searchMode">
             <me-icon icon="me-icon-memory" :name="t('keyTree.memoryUsage')" />
           </el-dropdown-item>
           <el-dropdown-item command="exportFolder" :disabled="share.exportImporting" divided>
@@ -786,9 +790,13 @@ function folderIconName(node: TreeNode): string {
   outline-offset: 1px;
 }
 
-/* 列表展示时左侧空白处理 */
-.list-key {
-  margin-left: -20px;
+/* 平铺键列表没有目录。藏掉只占位的叶子箭头。收藏目录树仍要展开箭头，不走这套 */
+.is-key-list :deep(.el-tree-node__expand-icon) {
+  display: none;
+}
+
+.is-key-list .key-leaf-row {
+  padding-left: 6px;
 }
 
 /* 占满 content 剩余宽度（勿用 width:100%，会和展开图标叠宽溢出） */
@@ -863,32 +871,20 @@ function folderIconName(node: TreeNode): string {
   height: 100%;
 }
 
+/* 开内存：右缘与目录 [ n ] 的括号对齐。关内存：树形 16px 对齐数字；平铺没有括号，8px 靠右 */
 .key-leaf-actions {
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 5px;
-  margin-right: 15px;
+  margin-right: 10px;
+
+  &.is-star-only {
+    margin-right: 16px;
+  }
 }
 
-/* 删除图标：hover 行时显示 */
-:deep(.el-tree-node__content:hover) .key-delete-btn {
-  visibility: visible;
-}
-
-.key-delete-btn {
-  flex-shrink: 0;
-  visibility: hidden;
-  cursor: pointer;
-  color: var(--el-color-info);
-
-  :deep(.el-icon) {
-    color: inherit;
-  }
-
-  &:hover {
-    color: var(--el-color-info-light-3);
-  }
+.is-key-list .key-leaf-actions.is-star-only {
+  margin-right: 8px;
 }
 
 /* 收藏星标图标 */

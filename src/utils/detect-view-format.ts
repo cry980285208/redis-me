@@ -1,7 +1,7 @@
 /**
  * STRING 值 Auto 编码识别：基于 base64 wire 原始字节。
  * Auto 入口（detectViewFormatAuto）先认 Gzip 魔数 1f 8b 并解一层（失败当无壳；只剥一层），
- * 再对内层走：JdkSerial(ACED) → Pickle(PROTO 0x80) → PhpSerial(a:/O:/C:) → MsgPack → StrJson → UTF-8 → Hex。
+ * 再对内层走：JdkSerial(ACED) → Pickle(PROTO 0x80) → PhpSerial(a:/O:/C:) → MsgPack → Vector32 → StrJson → UTF-8 → Hex。
  * JdkSerial/Pickle/PhpSerial：特征前缀 + 全量试解，失败则继续下一种（展示层再解析一遍）。
  * 各格式均全量试解：wire 已在内存，不再按体积跳过。
  * StrJson：仅原生 JSON.parse（双层字符串包装）。JSON5.parse 对 ~1.5MB 约 260ms，
@@ -13,6 +13,7 @@ import { gunzipSync } from 'fflate'
 import { javaSerBase64ToValue } from '@/utils/javaserial'
 import { phpSerialBase64ToValue } from '@/utils/phpserial'
 import { pickleBase64ToValue } from '@/utils/pickle'
+import { looksLikeVector32 } from '@/utils/vector32'
 
 /** Auto 识别结果（不含 auto / binary / base64 / custom） */
 export type DetectedViewFormat =
@@ -20,6 +21,7 @@ export type DetectedViewFormat =
   | 'pickle'
   | 'phpserial'
   | 'msgpack'
+  | 'vector32'
   | 'strjson'
   | 'utf8'
   | 'hex'
@@ -37,6 +39,7 @@ const DETECTED_LABELS: Record<DetectedViewFormat, string> = {
   pickle: 'Pickle',
   phpserial: 'PhpSerial',
   msgpack: 'MsgPack',
+  vector32: 'Vector32',
   strjson: 'StrJson',
   utf8: 'UTF8',
   hex: 'Hex',
@@ -263,6 +266,9 @@ export function detectViewFormat(
   if (utf8 !== null) {
     if (looksLikeStrJson(utf8)) return 'strjson'
     if (isDisplayableUtf8(utf8)) return 'utf8'
+  } else if (!opts?.truncated && looksLikeVector32(bytes)) {
+    // 截断预览可能切在浮点中间，不认 Vector32，留给 Hex
+    return 'vector32'
   }
 
   return 'hex'

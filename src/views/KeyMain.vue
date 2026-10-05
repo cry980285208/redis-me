@@ -32,7 +32,9 @@ import {
   removeFavoriteFolder,
   clearFavoriteFoldersForDb,
 } from '@/utils/favorite'
+import { clearKeyMemoryCacheForConn } from '@/utils/key-memory-cache'
 import { clearKeyTypeCacheForConn } from '@/utils/key-type-cache'
+import { FT_QUERY_HISTORY_KEY, rememberFtQuery } from '@/utils/query-history'
 import { KEY_TYPE_LIST, meKeyShort, toRedisTypeName } from '@/utils/redis-display'
 import {
   buildScanPattern,
@@ -104,6 +106,7 @@ function initReset(): void {
   scanBuffer = []
   keyList.value = []
   cursor.value = null
+  resetSearchState()
   share.redisKey = null
   if (favoriteMode.value) favFolderPanelRef.value?.resetScans()
   favoriteMode.value = false
@@ -113,16 +116,29 @@ function initReset(): void {
 }
 
 const keyType = ref('ALL')
+
+// #region 索引查询状态
+// 不是键类型，不进 KEY_TYPE_LIST。查询函数在文件末尾。
+const SEARCH_TYPE = 'Search'
+const searchMode = computed(() => keyType.value === SEARCH_TYPE)
+const searchSupported = computed(() => share.capabilities.redisSearchSupported)
+const searchIndexes = ref<string[]>([])
+const searchIndex = ref('')
+const searchTotal = ref(0)
+const searchOffset = ref(0)
+const loadingIndexes = ref(false)
+// loadSearchIndexes 会改选中项，避免选择框把这次赋值当成用户切换再查一遍
+let ignoreIndexChange = false
+// 按连接和库记住上次索引。FT._LIST 的顺序没有含义，不能每次都落在第一个。
+const lastSearchIndex = useStorage<Record<string, string>>('redis-me:last-search-index', {})
+
 const keyTypeTag = computed(() => {
   const v = keyType.value
   if (v === 'ALL') return { value: 'ALL' as const, type: 'info' as const }
+  if (v === SEARCH_TYPE) return { value: SEARCH_TYPE, type: 'primary' as const }
   return KEY_TYPE_LIST.find(k => k.value === v) ?? { value: v, type: 'info' as const }
 })
-function chooseKeyType(keyTypeSelected: string): void {
-  keyType.value = keyTypeSelected
-  keyword.value = ''
-  void scanKey(false, false)
-}
+// #endregion
 
 const exact = ref(false)
 const keyword = ref('')
@@ -240,21 +256,23 @@ function onScanAction() {
   if (loading.value) pauseScan()
   else if (scanPaused.value) {
     scanPaused.value = false
-    void scanKey(true, scanLoadAll.value)
+    queryKeyList(true, scanLoadAll.value)
   }
 }
 
-// 搜索历史记录
+// 键名扫描历史。全文检索另记一份，和搜索页共用。
 const SEARCH_HISTORY_KEY = 'redis-me:search-history'
 const searchHistory = useStorage<string[]>(SEARCH_HISTORY_KEY, [])
+const ftQueryHistory = useStorage<string[]>(FT_QUERY_HISTORY_KEY, [])
 const showHistory = ref(false)
 let historyHideTimer: ReturnType<typeof setTimeout> | null = null
 
 // 过滤后的搜索历史（输入时实时过滤）
 const filteredSearchHistory = computed(() => {
+  const source = searchMode.value ? ftQueryHistory.value : searchHistory.value
   const k = keyword.value.toLowerCase().trim()
-  if (!k) return searchHistory.value
-  return searchHistory.value.filter(h => h.toLowerCase().includes(k))
+  if (!k) return source
+  return source.filter(h => h.toLowerCase().includes(k))
 })
 
 function addSearchHistory(query: string) {
@@ -265,20 +283,28 @@ function addSearchHistory(query: string) {
 }
 
 function removeSearchHistory(item: string) {
+  if (searchMode.value) {
+    ftQueryHistory.value = ftQueryHistory.value.filter(h => h !== item)
+    return
+  }
   searchHistory.value = searchHistory.value.filter(h => h !== item)
 }
 
 function clearSearchHistory() {
+  if (searchMode.value) {
+    ftQueryHistory.value = []
+    return
+  }
   searchHistory.value = []
 }
 
 function selectHistory(item: string) {
   keyword.value = item
   showHistory.value = false
-  void scanKey(false, false)
+  queryKeyList(false, false)
 }
 
-// 仅点击输入框本体时展开历史；suffix 内控件（含复选框）不触发
+// 仅点击输入框本体时展开历史；suffix 内控件（含复选框）不触发。Search 模式展开全文检索历史。
 function handleKeywordClick(e: MouseEvent) {
   if ((e.target as HTMLElement).classList.contains('el-input__inner')) {
     showHistory.value = true
@@ -310,9 +336,11 @@ async function onRefreshKey() {
   hideSearchHistory()
   // 收藏模式 F5：重载已展开的收藏目录，不触发主列表 SCAN
   if (favoriteMode.value) {
+    if (share.conn) clearKeyMemoryCacheForConn(share.conn.id)
     await favFolderPanelRef.value?.reloadExpanded()
     return
   }
+  if (await refreshSearchList()) return
   await scanKey(false, false, true)
 }
 
@@ -342,9 +370,13 @@ const dbSize = computed(() => {
   return masterCount > 0 ? perDb * masterCount : perDb
 })
 
-// 扫描进度：按 SCAN 批次估算（与匹配结果数量无关，稀有键搜索时进度仍正常推进）
+// 进度：索引查询按已取条数 / total；SCAN 按批次估算（与匹配结果数量无关）
 const scanProgress = computed(() => {
   if (!share.conn) return 0
+  if (searchMode.value) {
+    if (searchTotal.value <= 0) return loading.value ? 0 : 100
+    return Math.min(100, Math.round((searchOffset.value / searchTotal.value) * 100))
+  }
   return computeScanProgress(
     scanBatchCount.value,
     scanBatchSize.value,
@@ -355,9 +387,11 @@ const scanProgress = computed(() => {
 
 const cursor = ref<ScanCursor | null>(null)
 // 仅在一次扫描结束且仍有未加载 key 时显示「加载更多」
-const showLoadMoreButtons = computed(
-  () => !loading.value && cursor.value != null && !cursor.value.finished,
-)
+const showLoadMoreButtons = computed(() => {
+  if (loading.value) return false
+  if (searchMode.value) return searchOffset.value < searchTotal.value
+  return cursor.value != null && !cursor.value.finished
+})
 
 // 本地过滤：精确转义字面，扫描用 match（切换勾选仅更新过滤，回车/查询才重新扫描）
 const filterPattern = computed(() =>
@@ -392,6 +426,8 @@ function flushScanToUi() {
 }
 
 const filterKeyList = computed(() => {
+  // 索引查询的关键字是 FT.SEARCH 语法，结果已在服务端筛过，不再按键名做本地匹配
+  if (searchMode.value) return keyList.value
   // 收藏模式下，只显示当前连接的收藏键
   let source: RedisKey_Deserialize[] = favoriteMode.value ? currentFavorites.value : keyList.value
 
@@ -435,6 +471,8 @@ async function scanKey(useCursor = false, loadAll = false, restart = false): Pro
       cursor.value = null
       scanBatchCount.value = 0
       scanBuffer = []
+      // 整表重扫时丢掉内存缓存，可见行会按新列表再查
+      clearKeyMemoryCacheForConn(share.conn.id)
     }
 
     const firstScanKeys = await scanKeyCore()
@@ -627,7 +665,7 @@ function chooseFolder(folder: string): void {
 function contextKey(command: string, redisKey: RedisKey_Deserialize): void {
   if (!share.conn) return
   if (command === 'refreshKey') {
-    void scanKey(false, false)
+    void reloadKeyList()
   } else if (command === 'reloadKey') {
     chooseKey(redisKey)
   } else if (command === 'addKey') {
@@ -659,13 +697,15 @@ function contextKey(command: string, redisKey: RedisKey_Deserialize): void {
 function contextFolder(command: string, folder: string): void {
   if (!share.conn) return
   if (command === 'refreshKey') {
-    void scanKey(false, false)
+    void reloadKeyList()
   } else if (command === 'addKey') {
     keyPrefix.value = folderKeyPrefix(folder, keySep.value)
     addKey()
   } else if (command === 'copyFolder') {
     meCopy(folder)
   } else if (command === 'loadFolder' || command === 'loadFolderAll') {
+    // 索引结果是已返回的键，目录节点没有未扫完的游标
+    if (searchMode.value) return
     // 须 await：loadFolder 标志要覆盖整轮 SCAN，否则续扫会退回 *keyword* 模式
     void (async () => {
       loadFolder.value = true
@@ -733,6 +773,9 @@ onMounted(() => {
   connUi.scrollKeyToTree = (redisKey: RedisKey_Deserialize) => {
     scrollKeyToTrees(redisKey)
   }
+  connUi.browseSearchIndex = (name: string) => {
+    void browseSearchIndex(name)
+  }
 })
 onUnmounted(() => {
   bus.off(KEY_DELETE, deleteKey)
@@ -791,7 +834,7 @@ function batchKeyOk(mode: string): void {
       // 与批量取消收藏一致：删完退出多选，避免勾选残留已删键
       exitCheckedMode()
     }
-    scanKey(false, false)
+    reloadKeyList()
     bus.emit(INFO_REFRESH)
   } else {
     share.exportImportingPercentage = 0
@@ -834,7 +877,7 @@ async function tauriListen(eventName: 'export' | 'import'): Promise<void> {
 
       // 导入完成后刷新键列表与连接信息
       if (eventName === 'import') {
-        void scanKey(false, false)
+        reloadKeyList()
         bus.emit(INFO_REFRESH)
       }
     }
@@ -873,9 +916,21 @@ const sortByCount = computed({
     meTauri.settings.keySort = newValue ? 'count' : 'alphabet'
   },
 })
+
+const showKeyMemory = computed({
+  get() {
+    return !!meTauri.settings.keyShowMemory
+  },
+  set(newValue: boolean) {
+    meTauri.settings.keyShowMemory = newValue
+  },
+})
+
 async function handleCommand(command: string): Promise<void> {
   if (command === 'toggleKeyShow') {
     keyShowTree.value = !keyShowTree.value
+  } else if (command === 'toggleKeyMemory') {
+    showKeyMemory.value = !showKeyMemory.value
   } else if (command === 'toggleKeySort') {
     sortByCount.value = !sortByCount.value
   } else if ('mockData' === command) {
@@ -912,6 +967,7 @@ function flushDb(): void {
   meConfirm(t('keyMain.flushDbConfirm'), async () => {
     await meCommands.flushDb(share.conn!.id)
     clearKeyTypeCacheForConn(share.conn!.id)
+    clearKeyMemoryCacheForConn(share.conn!.id)
     meOk(t('keyMain.flushDbOk'))
     bus.emit(CONN_REFRESH)
     bus.emit(INFO_REFRESH)
@@ -999,6 +1055,16 @@ function clearFavoriteChecked(): void {
   favFolderPathsChecked.value = []
 }
 
+/** 退出收藏，不在这里重查。浏览数据会自己切到索引查询。 */
+function leaveFavoriteMode(): void {
+  if (!favoriteMode.value) return
+  favFolderPanelRef.value?.resetScans()
+  favoriteMode.value = false
+  showCheckbox.value = false
+  favoriteCheckedZone.value = 'none'
+  clearFavoriteChecked()
+}
+
 function toggleChecked(): void {
   if (favoriteMode.value) {
     if (favoriteCheckedZone.value === 'none') return
@@ -1011,11 +1077,9 @@ function toggleChecked(): void {
 
 async function toggleFavoriteMode(): Promise<void> {
   if (favoriteMode.value) {
-    favFolderPanelRef.value?.resetScans()
-    favoriteMode.value = false
-    showCheckbox.value = false
-    favoriteCheckedZone.value = 'none'
-    clearFavoriteChecked()
+    leaveFavoriteMode()
+    // 进入收藏时关键字被清空，退出后按空查询重新拉一页，避免列表还是上一次的值查询
+    if (searchMode.value) void runSearchKeys(false, false)
   } else {
     // 进入收藏前停掉主列表 SCAN，避免与目录 SCAN 抢连接锁
     await stopScanIfRunning()
@@ -1246,6 +1310,214 @@ function editDbName(db: number): void {
     },
   )
 }
+
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// #region 索引查询
+// 状态在上面。这里是 FT._LIST / FT.SEARCH。条数用键扫描设置，后端不封顶。
+
+/** 回车、加载更多、加载全部、暂停后继续。索引模式走 FT.SEARCH，否则仍是 SCAN。 */
+function queryKeyList(append: boolean, loadAll = false, restart = false): void {
+  if (searchMode.value) void runSearchKeys(append, loadAll, restart)
+  else void scanKey(append, loadAll, restart)
+}
+
+function chooseKeyType(keyTypeSelected: string): void {
+  hideSearchHistory()
+  const leavingSearch = searchMode.value && keyTypeSelected !== SEARCH_TYPE
+  keyType.value = keyTypeSelected
+  keyword.value = ''
+  if (keyTypeSelected === SEARCH_TYPE) {
+    void enterSearchMode()
+    return
+  }
+  // 离开索引查询时先停掉进行中的 FT.SEARCH，再走原来的 SCAN
+  void scanKey(false, false, leavingSearch)
+}
+
+/** 上次索引按「连接 + 库」记。索引跟着库走，换库不能沿用上一个库的名字。 */
+function searchMemoryKey(): string {
+  if (!share.conn) return ''
+  return `${share.conn.id}\0${share.conn.db}`
+}
+
+function resetSearchState(): void {
+  searchIndexes.value = []
+  searchIndex.value = ''
+  clearSearchHits()
+  loadingIndexes.value = false
+}
+
+function rememberSearchIndex(name: string): void {
+  const key = searchMemoryKey()
+  if (!key || !name) return
+  lastSearchIndex.value = { ...lastSearchIndex.value, [key]: name }
+}
+
+/** 只拉索引名。赋值时忽略选择框的 change，避免和紧接着的查询打两次。传入 prefer 时只选这个索引，没有就留空。 */
+async function loadSearchIndexes(prefer?: string): Promise<void> {
+  if (!share.conn) return
+  loadingIndexes.value = true
+  ignoreIndexChange = true
+  try {
+    searchIndexes.value = await meCommands.searchIndexNames(share.conn.id)
+    const remembered = lastSearchIndex.value[searchMemoryKey()]
+    // 指定了索引却不在列表里时留空，避免浏览数据落到别的索引上
+    if (prefer) {
+      searchIndex.value = searchIndexes.value.includes(prefer) ? prefer : ''
+    } else {
+      searchIndex.value =
+        searchIndexes.value.find(name => name === searchIndex.value) ??
+        searchIndexes.value.find(name => name === remembered) ??
+        searchIndexes.value[0] ??
+        ''
+    }
+    if (searchIndex.value) rememberSearchIndex(searchIndex.value)
+  } finally {
+    loadingIndexes.value = false
+    await nextTick()
+    ignoreIndexChange = false
+  }
+}
+
+/** 搜索页「浏览数据」：键区切到索引查询，选中该索引，按空条件查出键。 */
+async function browseSearchIndex(name: string): Promise<void> {
+  if (!share.conn || !name || !searchSupported.value) return
+  leaveFavoriteMode()
+  keyword.value = ''
+  const already = searchMode.value
+  if (!already) keyType.value = SEARCH_TYPE
+  await stopScanIfRunning()
+  exact.value = false
+  cursor.value = null
+  scanPaused.value = false
+  if (!already) clearSearchHits()
+  await loadSearchIndexes(name)
+  if (searchIndex.value !== name) {
+    clearSearchHits()
+    return
+  }
+  await runSearchKeys(false, false)
+}
+
+/** 停掉 SCAN，先清空键列表再拉索引。拉索引期间不要留着上一轮扫描结果。 */
+async function enterSearchMode(): Promise<void> {
+  await stopScanIfRunning()
+  exact.value = false
+  cursor.value = null
+  scanPaused.value = false
+  clearSearchHits()
+  await loadSearchIndexes()
+  await runSearchKeys(false, false)
+}
+
+/** 换索引时丢掉上一条查询，按空条件重查。程序赋值选中项会进来，用 ignoreIndexChange 挡掉。 */
+async function onSearchIndexChange(name: string): Promise<void> {
+  if (ignoreIndexChange) return
+  rememberSearchIndex(name)
+  keyword.value = ''
+  await runSearchKeys(false, false, true)
+}
+
+/** 只刷新索引名。选中的名字变了才清空并重查，没变就留着当前键列表。 */
+async function onRefreshSearchIndexes(): Promise<void> {
+  if (loadingIndexes.value || loading.value) return
+  const prev = searchIndex.value
+  await loadSearchIndexes()
+  if (searchIndex.value !== prev) {
+    keyword.value = ''
+    await runSearchKeys(false, false)
+  }
+}
+
+/** 右键刷新、导入结束。索引模式要停掉进行中的查询；SCAN 保持原来的不重启。 */
+function reloadKeyList(): void {
+  queryKeyList(false, false, searchMode.value)
+}
+
+/** F5：索引模式重查并返回 true，调用方就不再 SCAN。 */
+async function refreshSearchList(): Promise<boolean> {
+  if (!searchMode.value) return false
+  await runSearchKeys(false, false, true)
+  return true
+}
+
+/** 清空本次命中。索引列表和上次选中的名字留着。 */
+function clearSearchHits(): void {
+  searchTotal.value = 0
+  searchOffset.value = 0
+  scanBuffer = []
+  keyList.value = []
+}
+
+/** append 续页，loadAll 一直翻到 total，restart 先停掉进行中的查询。空查询由后端按 *。 */
+async function runSearchKeys(append = false, loadAll = false, restart = false): Promise<void> {
+  if (!share.conn || !searchMode.value) return
+  if (loading.value) {
+    if (!restart) return
+    await stopScanIfRunning()
+  }
+  if (!searchIndex.value) {
+    clearSearchHits()
+    return
+  }
+
+  scanLoadAll.value = loadAll
+  loading.value = true
+  scanCancelled.value = false
+  if (!append) {
+    ftQueryHistory.value = rememberFtQuery(ftQueryHistory.value, keyword.value)
+    scanPaused.value = false
+    scanBatchCount.value = 0
+    clearSearchHits()
+    clearKeyMemoryCacheForConn(share.conn.id)
+  }
+  try {
+    if (loadAll) await searchKeysAll()
+    else await searchKeysPage()
+  } finally {
+    loading.value = false
+    if (searchOffset.value >= searchTotal.value) scanPaused.value = false
+  }
+}
+
+/** 一页 FT.SEARCH。条数用键扫描设置，命中只取键名填进现有列表。 */
+async function searchKeysPage(): Promise<void> {
+  const res = await meCommands.searchQuery(share.conn!.id, {
+    index: searchIndex.value,
+    query: keyword.value.trim(),
+    offset: searchOffset.value,
+    count: SCAN_FETCH_COUNT.value,
+    withScores: false,
+    noContent: true,
+    vectorFields: [],
+  })
+  searchTotal.value = res.total
+  const seen = new Set(scanBuffer.map(redisKeyId))
+  for (const hit of res.hits) {
+    const redisKey = { key: hit.key, bytes: '' }
+    const id = redisKeyId(redisKey)
+    if (seen.has(id)) continue
+    seen.add(id)
+    scanBuffer.push(redisKey)
+  }
+  // 空页说明没有更多，把 offset 推到 total，避免加载全部时空转
+  searchOffset.value = res.hits.length === 0 ? res.total : searchOffset.value + res.hits.length
+  scanBatchCount.value++
+  flushScanToUi()
+}
+
+/** 按页往后翻，直到拿满 total 或用户暂停。空页会把偏移推到 total，避免空转。 */
+async function searchKeysAll(): Promise<void> {
+  if (searchTotal.value > 0 && searchOffset.value >= searchTotal.value) return
+  do {
+    if (scanCancelled.value) return
+    const before = searchOffset.value
+    await searchKeysPage()
+    if (searchOffset.value === before) return
+  } while (!scanCancelled.value && searchOffset.value < searchTotal.value)
+}
+
+// #endregion
 </script>
 
 <template>
@@ -1258,9 +1530,9 @@ function editDbName(db: number): void {
         <el-input
           v-model="keyword"
           :readonly="loading"
-          :placeholder="t('keyMain.keyword')"
+          :placeholder="searchMode ? t('keyMain.searchQuery') : t('keyMain.keyword')"
           clearable
-          @keyup.enter="scanKey(false, false)"
+          @keyup.enter="queryKeyList(false, false)"
           @click="handleKeywordClick"
           @blur="handleInputBlur">
           <template #prepend>
@@ -1268,11 +1540,22 @@ function editDbName(db: number): void {
               <el-tag :type="keyTypeTag.type" effect="plain" class="key-type-tag">
                 <!-- ALL 状态用减号图标，与右侧新增键的 + 同款同尺寸 -->
                 <me-icon v-if="keyType === 'ALL'" icon="el-icon-minus" />
+                <me-icon v-else-if="searchMode" icon="el-icon-search" />
                 <template v-else>{{ meKeyShort(keyType) }}</template>
               </el-tag>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item command="ALL">
+                  <el-dropdown-item v-if="searchSupported" command="Search">
+                    <el-tag
+                      type="primary"
+                      :effect="searchMode ? 'plain' : 'dark'"
+                      style="width: 26px"
+                      hit>
+                      <me-icon icon="el-icon-search" />
+                    </el-tag>
+                    <el-text style="margin-left: 6px" type="primary">Search</el-text>
+                  </el-dropdown-item>
+                  <el-dropdown-item command="ALL" :divided="searchSupported">
                     <el-tag
                       type="info"
                       :effect="'ALL' === keyType ? 'plain' : 'dark'"
@@ -1296,6 +1579,25 @@ function editDbName(db: number): void {
               </template>
             </el-dropdown>
           </template>
+          <!-- 问号、精确复选框在左侧，和右侧刷新对称 -->
+          <template #prefix>
+            <el-tooltip
+              v-if="searchMode"
+              :content="t('redisSearch.queryHint')"
+              placement="bottom"
+              raw-content
+              popper-style="max-width: 420px">
+              <el-icon class="query-help"><el-icon-question-filled /></el-icon>
+            </el-tooltip>
+            <el-tooltip
+              v-else
+              :content="t('keyMain.exactSearch')"
+              placement="bottom"
+              raw-content
+              :show-after="1000">
+              <el-checkbox size="small" v-model="exact" class="suffix-exact-checkbox" />
+            </el-tooltip>
+          </template>
           <template #suffix>
             <div class="keyword-suffix">
               <me-scan-control
@@ -1311,13 +1613,6 @@ function editDbName(db: number): void {
                 :info="t('keyMain.refreshKey')"
                 placement="bottom"
                 @click.stop="onRefreshKey" />
-              <el-tooltip
-                :content="t('keyMain.exactSearch')"
-                placement="bottom"
-                raw-content
-                :show-after="1000">
-                <el-checkbox size="small" v-model="exact" class="suffix-exact-checkbox" />
-              </el-tooltip>
             </div>
           </template>
           <template v-if="canEdit" #append>
@@ -1339,6 +1634,25 @@ function editDbName(db: number): void {
             </el-dropdown>
           </template>
         </el-input>
+        <!-- 索引查询：关键字是 FT.SEARCH。左侧按钮只重拉索引名 -->
+        <div v-if="searchMode" class="search-index-row">
+          <me-icon
+            class="search-index-refresh"
+            :class="{ 'is-loading': loadingIndexes }"
+            icon="el-icon-refresh"
+            :info="t('keyMain.searchIndexRefresh')"
+            placement="top"
+            @click="onRefreshSearchIndexes" />
+          <el-select
+            v-model="searchIndex"
+            filterable
+            :placeholder="
+              searchIndexes.length ? t('keyMain.searchIndex') : t('keyMain.searchIndexEmpty')
+            "
+            @change="onSearchIndexChange">
+            <el-option v-for="name in searchIndexes" :key="name" :label="name" :value="name" />
+          </el-select>
+        </div>
       </template>
     </div>
 
@@ -1422,6 +1736,7 @@ function editDbName(db: number): void {
           :favorites="currentFavorites"
           :favorite-folders="currentFavoriteFolderPaths"
           :favorite-mode="false"
+          :search-mode="searchMode"
           @chooseKey="chooseKey"
           @contextKey="contextKey"
           @chooseFolder="chooseFolder"
@@ -1532,14 +1847,14 @@ function editDbName(db: number): void {
               hint
               placement="top"
               class="icon-btn"
-              @click="scanKey(true, false)" />
+              @click="queryKeyList(true, false)" />
             <me-icon
               :name="t('keyMain.loadAll')"
               icon="me-icon-load-all"
               hint
               placement="top"
               class="icon-btn"
-              @click="scanKey(true, true)" />
+              @click="queryKeyList(true, true)" />
           </div>
         </template>
       </div>
@@ -1622,6 +1937,7 @@ function editDbName(db: number): void {
           <span v-else-if="inCheckedMode"
             >{{ checkedKeyList.length }} / {{ filterKeyList.length }}</span
           >
+          <span v-else-if="searchMode">{{ keyList.length }} / {{ searchTotal }}</span>
           <span v-else-if="!favoriteMode">{{ filterKeyList.length }} / {{ keyList.length }}</span>
         </el-text>
       </div>
@@ -1659,7 +1975,17 @@ function editDbName(db: number): void {
                 </el-dropdown-item>
               </template>
 
-              <el-dropdown-item command="toggleKeyShow" :divided="!favoriteMode">
+              <el-dropdown-item command="toggleKeyMemory" :divided="!favoriteMode">
+                <me-icon
+                  :name="showKeyMemory ? t('keyMain.hideKeyMemory') : t('keyMain.showKeyMemory')"
+                  :info="
+                    share.capabilities.memoryUsageSupported
+                      ? ''
+                      : t('keyMain.memoryUsageUnsupported')
+                  "
+                  icon="me-icon-memory" />
+              </el-dropdown-item>
+              <el-dropdown-item command="toggleKeyShow">
                 <me-icon
                   :name="keyShowTree ? t('keyMain.listView') : t('keyMain.treeView')"
                   :icon="keyShowTree ? 'me-icon-list' : 'me-icon-tree'"></me-icon>
@@ -1762,14 +2088,17 @@ function editDbName(db: number): void {
       flex-shrink: 0;
     }
 
-    // 输入框内右侧：暂停/继续 + 刷新 + 精确查询
-    .keyword-suffix {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      margin-left: 6px;
+    // 左侧问号或精确复选框；右侧暂停/继续和刷新
+    :deep(.el-input__prefix) {
+      .query-help {
+        color: var(--el-text-color-secondary);
+        cursor: help;
 
-      // 与 suffix 图标同色，选中时用主题色
+        &:hover {
+          color: var(--el-color-primary);
+        }
+      }
+
       :deep(.suffix-exact-checkbox) {
         height: auto;
 
@@ -1789,12 +2118,56 @@ function editDbName(db: number): void {
       }
     }
 
+    .keyword-suffix {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-left: 6px;
+    }
+
     .suffix-icon-btn {
       cursor: pointer;
       font-size: 16px;
 
       &:hover {
         opacity: 0.75;
+      }
+    }
+
+    // 刷新图标自己画边框，右边不画，交界只留选择框左侧那一条
+    .search-index-row {
+      display: flex;
+      margin-top: 6px;
+
+      .el-select {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .search-index-refresh {
+        flex-shrink: 0;
+        box-sizing: border-box;
+        width: 32px;
+        height: var(--el-component-size);
+        justify-content: center;
+        cursor: pointer;
+        color: var(--el-text-color-regular);
+        border: 1px solid var(--el-border-color);
+        border-right: none;
+        border-radius: var(--el-border-radius-base) 0 0 var(--el-border-radius-base);
+
+        &:hover {
+          color: var(--el-color-primary);
+        }
+
+        &.is-loading :deep(.el-icon) {
+          animation: rotating 2s linear infinite;
+        }
+      }
+
+      :deep(.el-select__wrapper) {
+        border-top-left-radius: 0;
+        border-bottom-left-radius: 0;
       }
     }
   }

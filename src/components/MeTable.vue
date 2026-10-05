@@ -43,7 +43,7 @@ const props = withDefaults(
   }>(),
   {
     data: () => [],
-    layout: 'total, sizes, prev, pager, next, jumper',
+    layout: 'total, sizes, prev, pager, next',
     hideOnSinglePage: false,
     exportName: 'table',
     hideExport: false,

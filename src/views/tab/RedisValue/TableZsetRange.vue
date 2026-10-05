@@ -130,7 +130,7 @@ defineExpose({ open })
       <div class="zset-range-main">
         <me-table
           v-if="filteredList.length"
-          layout="sizes, prev, pager, next, jumper"
+          layout="sizes, prev, pager, next"
           :data="filteredList"
           export-name="zset-range"
           :export-rows="exportRows"

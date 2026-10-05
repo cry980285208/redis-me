@@ -294,7 +294,7 @@ defineExpose({ open })
       <div class="vsim-main">
         <me-table
           v-if="filteredList.length"
-          layout="sizes, prev, pager, next, jumper"
+          layout="sizes, prev, pager, next"
           :data="filteredList"
           export-name="vsim"
           :export-rows="exportRows"

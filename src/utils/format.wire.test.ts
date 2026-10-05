@@ -58,6 +58,7 @@ describe('format wire=base64 display-only', () => {
       'Pickle',
       'PhpSerial',
       'MsgPack',
+      'Vector32',
       'Hex',
       'Binary',
       'Base64',

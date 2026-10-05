@@ -1,3 +1,5 @@
+// 文档配置不引入 @types/node；node:url 由运行时提供
+// @ts-expect-error TS2591
 import { fileURLToPath } from 'node:url'
 
 import { defineConfig } from 'vitepress'
@@ -62,7 +64,11 @@ export default defineConfig({
   rewrites: { 'en/:rest*': ':rest*' },
 
   // 预加载文档里实际用到的高亮语言，避免搜索索引时 fallback 到 txt
-  markdown: { languages: ['bash', 'rust', 'python', 'javascript', 'java'] },
+  // conf：Redis 配置。Shiki 无此语法，用 bash 上色（指令、数字、字符串），角标仍显示 conf
+  markdown: {
+    languages: ['bash', 'rust', 'python', 'javascript', 'java', 'go', 'toml'],
+    languageAlias: { conf: 'bash' },
+  },
 
   // 显示最后更新时间
   lastUpdated: false,

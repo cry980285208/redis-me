@@ -22,6 +22,13 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary)
 }
 
+function f32le(nums: number[]): Uint8Array {
+  const bytes = new Uint8Array(nums.length * 4)
+  const view = new DataView(bytes.buffer)
+  nums.forEach((n, i) => view.setFloat32(i * 4, n, true))
+  return bytes
+}
+
 describe('detectViewFormat', () => {
   it('空值 → utf8', () => {
     expect(detectViewFormat('')).toBe('utf8')
@@ -122,6 +129,28 @@ describe('detectViewFormat', () => {
     expect(detectViewFormat('!!!not-base64!!!')).toBe('hex')
   })
 
+  it('小端 FLOAT32 向量（至少两个数、非 UTF-8）→ vector32', () => {
+    expect(detectViewFormat(bytesToBase64(f32le([1, -1, 0.25, 0.5])))).toBe('vector32')
+  })
+
+  it('合法 UTF-8 即使长度是 4 的倍数也不认 Vector32', () => {
+    expect(detectViewFormat(utf8ToBase64('abcdefgh'))).toBe('utf8')
+  })
+
+  it('单个 FLOAT32 太短，留给 Hex', () => {
+    expect(detectViewFormat(bytesToBase64(f32le([0.5])))).toBe('hex')
+  })
+
+  it('含 NaN 的浮点字节不认 Vector32', () => {
+    expect(detectViewFormat(bytesToBase64(f32le([1, Number.NaN])))).toBe('hex')
+  })
+
+  it('截断预览不认 Vector32', () => {
+    expect(detectViewFormat(bytesToBase64(f32le([1, -1, 0.25, 0.5])), { truncated: true })).toBe(
+      'hex',
+    )
+  })
+
   it('短 UTF-8 不被 MsgPack 误判', () => {
     expect(detectViewFormat(utf8ToBase64('hello'))).toBe('utf8')
     expect(detectViewFormat(utf8ToBase64('a'))).toBe('utf8')
@@ -201,6 +230,13 @@ describe('peelGzipWire / detectViewFormatAuto', () => {
   it('Gzip + PhpSerial', () => {
     const inner = new TextEncoder().encode('a:1:{s:1:"a";i:1;}')
     expect(detectViewFormatAuto(gzipBase64(inner))).toMatchObject({ gzip: true, view: 'phpserial' })
+  })
+
+  it('Gzip + Vector32', () => {
+    const inner = f32le([1, -1, 0.25, 0.5])
+    const auto = detectViewFormatAuto(gzipBase64(inner))
+    expect(auto).toMatchObject({ gzip: true, view: 'vector32' })
+    expect(detectedViewLabel(auto.view, auto.gzip)).toBe('Gzip · Vector32')
   })
 
   it('Gzip + MsgPack', () => {
