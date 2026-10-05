@@ -1994,6 +1994,16 @@ onUnmounted(() => {
               clearable
               class="field-scan-input"
               @keyup.enter="onFieldSearch">
+              <!-- 精确勾选在左侧，查询在右侧，与键区一致 -->
+              <template v-if="showFieldExactCheckbox" #prefix>
+                <el-tooltip
+                  :content="fieldExactSearchTip"
+                  placement="bottom"
+                  raw-content
+                  :show-after="1000">
+                  <el-checkbox size="small" v-model="fieldExact" class="suffix-exact-checkbox" />
+                </el-tooltip>
+              </template>
               <template #suffix>
                 <div class="keyword-suffix">
                   <me-scan-control
@@ -2002,14 +2012,10 @@ onUnmounted(() => {
                     :loading="loading"
                     :tip="scanToggleTip"
                     @click="onFieldScanAction" />
-                  <el-tooltip
-                    v-if="showFieldExactCheckbox"
-                    :content="fieldExactSearchTip"
-                    placement="bottom"
-                    raw-content
-                    :show-after="1000">
-                    <el-checkbox size="small" v-model="fieldExact" class="suffix-exact-checkbox" />
-                  </el-tooltip>
+                  <me-icon
+                    icon="me-icon-search"
+                    class="suffix-icon-btn"
+                    @click.stop="onFieldSearch" />
                 </div>
               </template>
             </el-input>
@@ -2832,12 +2838,8 @@ onUnmounted(() => {
         width: 250px;
         flex-shrink: 0;
 
-        .keyword-suffix {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          margin-left: 6px;
-
+        // 左侧精确勾选；右侧暂停/继续和查询
+        :deep(.el-input__prefix) {
           :deep(.suffix-exact-checkbox) {
             height: auto;
 
@@ -2854,6 +2856,22 @@ onUnmounted(() => {
               background-color: var(--el-color-primary);
               border-color: var(--el-color-primary);
             }
+          }
+        }
+
+        .keyword-suffix {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          margin-left: 6px;
+        }
+
+        .suffix-icon-btn {
+          cursor: pointer;
+          font-size: 16px;
+
+          &:hover {
+            opacity: 0.75;
           }
         }
       }
