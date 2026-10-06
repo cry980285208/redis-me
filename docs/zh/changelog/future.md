@@ -35,6 +35,7 @@
 - SSH 隧道支持集群和哨兵 ✅️
 - 数据编码魔数自动识别（Auto：ACED / Pickle PROTO / PhpSerial a:/O:/C: / MsgPack / StrJson / UTF-8 / Hex）✅️
 - 自定义编解码勾选 Auto：内置落到 Hex 后按顺序试解，成功输出直接展示 ✅️
+- 自定义编码测试样例不再预填；编码样例直接填编辑区明文，由程序做 Base64；取消不保留本次修改 ✅️
 - String类型阈值保护 ✅️
 - Binary格式恢复支持（setbit等场景还是需要的）✅️
 - Hash/Set/ZSet的扫描模式支持 ✅️

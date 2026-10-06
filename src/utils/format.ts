@@ -58,7 +58,8 @@ function isValidBase64(s: string): boolean {
   return B64_RE.test(s)
 }
 
-function textUtf8ToBase64(text: string): string {
+/** 编辑区 UTF-8 文本 → 脚本 encode 参数。保存与测试编码共用 */
+export function textUtf8ToBase64(text: string): string {
   const bytes = new TextEncoder().encode(text)
   let binary = ''
   for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]!)
