@@ -1,18 +1,15 @@
 ## Future
 
-- 导出Excel更换新组件实现
 - 能力探测是否许需要界面显示
 - 集群的图形: 可以显示所有的
 - 集群的信息: 表格展示
-- 数据编码: 自定义编码支持自动识别
-- 键的数据编码记住(连接内粘住或每个键自定义待进一步确认)
+- 键的数据编码记住：暂缓。自定义 Auto 试解成功后仍要解码一次，记住编码省不下这次时间
 - TimeSeries：TS.CREATE 全参数、多键 MRANGE 与聚合
 - 抖音/B站短视频的制作: 每个痛点解决1个小视频
 - Redis实战相关文章的编写
 - 连接级自动解压：优先 GZIP，可选 LZ4 / ZSTD / Snappy（对标 RedisInsight；即此前「自动解压缩」）
 - 研究下怎么上线Linux的应用商店: deepin, snap, flathub
 - Redisson的键空间通知 模块 参考实现
-- 自定义编码也支持自动识别
 - Viewer 解压查看：Gzip / Deflate / Brotli（对标 TinyRDM / Another）
 - Unix Socket 支持
 - 树形节点的内存占用显示
@@ -29,12 +26,16 @@
 
 ### 已完成
 
+- 导出 Excel 改用 hucre：标题加粗灰底细边框、冻结首行、列宽按前 10 行自适应（上限 60），流式写出；工作表名用导出名 ✅️
+- 连接空闲超过 10 分钟直接重连，不再先 PING ✅️
 - RedisSearch 的支持 ✅️
 - 键列表显示内存占用（菜单开关，默认关；不支持 MEMORY USAGE 则不显示）✅️
 - TimeSeries 键详情：浏览 / 增删改 / Info / 当前样本折线图 ✅️
 - 网络代理：HTTP / HTTPS / SOCKS5 / SOCKS5H + 系统代理 ✅️
 - SSH 隧道支持集群和哨兵 ✅️
 - 数据编码魔数自动识别（Auto：ACED / Pickle PROTO / PhpSerial a:/O:/C: / MsgPack / StrJson / UTF-8 / Hex）✅️
+- 自定义编解码勾选 Auto：内置落到 Hex 后按顺序试解，成功输出直接展示 ✅️
+- 自定义编码测试样例不再预填；编码样例直接填编辑区明文，由程序做 Base64；取消不保留本次修改 ✅️
 - String类型阈值保护 ✅️
 - Binary格式恢复支持（setbit等场景还是需要的）✅️
 - Hash/Set/ZSet的扫描模式支持 ✅️

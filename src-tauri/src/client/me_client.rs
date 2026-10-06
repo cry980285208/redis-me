@@ -4,9 +4,13 @@ use crate::model::*;
 use crate::support::error::AppError;
 use crate::support::util::*;
 use anyhow::bail;
+use chrono::Utc;
+use log::info;
+use parking_lot::MutexGuard;
+use redis::ConnectionLike;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 
 #[rustfmt::skip]
 pub trait MeClient: Send + Sync {
@@ -186,5 +190,108 @@ pub trait MeClient: Send + Sync {
     fn command_logs_clear(&self) -> AnyResult<()> {
         self.base().command_logger.clear();
         Ok(())
+    }
+}
+
+/// 复用现有连接，还是先 PING，还是直接重连。单机和集群共用，避免两处判断走偏。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConnReuse {
+    /// 距上次探活或重连不到检查间隔，且本地仍标记为开着。
+    Keep,
+    /// 超过检查间隔，但还没到「多半已断」的空闲时长。用短超时 PING。
+    Probe,
+    /// 本地已关闭，或空闲超过 `CONNECTION_STALE_SECONDS`。PING 要么必然失败，要么很可能干等超时。
+    Reconnect,
+}
+
+/// `idle_secs` 为距上次探活或重连的秒数。本地已关闭时不再看空闲时长。
+pub fn conn_reuse(is_open: bool, idle_secs: i64) -> ConnReuse {
+    if !is_open || idle_secs >= CONNECTION_STALE_SECONDS {
+        ConnReuse::Reconnect
+    } else if idle_secs < CONNECTION_CHECK_SECONDS {
+        ConnReuse::Keep
+    } else {
+        ConnReuse::Probe
+    }
+}
+
+/// 按 `conn_reuse` 拿连接。
+///
+/// 标准库 Mutex 不能设加锁超时，所以用 parking_lot；暂不重入，其 Guard 没有 deref_mut。
+/// `lock_conn` 每次现锁。重连闭包会再锁同一把 Mutex，所以调用它之前必须先丢掉 guard，否则死锁。
+/// 最多重连一次：成功的重连会把 `last_check` 刷新成现在，下一轮应直接复用；
+/// 若新连接仍要重连或探活失败，说明这条连接不可用，不再空转。
+pub fn get_checked_conn<'a, T, L, P, R>(
+    mut lock_conn: L,
+    last_check: &AtomicI64,
+    mut probe: P,
+    mut reconnect: R,
+) -> AnyResult<MutexGuard<'a, T>>
+where
+    T: ConnectionLike,
+    L: FnMut() -> Option<MutexGuard<'a, T>>,
+    P: FnMut(&mut T) -> AnyResult<bool>,
+    R: FnMut() -> AnyResult<()>,
+{
+    let mut retried = false;
+    loop {
+        let Some(mut guard) = lock_conn() else {
+            bail!(AppError::ConnectionLockTimeout);
+        };
+        let now = Utc::now().timestamp();
+        let idle = now - last_check.load(Ordering::Relaxed);
+        match conn_reuse(guard.is_open(), idle) {
+            ConnReuse::Keep => return Ok(guard),
+            ConnReuse::Probe => {
+                // 先记下检查时间，避免这次 PING 变慢时，下一次点击又探一遍
+                last_check.store(now, Ordering::Relaxed);
+                if probe(&mut guard).unwrap_or(false) {
+                    return Ok(guard);
+                }
+            }
+            ConnReuse::Reconnect => {
+                if guard.is_open() {
+                    info!("连接空闲 {idle}s，跳过探活直接重连");
+                } else {
+                    info!("连接已关闭，跳过探活直接重连");
+                }
+            }
+        }
+        drop(guard);
+        if retried {
+            bail!(AppError::Internal {
+                message: "重连后连接仍不可用".into(),
+            });
+        }
+        retried = true;
+        reconnect()?;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 短间隔直接复用；中间档探活；本地已关或空闲过久则跳过 PING。
+    #[test]
+    fn conn_reuse_skips_ping_when_closed_or_stale() {
+        assert_eq!(conn_reuse(true, 0), ConnReuse::Keep);
+        assert_eq!(
+            conn_reuse(true, CONNECTION_CHECK_SECONDS - 1),
+            ConnReuse::Keep
+        );
+        assert_eq!(conn_reuse(true, CONNECTION_CHECK_SECONDS), ConnReuse::Probe);
+        assert_eq!(
+            conn_reuse(true, CONNECTION_STALE_SECONDS - 1),
+            ConnReuse::Probe
+        );
+        assert_eq!(
+            conn_reuse(true, CONNECTION_STALE_SECONDS),
+            ConnReuse::Reconnect
+        );
+        // 刚用过但 redis-rs 已标记关闭：再 PING 没有成功的可能
+        assert_eq!(conn_reuse(false, 0), ConnReuse::Reconnect);
+        // 时钟回拨时按仍在检查间隔内处理，不因为负数空闲去探活
+        assert_eq!(conn_reuse(true, -5), ConnReuse::Keep);
     }
 }

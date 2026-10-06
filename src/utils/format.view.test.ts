@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vite-plus/test'
 import i18n from '@/locales'
 import {
   CODEC_STDIN_B64_THRESHOLD,
+  autoCustomCodecs,
   buildCodecCommand,
   customFormatName,
   customFormatValue,
@@ -21,6 +22,7 @@ import {
   needsJsonNormalize,
   needsStdinInput,
   parseCodecErrorDetail,
+  probeAutoCustomCodecs,
   readonlyViewTip,
   viewFmtForField,
 } from '@/utils/format'
@@ -207,5 +209,64 @@ describe('custom codec command', () => {
     } finally {
       holder.window.meTauri = prev
     }
+  })
+})
+
+describe('probeAutoCustomCodecs', () => {
+  const redisson = { name: 'Redisson', command: 'java c', auto: true }
+  const other = { name: 'Other', command: 'node c', auto: true }
+  const off = { name: 'Off', command: 'node c', auto: false }
+
+  it('只保留勾了 Auto 且名称、命令都有的项，顺序不变', () => {
+    expect(
+      autoCustomCodecs([
+        off,
+        { name: ' ', command: 'x', auto: true },
+        { name: 'NoCmd', command: '  ', auto: true },
+        redisson,
+        other,
+      ]),
+    ).toEqual([redisson, other])
+  })
+
+  it('第一个成功就返回，不再试后面的', async () => {
+    const calls: string[] = []
+    const hit = await probeAutoCustomCodecs('AAAA', [redisson, other], async (_wire, codec) => {
+      calls.push(codec.name)
+      return 'ok'
+    })
+    expect(hit).toEqual({ name: 'Redisson', text: 'ok' })
+    expect(calls).toEqual(['Redisson'])
+  })
+
+  it('按顺序通知当前正在识别的编码，成功后不再通知后面的', async () => {
+    const noticed: string[] = []
+    const hit = await probeAutoCustomCodecs(
+      'AAAA',
+      [redisson, other],
+      async (_wire, codec) => (codec.name === 'Redisson' ? '' : 'ok'),
+      codec => noticed.push(codec.name),
+    )
+    expect(hit).toEqual({ name: 'Other', text: 'ok' })
+    expect(noticed).toEqual(['Redisson', 'Other'])
+  })
+
+  it('失败则试下一个；都失败或空输出返回 null', async () => {
+    const calls: string[] = []
+    const hit = await probeAutoCustomCodecs('AAAA', [redisson, other], async (_wire, codec) => {
+      calls.push(codec.name)
+      if (codec.name === 'Redisson') throw new Error('nope')
+      return 'decoded'
+    })
+    expect(hit).toEqual({ name: 'Other', text: 'decoded' })
+    expect(calls).toEqual(['Redisson', 'Other'])
+
+    expect(
+      await probeAutoCustomCodecs('AAAA', [redisson], async () => {
+        throw new Error('nope')
+      }),
+    ).toBeNull()
+    expect(await probeAutoCustomCodecs('AAAA', [redisson], async () => '')).toBeNull()
+    expect(await probeAutoCustomCodecs('', [redisson], async () => 'x')).toBeNull()
   })
 })

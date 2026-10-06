@@ -31,6 +31,17 @@ export interface CustomCodec {
   name: string
   /** 可执行入口，如 `python3 /path/codec.py` */
   command: string
+  /**
+   * 参与 Auto：内置识别落到 Hex 后按列表顺序试解。
+   * 缺省 / false 不试。脚本对非本格式必须非 0 退出，否则会把别的二进制认进来。
+   */
+  auto?: boolean
+}
+
+/** Auto 试解命中：stdout 即展示文本，调用方不要再 decode 一遍 */
+export interface CustomCodecProbeHit {
+  name: string
+  text: string
 }
 
 export type CodecMode = 'decode' | 'encode'
@@ -47,7 +58,8 @@ function isValidBase64(s: string): boolean {
   return B64_RE.test(s)
 }
 
-function textUtf8ToBase64(text: string): string {
+/** 编辑区 UTF-8 文本 → 脚本 encode 参数。保存与测试编码共用 */
+export function textUtf8ToBase64(text: string): string {
   const bytes = new TextEncoder().encode(text)
   let binary = ''
   for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]!)
@@ -228,6 +240,35 @@ async function execCodec(
 /** wire base64 → 展示文本；meFormatViewValueAsync 调用 */
 export async function runDecode(wireBase64: string, codec: CustomCodec): Promise<string> {
   return execCodec(codec, 'decode', wireBase64, 'decode')
+}
+
+/** 勾了 Auto 的自定义编码，保持列表顺序 */
+export function autoCustomCodecs(list: CustomCodec[] | undefined | null): CustomCodec[] {
+  if (!Array.isArray(list)) return []
+  return list.filter(c => c.auto === true && c.name.trim() !== '' && c.command.trim() !== '')
+}
+
+/**
+ * 内置 Auto 未认出格式后调用。按顺序试解，第一个成功的即返回。
+ * 失败静默跳过。onCodec 在每次真正解码前调用，供界面显示「某某 编码识别中」。
+ */
+export async function probeAutoCustomCodecs(
+  wireBase64: string,
+  codecs: CustomCodec[] = autoCustomCodecs(window.meTauri.settings.customCodecs),
+  decode: (wire: string, codec: CustomCodec) => Promise<string> = runDecode,
+  onCodec?: (codec: CustomCodec) => void,
+): Promise<CustomCodecProbeHit | null> {
+  if (!wireBase64) return null
+  for (const codec of codecs) {
+    onCodec?.(codec)
+    try {
+      const text = await decode(wireBase64, codec)
+      if (text) return { name: codec.name, text }
+    } catch {
+      // 非本格式或执行失败：试下一个
+    }
+  }
+  return null
 }
 
 /** 编辑区文本 → wire base64；meViewToWireAsync 调用 */

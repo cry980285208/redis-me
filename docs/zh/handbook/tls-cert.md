@@ -3,7 +3,7 @@ aside: false
 ---
 
 <script setup>
-import TlsCertTool from '../../../.vitepress/theme/components/TlsCertTool.vue'
+import TlsCertTool from '../../.vitepress/theme/components/TlsCertTool.vue'
 </script>
 
 # TLS 证书

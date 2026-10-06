@@ -22,7 +22,17 @@ pub type ApiResult<T> = Result<T, String>;
 pub const REDIS_ME_FIELD_TO_DELETE_TMP_VALUE: &str = "REDIS_ME_FIELD_TO_DELETE_TMP_VALUE";
 pub const REDIS_ME_SUBSCRIBE_STOP_CHANNEL: &str = "REDIS_ME_SUBSCRIBE_STOP_CHANNEL";
 pub const CONNECTION_CHECK_SECONDS: i64 = 30; // 30s 检查 1 次连接，避免频繁检查
-pub const CONNECTION_CHECK_TIMEOUT: Duration = Duration::from_secs(3); // 已有连接探活 PING
+/// 已有连接的探活 PING。活连接通常远小于 1 秒；死连接少等，避免点击卡住。
+/// 测试连接和首次建连走 `CONNECTION_CONNECT_TIMEOUT`，不用这个值。
+pub const CONNECTION_CHECK_TIMEOUT: Duration = Duration::from_secs(1);
+pub const CONNECTION_LOCK_TIMEOUT: Duration = Duration::from_secs(10); // 取连接等锁
+/// 空闲超过此时长不再 PING，直接重连。
+///
+/// `is_open` 只在某次读写已经失败后才变 false。NAT、防火墙、云负载均衡静默回收空闲 TCP 时，
+/// 标志仍是 true，PING 的读会一直等到 `CONNECTION_CHECK_TIMEOUT`（1 秒），点击就会卡住。
+/// 这类回收常见落在 5～15 分钟，10 分钟后探活多半是白等。
+/// 30 秒～10 分钟仍 PING：活连接只要一两毫秒，避免把还好的连接拆掉重建。
+pub const CONNECTION_STALE_SECONDS: i64 = 10 * 60;
 pub const CONNECTION_CONNECT_TIMEOUT: Duration = Duration::from_secs(10); // 建连默认（TCP+握手+PING），设置可覆盖
 pub const CONNECTION_NORMAL_TIMEOUT: Duration = Duration::from_secs(30); // 连接操作默认操作时长
 

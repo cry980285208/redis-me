@@ -30,7 +30,8 @@ declare global {
       codeFont?: string[]
       autoUpdate?: boolean
       /** 自定义 STRING 值编解码脚本配置 */
-      customCodecs?: { name: string; command: string }[]
+      /** auto：内置识别落到 Hex 时参与试解，默认关 */
+      customCodecs?: { name: string; command: string; auto?: boolean }[]
       /** 自定义编解码脚本执行超时（秒） */
       codecExecTimeoutSec?: number
       /** Redis 建连超时（秒），同步至 Rust */

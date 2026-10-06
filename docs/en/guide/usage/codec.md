@@ -28,8 +28,13 @@
 4. Fields:
    - **Name** — shown under the **Custom** group in the dropdown
    - **Command** — full executable command including the interpreter (see below)
+   - **Auto detect** — off by default. When checked, this codec is tried if Auto does not match a built-in format. Several checked codecs run from top to bottom; the first success is shown
 
 Built-in templates already split out `decode` / `encode`; leave the protocol boilerplate alone and put your logic in those two methods (Hex sample by default).
+
+::: warning If you check Auto detect
+The script should fail when the value is not this format. The Hex sample succeeds for any data — do not check it, or every value will be claimed. Usually check only the codec you use most.
+:::
 
 ![](../../../public/images/codec/main.png)
 
@@ -80,9 +85,10 @@ The app reads stdout as **UTF-8**. On Windows, Python scripts should call `sys.s
 1. Configure and save your custom codec entry
 2. Select it from the **Custom** group in the **codec** dropdown
 3. The value area shows decoded text; edit and click **Save**
-4. Use **Test Decode / Test Encode** in the dialog to verify your script:
-   - Default wire Base64 sample is `aGVsbG8=` (bytes `hello`)
-   - With the Hex samples below: **Test Decode** should show `68656c6c6f`; for **Test Encode**, use editor sample `68656c6c6f` (UTF-8 text) and expect `aGVsbG8=`
+4. Use **Test Decode / Test Encode** in the dialog to verify your script. Both sample boxes start empty:
+   - **Decode sample**: switch the value view to Base64 and copy the raw data (Base64 → script decode), whether or not decoding already works
+   - **Encode sample**: text to save, or copy it from the editor (text → RedisME Base64 → script encode). Type it in the expected format if it is not decoded yet, or copy it when it is already shown
+   - With the Hex samples below: decode sample `aGVsbG8=` (bytes `hello`) should show `68656c6c6f`; encode sample `68656c6c6f` should show `aGVsbG8=`
 
 ## Scope and limits
 

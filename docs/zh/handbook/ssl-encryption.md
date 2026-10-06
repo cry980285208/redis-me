@@ -260,7 +260,7 @@ ca_cert = "/path/ca.crt"
 ## RedisME 在改造中的作用
 
 1. **证书与安装**  
-   [TLS 证书](/zh/guide/other/tls-cert) 生成的就是第 2 节这套：CA、带 SAN 的 `redis.crt`（`serverAuth` + `clientAuth`）。[Redis Docker 安装](/zh/guide/other/redis-install) 能生成 `port 0`、`tls-port`、`tls-cluster`、`tls-replication` 的 Compose 和建集群命令。客户端里的「Redis 安装帮助」是同一套生成器。
+   [TLS 证书](/zh/handbook/tls-cert) 生成的就是第 2 节这套：CA、带 SAN 的 `redis.crt`（`serverAuth` + `clientAuth`）。[Redis Docker 安装](/zh/handbook/redis-install) 能生成 `port 0`、`tls-port`、`tls-cluster`、`tls-replication` 的 Compose 和建集群命令。客户端里的「Redis 安装帮助」是同一套生成器。
 2. **验收**  
    [连接](/zh/guide/usage/connection) 勾选 SSL 和集群，公钥、私钥填 `redis.crt` / `redis.key`。连接不校验服务端证书，授权（CA）可以不填。填一个节点就能列出全部节点。客户端列表用来确认旧集群已经没有应用连接。X.509 v1 证书也能连。
 3. **改 TLS 参数**  

@@ -13,6 +13,7 @@ import {
   buildCodecCommand,
   parseCodecErrorDetail,
   testCodec,
+  textUtf8ToBase64,
   type CustomCodec,
 } from '@/utils/format'
 import { meConfirm, meErr, meErrHtml, meOk, meOpenUrl } from '@/utils/util'
@@ -74,9 +75,12 @@ const editIndex = ref(-1)
 const testingDecode = ref(false)
 const testingEncode = ref(false)
 const form = reactive<CustomCodec>({ name: '', command: '' })
-// 解码：wire Base64（hello）；编码：编辑区 Hex 文本 68656c6c6f 的 UTF-8 Base64
-const testDecodeSample = ref('aGVsbG8=')
-const testEncodeSample = ref('Njg2NTZjNmM2Zg==')
+// 测试样例不预填：默认值是 Hex 模板的 hello，别的编码一测就失败。取消时还原打开前的内容
+const testDecodeSample = ref('')
+const testEncodeSample = ref('')
+let decodeSampleSnap = ''
+let encodeSampleSnap = ''
+let formAccepted = false
 
 const formValid = computed(() => form.name.trim() !== '' && form.command.trim() !== '')
 
@@ -87,10 +91,17 @@ function readForm(): CustomCodec | null {
   return { name, command }
 }
 
+function rememberSamples() {
+  decodeSampleSnap = testDecodeSample.value
+  encodeSampleSnap = testEncodeSample.value
+  formAccepted = false
+}
+
 function openAdd(name = '', command = '') {
   editIndex.value = -1
   form.name = name
   form.command = command
+  rememberSamples()
   formVisible.value = true
 }
 
@@ -98,7 +109,20 @@ function openEdit(row: CustomCodec, index: number) {
   editIndex.value = index
   form.name = row.name
   form.command = row.command
+  rememberSamples()
   formVisible.value = true
+}
+
+function restoreSamples() {
+  if (formAccepted) return
+  testDecodeSample.value = decodeSampleSnap
+  testEncodeSample.value = encodeSampleSnap
+}
+
+function cancelForm(done?: () => void) {
+  restoreSamples()
+  if (done) done()
+  else formVisible.value = false
 }
 
 // 从模板导出脚本到本机，再预填添加表单
@@ -138,12 +162,15 @@ function saveForm() {
     meErr(t('customCodec.duplicateName'))
     return
   }
-  const item = { name, command }
+  const prev = editIndex.value >= 0 ? list.value[editIndex.value] : undefined
+  // 编辑名称/命令时保留表格上的 Auto 勾选
+  const item = { name, command, auto: prev?.auto === true }
   if (editIndex.value >= 0) {
     list.value[editIndex.value] = item
   } else {
     list.value.push(item)
   }
+  formAccepted = true
   formVisible.value = false
 }
 // #endregion
@@ -157,11 +184,19 @@ async function runTest(mode: 'decode' | 'encode') {
   }
   const isDecode = mode === 'decode'
   const sample = (isDecode ? testDecodeSample : testEncodeSample).value.trim()
+  if (!sample) {
+    meErr(
+      t(isDecode ? 'customCodec.testDecodeSampleRequired' : 'customCodec.testEncodeSampleRequired'),
+    )
+    return
+  }
   const loading = isDecode ? testingDecode : testingEncode
-  const preview = buildCodecCommand(codec, mode, sample)
+  // 解码样例已是原始字节 Base64；编码样例是编辑区明文，这里按保存时同样做成 Base64
+  const arg = isDecode ? sample : textUtf8ToBase64(sample)
+  const preview = buildCodecCommand(codec, mode, arg)
   loading.value = true
   try {
-    const out = await testCodec(codec, mode, sample)
+    const out = await testCodec(codec, mode, arg)
     meOk(
       t('customCodec.testResult', { command: preview, input: sample, output: out }),
       true,
@@ -222,6 +257,22 @@ function openCodecDoc() {
         width="100"
         show-overflow-tooltip />
       <el-table-column :label="t('customCodec.command')" prop="command" show-overflow-tooltip />
+      <el-table-column width="128" align="center">
+        <template #header>
+          <span class="auto-col-header">
+            {{ t('customCodec.auto') }}
+            <me-icon
+              icon="el-icon-question-filled"
+              :info="t('customCodec.autoHelp')"
+              placement="top"
+              raw-content
+              :show-after="200" />
+          </span>
+        </template>
+        <template #default="{ row }">
+          <el-checkbox v-model="row.auto" />
+        </template>
+      </el-table-column>
       <el-table-column :label="t('action')" width="80" align="center">
         <template #default="{ row, $index }">
           <div class="row-actions">
@@ -239,7 +290,9 @@ function openCodecDoc() {
     width="720px"
     append-to-body
     destroy-on-close
-    draggable>
+    draggable
+    :before-close="cancelForm"
+    @closed="restoreSamples">
     <el-form label-position="top">
       <el-form-item :label="t('customCodec.name')" required>
         <el-input v-model="form.name" :placeholder="t('customCodec.namePlaceholder')" />
@@ -260,7 +313,10 @@ function openCodecDoc() {
       </el-form-item>
       <el-form-item :label="t('customCodec.testDecodeSample')">
         <div class="test-row">
-          <el-input v-model="testDecodeSample" :placeholder="t('customCodec.testDecodeSamplePh')" />
+          <el-input
+            v-model="testDecodeSample"
+            clearable
+            :placeholder="t('customCodec.testDecodeSamplePh')" />
           <el-button :loading="testingDecode" @click="runTest('decode')">{{
             t('customCodec.testDecode')
           }}</el-button>
@@ -268,7 +324,10 @@ function openCodecDoc() {
       </el-form-item>
       <el-form-item :label="t('customCodec.testEncodeSample')">
         <div class="test-row">
-          <el-input v-model="testEncodeSample" :placeholder="t('customCodec.testEncodeSamplePh')" />
+          <el-input
+            v-model="testEncodeSample"
+            clearable
+            :placeholder="t('customCodec.testEncodeSamplePh')" />
           <el-button :loading="testingEncode" @click="runTest('encode')">{{
             t('customCodec.testEncode')
           }}</el-button>
@@ -276,7 +335,7 @@ function openCodecDoc() {
       </el-form-item>
     </el-form>
     <template #footer>
-      <el-button @click="formVisible = false">{{ t('cancel') }}</el-button>
+      <el-button @click="cancelForm()">{{ t('cancel') }}</el-button>
       <el-button type="primary" :disabled="!formValid" @click="saveForm">{{ t('ok') }}</el-button>
     </template>
   </el-dialog>
@@ -303,6 +362,14 @@ function openCodecDoc() {
 .field-label {
   display: inline-flex;
   align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.auto-col-header {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   gap: 4px;
   white-space: nowrap;
 }

@@ -1,10 +1,16 @@
 /**
  * 小端 FLOAT32 向量（RediSearch HASH 的 VECTOR TYPE FLOAT32）。
- * Auto 在 MsgPack 之后才认：不是合法 UTF-8、至少 8 字节、长度是 4 的倍数、每个数有限。
- * 直接用数字转成的字符串。极小或极大时可能是科学计数法。只读，不把浮点文本编回字节。
+ * Auto 在不是合法 UTF-8 时才认：至少 8 字节、长度是 4 的倍数、每个数有限，
+ * 并且数量级挤在一起（绝对值不超过 1e6，非零分量的指数跨度不超过 40）。
+ * 任意二进制（如 Kryo / Marshalling）常被误读成有限浮点，跨度很大就留给 Hex。
+ * 手动选 Vector32 仍只检查长度和有限性。只读，不把浮点文本编回字节。
  */
 
 const MIN_AUTO_BYTES = 8
+/** 超过这个绝对值不像向量分量 */
+const MAX_ABS = 1e6
+/** 非零分量 log2 跨度上限，约 12 个数量级；再散就是别的二进制 */
+const MAX_EXP_SPAN = 40
 
 function dataViewOf(bytes: Uint8Array): DataView {
   return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
@@ -22,10 +28,20 @@ export function formatF32(n: number): string {
 export function looksLikeVector32(bytes: Uint8Array): boolean {
   if (bytes.length < MIN_AUTO_BYTES || bytes.length % 4 !== 0) return false
   const view = dataViewOf(bytes)
+  let minExp = Infinity
+  let maxExp = -Infinity
   for (let i = 0; i < bytes.length; i += 4) {
-    if (!Number.isFinite(view.getFloat32(i, true))) return false
+    const n = view.getFloat32(i, true)
+    if (!Number.isFinite(n)) return false
+    const abs = Math.abs(n)
+    if (abs === 0) continue
+    if (abs > MAX_ABS) return false
+    const exp = Math.floor(Math.log2(abs))
+    if (exp < minExp) minExp = exp
+    if (exp > maxExp) maxExp = exp
   }
-  return true
+  if (!Number.isFinite(minExp)) return true
+  return maxExp - minExp <= MAX_EXP_SPAN
 }
 
 /**

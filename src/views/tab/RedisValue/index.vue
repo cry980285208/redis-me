@@ -28,6 +28,7 @@ import type {
 import { isConnMinimalMode } from '@/utils/conn'
 import {
   detectViewFormatAuto,
+  detectedCustomLabel,
   detectedViewLabel,
   type DetectedViewAuto,
   type DetectedViewFormat,
@@ -37,9 +38,11 @@ import { useFavorites, addFavorite, removeFavorite, isFavorited } from '@/utils/
 import {
   IPC_WIRE_FORMAT,
   VIEW_FORMAT_OPTIONS,
+  autoCustomCodecs,
   customFormatName,
   customFormatValue,
   isCustomView,
+  probeAutoCustomCodecs,
   isReadonlyView,
   isStringOnlyView,
   isViewDecodeError,
@@ -313,17 +316,27 @@ const pendingAutoDetect = ref(false) // KEY_REFRESH 置位，开跑时领到局�
 const detectedView = ref<DetectedViewFormat>('utf8')
 const detectedGzip = ref(false) // Auto 剥过一层 Gzip → 只读，标签为 Gzip · 内层
 const detectedInnerWire = ref('') // 剥壳后的 base64；无壳为空串
-const effectiveViewFormat = computed<ViewBytesFormat>(() =>
-  bytesFormat.value === 'auto' ? detectedView.value : bytesFormat.value,
-)
+const detectedCustomName = ref('') // Auto 试解命中的自定义编码名；下拉仍为 Auto
+const customProbePending = ref(false) // 自定义编码识别中：编辑区先留空，只显示 loading
+const customProbeName = ref('') // 当前正在试的编码名
+const customProbeApplied = ref(false) // 已用试解 stdout 展示，避免再跑一遍 decode
+let customProbeGen = 0 // 换键 / 手动切编码时递增，丢弃过期试解
+const effectiveViewFormat = computed<ViewBytesFormat>(() => {
+  if (bytesFormat.value !== 'auto') return bytesFormat.value
+  if (detectedCustomName.value) return customFormatValue(detectedCustomName.value)
+  return detectedView.value
+})
 const gzipReadonly = computed(
   () => bytesFormat.value === 'auto' && stringType.value && detectedGzip.value,
 )
-const detectedViewText = computed(() =>
-  bytesFormat.value === 'auto' && stringType.value
-    ? detectedViewLabel(detectedView.value, detectedGzip.value)
-    : '',
-)
+const detectedViewText = computed(() => {
+  if (bytesFormat.value !== 'auto' || !stringType.value) return ''
+  // 识别中只在编辑区 loading，编码框旁不显示
+  if (customProbePending.value) return ''
+  if (detectedCustomName.value)
+    return detectedCustomLabel(detectedCustomName.value, detectedGzip.value)
+  return detectedViewLabel(detectedView.value, detectedGzip.value)
+})
 const formatOptions = computed(() => {
   // Auto / string-only 项仅 STRING 可用；顺序由 VIEW_FORMAT_OPTIONS 固定
   const builtin = [
@@ -386,6 +399,7 @@ const editorReadOnly = computed(
   () =>
     !canEdit.value ||
     gzipReadonly.value ||
+    customProbePending.value ||
     isReadonlyView(effectiveViewFormat.value) ||
     viewDecodeFailed.value ||
     (valueTruncated.value && !forceFullValue.value),
@@ -413,6 +427,11 @@ function setCustomCodecError(message: string) {
 }
 
 function syncDisplaySnapshot() {
+  // 展示以本次内置识别为准；自定义试解在其后异步补上
+  detectedCustomName.value = ''
+  customProbeApplied.value = false
+  customProbePending.value = false
+  customProbeName.value = ''
   const rv = redisValue.value
   if (!rv || rv.value === null || rv.value === undefined) {
     displayWire.value = ''
@@ -440,6 +459,8 @@ function syncDisplaySnapshot() {
     const nextDetected = detectViewFormatAuto(wire, { truncated: valueTruncated.value })
     commitDetectedAuto(nextDetected)
     displayBytesFormat.value = nextDetected.view
+    // 即将试自定义编码时先占住 loading，避免编辑器先画出 Hex
+    armCustomProbe()
     return
   }
 
@@ -450,6 +471,8 @@ function syncDisplaySnapshot() {
 }
 
 async function refreshResolvedWireView() {
+  // 试解已经写入 stdout，不要再起一次进程
+  if (customProbeApplied.value) return
   if (!stringType.value || !isCustomView(displayBytesFormat.value)) {
     resolvedWireView.value = ''
     customCodecFailed.value = false
@@ -471,6 +494,7 @@ async function refreshResolvedWireView() {
 
 // 切换编码：只重算展示，不请求 Redis
 async function onBytesFormatChange() {
+  customProbeGen++ // 丢掉进行中的试解，避免盖住这次手动选择
   if (!stringType.value && isStringOnlyView(bytesFormat.value)) {
     commitBytesFormat('utf8')
   }
@@ -478,18 +502,23 @@ async function onBytesFormatChange() {
   syncDisplaySnapshot()
   await refreshResolvedWireView()
   valueEditorRemountKey.value++
+  void runCustomProbe()
 }
 
 watch(
   () => window.meTauri.settings.customCodecs,
   list => {
-    // 自定义编解码被删/改名：回退并重算展示
-    if (!isCustomView(bytesFormat.value)) return
-    const name = customFormatName(bytesFormat.value)
-    if (!name || !list?.some(f => f.name === name)) {
-      bytesFormat.value = stringType.value ? 'auto' : 'utf8'
-      void onBytesFormatChange()
+    if (isCustomView(bytesFormat.value)) {
+      // 自定义编解码被删/改名：回退并重算展示
+      const name = customFormatName(bytesFormat.value)
+      if (!name || !list?.some(f => f.name === name)) {
+        bytesFormat.value = stringType.value ? 'auto' : 'utf8'
+        void onBytesFormatChange()
+      }
+      return
     }
+    // 勾选变化：当前键若是 Hex，重新试解
+    if (bytesFormat.value === 'auto' && stringType.value) void runCustomProbe()
   },
   { deep: true },
 )
@@ -503,6 +532,8 @@ watch(stringType, isString => {
 // 单元格 / JSON 视图解码（表格行 wire → 可读文本）
 function stringWireDisplayText(wire: string): string {
   try {
+    // 识别完成前不写入编辑器，避免 Hex 撑出滚动条、成功后又收回
+    if (stringType.value && customProbePending.value) return ''
     if (stringType.value && isCustomView(displayBytesFormat.value)) {
       return resolvedWireView.value
     }
@@ -609,7 +640,8 @@ const showValue = computed(() => {
 })
 
 function onCodeUpdate(newValue: string) {
-  if (suppressCodeUpdate.value || !redisValue.value) return
+  // 识别中编辑器是空的，回写不算用户修改，否则失败落到 Hex 时会误亮保存
+  if (suppressCodeUpdate.value || customProbePending.value || !redisValue.value) return
   redisValue.value.newValue = newValue // 保存时 setValue 读回
 }
 
@@ -872,6 +904,89 @@ async function loadFullValue() {
   await refreshKey(false)
 }
 
+// 内置识别落到 Hex 后，按列表顺序试勾选的自定义编码。成功的 stdout 直接当展示。
+function customProbeWire(): string {
+  if (detectedGzip.value) return detectedInnerWire.value
+  return displayWire.value
+}
+
+function stopCustomProbe() {
+  customProbePending.value = false
+  customProbeName.value = ''
+}
+
+/** 内置结果是 Hex、且有勾了 Auto 的自定义编码时才试。 */
+function canCustomProbe(): boolean {
+  return (
+    !valueDirty.value &&
+    bytesFormat.value === 'auto' &&
+    stringType.value &&
+    detectedView.value === 'hex' &&
+    !valueTruncated.value &&
+    !!customProbeWire() &&
+    autoCustomCodecs(window.meTauri.settings.customCodecs).length > 0
+  )
+}
+
+/** 满足试解条件时先占住 loading，编辑器保持空白。 */
+function armCustomProbe() {
+  const codecs = autoCustomCodecs(window.meTauri.settings.customCodecs)
+  if (!canCustomProbe()) {
+    stopCustomProbe()
+    return
+  }
+  customProbeName.value = codecs[0]?.name ?? ''
+  customProbePending.value = true
+}
+
+async function runCustomProbe() {
+  const gen = ++customProbeGen
+  // 正在编辑、或不是 STRING 的 Auto：不试，也不改当前展示
+  if (valueDirty.value || bytesFormat.value !== 'auto' || !stringType.value) {
+    if (gen === customProbeGen) stopCustomProbe()
+    return
+  }
+  const wasCustom = isCustomView(displayBytesFormat.value)
+  detectedCustomName.value = ''
+  customProbeApplied.value = false
+  displayBytesFormat.value = detectedView.value
+  resolvedWireView.value = ''
+  customCodecFailed.value = false
+  if (wasCustom) valueEditorRemountKey.value++
+
+  const codecs = autoCustomCodecs(window.meTauri.settings.customCodecs)
+  const wire = customProbeWire()
+  if (!canCustomProbe()) {
+    if (gen === customProbeGen) stopCustomProbe()
+    return
+  }
+
+  // 编辑区保持空白，成功后再写入解码文本；失败则回到 Hex
+  customProbeName.value = codecs[0]?.name ?? ''
+  customProbePending.value = true
+  try {
+    const hit = await probeAutoCustomCodecs(wire, codecs, undefined, codec => {
+      if (gen === customProbeGen) customProbeName.value = codec.name
+    })
+    if (gen !== customProbeGen) return
+    if (bytesFormat.value !== 'auto' || !stringType.value || valueTruncated.value) return
+    if (detectedView.value !== 'hex' || customProbeWire() !== wire || !hit) return
+    if (redisValue.value) redisValue.value.newValue = null
+    detectedCustomName.value = hit.name
+    displayBytesFormat.value = customFormatValue(hit.name)
+    resolvedWireView.value = hit.text
+    customCodecFailed.value = false
+    customProbeApplied.value = true
+    suppressCodeUpdate.value = true
+    valueEditorRemountKey.value++
+    void nextTick(() => {
+      suppressCodeUpdate.value = false
+    })
+  } finally {
+    if (gen === customProbeGen) stopCustomProbe()
+  }
+}
+
 // 单次拉取 / 自动续扫 / 收尾
 async function finalizeAfterFieldScan(reset: boolean, replaceData?: FieldScanResult) {
   if (replaceData) {
@@ -900,6 +1015,7 @@ async function finalizeAfterFieldScan(reset: boolean, replaceData?: FieldScanRes
   // 强制 me-code remount：未保存时 modelValue 字符串可能不变，子组件 watch 不触发
   valueEditorRemountKey.value++
   loading.value = false
+  void runCustomProbe()
 }
 
 async function fieldScanCore(
@@ -956,6 +1072,8 @@ async function refreshKey(
       await sleep(20)
     }
   }
+  // 换键 / 整键重拉：丢掉上一键还没回来的自定义试解
+  if (!useCursor) customProbeGen++
 
   // 等上一轮结束后再领取，避免被上一轮 finally 清掉后漏探测
   let detectThisLoad = !useCursor && pendingAutoDetect.value
@@ -1973,9 +2091,11 @@ onUnmounted(() => {
             </el-button>
           </div>
         </el-alert>
-        <!-- json显示 -->
+        <!-- json显示；识别中用半透明 loading 盖在 Hex 上 -->
         <me-code
           v-if="viewType === 'json'"
+          :loading="customProbePending && stringType"
+          :loading-text="t('customCodec.probing', { name: customProbeName })"
           :key="valueEditorRemountKey"
           :modelValue="showValue"
           @update:modelValue="onCodeUpdate"
@@ -2546,7 +2666,7 @@ onUnmounted(() => {
           <el-text v-if="textVectorDim"> {{ textVectorDim }} </el-text>
         </div>
 
-        <div class="me-flex" style="position: relative">
+        <div class="me-flex" style="position: relative; align-items: center">
           <!-- 底栏贴底：下拉固定向上，避免翻到窗口外 -->
           <el-select
             v-model="bytesFormat"

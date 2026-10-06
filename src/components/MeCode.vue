@@ -115,8 +115,19 @@ const props = withDefaults(
     error?: boolean
     /** 右下角内置复制图标（可选展示） */
     copyable?: boolean
+    /** 自定义编码识别中：编辑区留空，只盖一行半透明提示 */
+    loading?: boolean
+    loadingText?: string
   }>(),
-  { modelValue: '', mode: 'json', readOnly: false, error: false, copyable: false },
+  {
+    modelValue: '',
+    mode: 'json',
+    readOnly: false,
+    error: false,
+    copyable: false,
+    loading: false,
+    loadingText: '',
+  },
 )
 
 // class/style 落到外层包装（撑高度），其余属性透给编辑器
@@ -187,6 +198,9 @@ const extensions = computed(() => {
       :extensions
       :readonly="props.readOnly"
       :class="rootClass" />
+    <div v-if="props.loading" class="me-code-loading">
+      <me-icon icon="el-icon-loading" :name="props.loadingText" />
+    </div>
     <me-icon
       v-if="props.copyable"
       class="me-code-copy"
@@ -202,6 +216,22 @@ const extensions = computed(() => {
   position: relative;
   height: 100%;
   min-height: 0;
+}
+
+.me-code-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--el-color-info);
+  background: transparent;
+  opacity: 0.8;
+
+  :deep(.el-icon) {
+    animation: rotating 2s linear infinite;
+  }
 }
 
 /* 右下角复制图标（仅 copyable 时展示） */

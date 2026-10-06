@@ -12,11 +12,17 @@ import type {
   RedisFieldSet_Deserialize,
   RedisFieldValue,
 } from '@/types/tauri-specta'
-import { detectViewFormatAuto, detectedViewLabel } from '@/utils/detect-view-format'
+import {
+  detectViewFormatAuto,
+  detectedCustomLabel,
+  detectedViewLabel,
+} from '@/utils/detect-view-format'
 import {
   IPC_WIRE_FORMAT,
+  autoCustomCodecs,
   base64WireToUtf8Display,
   customFormatName,
+  customFormatValue,
   fieldViewOptions,
   isCustomView,
   isReadonlyView,
@@ -26,6 +32,7 @@ import {
   meViewToWire,
   meViewToWireAsync,
   needsJsonNormalize,
+  probeAutoCustomCodecs,
   readonlyViewTip,
   type ViewBytesFormat,
 } from '@/utils/format'
@@ -100,6 +107,9 @@ const srcFieldWire = ref('') // fieldScan 返回的原始 base64；切换编码�
 const expectedVectorDim = ref<number | null>(null) // Vector Set：键的 VDIM，打开时传入，提交前预检维度
 const attrsText = ref('') // Vector Set：attrs 展示文本，打开时由 field_get 提供，保存时全量提交
 const fieldViewFmt = ref<ViewBytesFormat>('auto') // 编码下拉；默认 Auto，与 STRING 键级一致
+const detectedCustomName = ref('') // Auto 试解命中的自定义编码；下拉仍为 Auto
+const fieldProbeName = ref('') // 正在识别的自定义编码名；非空时编辑区留空并显示 loading
+let fieldProbeGen = 0
 const fieldPretty = ref(true)
 const editorLoading = ref(false)
 const isRefreshing = ref(false)
@@ -114,15 +124,21 @@ const fieldViewOptionList = computed(() => fieldViewOptions(customNames.value))
 const detectedAuto = computed(() => detectViewFormatAuto(srcFieldWire.value)) // Auto 识别（含 Gzip 剥壳）
 const detectedView = computed(() => detectedAuto.value.view)
 const gzipReadonly = computed(() => fieldViewFmt.value === 'auto' && detectedAuto.value.gzip)
-const effectiveFieldViewFmt = computed<ViewBytesFormat>(() =>
-  // Auto 时为识别结果，否则等于下拉选中项；驱动展示 / 保存 / 只读
-  fieldViewFmt.value === 'auto' ? detectedView.value : fieldViewFmt.value,
-)
-const detectedViewText = computed(() =>
-  fieldViewFmt.value === 'auto'
-    ? detectedViewLabel(detectedView.value, detectedAuto.value.gzip)
-    : '',
-)
+const effectiveFieldViewFmt = computed<ViewBytesFormat>(() => {
+  // Auto 时为识别结果（含自定义试解），否则等于下拉选中项；驱动展示 / 保存 / 只读
+  if (fieldViewFmt.value !== 'auto') return fieldViewFmt.value
+  if (detectedCustomName.value) return customFormatValue(detectedCustomName.value)
+  return detectedView.value
+})
+const detectedViewText = computed(() => {
+  if (fieldViewFmt.value !== 'auto') return ''
+  // 识别中只在编辑区 loading，编码框旁不显示
+  if (fieldProbeName.value) return ''
+  if (detectedCustomName.value) {
+    return detectedCustomLabel(detectedCustomName.value, detectedAuto.value.gzip)
+  }
+  return detectedViewLabel(detectedView.value, detectedAuto.value.gzip)
+})
 const vectorsetType = computed(() => form.value.type === 'vectorset')
 const timeseriesType = computed(() => form.value.type === 'timeseries')
 const prettyEnabled = computed(
@@ -165,17 +181,29 @@ const supportsFieldRefresh = computed(() => {
 
 // #region 编辑器同步
 // wire + 生效 view → 编辑区文本；切编码只重算展示，不打 Redis
+// Auto 落到 Hex 时试勾选的自定义编码，成功的 stdout 直接写入编辑区
+function onFieldValueUpdate(value: string) {
+  // 识别或解码过程中的回写丢掉，避免盖住随后写入的结果
+  if (fieldProbeName.value || editorLoading.value) return
+  form.value.fieldValue = value
+}
+
 async function syncFieldEditor() {
+  const gen = ++fieldProbeGen
+  detectedCustomName.value = ''
+  fieldProbeName.value = ''
   // Vector Set：向量为 JSON 明文，attrs 由 open 中一并设置
   if (vectorsetType.value) {
     form.value.fieldValue = meFormatDisplayValue(srcFieldWire.value, fieldPretty.value)
     decodeFailed.value = false
+    editorLoading.value = false
     return
   }
   // TimeSeries：timestamp/value 为数值明文，不走 wire 解码
   if (timeseriesType.value) {
     form.value.fieldValue = srcFieldWire.value
     decodeFailed.value = false
+    editorLoading.value = false
     return
   }
   const wire =
@@ -186,15 +214,37 @@ async function syncFieldEditor() {
   if (!wire) {
     form.value.fieldValue = ''
     decodeFailed.value = false
+    editorLoading.value = false
     return
   }
   if (!fieldPretty.value && fmt === 'strjson') {
     form.value.fieldValue = base64WireToUtf8Display(wire)
     decodeFailed.value = false
+    editorLoading.value = false
     return
   }
   editorLoading.value = true
   try {
+    const probeCodecs =
+      fieldViewFmt.value === 'auto' && detectedView.value === 'hex'
+        ? autoCustomCodecs(window.meTauri.settings.customCodecs)
+        : []
+    if (probeCodecs.length > 0) {
+      // 识别完成前不写入编辑器，避免 Hex 撑出滚动条
+      form.value.fieldValue = ''
+      fieldProbeName.value = probeCodecs[0]?.name ?? ''
+      const hit = await probeAutoCustomCodecs(wire, probeCodecs, undefined, codec => {
+        if (gen === fieldProbeGen) fieldProbeName.value = codec.name
+      })
+      if (gen !== fieldProbeGen) return
+      if (hit) {
+        detectedCustomName.value = hit.name
+        form.value.fieldValue = hit.text
+        decodeFailed.value = false
+        codeRemountKey.value++
+        return
+      }
+    }
     if (isCustomView(fmt)) {
       form.value.fieldValue = await meFormatViewValueAsync(wire, fmt)
     } else if (fmt === 'utf8' || fmt === 'vector32') {
@@ -207,7 +257,12 @@ async function syncFieldEditor() {
     form.value.fieldValue = e instanceof Error ? e.message : String(e)
     decodeFailed.value = true
   } finally {
-    editorLoading.value = false
+    if (gen !== fieldProbeGen) return
+    fieldProbeName.value = ''
+    // 晚一拍再允许编辑器回写，避免空内容盖住刚写入的解码结果
+    void nextTick(() => {
+      if (gen === fieldProbeGen) editorLoading.value = false
+    })
   }
 }
 // #endregion
@@ -287,15 +342,25 @@ watch(visible, val => {
   else window.removeEventListener('keydown', onEscapeKey, true)
 })
 
-// 自定义编解码删除/改名后，当前字段 view 失效则回退 Auto
-watch(customNames, names => {
-  if (!visible.value || !isCustomView(fieldViewFmt.value)) return
-  const name = customFormatName(fieldViewFmt.value)
-  if (!name || !names.includes(name)) {
-    fieldViewFmt.value = 'auto'
-    void syncFieldEditor()
-  }
-})
+// 自定义编解码删除/改名，或 Auto 勾选变化：重算当前字段
+watch(
+  () => window.meTauri.settings.customCodecs,
+  list => {
+    if (!visible.value) return
+    if (fieldViewFmt.value === 'auto') {
+      void syncFieldEditor()
+      return
+    }
+    if (!isCustomView(fieldViewFmt.value)) return
+    const name = customFormatName(fieldViewFmt.value)
+    const names = (list ?? []).map(item => item.name)
+    if (!name || !names.includes(name)) {
+      fieldViewFmt.value = 'auto'
+      void syncFieldEditor()
+    }
+  },
+  { deep: true },
+)
 // #endregion
 
 // #region 表单提交
@@ -549,8 +614,11 @@ onUnmounted(() => window.removeEventListener('keydown', onEscapeKey, true))
         :label="vectorsetType ? t('fieldSet.vector') : t('fieldSet.value')"
         class="field-value-item">
         <me-code
+          :loading="!!fieldProbeName"
+          :loading-text="t('customCodec.probing', { name: fieldProbeName })"
           :key="codeRemountKey"
-          v-model="form.fieldValue"
+          :model-value="form.fieldValue"
+          @update:model-value="onFieldValueUpdate"
           :read-only="
             editorLoading ||
             readonly ||

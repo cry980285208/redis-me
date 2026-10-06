@@ -50,6 +50,11 @@ export function detectedViewLabel(view: DetectedViewFormat, gzip = false): strin
   return gzip ? `Gzip · ${label}` : label
 }
 
+/** 自定义编码被 Auto 试解命中后的旁注，Gzip 前缀与内置一致 */
+export function detectedCustomLabel(name: string, gzip = false): string {
+  return gzip ? `Gzip · ${name}` : name
+}
+
 function base64ToBytes(base64: string): Uint8Array | null {
   if (!base64) return new Uint8Array()
   try {

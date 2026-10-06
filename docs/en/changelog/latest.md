@@ -1,5 +1,12 @@
 # 5.x Changelog
 
+## v5.4.1 (2026-10-07)
+
+- Codec: custom codecs can opt in to **Auto detect**
+- Export: Excel **styled headers, written as a stream**
+- Connection: idle for over 10 minutes reconnects directly; probe timeout is now 1 second
+- Other: custom codec test samples are filled in by you; encode samples are plain text
+
 ## [v5.4.0](https://mp.weixin.qq.com/s/h6S4mnUZvGLu85mztHzxBA) (2026-10-05)
 
 ### ✨ New Features
