@@ -260,7 +260,7 @@ Caught up means RedisShake is in the incremental phase, and keys still being upd
 ## Where RedisME fits
 
 1. **Certificates and install**  
-   [TLS certificates](/guide/other/tls-cert) generates the set in section 2: a CA and a `redis.crt` with a SAN (`serverAuth` + `clientAuth`). [Redis Docker install](/guide/other/redis-install) can emit Compose and the cluster-create command with `port 0`, `tls-port`, `tls-cluster`, and `tls-replication`. “Redis install help” in the client is the same generator.
+   [TLS certificates](/handbook/tls-cert) generates the set in section 2: a CA and a `redis.crt` with a SAN (`serverAuth` + `clientAuth`). [Redis Docker install](/handbook/redis-install) can emit Compose and the cluster-create command with `port 0`, `tls-port`, `tls-cluster`, and `tls-replication`. “Redis install help” in the client is the same generator.
 2. **Checking the clusters**  
    In [Connections](/guide/usage/connection), enable SSL and cluster mode, and set the public certificate and private key to `redis.crt` / `redis.key`. The connection does not verify the server certificate; the CA field can be left empty. One node is enough to list the whole cluster. Use the client list to confirm the old cluster has no application connections left. X.509 v1 certificates connect as well.
 3. **Changing TLS settings**  

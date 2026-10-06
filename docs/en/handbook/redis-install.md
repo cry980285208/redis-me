@@ -3,7 +3,7 @@ aside: false
 ---
 
 <script setup>
-import RedisInstallTool from '../../../.vitepress/theme/components/RedisInstallTool.vue'
+import RedisInstallTool from '../../.vitepress/theme/components/RedisInstallTool.vue'
 </script>
 
 # Redis Docker Setup

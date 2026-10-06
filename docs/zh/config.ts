@@ -83,8 +83,6 @@ function sidebarGuide() {
     {
       text: '其他',
       items: [
-        { text: 'Redis Docker 安装', link: '/other/redis-install' },
-        { text: 'TLS 证书', link: '/other/tls-cert' },
         { text: '客户端对比', link: '/other/compare' },
         { text: '隐私政策', link: '/other/privacy' },
       ],
@@ -98,8 +96,15 @@ function sidebarHandbook() {
     {
       text: '实战文章',
       items: [
-        { text: '慢日志专项治理', link: '/slowlog-governance' },
+        { text: '慢日志治理', link: '/slowlog-governance' },
         { text: 'SSL 加密改造', link: '/ssl-encryption' },
+      ],
+    },
+    {
+      text: 'Redis安装',
+      items: [
+        { text: 'Redis Docker 安装', link: '/redis-install' },
+        { text: 'TLS 证书', link: '/tls-cert' },
       ],
     },
   ]
