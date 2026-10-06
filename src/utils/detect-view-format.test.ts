@@ -145,6 +145,11 @@ describe('detectViewFormat', () => {
     expect(detectViewFormat(bytesToBase64(f32le([1, Number.NaN])))).toBe('hex')
   })
 
+  it('数量级差太大或绝对值过大的浮点字节不认 Vector32', () => {
+    expect(detectViewFormat(bytesToBase64(f32le([1e-20, 1, 0.5, -0.25])))).toBe('hex')
+    expect(detectViewFormat(bytesToBase64(f32le([1e20, 1, 0.5, -0.25])))).toBe('hex')
+  })
+
   it('截断预览不认 Vector32', () => {
     expect(detectViewFormat(bytesToBase64(f32le([1, -1, 0.25, 0.5])), { truncated: true })).toBe(
       'hex',

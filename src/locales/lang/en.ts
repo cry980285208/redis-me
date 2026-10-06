@@ -318,6 +318,9 @@ export default {
     docHelpTip: 'View custom codec examples on the official site',
     name: 'Name',
     namePlaceholder: 'Shown in the codec dropdown',
+    auto: 'Auto detect',
+    autoHelp: `When checked, this codec is tried if Auto does not match a built-in format.<br/>If several are checked, they run from top to bottom and the first successful decode is shown. If none match, the Auto fallback result stays.<br/>Applies to string values and the field currently being edited.<br/>External programs can be slow to start. Usually check only the one you use most.`,
+    probing: 'Recognizing {name}',
     command: 'Command',
     commandHelp: `Enter the <b>full command with interpreter</b>, e.g. python C:\\path\\codec.py<br/><br/>
 <b>The app appends two arguments</b><br/>

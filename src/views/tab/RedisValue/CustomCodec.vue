@@ -138,7 +138,9 @@ function saveForm() {
     meErr(t('customCodec.duplicateName'))
     return
   }
-  const item = { name, command }
+  const prev = editIndex.value >= 0 ? list.value[editIndex.value] : undefined
+  // 编辑名称/命令时保留表格上的 Auto 勾选
+  const item = { name, command, auto: prev?.auto === true }
   if (editIndex.value >= 0) {
     list.value[editIndex.value] = item
   } else {
@@ -222,6 +224,22 @@ function openCodecDoc() {
         width="100"
         show-overflow-tooltip />
       <el-table-column :label="t('customCodec.command')" prop="command" show-overflow-tooltip />
+      <el-table-column width="128" align="center">
+        <template #header>
+          <span class="auto-col-header">
+            {{ t('customCodec.auto') }}
+            <me-icon
+              icon="el-icon-question-filled"
+              :info="t('customCodec.autoHelp')"
+              placement="top"
+              raw-content
+              :show-after="200" />
+          </span>
+        </template>
+        <template #default="{ row }">
+          <el-checkbox v-model="row.auto" />
+        </template>
+      </el-table-column>
       <el-table-column :label="t('action')" width="80" align="center">
         <template #default="{ row, $index }">
           <div class="row-actions">
@@ -303,6 +321,14 @@ function openCodecDoc() {
 .field-label {
   display: inline-flex;
   align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.auto-col-header {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   gap: 4px;
   white-space: nowrap;
 }

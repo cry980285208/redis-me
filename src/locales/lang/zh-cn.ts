@@ -308,6 +308,9 @@ export default {
     docHelpTip: '查看官网自定义编解码示例',
     name: '名称',
     namePlaceholder: '显示在「编解码」下拉中',
+    auto: 'Auto识别',
+    autoHelp: `勾选后，自动识别没有对上内置格式时，会再用这项来解码。<br/>同时勾选多项时，按列表从上到下，先解码成功的用来显示；都不成功则仍显示自动识别的兜底结果。<br/>只对字符串的值，以及字段编辑中的当前字段生效。<br/>外部程序启动可能较慢，一般只勾最常用的一个。`,
+    probing: '{name} 编码识别中',
     command: '命令',
     commandHelp: `需填写<b>含解释器的完整命令</b>，例如 python C:\\path\\codec.py<br/><br/>
 <b>程序会自动追加两个参数</b><br/>

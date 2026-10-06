@@ -54,6 +54,11 @@ if (
   settings.connGroupExpanded = {}
 }
 if (!Array.isArray(settings.customCodecs)) settings.customCodecs = []
+for (const item of settings.customCodecs) {
+  if (!item || typeof item !== 'object') continue
+  // 旧配置没有 auto，一律视为不参与自动试解
+  item.auto = item.auto === true
+}
 if (typeof settings.codecExecTimeoutSec !== 'number' || settings.codecExecTimeoutSec <= 0) {
   settings.codecExecTimeoutSec = 5
 }

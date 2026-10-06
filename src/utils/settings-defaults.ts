@@ -22,7 +22,7 @@ export const defaultSettings = {
   connGroups: [] as string[], // 分组名有序列表
   connGroupExpanded: {} as Record<string, boolean>, // 分组折叠状态，键为分组名（''=默认分组）
   // 自定义 Codec（STRING 值编解码，见 zzz/plans/05_custom-formatter.md）
-  customCodecs: [] as { name: string; command: string }[],
+  customCodecs: [] as { name: string; command: string; auto?: boolean }[],
   codecExecTimeoutSec: 5,
   // Redis 建连超时（秒，TCP+握手+PING），同步至 Rust AppSettings
   connectTimeout: 10,

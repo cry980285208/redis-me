@@ -28,8 +28,13 @@
 4. Fields:
    - **Name** — shown under the **Custom** group in the dropdown
    - **Command** — full executable command including the interpreter (see below)
+   - **Auto detect** — off by default. When checked, this codec is tried if Auto does not match a built-in format. Several checked codecs run from top to bottom; the first success is shown
 
 Built-in templates already split out `decode` / `encode`; leave the protocol boilerplate alone and put your logic in those two methods (Hex sample by default).
+
+::: warning If you check Auto detect
+The script should fail when the value is not this format. The Hex sample succeeds for any data — do not check it, or every value will be claimed. Usually check only the codec you use most.
+:::
 
 ![](../../../public/images/codec/main.png)
 
