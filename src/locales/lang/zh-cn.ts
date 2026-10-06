@@ -801,7 +801,7 @@ export default {
     infoDetail: '参数详情',
     rawInfo: '原始信息',
     tag: '分类',
-    keyword: '模糊筛选（键值、说明）',
+    keyword: '模糊筛选（键、值、说明）',
     key: '键',
     value: '值',
     tip: '说明',

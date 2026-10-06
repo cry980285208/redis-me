@@ -2666,7 +2666,7 @@ onUnmounted(() => {
           <el-text v-if="textVectorDim"> {{ textVectorDim }} </el-text>
         </div>
 
-        <div class="me-flex" style="position: relative">
+        <div class="me-flex" style="position: relative; align-items: center">
           <!-- 底栏贴底：下拉固定向上，避免翻到窗口外 -->
           <el-select
             v-model="bytesFormat"

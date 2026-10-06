@@ -464,8 +464,7 @@ const nodeGroups = computed(() => {
             <el-input
               v-model="keyword"
               clearable
-              style="width: 200px"
-              prefix-icon="el-icon-search"
+              style="width: 226px"
               :placeholder="t('redisInfo.keyword')" />
           </div>
         </div>
