@@ -14,7 +14,27 @@ minimumReleaseAge: 0
 overrides:
   '@codemirror/view': ^6.43.13
   '@codemirror/state': ^6.7.6
+  vite@*: 'catalog:'
 
 # Java 序列化：补丁支持 TC_CLASS / Externalizable（如 java.time）
 patchedDependencies:
   java-object-serialization@0.1.2: patches/java-object-serialization@0.1.2.patch
+catalog:
+  vite: npm:@voidzero-dev/vite-plus-core@1.1.0
+  vite-plus: 1.1.0
+peerDependencyRules:
+  allowAny:
+    - vite
+  allowedVersions:
+    vite: '*'
+minimumReleaseAgeExclude:
+  - vite-plus
+  - '@voidzero-dev/*'
+  - oxlint
+  - '@oxlint/*'
+  - oxlint-tsgolint
+  - '@oxlint-tsgolint/*'
+  - oxfmt
+  - '@oxfmt/*'
+  - vitest
+  - '@vitest/*'

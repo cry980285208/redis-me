@@ -70,10 +70,11 @@
     "@vitejs/plugin-vue": "^6.0.9",
     "front-matter": "^4.0.2",
     "sass": "^1.105.0",
+    "typescript": "^6.0.3",
     "unplugin-auto-import": "^21.1.0",
     "unplugin-svg-component": "^0.13.0",
-    "vite": "npm:@voidzero-dev/vite-plus-core@1.0.0",
-    "vite-plus": "1.0.0",
+    "vite": "catalog:",
+    "vite-plus": "catalog:",
     "vitepress": "2.0.0-alpha.20",
     "vue-tsc": "3.3.11"
   },

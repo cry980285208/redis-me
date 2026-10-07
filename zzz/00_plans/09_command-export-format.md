@@ -458,7 +458,6 @@ const initForm = readonly({
   match: '',
   keyList: [],
   deleteDirect: false,
-
   file: '',
   withTtl: true,
   exportFormat: 'command', // 新增: 'command' 或 'dump'

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // #region 导入
-import { useNow } from '@vueuse/core'
+import { useIntervalFn, useNow } from '@vueuse/core'
 import {
   computed,
   inject,
@@ -751,7 +751,7 @@ const {
   now,
   pause: pauseTtlClock,
   resume: resumeTtlClock,
-} = useNow({ interval: 1000, controls: true })
+} = useNow({ scheduler: update => useIntervalFn(update, 1000), controls: true })
 
 function applyTtl(seconds: number) {
   const rv = redisValue.value
