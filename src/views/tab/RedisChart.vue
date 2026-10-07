@@ -32,7 +32,7 @@ import { useI18n } from 'vue-i18n'
 
 import { shareProvideKey } from '@/types/me-interface'
 import type { RedisChart } from '@/types/tauri-specta'
-import { isDark, meHumanNums, meCommands, meLog, PREDEFINE_COLORS } from '@/utils/util'
+import { isDark, meConfirm, meHumanNums, meCommands, meLog, PREDEFINE_COLORS } from '@/utils/util'
 import NodeList from '@/views/ext/NodeList.vue'
 // #endregion
 
@@ -548,22 +548,31 @@ watch(
   <div class="redis-chart">
     <div class="me-flex">
       <div class="left">
-        <me-button @click="resetData" icon="el-icon-delete" info="清空数据" placement="top" />
-        <el-dropdown placement="bottom-start" :hide-on-click="false" :teleported="false">
+        <me-button
+          @click="meConfirm(t('redisChart.clearConfirm'), resetData)"
+          icon="el-icon-delete"
+          :info="t('redisChart.clearData')"
+          placement="top" />
+        <el-switch
+          v-model="autoRefresh"
+          :active-text="t('redisChart.autoRefresh')"
+          style="margin-left: 15px" />
+        <el-switch
+          v-model="showMoreChart"
+          :active-text="t('redisChart.moreChart')"
+          style="margin-left: 15px" />
+      </div>
+      <div class="right">
+        <el-dropdown placement="bottom-end" :hide-on-click="false" :teleported="false">
           <me-icon
             class="refresh icon-btn"
             :class="autoRefresh ? 'rotating' : ''"
             icon="el-icon-refresh-right"
             @click="getData"
-            style="margin-left: 20px" />
+            style="margin-right: 10px" />
           <template #dropdown>
             <el-dropdown-menu>
               <el-form :label-width="t('redisChart.labelWidth')" label-position="right">
-                <el-dropdown-item>
-                  <el-form-item :label="t('redisChart.autoRefresh')">
-                    <el-switch v-model="autoRefresh" style="margin-left: 10px" />
-                  </el-form-item>
-                </el-dropdown-item>
                 <el-dropdown-item>
                   <el-form-item :label="t('redisChart.refreshInterval')">
                     <el-input-number
@@ -600,20 +609,11 @@ watch(
                     </el-input-number>
                   </el-form-item>
                 </el-dropdown-item>
-
-                <el-dropdown-item>
-                  <el-form-item :label="t('redisChart.moreChart')">
-                    <el-switch v-model="showMoreChart" style="margin-left: 10px" />
-                  </el-form-item>
-                </el-dropdown-item>
               </el-form>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
-      </div>
-      <div class="right">
-        <el-text type="info">[{{ nowPointCount }}]</el-text>
-        <node-list v-model="node" style="margin-left: 10px" init-node />
+        <node-list v-model="node" init-node />
       </div>
     </div>
 
@@ -646,6 +646,9 @@ watch(
         </div>
       </template>
     </div>
+    <el-text class="point-count" type="info"
+      >{{ t('redisChart.points') }}: {{ nowPointCount }}</el-text
+    >
   </div>
 </template>
 
@@ -656,8 +659,22 @@ watch(
   display: flex;
   flex-direction: column;
 
+  .point-count {
+    position: sticky;
+    align-self: flex-end;
+    bottom: 0;
+    margin-right: 0;
+    opacity: 0.6;
+  }
+
   .left {
     display: flex;
+    align-items: center;
+  }
+
+  .right {
+    display: flex;
+    align-items: center;
   }
 
   :deep(.el-input-group__prepend) {
