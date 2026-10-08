@@ -1214,7 +1214,10 @@ export default {
     keepUnit: '分',
     maxPointCount: '最大点数',
     pointUnit: '个',
+    points: '点数',
     moreChart: '更多图表',
+    clearData: '清空数据',
+    clearConfirm: '确定清空图表数据吗？',
   },
 
   keyMain: {

@@ -1237,7 +1237,10 @@ Once an operation prevents Redis from keeping the space-saving encoding, special
     keepUnit: 'm',
     maxPointCount: 'Max Point Count',
     pointUnit: '',
+    points: 'Points',
     moreChart: 'More Charts',
+    clearData: 'Clear Data',
+    clearConfirm: 'Clear chart data?',
   },
 
   keyMain: {
