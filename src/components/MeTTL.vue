@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /** TTL 输入：前缀选时长/时刻；时长为数字+单位，时刻为日期时间。v-model 为秒（-1=永久）。已有正数 TTL 打开时回显为过期时刻。 */
-import { useNow } from '@vueuse/core'
+import { useIntervalFn, useNow } from '@vueuse/core'
 import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -32,7 +32,7 @@ const seconds = defineModel<number>({ default: -1 })
 const { t } = useI18n()
 const rootRef = useTemplateRef<HTMLElement>('rootRef')
 /** tooltip 按秒刷新：时长→过期时刻前移，时刻→剩余倒计时 */
-const now = useNow({ interval: 1000 })
+const now = useNow({ scheduler: update => useIntervalFn(update, 1000) })
 
 defineExpose({ toSeconds, setDuration, syncFromSeconds, syncFromAt })
 
