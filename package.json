@@ -40,7 +40,6 @@
     "buffer": "^6.0.3",
     "chart.js": "^4.5.1",
     "chartjs-adapter-dayjs-4": "^1.0.4",
-    "codemirror": "^6.0.2",
     "codemirror-json5": "^1.0.3",
     "dayjs": "^1.11.23",
     "element-plus": "^2.14.6",
@@ -59,7 +58,6 @@
     "tauri-plugin-system-fonts-api": "^2.0.2",
     "vue": "^3.5.43",
     "vue-chartjs": "^5.3.4",
-    "vue-codemirror6": "^1.7.0",
     "vue-i18n": "^11.4.12",
     "vue-web-terminal": "^3.4.2",
     "yaml": "^2.9.1"

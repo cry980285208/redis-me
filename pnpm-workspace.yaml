@@ -4,16 +4,12 @@ allowBuilds:
   '@parcel/watcher': true
   # vite-plus / vitepress / vitest 间接依赖的原生二进制
   esbuild: true
-  # vue-codemirror6 的 Vue2/3 兼容层（postinstall 切换入口）
-  vue-demi: true
 
 # 默认 1440 分钟内新发布的包不能装。vite-plus 1.0.0 当天发布，关掉等待
-minimumReleaseAge: 0
+# minimumReleaseAge: 0
 
-# 统一 Codemirror 版本，避免 @codemirror/view / state 双实例导致 TS2345
+# vite 别名统一走 catalog；Codemirror 已不再经 vue-codemirror6 的 peer 引入，无需版本 override
 overrides:
-  '@codemirror/view': ^6.43.13
-  '@codemirror/state': ^6.7.6
   vite@*: 'catalog:'
 
 # Java 序列化：补丁支持 TC_CLASS / Externalizable（如 java.time）

@@ -4,12 +4,21 @@ import { LanguageSupport, StreamLanguage, syntaxHighlighting } from '@codemirror
 import { properties as propertiesMode } from '@codemirror/legacy-modes/mode/properties'
 import { shell as shellMode } from '@codemirror/legacy-modes/mode/shell'
 import { yaml as yamlMode } from '@codemirror/legacy-modes/mode/yaml'
-import { Prec } from '@codemirror/state'
+import { Prec, EditorState, StateEffect } from '@codemirror/state'
 import { EditorView, keymap, lineNumbers } from '@codemirror/view'
 import { useDark } from '@vueuse/core'
 import { json5 as cmJson5 } from 'codemirror-json5'
-import { type HTMLAttributes, computed, ref, useAttrs } from 'vue'
-import CodeMirror from 'vue-codemirror6'
+import {
+  type HTMLAttributes,
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  shallowRef,
+  useAttrs,
+  watch,
+} from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import {
@@ -130,10 +139,14 @@ const props = withDefaults(
   },
 )
 
+// 对外仅暴露 v-model：编辑内容变化时通知父组件
+// （原先靠 attrs 透传 onUpdate:modelValue 给 code-mirror，去掉包装后显式声明）
+const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
+
 // class/style 落到外层包装（撑高度），其余属性透给编辑器
 defineOptions({ inheritAttrs: false })
 const attrs = useAttrs()
-// class/style 拆到外层 wrapper，其余透传给 code-mirror
+// class/style 拆到外层 wrapper，其余透传给编辑器容器
 const wrapClass = computed<HTMLAttributes['class']>(() => attrs.class as HTMLAttributes['class'])
 const wrapStyle = computed<HTMLAttributes['style']>(() => attrs.style as HTMLAttributes['style'])
 const restAttrs = computed(() => {
@@ -183,21 +196,74 @@ const extensions = computed(() => {
   if (props.mode === 'redis') list.push(redisHighlighting)
   return list
 })
+
+// 合并扩展 + 语言 + 短语 + 只读：直接喂给 EditorState，不再经 vue-codemirror6 包装
+const fullExtensions = computed(() => [
+  ...extensions.value,
+  ...(lang.value ? [lang.value] : []),
+  ...(Object.keys(phrases.value).length > 0 ? [EditorState.phrases.of(phrases.value)] : []),
+  EditorState.readOnly.of(props.readOnly),
+  EditorView.editable.of(!props.readOnly),
+  EditorView.theme({}, { dark: dark.value }),
+])
+// #endregion
+
+// #region 编辑器挂载（直接实例化 EditorView）
+const containerEl = ref<HTMLElement>()
+const view = shallowRef<EditorView>()
+let lastEmitted: string | null = null // 抑制「用户输入 → emit → 父回灌」的整篇替换回环
+
+onMounted(async () => {
+  if (!containerEl.value || typeof window === 'undefined') return
+  view.value = new EditorView({
+    parent: containerEl.value,
+    state: EditorState.create({ doc: props.modelValue, extensions: fullExtensions.value }),
+    dispatch: (tr, dv) => {
+      const txs = Array.isArray(tr) ? tr : [tr]
+      dv.update(txs)
+      const last = txs[txs.length - 1]
+      if (!last || last.changes.empty || !last.docChanged) return
+      lastEmitted = dv.state.doc.toString()
+      emit('update:modelValue', lastEmitted)
+    },
+  })
+  await nextTick()
+})
+
+onBeforeUnmount(() => {
+  view.value?.destroy()
+  view.value = undefined
+})
+
+// 字号 / 换行 / 行号 / 语言 / 主题 / 只读变化时热替换，保留文档与光标
+watch(fullExtensions, exts => {
+  view.value?.dispatch({ effects: StateEffect.reconfigure.of(exts) })
+})
+
+// 外部改值（加载 / 刷新 / 切换键）整篇替换；跳过 IME 合成中与自身 emit 回灌
+watch(
+  () => props.modelValue,
+  value => {
+    const v = view.value
+    if (!v || v.composing) return
+    if (value === lastEmitted) {
+      lastEmitted = null
+      return
+    }
+    if (v.state.doc.toString() === value) return
+    v.dispatch({
+      changes: { from: 0, to: v.state.doc.length, insert: value },
+      scrollIntoView: true,
+    })
+  },
+)
 // #endregion
 </script>
 
 <template>
-  <!-- https://github.com/logue/vue-codemirror6  -->
-  <div class="me-code-wrap" :class="wrapClass" :style="wrapStyle">
-    <code-mirror
-      v-bind="restAttrs"
-      :model-value="props.modelValue"
-      :dark
-      :lang
-      :phrases
-      :extensions
-      :readonly="props.readOnly"
-      :class="rootClass" />
+  <!-- 直接挂载 CodeMirror EditorView，不再依赖 vue-codemirror6 包装层 -->
+  <div class="me-code-wrap" :class="[wrapClass, rootClass]" :style="wrapStyle">
+    <div ref="containerEl" class="vue-codemirror" v-bind="restAttrs"></div>
     <div v-if="props.loading" class="me-code-loading">
       <me-icon icon="el-icon-loading" :name="props.loadingText" />
     </div>
