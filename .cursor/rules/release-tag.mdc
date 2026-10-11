@@ -17,11 +17,11 @@ alwaysApply: true
 
 ## 执行命令
 
-在本仓库 **remote 名为 `github`**（不是 `origin`）：
+在本仓库 **remote 名为 `origin`**（指向 `github.com/hepengju/redis-me`）：
 
 ```bash
 git tag vX.Y.Z
-git push github vX.Y.Z
+git push origin vX.Y.Z
 ```
 
 - 使用 **轻量 tag**（与 `v3.5.0` 等历史 tag 一致），打在 **当前 HEAD**。
