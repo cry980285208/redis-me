@@ -1,5 +1,24 @@
 # 5.x Changelog
 
+## v5.4.2 (2026-10-11)
+
+### ✨ Improvements
+
+- macOS: title bar left margin now adapts by system version to fit the larger rounded corners on new systems
+- Connection: the home page shows connections in **grouped mode** by default
+- Chart: toolbar layout improved; clearing data now has a confirmation step
+- Other details
+  - Keys panel bottom bar and right-side Tab container get rounded corners matching the top-left dropdown
+  - Removed the gray background behind the key-name prefix (locate button) in the key-value header
+  - Eliminated the double-instance issue in the code editor (removed vue-codemirror6, wired directly to CodeMirror)
+  - Upgraded Vite+ to 1.1.0
+
+### 🐞 Bug Fixes
+
+- Fixed an error when adding a field to a key that was deleted/expired (reuses the on-screen type instead of re-querying) #177
+- Fixed tag (el-tag) flickering caused by the transition animation when entering a connection, etc.
+- Fixed vertical misalignment between the inline "Config" link and the path text after it in the Info overview
+
 ## v5.4.1 (2026-10-07)
 
 - Codec: custom codecs can opt in to **Auto detect**
