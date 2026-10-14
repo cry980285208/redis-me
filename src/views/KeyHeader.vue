@@ -1,12 +1,12 @@
 <script setup lang="ts">
 // #region 导入
-import { inject, nextTick, onMounted, reactive, ref } from 'vue'
+import { inject, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { shareProvideKey, connUiProvideKey } from '@/types/me-interface'
 import { openNewWindow } from '@/utils/app-window'
 import { getConnIcon } from '@/utils/conn'
-import { bus, CONN_REFRESH, meCommands, meOk } from '@/utils/util'
+import { bus, CONN_REFRESH, meCommands, meOk, OPEN_SETTING } from '@/utils/util'
 import AppAbout from '@/views/ext/AppAbout.vue'
 import AppSetting from '@/views/ext/AppSetting.vue'
 import AppShortcut from '@/views/ext/AppShortcut.vue'
@@ -33,6 +33,11 @@ function openShortcuts(): void {
 onMounted(() => {
   connUi.openSetting = openSetting
   connUi.openShortcuts = openShortcuts
+  // 顶部栏设置图标与本组件非父子关系，经 bus 通知打开本处挂载的设置弹窗
+  bus.on(OPEN_SETTING, openSetting)
+})
+onUnmounted(() => {
+  bus.off(OPEN_SETTING, openSetting)
 })
 // #endregion
 

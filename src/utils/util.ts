@@ -28,6 +28,8 @@ export type MeBusEvents = {
   SEARCH_CREATE: string
   INFO_REFRESH: boolean | undefined
   CONN_REFRESH: void
+  /** 打开设置弹窗：顶部栏设置图标 emit，KeyHeader（挂载 AppSetting）监听 */
+  OPEN_SETTING: void
 }
 
 // #region 本文件内部类型（Specta / 应用错误载荷）
@@ -65,6 +67,7 @@ export function takeSearchCreateDraft(): string | null {
 
 export const INFO_REFRESH = 'INFO_REFRESH'
 export const CONN_REFRESH = 'CONN_REFRESH'
+export const OPEN_SETTING = 'OPEN_SETTING'
 export const CONN_LIST_WINDOWS_SYNC = 'CONN_LIST_WINDOWS_SYNC'
 export const TREE_KEY_ID_PREFIX = '_TREE_KEY_ID_PREFIX_'
 

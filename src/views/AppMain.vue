@@ -4,6 +4,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { check, type Update } from '@tauri-apps/plugin-updater'
 import {
   computed,
+  inject,
   nextTick,
   onMounted,
   onUnmounted,
@@ -21,7 +22,6 @@ import {
   connUiProvideKey,
   shareProvideKey,
   type AppMainInject,
-  type AppMainShare,
   type ConnListWindowsSyncPayload,
   type ConnShortcutAction,
   type UiConn,
@@ -64,42 +64,14 @@ import TabMain from './TabMain.vue'
 
 const { t } = useI18n()
 
-// 共享数据
-const share = reactive<AppMainShare>({
-  conn: null,
-  connList: meTauri.connList as UiConn[],
-  nodeList: [],
-  loading: false,
-  color: 'var(--el-color-primary)',
-  readonly: false,
-  redisKey: null,
-  tabName: 'info',
-  dbSizeMap: {},
-
-  exportImporting: false,
-  exportImportingTip: '',
-  exportImportingPercentage: 0,
-
-  capabilities: {
-    version: '',
-    isValkey: false,
-    infoSupported: false,
-    aclSupported: false,
-    aclDryrunSupported: false,
-    aclSelectorSupported: false,
-    httlSupported: false,
-    clusterDbSupported: false,
-    redisSearchSupported: false,
-    memoryUsageSupported: false,
-  },
-})
+// 共享数据（由 App.vue provide，AppMain 与顶部栏 AppTitle 共用同一份）
+const share = inject(shareProvideKey)!
 // 列表批量 MEMORY USAGE 若发现命令不可用，关掉本连接能力，内存页和目录分析一起停
 onMemoryUsageUnsupported(connId => {
   if (share.conn?.id !== connId) return
   share.capabilities.memoryUsageSupported = false
   if (share.tabName === 'memory') share.tabName = 'value'
 })
-provide(shareProvideKey, share)
 // #endregion
 
 // #region 连接切换
@@ -208,11 +180,6 @@ onMounted(checkAutoUpdate)
 // #endregion
 
 // #region 面板操作
-function changeReadonly(): void {
-  share.readonly = !share.readonly
-  meOk(share.readonly ? t('appMain.readonlyTip') : t('appMain.writableTip'))
-}
-
 // 连接相关弹窗：ConnSave/Import 挂 AppMain；设置弹窗在 KeyHeader（始终挂载）
 const connSaveRef = useTemplateRef<InstanceType<typeof ConnSave>>('connSave')
 const connImportRef = useTemplateRef<InstanceType<typeof ConnImport>>('connImport')
@@ -304,15 +271,6 @@ provide(connUiProvideKey, connUi)
         <template v-else>
           <TabMain />
 
-          <!-- 只读/可写 -->
-          <me-icon
-            class="readonly-icon"
-            plain
-            :icon="share.readonly ? 'me-icon-lock' : 'me-icon-unlock'"
-            :name="share.readonly ? t('appMain.readonly') : t('appMain.writable')"
-            :hint="true"
-            @click="changeReadonly" />
-
           <!-- 导入导出 -->
           <el-progress
             class="export-importing"
@@ -342,7 +300,7 @@ provide(connUiProvideKey, connUi)
 <style scoped lang="scss">
 .redis-main {
   height: calc(100% - 30px);
-  padding: 0px 5px 5px 5px;
+  padding: 0 8px 8px 8px;
   flex: 1;
 
   .redis-key {
@@ -358,21 +316,6 @@ provide(connUiProvideKey, connUi)
     .el-splitter-bar__dragger-horizontal:before {
       width: 0; // 宽度为0，不显示原始的竖线
       background-color: transparent;
-    }
-  }
-
-  /* 只读按钮图标 */
-  :deep(.readonly-icon) {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    font-size: 20px;
-    z-index: 100;
-    color: var(--el-color-success);
-
-    cursor: pointer;
-    &:hover {
-      color: var(--el-color-primary);
     }
   }
 

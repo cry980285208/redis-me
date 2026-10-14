@@ -1,14 +1,46 @@
 <script setup lang="ts">
 import { type as getOsType } from '@tauri-apps/plugin-os'
-import { shallowRef, watch } from 'vue'
+import { provide, reactive, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import { shareProvideKey, type AppMainShare, type UiConn } from '@/types/me-interface'
 import { isDark } from '@/utils/util'
 import AppMain from '@/views/AppMain.vue'
 import AppResize from '@/views/ext/AppResize.vue'
 import AppTitle from '@/views/ext/AppTitle.vue'
 
 const { locale: i18nLocale } = useI18n()
+
+// 共享数据：AppMain 与顶部栏 AppTitle 是兄弟组件，统一在本父组件创建并 provide
+const share = reactive<AppMainShare>({
+  conn: null,
+  connList: meTauri.connList as UiConn[],
+  nodeList: [],
+  loading: false,
+  color: 'var(--el-color-primary)',
+  readonly: false,
+  redisKey: null,
+  tabName: 'info',
+  dbSizeMap: {},
+
+  exportImporting: false,
+  exportImportingTip: '',
+  exportImportingPercentage: 0,
+
+  capabilities: {
+    version: '',
+    isValkey: false,
+    infoSupported: false,
+    aclSupported: false,
+    aclDryrunSupported: false,
+    aclSelectorSupported: false,
+    httlSupported: false,
+    clusterDbSupported: false,
+    redisSearchSupported: false,
+    memoryUsageSupported: false,
+  },
+})
+provide(shareProvideKey, share)
 
 /** 供 CSS 按平台作用：Linux WebKitGTK 字体补丁等（非 WebView 自动注入） */
 const osType = getOsType()

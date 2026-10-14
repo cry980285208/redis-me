@@ -21,10 +21,7 @@ const memoryUsageSupported = computed(() => share.capabilities.memoryUsageSuppor
 </script>
 
 <template>
-  <el-tabs
-    v-model="share.tabName"
-    class="redis-tab"
-    :style="{ paddingBottom: share.tabName === 'value' ? 0 : '10px' }">
+  <el-tabs v-model="share.tabName" class="redis-tab">
     <!-- 信息界面: 极简模式或无INFO权限则不显示 -->
     <template v-if="!minimalMode">
       <me-tab-pane v-if="infoSupported" name="info" icon="el-icon-calendar">
@@ -68,7 +65,7 @@ const memoryUsageSupported = computed(() => share.capabilities.memoryUsageSuppor
 .redis-tab {
   // border: 1px solid var(--el-border-color);
   // border-radius: var(--el-border-radius-base);
-  padding: 0 10px 10px 10px;
+  padding: 0 5px 0 10px;
 
   height: 100%;
 
@@ -77,7 +74,14 @@ const memoryUsageSupported = computed(() => share.capabilities.memoryUsageSuppor
   }
 
   :deep(.el-tabs__item) {
+    height: 30px;
+    align-items: start;
     padding: 0 12px;
+  }
+
+  :deep(.el-tabs__header) {
+    margin: 0 0 10px;
+    padding-top: 2px;
   }
 }
 </style>

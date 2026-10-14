@@ -28,7 +28,7 @@ export interface MeAppUpdateState {
 /** 存储/列表中的连接 + 界面字段（颜色、只读等）；meta 在 ConnConfig 上 */
 export type UiConn = ConnConfig & { color?: string; readonly?: boolean }
 
-/** AppMain 注入的共享状态（与 `shareProvideKey` 配对） */
+/** App.vue 注入的共享状态（与 `shareProvideKey` 配对，AppTitle 与 AppMain 共用） */
 export interface ServerCapabilities {
   version: string
   isValkey: boolean
@@ -64,7 +64,7 @@ export interface AppMainInject extends MeAppUpdateState {
   update: Update | null
 }
 
-/** 与 `AppMain` 中 `provide(shareProvideKey, share)` 配对，子组件使用 `inject(shareProvideKey)!` */
+/** 与 `App.vue` 中 `provide(shareProvideKey, share)` 配对，子组件使用 `inject(shareProvideKey)!` */
 export const shareProvideKey: InjectionKey<AppMainShare> = Symbol('redis-me.share')
 
 /** 与 `AppMain` 中 `provide(appProvideKey, app)` 配对，子组件使用 `inject(appProvideKey)!` */

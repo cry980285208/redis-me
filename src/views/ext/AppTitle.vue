@@ -1,9 +1,22 @@
 <script setup lang="ts">
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { type as getOsType, version as getOsVersion } from '@tauri-apps/plugin-os'
-import { computed, ref } from 'vue'
+import { computed, inject, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 
-import { meLog, meOk } from '@/utils/util'
+import { shareProvideKey } from '@/types/me-interface'
+import { bus, meLog, meOk, OPEN_SETTING } from '@/utils/util'
+
+const { t } = useI18n()
+
+// 共享数据：与 AppMain 共用 App.vue provide 的同一份
+const share = inject(shareProvideKey)!
+
+// 切换只读/可写（顶部栏锁图标）
+function changeReadonly(): void {
+  share.readonly = !share.readonly
+  meOk(share.readonly ? t('appMain.readonlyTip') : t('appMain.writableTip'))
+}
 
 const appWindow = getCurrentWindow()
 const isFullScreen = ref(false)
@@ -30,8 +43,8 @@ meLog(
   isMacOSTahoePlus,
 )
 const marginLeft = computed(() => {
-  if (isFullScreen.value) return '7px'
-  if (!isMacOS) return '7px'
+  if (isFullScreen.value) return '10px'
+  if (!isMacOS) return '10px'
   return isMacOSTahoePlus ? '80px' : '70px'
 })
 
@@ -64,25 +77,45 @@ const toggleName = () => {
         @click="toggleIcon" />
       <div style="margin-left: 5px; font-size: 12px" @click="toggleName">RedisME</div>
     </div>
-    <div style="font-size: 12px" v-if="!isMacOS">
+    <div class="title-right">
+      <!-- 只读/可写 -->
       <me-icon
-        icon="me-icon-window-minimize"
-        class="title-button normal-btn"
-        @click="appWindow.minimize()" />
+        v-if="share.conn"
+        class="action-icon"
+        :icon="share.readonly ? 'me-icon-lock' : 'me-icon-unlock'"
+        :name="share.readonly ? t('appMain.readonly') : t('appMain.writable')"
+        :hint="true"
+        placement="bottom"
+        @click="changeReadonly" />
+      <!-- 设置：弹窗挂在 KeyHeader，兄弟组件间经 bus 通知打开 -->
       <me-icon
-        icon="me-icon-window-maximize"
-        class="title-button normal-btn"
-        @click="appWindow.toggleMaximize()"
-        v-show="!isMaximized" />
-      <me-icon
-        icon="me-icon-window-restore"
-        class="title-button normal-btn"
-        @click="appWindow.toggleMaximize()"
-        v-show="isMaximized" />
-      <me-icon
-        icon="me-icon-window-close"
-        class="title-button danger-btn"
-        @click="appWindow.close()" />
+        class="action-icon"
+        icon="el-icon-setting"
+        :name="t('keyHeader.setting')"
+        :hint="true"
+        placement="bottom"
+        :style="{ marginRight: isMacOS ? '15px' : '-5px' }"
+        @click="bus.emit(OPEN_SETTING)" />
+      <div style="font-size: 12px" v-if="!isMacOS">
+        <me-icon
+          icon="me-icon-window-minimize"
+          class="title-button normal-btn"
+          @click="appWindow.minimize()" />
+        <me-icon
+          icon="me-icon-window-maximize"
+          class="title-button normal-btn"
+          @click="appWindow.toggleMaximize()"
+          v-show="!isMaximized" />
+        <me-icon
+          icon="me-icon-window-restore"
+          class="title-button normal-btn"
+          @click="appWindow.toggleMaximize()"
+          v-show="isMaximized" />
+        <me-icon
+          icon="me-icon-window-close"
+          class="title-button danger-btn"
+          @click="appWindow.close()" />
+      </div>
     </div>
   </div>
 </template>
@@ -91,6 +124,23 @@ const toggleName = () => {
 .title-bar {
   height: 30px;
   user-select: none;
+
+  .title-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  /* 顶部栏功能图标（只读锁、设置） */
+  .action-icon {
+    font-size: 16px;
+    cursor: pointer;
+    color: var(--el-color-info);
+
+    &:hover {
+      color: var(--el-color-primary);
+    }
+  }
 
   .title-button {
     width: 40px;
