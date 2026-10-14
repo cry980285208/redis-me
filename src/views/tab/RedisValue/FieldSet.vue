@@ -556,6 +556,41 @@ async function refreshField() {
 }
 // #endregion
 
+// #region 面板宽度拖动
+// 默认宽度百分比；双击拖柄恢复
+const FIELD_SET_WIDTH = 60
+const panelWidth = ref(FIELD_SET_WIDTH)
+const resizing = ref(false) // 拖动中：蒙层锁定光标为 ew-resize，与 el-splitter 一致
+
+// 拖动快照：容器宽仅在按下时读一次，避免逐帧读取强制重排导致卡顿
+let resizeContainerW = 0
+let resizeStartX = 0
+let resizeStartW = 0
+
+// 左缘拖柄按下：捕获指针后 move/up 恒落在拖柄上；蒙层统一拖动光标
+function onFieldSetResizeStart(e: PointerEvent) {
+  const root = (e.currentTarget as HTMLElement).closest('.field-set') as HTMLElement
+  resizeContainerW = root.parentElement?.clientWidth ?? 0
+  resizeStartX = e.clientX
+  resizeStartW = root.clientWidth
+  resizing.value = true
+  ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+}
+
+// 横向位移按按下时容器宽换算为宽度百分比，限幅 30~100
+function onFieldSetResizeMove(e: PointerEvent) {
+  if (!resizeContainerW) return
+  const pct = ((resizeStartW + resizeStartX - e.clientX) / resizeContainerW) * 100
+  panelWidth.value = Math.min(100, Math.max(30, pct))
+}
+
+// 松开/取消：指针捕获由浏览器自动释放，此处只清快照与蒙层
+function onFieldSetResizeEnd() {
+  resizeContainerW = 0
+  resizing.value = false
+}
+// #endregion
+
 // #region 生命周期
 onUnmounted(() => window.removeEventListener('keydown', onEscapeKey, true))
 // #endregion
@@ -563,7 +598,17 @@ onUnmounted(() => window.removeEventListener('keydown', onEscapeKey, true))
 
 <template>
   <!-- 字段编辑面板：查看/编辑字段值，支持编码切换、美化、单行刷新 -->
-  <el-card v-show="visible" class="field-set">
+  <el-card v-show="visible" class="field-set" :style="{ width: panelWidth + '%' }">
+    <!-- 拖动蒙层：拖动期间视口级遮罩，锁定光标并阻挡 hover，与 el-splitter 一致 -->
+    <div v-if="resizing" class="field-set-mask" />
+    <!-- 左缘拖柄：拖动调整面板宽度，双击恢复默认 -->
+    <div
+      class="field-set-resize"
+      @pointerdown="onFieldSetResizeStart"
+      @pointermove="onFieldSetResizeMove"
+      @pointerup="onFieldSetResizeEnd"
+      @pointercancel="onFieldSetResizeEnd"
+      @dblclick="panelWidth = FIELD_SET_WIDTH" />
     <template #header>
       <div class="me-flex" style="align-items: center">
         <span>{{ readonly ? t('fieldSet.viewField') : t('fieldSet.editField') }}</span>
@@ -724,6 +769,31 @@ onUnmounted(() => window.removeEventListener('keydown', onEscapeKey, true))
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+
+  // 拖动蒙层：视口级遮罩，与 el-splitter 的 mask 一致（锁光标、挡 hover）
+  .field-set-mask {
+    position: fixed;
+    inset: 0;
+    z-index: 999;
+    cursor: ew-resize;
+  }
+
+  // 左缘拖柄：绝对定位贴面板左缘，悬停高亮；光标与 el-splitter 横向一致
+  .field-set-resize {
+    position: absolute;
+    left: 0;
+    top: 0;
+    z-index: 1;
+    width: 6px;
+    height: 100%;
+    cursor: ew-resize;
+    user-select: none;
+    touch-action: none;
+
+    &:hover {
+      background: var(--el-color-primary-light-7);
+    }
+  }
 
   :deep(.el-card__body) {
     padding: 20px 20px 0 20px;
