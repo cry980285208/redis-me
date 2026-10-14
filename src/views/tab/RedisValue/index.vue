@@ -2883,7 +2883,7 @@ onUnmounted(() => {
 
   // 主区：纵向 flex。预览提示占自然高度，编辑器/表格吃剩余空间，避免 height:100% 把整块顶出视口跟着滚
   .value-main {
-    margin: 10px 0 5px 0;
+    margin: 10px 0 8px 0;
     position: relative;
     flex: 1;
     min-height: 0;
