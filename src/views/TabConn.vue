@@ -331,7 +331,8 @@ function clickNew(): void {
   height: 100%;
   display: flex;
   flex-direction: column;
-  padding: 0 5px;
+  // 左内边距与 .redis-tab 同为 3px，保证分割线两侧留白在连接/主界面一致（左 3px / 右 3px）
+  padding: 0 5px 0 3px;
 
   .header {
     margin-bottom: 10px;
