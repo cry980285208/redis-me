@@ -65,7 +65,7 @@ const memoryUsageSupported = computed(() => share.capabilities.memoryUsageSuppor
 .redis-tab {
   // border: 1px solid var(--el-border-color);
   // border-radius: var(--el-border-radius-base);
-  padding: 0 5px 0 10px;
+  padding: 0 5px;
 
   height: 100%;
 
