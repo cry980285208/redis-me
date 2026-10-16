@@ -560,7 +560,7 @@ async function refreshField() {
 // 默认宽度百分比；双击拖柄恢复
 const FIELD_SET_WIDTH = 60
 const panelWidth = ref(FIELD_SET_WIDTH)
-const resizing = ref(false) // 拖动中：蒙层锁定光标为 ew-resize，与 el-splitter 一致
+const resizing = ref(false) // 拖动中：蒙层锁定光标为 ew-resize、拖柄加深高亮，与 el-splitter 一致
 
 // 拖动快照：容器宽仅在按下时读一次，避免逐帧读取强制重排导致卡顿
 let resizeContainerW = 0
@@ -604,6 +604,7 @@ onUnmounted(() => window.removeEventListener('keydown', onEscapeKey, true))
     <!-- 左缘拖柄：拖动调整面板宽度，双击恢复默认 -->
     <div
       class="field-set-resize"
+      :class="{ 'is-active': resizing }"
       @pointerdown="onFieldSetResizeStart"
       @pointermove="onFieldSetResizeMove"
       @pointerup="onFieldSetResizeEnd"
@@ -778,20 +779,37 @@ onUnmounted(() => window.removeEventListener('keydown', onEscapeKey, true))
     cursor: ew-resize;
   }
 
-  // 左缘拖柄：绝对定位贴面板左缘，悬停高亮；光标与高亮色均与 el-splitter 横向一致
+  // 左缘拖柄：绝对定位贴面板左缘；16px 透明命中区 + 2px 可见细线，配色对齐 el-splitter 横向拖柄
   .field-set-resize {
     position: absolute;
     left: 0;
     top: 0;
     z-index: 1;
-    width: 6px;
+    // 命中区只向内扩：卡片 overflow:hidden 会裁掉左溢部分；16px 也仅覆盖卡片自身 20px 内边距，不挡内容
+    width: 16px;
     height: 100%;
+    background: transparent;
     cursor: ew-resize;
     user-select: none;
     touch-action: none;
 
-    &:hover {
+    // 可见细线：宽度同 el-splitter 的 dragger::before（2px），恰好盖住卡片 1px 左边框
+    &::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 2px;
+      height: 100%;
+    }
+
+    &:hover::before {
       background: var(--el-color-primary-light-5);
+    }
+
+    // 拖动中：蒙层盖住拖柄使 :hover 失效，故单独加深，对应 el-splitter 的 dragger-active
+    &.is-active::before {
+      background: var(--el-color-primary-light-3);
     }
   }
 
