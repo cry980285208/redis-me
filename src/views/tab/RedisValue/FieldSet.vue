@@ -778,7 +778,7 @@ onUnmounted(() => window.removeEventListener('keydown', onEscapeKey, true))
     cursor: ew-resize;
   }
 
-  // 左缘拖柄：绝对定位贴面板左缘，悬停高亮；光标与 el-splitter 横向一致
+  // 左缘拖柄：绝对定位贴面板左缘，悬停高亮；光标与高亮色均与 el-splitter 横向一致
   .field-set-resize {
     position: absolute;
     left: 0;
@@ -791,7 +791,7 @@ onUnmounted(() => window.removeEventListener('keydown', onEscapeKey, true))
     touch-action: none;
 
     &:hover {
-      background: var(--el-color-primary-light-7);
+      background: var(--el-color-primary-light-5);
     }
   }
 
