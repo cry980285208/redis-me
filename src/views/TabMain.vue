@@ -65,7 +65,7 @@ const memoryUsageSupported = computed(() => share.capabilities.memoryUsageSuppor
 .redis-tab {
   // border: 1px solid var(--el-border-color);
   // border-radius: var(--el-border-radius-base);
-  padding: 0 5px;
+  padding: 0 5px 0 3px;
 
   height: 100%;
 
@@ -82,6 +82,12 @@ const memoryUsageSupported = computed(() => share.capabilities.memoryUsageSuppor
   :deep(.el-tabs__header) {
     margin: 0 0 10px;
     padding-top: 2px;
+  }
+
+  // EP 的 nav-wrap 内置 margin-bottom:-1px，页签栏实际占位 2+30-1=31px，
+  // 比左侧连接栏 32px 少 1px，导致右列输入框顶边比左列高 1px；归零后左右完全对齐
+  :deep(.el-tabs__nav-wrap) {
+    margin-bottom: 0;
   }
 }
 </style>

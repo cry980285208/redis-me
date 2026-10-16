@@ -288,7 +288,7 @@ function onSplitterBarMouseDown(e: MouseEvent): void {
   <div class="redis-main" v-loading="share.loading" @mousedown="onSplitterBarMouseDown">
     <el-splitter>
       <!-- 左侧键 -->
-      <el-splitter-panel v-model:size="keyPanelSize" :min="250" style="margin-right: 3px">
+      <el-splitter-panel v-model:size="keyPanelSize" style="margin-right: 3px">
         <div class="redis-key">
           <KeyHeader />
           <KeyMain v-if="share.conn && connPrepared" />
@@ -297,7 +297,7 @@ function onSplitterBarMouseDown(e: MouseEvent): void {
       </el-splitter-panel>
 
       <!-- 右侧值 -->
-      <el-splitter-panel v-model:size="valuePanelSize" :min="400">
+      <el-splitter-panel v-model:size="valuePanelSize">
         <TabConn v-if="!share.conn || !connPrepared" />
         <template v-else>
           <TabMain />
