@@ -251,13 +251,44 @@ function onConnImported(impConnList: UiConn[]): void {
 
 provide(connUiProvideKey, connUi)
 // #endregion
+
+// #region 键值分栏
+// 键区/值区宽度：初始 30%/70%，拖动中 el-splitter 以 px 回写
+// 复位必须两侧同时设：拖过后双方都有显式 size，el-splitter 会把百分比归一化到总和 1，只改一侧会被旧 px 缩放
+const KEY_PANEL_DEFAULT_SIZE = '30%'
+const VALUE_PANEL_DEFAULT_SIZE = '70%'
+const keyPanelSize = ref<string | number>(KEY_PANEL_DEFAULT_SIZE)
+const valuePanelSize = ref<string | number>(VALUE_PANEL_DEFAULT_SIZE)
+
+/** 双击分隔条恢复默认分栏（el-splitter 无内建复位） */
+function resetSplitSize(): void {
+  keyPanelSize.value = KEY_PANEL_DEFAULT_SIZE
+  valuePanelSize.value = VALUE_PANEL_DEFAULT_SIZE
+}
+
+// 不用 dblclick：拖动蒙层让 click/dblclick 的 target 抬到 .el-splitter（mouseup 落在蒙层上取公共祖先），
+// 而 mousedown 目标恒为 dragger（拖动本身也靠它），故数 400ms 内的两次 mousedown 当作双击
+let lastBarDownAt = 0
+function onSplitterBarMouseDown(e: MouseEvent): void {
+  // 新的按下先摘掉上一次挂起的复位（连按后又继续拖的场景）
+  window.removeEventListener('mouseup', resetSplitSize)
+  const onBar = !!(e.target as HTMLElement | null)?.closest('.el-splitter-bar')
+  const now = Date.now()
+  const doubleDown = onBar && now - lastBarDownAt < 400
+  lastBarDownAt = onBar ? now : 0
+  if (!doubleDown) return
+  // 拖柄的 mousedown 已开启拖动会话并缓存旧尺寸，期间任一 mousemove 都会用缓存回写覆盖复位，
+  // 故推迟到本次 mouseup 之后写回（el-splitter 的 mouseup 监听先注册先执行，moveEnd 已收尾）
+  window.addEventListener('mouseup', resetSplitSize, { once: true })
+}
+// #endregion
 </script>
 
 <template>
-  <div class="redis-main" v-loading="share.loading">
+  <div class="redis-main" v-loading="share.loading" @mousedown="onSplitterBarMouseDown">
     <el-splitter>
       <!-- 左侧键 -->
-      <el-splitter-panel :min="250" size="30%">
+      <el-splitter-panel v-model:size="keyPanelSize" :min="250" style="margin-right: 3px">
         <div class="redis-key">
           <KeyHeader />
           <KeyMain v-if="share.conn && connPrepared" />
@@ -266,7 +297,7 @@ provide(connUiProvideKey, connUi)
       </el-splitter-panel>
 
       <!-- 右侧值 -->
-      <el-splitter-panel :min="250">
+      <el-splitter-panel v-model:size="valuePanelSize" :min="400">
         <TabConn v-if="!share.conn || !connPrepared" />
         <template v-else>
           <TabMain />
@@ -313,9 +344,18 @@ provide(connUiProvideKey, connUi)
   :deep(.el-splitter-bar) {
     width: 5px !important;
 
-    .el-splitter-bar__dragger-horizontal:before {
-      width: 0; // 宽度为0，不显示原始的竖线
+    // 竖线常驻隐藏（整条线显脏），仅悬停/拖动时显示，配色与字段面板左缘拖柄一致
+    .el-splitter-bar__dragger-horizontal::before {
       background-color: transparent;
+    }
+
+    .el-splitter-bar__dragger-horizontal:hover::before {
+      background-color: var(--el-color-primary-light-5);
+    }
+
+    // 拖动中：组件加 dragger-active；蒙层会夺走 :hover，故与 hover 同优先级且置后
+    .el-splitter-bar__dragger-horizontal.el-splitter-bar__dragger-active::before {
+      background-color: var(--el-color-primary-light-3);
     }
   }
 
