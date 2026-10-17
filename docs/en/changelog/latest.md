@@ -1,5 +1,20 @@
 # 5.x Changelog
 
+## v5.4.3 (2026-10-18)
+
+### ✨ Improvements
+
+- Table: **MeTable upgraded to the el-table-v2 virtual table**, with tables across all pages fully migrated #169
+- Key-value page: **"load more" moved into the table footer**, with total count / loaded / filters shown together #169
+- Field edit panel: **drag its left edge to resize** the panel; double-click restores the default width
+- Keys/value area: the divider line shows on hover and **double-click restores the default split**
+- Top bar: the read-only lock moved into the top menu bar, with a new settings icon
+- UI simplified: removed the borders below the keys panel and around the right-side Tab
+
+### 🐞 Bug Fixes
+
+- Fixed Stream scan: default order now consistently descending across front end and back end; continued scans merge and deduplicate; falls back to a re-scan when conditions don't match
+
 ## v5.4.2 (2026-10-11)
 
 ### ✨ Improvements
