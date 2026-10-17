@@ -141,6 +141,7 @@ const canEdit = computed(() => !share.readonly)
 // 基础
 const redisValue = ref<FieldScanViewState | null>(null)
 const cursor = ref<ScanCursor | null>(null) // list/hash/set/zset/stream 分页游标
+let cursorScanKey = '' // 游标产生时的扫描条件快照（方向/区间/MATCH）；续扫不匹配则降级整键重扫
 const loading = ref(false)
 const isSavingValue = ref(false) // STRING/JSON 保存中，底栏保存钮转圈
 const isPretty = ref(true)
@@ -242,7 +243,7 @@ const meta = ref({ maxId: '', minId: '' }) // Stream minId / maxId
 const listIndexMin = ref('')
 const listIndexMax = ref('')
 const listDescAsc = ref(true) // true=升序
-const streamDescAsc = ref(true) // true=XRANGE
+const streamDescAsc = ref(false) // true=XRANGE 升序；默认降序（XREVRANGE，新→旧），与后端默认一致
 const tsDescAsc = ref(false) // true=TS.RANGE；默认倒序（TS.REVRANGE，新→旧）
 const zsetScoreMin = ref('')
 const zsetScoreMax = ref('')
@@ -833,7 +834,7 @@ function resetParam() {
   listIndexMin.value = ''
   listIndexMax.value = ''
   listDescAsc.value = true
-  streamDescAsc.value = true
+  streamDescAsc.value = false
   tsDescAsc.value = false
   zsetScoreMin.value = ''
   zsetScoreMax.value = ''
@@ -860,16 +861,17 @@ function buildFieldScanParam() {
       ...meta.value,
       listMinIndex: parseListIndexInput(listIndexMin.value),
       listMaxIndex: parseListIndexInput(listIndexMax.value),
-      listDesc: listType.value ? !listDescAsc.value : null,
-      streamDesc: streamType.value ? !streamDescAsc.value : null,
-      vectorsetSample: vectorsetType.value ? vectorsetSample.value : null,
-      zsetMinScore: zsetType.value ? zsetScoreMin.value.trim() || null : null,
-      zsetMaxScore: zsetType.value ? zsetScoreMax.value.trim() || null : null,
-      tsMin: timeseriesType.value ? normalizeTsRangeBound(tsMin.value) || null : null,
-      tsMax: timeseriesType.value ? normalizeTsRangeBound(tsMax.value) || null : null,
-      tsMinValue: timeseriesType.value ? tsMinValue.value.trim() || null : null,
-      tsMaxValue: timeseriesType.value ? tsMaxValue.value.trim() || null : null,
-      tsDesc: timeseriesType.value ? !tsDescAsc.value : null,
+      // 方向/模式恒送：首扫时键类型未定，不送则后端默认生效；前后端默认已对齐（Stream 降序、List 升序、TS 降序）
+      listDesc: !listDescAsc.value,
+      streamDesc: !streamDescAsc.value,
+      vectorsetSample: vectorsetSample.value,
+      zsetMinScore: zsetScoreMin.value.trim() || null,
+      zsetMaxScore: zsetScoreMax.value.trim() || null,
+      tsMin: normalizeTsRangeBound(tsMin.value) || null,
+      tsMax: normalizeTsRangeBound(tsMax.value) || null,
+      tsMinValue: tsMinValue.value.trim() || null,
+      tsMaxValue: tsMaxValue.value.trim() || null,
+      tsDesc: !tsDescAsc.value,
       valueByteLimit: VALUE_BYTE_LIMIT.value,
       valuePreviewBytes: VALUE_PREVIEW_BYTES.value,
       forceFullValue: forceFullValue.value,
@@ -1021,12 +1023,21 @@ async function finalizeAfterFieldScan(reset: boolean, replaceData?: FieldScanRes
 async function fieldScanCore(
   useCursor: boolean,
 ): Promise<{ count: number; replaceData?: FieldScanResult }> {
-  const includeMeta = fieldScanIncludeMeta()
+  let param = buildFieldScanParam()
+  // MATCH 空串与 * 后端等价（都不加 MATCH），快照前归一，避免首扫/续扫误判为条件变化
+  const pageKey = JSON.stringify([param.match === '' ? '*' : param.match, param.exact, param.meta])
+  if (useCursor && pageKey !== cursorScanKey) {
+    // 游标是旧条件（换向/改区间/改 MATCH 前的残留）产生的：续扫会并入旧方向的页，降级整键重扫
+    useCursor = false
+    param = { ...param, cursor: null, includeMeta: true, keyType: null }
+  }
+  const includeMeta = param.includeMeta === true // 仅首扫/降级重扫带 meta；续扫页 length/ttl/size 为 null，不能覆盖已有值
   // 首屏带 MEMORY USAGE。写回列表缓存，编辑后的新大小盖掉列表里的旧值。
   const writeMemory = captureKeyMemoryWrite(share.conn?.id, share.conn?.db, share.redisKey)
-  const data = await meCommands.fieldScan(share.conn!.id, buildFieldScanParam())
+  const data = await meCommands.fieldScan(share.conn!.id, param)
   if (includeMeta) writeMemory(data.size)
   cursor.value = data.cursor
+  cursorScanKey = pageKey
   scanBatchCount.value++
 
   if (useCursor) {

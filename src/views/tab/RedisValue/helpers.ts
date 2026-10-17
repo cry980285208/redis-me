@@ -316,7 +316,31 @@ export const KEY_TYPE_TO_GROUP: Record<string, string> = {
 
 // 扫描纯函数
 
+/** 续扫合并的去重身份：两侧均为 fieldScan 原始行（Set 为裸字符串成员）；无身份返回 undefined 即不去重 */
+function scannedRowMergeKey(type: string, item: unknown): unknown {
+  if (type === 'set') return item
+  const row = scannedRowObject(item)
+  if (!row) return undefined
+  switch (type) {
+    case 'hash':
+    case 'timeseries':
+      return row.key
+    case 'zset':
+      return row.value
+    case 'stream':
+      return row.id
+    case 'vectorset':
+      return row.name
+    case 'list':
+    case 'array':
+      return row.index
+    default:
+      return undefined
+  }
+}
+
 // 「加载更多」：新一页追加到已有 redisValue.value；true=已 merge，false=应整包替换
+// 按行身份去重：游标与已加载页重叠时（扫描条件变更后的残留游标等）不重复追加
 export function mergeFieldScanPage(
   prev: FieldScanViewState,
   data: FieldScanResult,
@@ -324,8 +348,13 @@ export function mergeFieldScanPage(
 ): boolean {
   if (!supportsTableView(data.type)) return false
   if (data.type === 'hash') pinHashRowsExpireAt(data.value)
-  const merged: unknown[] = [...fieldValueRows(prev.value), ...fieldValueRows(data.value)]
-  ;(prev as { value: unknown }).value = merged
+  const prevRows = fieldValueRows(prev.value)
+  const seen = new Set(prevRows.map(row => scannedRowMergeKey(data.type, row)))
+  const fresh = fieldValueRows(data.value).filter(row => {
+    const key = scannedRowMergeKey(data.type, row)
+    return key === undefined || !seen.has(key)
+  })
+  ;(prev as { value: unknown }).value = [...prevRows, ...fresh]
   if (includeMeta) {
     prev.length = data.length
     prev.ttl = data.ttl

@@ -2,14 +2,17 @@ import dayjs from 'dayjs'
 import { afterEach, describe, expect, it } from 'vite-plus/test'
 
 import i18n from '@/locales'
+import type { FieldScanResult } from '@/types/tauri-specta'
 
 import {
   formatFieldTtlCell,
   formatFieldTtlTooltip,
   formatTtlExpireTooltip,
+  mergeFieldScanPage,
   normalizeTsRangeBound,
   pinFieldExpireAt,
   removeScannedFieldRow,
+  type FieldScanViewState,
   type ValueTableRow,
 } from './helpers'
 
@@ -223,5 +226,65 @@ describe('normalizeTsRangeBound', () => {
 
   it('无法解析则原样交 Redis', () => {
     expect(normalizeTsRangeBound('not-a-date')).toBe('not-a-date')
+  })
+})
+
+describe('mergeFieldScanPage', () => {
+  function scanState(type: string, value: unknown[]): FieldScanViewState {
+    return {
+      type,
+      ttl: -1,
+      size: 0,
+      value,
+      cursor: { readyNodes: [], nowNode: '', nowCursor: '0', streamCursor: '', finished: false },
+      length: value.length,
+      valueTruncated: false,
+      newValue: null,
+    } as FieldScanViewState
+  }
+
+  function scanPage(type: string, value: unknown[]): FieldScanResult {
+    const { newValue: _drop, ...page } = scanState(type, value)
+    return page as FieldScanResult
+  }
+
+  it('Stream 续扫按 ID 去重：重叠条目不追加', () => {
+    const prev = scanState('stream', [
+      { id: '1-0', value: { a: '1' } },
+      { id: '2-0', value: { a: '2' } },
+    ])
+    const page = scanPage('stream', [
+      { id: '2-0', value: { a: '2' } },
+      { id: '3-0', value: { a: '3' } },
+    ])
+    expect(mergeFieldScanPage(prev, page, false)).toBe(true)
+    expect((prev.value as ValueTableRow[]).map(row => row.id)).toEqual(['1-0', '2-0', '3-0'])
+  })
+
+  it('Hash 续扫按字段名去重', () => {
+    const prev = scanState('hash', [{ key: 'a', value: '1' }])
+    const page = scanPage('hash', [
+      { key: 'a', value: '1' },
+      { key: 'b', value: '2' },
+    ])
+    expect(mergeFieldScanPage(prev, page, false)).toBe(true)
+    expect((prev.value as ValueTableRow[]).map(row => row.key)).toEqual(['a', 'b'])
+  })
+
+  it('无重叠时全量追加', () => {
+    const prev = scanState('list', [{ index: 0, value: 'a' }])
+    const page = scanPage('list', [{ index: 1, value: 'b' }])
+    expect(mergeFieldScanPage(prev, page, false)).toBe(true)
+    expect(prev.value).toEqual([
+      { index: 0, value: 'a' },
+      { index: 1, value: 'b' },
+    ])
+  })
+
+  it('非表格类型不 merge', () => {
+    const prev = scanState('string', ['old'])
+    const page = scanPage('string', ['new'])
+    expect(mergeFieldScanPage(prev, page, false)).toBe(false)
+    expect(prev.value).toEqual(['old'])
   })
 })
