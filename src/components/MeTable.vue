@@ -1,12 +1,13 @@
 <script setup lang="ts">
-// 说明: 前端分页表，用于数据量比较大的场景（比如内存分析等），进行前端分页，避免卡顿。
-// 在分页前对整表排序：与 el-table 的 default-sort、列 sortable / sort-method / sort-by 一致；
+// 说明: 虚拟滚动表（el-table-v2）：连续滚动、无分页，千行级以上的大数据表（内存分析、命令日志等）不卡顿。
+// 列描述 columns 为单一来源：同时驱动渲染、排序、导出矩阵与具名插槽（cell-${key} / header-${key}）。
+// 排序与 el-table 的 default-sort、列 sortable / sort-method / sort-by 一致；
 // sortable="custom" 时不改行顺序，由父组件在 sort-change 中自行更新 :data。
-// 分页条右侧「…」菜单：RAW 项直接序列化数据永远可用；其余格式由 exportRows
-// 从数据层计算矩阵（不渲染 DOM），未提供 exportRows 时仅显示 RAW 项。
-import type { TableInstance } from 'element-plus'
+// 表内 footer 固定行：总数 +「…」导出菜单（RAW 项直接序列化数据永远可用，其余格式由列描述计算矩阵、不渲染 DOM）。
+import type { TableV2Instance } from 'element-plus'
 import { orderBy } from 'element-plus/es/components/table/src/util.mjs'
-import { computed, ref, useAttrs, watch } from 'vue'
+import type { StyleValue } from 'vue'
+import { computed, ref, toRaw, useAttrs, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import {
@@ -19,193 +20,314 @@ import {
   matrixToTsv,
   saveTableTextFile,
   saveTableXlsxFile,
-  type TableExportMatrix,
 } from '@/utils/export'
 import { meCopy, meErr } from '@/utils/util'
+
+import {
+  exportableColumns,
+  exportMatrixFromColumns,
+  isExportableColumn,
+  toCellText,
+  type MeColumn,
+} from './me-table-column'
 
 defineOptions({ inheritAttrs: false })
 
 const { t } = useI18n()
 
-// #region 其他：props、attrs、分页状态（排序变更会重置页码，故放在排序之前）
+// #region props、attrs
 const props = withDefaults(
   defineProps<{
     data?: unknown[]
-    layout?: string
-    /** 仅一页时是否隐藏分页条；默认 false（始终显示） */
-    hideOnSinglePage?: boolean
+    /** 列描述：渲染、排序、导出与插槽名的单一来源 */
+    columns: MeColumn[]
     /** 导出文件名中段，同时作为 Excel 工作表名（如 info → RedisME_info_时间.xlsx 的表「info」） */
     exportName?: string
-    /** 隐藏分页条右侧扩展菜单 */
-    hideExport?: boolean
-    /** 导出数据计算：由行数据直接生成表头/文本矩阵（不渲染 DOM）；未提供时菜单仅显示 RAW 项 */
-    exportRows?: (data: unknown[]) => TableExportMatrix
+    /** 底部总数覆盖：默认取 data.length；与筛选后数量不一致时 footer 显示「共 筛选 / 总数 条」 */
+    total?: number
+    /** 空态文案（ElEmpty description）；不传用 EP 默认「暂无数据」 */
+    emptyText?: string
+    /** 自定义行类：如差异行着色标记；与内置 stripe 类组合 */
+    rowClass?: (row: unknown, rowIndex: number) => string
   }>(),
-  {
-    data: () => [],
-    layout: 'total, sizes, prev, pager, next',
-    hideOnSinglePage: false,
-    exportName: 'table',
-    hideExport: false,
-  },
+  { data: () => [], exportName: 'table' },
 )
 
 const attrs = useAttrs()
-
-const currentPage = ref(1)
-const pageSize = ref(20)
 // #endregion
 
-// #region 排序（default-sort、sort-change、整表 orderBy 与 EP 列行为一致）
-// 与 Element Plus sort-change 中 column 对齐的字段（避免深类型依赖）
-interface SortColumnLike {
-  sortable?: boolean | string
-  sortMethod?: (a: unknown, b: unknown) => number
-  sortBy?: string | string[] | ((row: unknown, index: number, array?: unknown[]) => unknown)
-}
-
+// #region 排序（default-sort 初值 + 表头点击，整表 orderBy 与 EP 列行为一致）
 const sortProp = ref<string | null>(null)
 const sortOrder = ref<'ascending' | 'descending' | null>(null)
-const sortMethod = ref<((a: unknown, b: unknown) => number) | undefined>(undefined)
-const sortBy = ref<SortColumnLike['sortBy']>(undefined)
-const isCustomSort = ref(false)
 
-function readDefaultSortFromAttrs(): { prop: string; order: 'ascending' | 'descending' } | null {
-  const ds = attrs.defaultSort as { prop?: string; order?: string } | undefined
-  if (!ds?.prop) return null
-  if (ds.order !== 'ascending' && ds.order !== 'descending') return null
-  return { prop: ds.prop, order: ds.order }
-}
+// 当前排序列：排序方式全由列描述决定（sortable: 'custom' 不动行序、sortMethod 自定义比较器）
+const sortCol = computed(() => props.columns.find(c => (c.prop ?? c.key) === sortProp.value))
 
-function applyDefaultSortFromAttrs(): void {
-  const ds = readDefaultSortFromAttrs()
-  if (ds) {
-    sortProp.value = ds.prop
-    sortOrder.value = ds.order
-    sortMethod.value = undefined
-    sortBy.value = undefined
-    isCustomSort.value = false
-  } else {
-    sortProp.value = null
-    sortOrder.value = null
-    sortMethod.value = undefined
-    sortBy.value = undefined
-    isCustomSort.value = false
-  }
-}
+// default-sort 只是为对齐 el-table 习惯的透传项（v2 无此概念），故从 attrs 读而不进 props
+const defaultSort = computed(() => {
+  const ds = attrs.defaultSort as { prop?: string; order?: 'ascending' | 'descending' } | undefined
+  if (!ds?.prop || !ds.order) return null
+  return ds
+})
 
+// 调用方多传字面量对象（每次渲染都是新引用），故比值不比引用：
+// 只在 prop/order 真变了才回到默认排序，否则父组件无关重渲染会把用户点出来的排序冲掉
 watch(
-  () => attrs.defaultSort,
-  () => {
-    applyDefaultSortFromAttrs()
+  defaultSort,
+  (ds, prev) => {
+    if (ds?.prop === prev?.prop && ds?.order === prev?.order) return
+    sortProp.value = ds?.prop ?? null
+    sortOrder.value = ds?.order ?? null
   },
-  { deep: true, immediate: true },
+  { immediate: true },
 )
 
 const sortedData = computed(() => {
-  const raw = props.data
-  if (isCustomSort.value || !sortProp.value || !sortOrder.value) return raw
+  const col = sortCol.value
+  const prop = sortProp.value
+  const order = sortOrder.value
+  // custom 列只回传 sort-change，行序由父组件自行更新 :data
+  if (!col || !prop || !order || col.sortable === 'custom') return props.data
   return orderBy(
-    [...raw] as never,
-    sortProp.value,
-    sortOrder.value,
-    (sortMethod.value ?? null) as never,
-    sortBy.value as never,
+    [...props.data] as never,
+    prop,
+    order,
+    (col.sortMethod ?? null) as never,
+    null as never, // 不用 EP 的 sortBy（多字段排序），列描述只提供 sortMethod
   ) as unknown[]
 })
+// #endregion
 
-const elTableAttrs = computed(() => {
-  const { onSortChange: _onSortChange, ...rest } = attrs as Record<string, unknown>
-  return rest
+// #region 底部状态：总数与导出菜单（无数据时都不显示，footer 高度收为 0）
+// 传了 total 覆盖且与筛选后数量不一致时显示「共 筛选 / 总数 条」
+const footerTotalText = computed(() => {
+  const filtered = sortedData.value.length
+  const total = props.total ?? filtered
+  if (total !== filtered) return t('meTable.totalFiltered', { filtered, total })
+  return t('meTable.total', { total })
 })
+// #endregion
 
-function handleSortChange(payload: {
-  column: SortColumnLike | null
-  prop: string | null
-  order: 'ascending' | 'descending' | null
-}): void {
-  const { column, prop, order } = payload
+// #region 列映射、行 key 注入、排序桥接
+const v2Ref = ref<TableV2Instance>()
 
-  if (column?.sortable === 'custom') {
-    isCustomSort.value = true
-    sortProp.value = prop
-    sortOrder.value = order
-    sortMethod.value = undefined
-    sortBy.value = undefined
-  } else if (order === null) {
-    isCustomSort.value = false
-    // 与「有 default-sort 的列表」预期一致：取消列排序时回到 default-sort，而不是按 data 插入顺序（例如监控 push 尾部最新）
-    if (readDefaultSortFromAttrs()) {
-      applyDefaultSortFromAttrs()
-    } else {
-      sortProp.value = null
-      sortOrder.value = null
-      sortMethod.value = undefined
-      sortBy.value = undefined
+// 行高/表头高/表内 footer 固定行高：全应用统一，与 el-table 默认行高对齐
+const V2_ROW_HEIGHT = 40
+
+// v2 的 rowKey 只支持指定字段名：给行对象注入不可枚举的 symbol 内部键（稳定唯一，且不出现在 RAW 导出 JSON 里）
+const V2_ROW_KEY = Symbol('meTableRowKey')
+let rowKeySeed = 0
+
+const v2Data = computed(() => {
+  const rows = sortedData.value
+  for (const row of rows) {
+    const raw = toRaw(row)
+    if (raw && typeof raw === 'object' && !(V2_ROW_KEY in raw)) {
+      Object.defineProperty(raw, V2_ROW_KEY, { value: ++rowKeySeed })
     }
-  } else {
-    isCustomSort.value = false
-    sortProp.value = prop
-    sortOrder.value = order
-    sortMethod.value = column?.sortMethod
-    sortBy.value = column?.sortBy
   }
-
-  currentPage.value = 1
-
-  const onSortChange = attrs.onSortChange as ((p: typeof payload) => void) | undefined
-  onSortChange?.(payload)
-}
-// #endregion
-
-// #region 其他：分页数据与分页事件
-const pageData = computed(() => {
-  return sortedData.value.slice(
-    (currentPage.value - 1) * pageSize.value,
-    currentPage.value * pageSize.value,
-  )
+  return rows
 })
 
-// RAW 项不依赖 exportRows 永远可用；其余格式需视图提供 exportRows
-const showExportMenu = computed(() => !props.hideExport && sortedData.value.length > 0)
-
-const showPagination = computed(() => {
-  if (sortedData.value.length === 0) return false
-  if (!props.hideOnSinglePage) return true
-  return sortedData.value.length > pageSize.value
-})
-
-// 无数据时不显示 footer；有数据时显示分页和/或 …
-const showTableFooter = computed(() => showExportMenu.value || showPagination.value)
-
-function handleChange(page: number, size: number): void {
-  currentPage.value = page
-  pageSize.value = size
-}
-
-function updatePageSize(size: number): void {
-  currentPage.value = 1
-  pageSize.value = size
-}
-
-// 行变少后停在仍有数据的页（例如删掉当前页最后一条）
-watch(
-  () => sortedData.value.length,
-  len => {
-    const maxPage = Math.max(1, Math.ceil(len / pageSize.value))
-    if (currentPage.value > maxPage) currentPage.value = maxPage
-  },
+const v2Columns = computed(() =>
+  props.columns.map(col => ({
+    key: col.key,
+    dataKey: col.prop ?? col.key,
+    title: col.title ?? '',
+    headerTip: col.headerTip,
+    // 弹性列以 minWidth 为基准宽、按 grow 分配剩余宽度；固定宽列不参与拉伸
+    width: col.width ?? col.minWidth ?? 120,
+    flexGrow: col.width ? 0 : (col.grow ?? 1),
+    fixed: col.fixed,
+    align: col.align,
+    sortable: Boolean(col.sortable),
+    class: col.className,
+    headerClass: col.headerClassName,
+  })),
 )
+
+// v2 默认流体布局：列宽 flexShrink=1 会随容器压缩；总列宽超出容器时须开 fixed
+// （列宽不收缩、主体展宽出横向滚动，与 el-table 溢出行为一致）；fixed 会禁用 flexGrow 拉伸，故按总宽动态开
+const v2ColumnsTotalWidth = computed(() =>
+  props.columns.reduce((sum, col) => sum + (col.width ?? col.minWidth ?? 120), 0),
+)
+
+// v2 排序箭头仅展示（sortState），实际排序仍走 MeTable 的 orderBy（保留 sortMethod 能力）
+const v2SortState = computed(() => {
+  if (!sortCol.value || !sortOrder.value) return {}
+  return { [sortCol.value.key]: sortOrder.value === 'ascending' ? 'asc' : 'desc' }
+})
+
+// v2 的 #footer 为表内固定行：高度从主体扣除、空态底部也让位；无数据时收为 0 让空态占满整表
+const v2FooterHeight = computed(() => (sortedData.value.length ? V2_ROW_HEIGHT : 0))
+
+// v2 原生只有 asc/desc 两态（无第三次点击取消排序）；对外仍按 el-table 的 sort-change 签名回传
+function handleV2ColumnSort({ key, order }: { key: string; order?: 'asc' | 'desc' }): void {
+  const col = props.columns.find(c => c.key === key)
+  if (!col) return
+  sortProp.value = col.prop ?? col.key
+  sortOrder.value = order === 'desc' ? 'descending' : 'ascending'
+
+  const onSortChange = attrs.onSortChange as
+    | ((p: { column: MeColumn; prop: string; order: string }) => void)
+    | undefined
+  onSortChange?.({ column: col, prop: sortProp.value, order: sortOrder.value })
+}
+
+// 行类：调用方 rowClass（如差异行标记）与内置 stripe 组合（0 起奇数行加浅色底，与 el-table stripe 对齐）
+function v2RowClass({ rowIndex, rowData }: { rowIndex: number; rowData: unknown }): string {
+  const custom = props.rowClass?.(rowData, rowIndex) ?? ''
+  return rowIndex % 2 === 1 ? `${custom} me-v2-stripe`.trim() : custom
+}
+
+// #region 勾选列：v2 无内置 selection，自渲染复选框并维护选中态；selection-change 经 attrs 回传行对象数组（与 el-table 签名一致）
+const selectedSeeds = ref<Set<number>>(new Set())
+
+function rowSeed(row: unknown): number | undefined {
+  if (row && typeof row === 'object') return (toRaw(row) as Record<symbol, number>)[V2_ROW_KEY]
+  return undefined
+}
+
+const selectedRows = computed(() =>
+  sortedData.value.filter(row => {
+    const seed = rowSeed(row)
+    return seed !== undefined && selectedSeeds.value.has(seed)
+  }),
+)
+
+const isAllSelected = computed(
+  () => sortedData.value.length > 0 && selectedRows.value.length === sortedData.value.length,
+)
+const isSomeSelected = computed(() => selectedRows.value.length > 0 && !isAllSelected.value)
+
+function emitSelectionChange(): void {
+  const fn = attrs.onSelectionChange as ((rows: unknown[]) => void) | undefined
+  fn?.(selectedRows.value)
+}
+
+function isRowSelected(row: unknown): boolean {
+  const seed = rowSeed(row)
+  return seed !== undefined && selectedSeeds.value.has(seed)
+}
+
+function toggleRowSelected(row: unknown, checked: boolean): void {
+  const seed = rowSeed(row)
+  if (seed === undefined) return
+  const next = new Set(selectedSeeds.value)
+  if (checked) next.add(seed)
+  else next.delete(seed)
+  selectedSeeds.value = next
+  emitSelectionChange()
+}
+
+function toggleSelectAll(checked: boolean): void {
+  const next = new Set<number>()
+  if (checked) {
+    for (const row of sortedData.value) {
+      const seed = rowSeed(row)
+      if (seed !== undefined) next.add(seed)
+    }
+  }
+  selectedSeeds.value = next
+  emitSelectionChange()
+}
+
+// 数据刷新后裁剪不存在的选中项（与 el-table 数据重置后 selection-change 一致）
+watch(sortedData, rows => {
+  const alive = new Set(rows.map(rowSeed).filter((s): s is number => s !== undefined))
+  const pruned = new Set([...selectedSeeds.value].filter(s => alive.has(s)))
+  if (pruned.size !== selectedSeeds.value.size) {
+    selectedSeeds.value = pruned
+    emitSelectionChange()
+  }
+})
 // #endregion
 
-// #region 导出：RAW 直接序列化数据；其余格式由 exportRows 数据层计算，不渲染 DOM
-const tableRef = ref<TableInstance>()
+// #region 行事件桥接：调用方经 attrs 传 onRowClick / onRowDblclick（签名 (row, rowIndex, event)），转 v2 row-event-handlers（键为 vnode 事件名）
+type RowEventListener = (row: unknown, rowIndex: number, event: Event) => void
 
-function ensureExportRows(): boolean {
-  if (sortedData.value.length) return true
-  meErr(t('meTable.exportEmpty'))
-  return false
+const v2RowEventHandlers = computed(() => {
+  const handlers: Record<
+    string,
+    (payload: { event: Event; rowData: unknown; rowIndex: number }) => void
+  > = {}
+  const click = attrs.onRowClick as RowEventListener | undefined
+  if (click) handlers.onClick = ({ event, rowData, rowIndex }) => click(rowData, rowIndex, event)
+  const dblclick = attrs.onRowDblclick as RowEventListener | undefined
+  if (dblclick)
+    handlers.onDblclick = ({ event, rowData, rowIndex }) => dblclick(rowData, rowIndex, event)
+  return handlers
+})
+// #endregion
+
+function meColumnOf(key: unknown): MeColumn | undefined {
+  return props.columns.find(c => c.key === key)
 }
+
+// 纯插槽列（操作列等无取值源、不进导出的列）：包裹层撑满单元格但不裁剪（el-table 的 .cell 也不裁溢出内容），
+// 插槽内靠 space-between / space-evenly 铺满整格的布局（操作图标）与旧版一致
+function isPlainSlotColumn(key: unknown): boolean {
+  const col = meColumnOf(key)
+  return !!col && !isExportableColumn(col)
+}
+
+// 单元格文本统一取法：formatter 优先，否则按 prop 取值（复用已取好的 cellData）
+function cellText(
+  col: MeColumn | undefined,
+  row: unknown,
+  index: number,
+  cellData?: unknown,
+): string {
+  // 序号列：显示与导出一致（rowIndex + 1）
+  if (col?.index) return String(index + 1)
+  if (col?.formatter) return col.formatter(row, index)
+  const value =
+    cellData !== undefined
+      ? cellData
+      : col?.prop
+        ? (row as Record<string, unknown>)?.[col.prop]
+        : ''
+  return toCellText(value)
+}
+
+// 溢出提示：全列统一，与 el-table show-overflow-tooltip 一致，mouseenter 时检测截断才显示；
+// el-tooltip 有 300ms 延迟，检测必先于展示；开关全单元格共用（同一时刻只有一个悬停）
+const cellTooltipDisabled = ref(true)
+
+function updateCellTooltipDisabled(e: MouseEvent): void {
+  const el = e.currentTarget as HTMLElement
+  cellTooltipDisabled.value = el.scrollWidth <= el.clientWidth
+}
+// #endregion
+
+// #region 导出：RAW 直接序列化数据；其余格式由列描述从数据层计算矩阵，不渲染 DOM
+// 导出菜单项：RAW 项永远可用，其余格式需列描述能算出矩阵
+const exportMenuItems = computed(() => {
+  const withMatrix = exportableColumns(props.columns).length > 0
+  return [
+    { command: 'copyRawJson', label: t('meTable.copyRawJson'), divided: false },
+    ...(withMatrix
+      ? [
+          { command: 'copyJson', label: t('meTable.copyJson'), divided: false },
+          { command: 'copyCsv', label: t('meTable.copyCsv'), divided: false },
+          { command: 'copyTsv', label: t('meTable.copyTsv'), divided: false },
+          { command: 'copyHtml', label: t('meTable.copyHtml'), divided: false },
+          { command: 'copyMarkdown', label: t('meTable.copyMarkdown'), divided: false },
+        ]
+      : []),
+    { command: 'exportRawJson', label: t('meTable.exportRawJson'), divided: true },
+    ...(withMatrix
+      ? [
+          { command: 'exportJson', label: t('meTable.exportJson'), divided: false },
+          { command: 'exportCsv', label: t('meTable.exportCsv'), divided: false },
+          { command: 'exportTsv', label: t('meTable.exportTsv'), divided: false },
+          { command: 'exportHtml', label: t('meTable.exportHtml'), divided: false },
+          { command: 'exportMarkdown', label: t('meTable.exportMarkdown'), divided: false },
+          { command: 'exportExcel', label: t('meTable.exportExcel'), divided: false },
+        ]
+      : []),
+  ]
+})
 
 function exportFileName(ext: string): string {
   return buildExportFileName(props.exportName, ext)
@@ -217,9 +339,12 @@ function rawJsonText(): string {
 }
 
 async function handleExportCommand(command: string): Promise<void> {
-  if (!ensureExportRows()) return
+  if (!sortedData.value.length) {
+    meErr(t('meTable.exportEmpty'))
+    return
+  }
 
-  // 原始 JSON 直接序列化数据，不依赖 exportRows
+  // 原始 JSON 直接序列化数据，不受列描述影响
   if (command === 'copyRawJson') {
     meCopy(rawJsonText())
     return
@@ -229,9 +354,8 @@ async function handleExportCommand(command: string): Promise<void> {
     return
   }
 
-  // 其余格式：由视图提供的 exportRows 计算展示文本（与界面列定义保持一致）
-  if (!props.exportRows) return
-  const { headers, rows } = props.exportRows(sortedData.value)
+  // 其余格式：由列描述计算展示文本（与界面列定义单一来源）
+  const { headers, rows } = exportMatrixFromColumns(props.columns, sortedData.value)
 
   switch (command) {
     case 'copyJson':
@@ -272,96 +396,106 @@ async function handleExportCommand(command: string): Promise<void> {
 
 defineExpose({
   scrollTo(top: number, left?: number) {
-    tableRef.value?.scrollTo(top, left)
-  },
-  /** 回到第 1 页；每页条数和排序保留 */
-  resetPage() {
-    currentPage.value = 1
+    v2Ref.value?.scrollTo({ scrollTop: top, scrollLeft: left ?? 0 })
   },
 })
 // #endregion
 </script>
 
 <template>
-  <div class="me-table">
+  <div class="me-table" :class="attrs.class" :style="attrs.style as StyleValue">
     <div class="me-table-main">
-      <el-table
-        ref="tableRef"
-        stripe
-        border
-        v-bind="elTableAttrs"
-        :data="pageData"
-        height="100%"
-        @sort-change="handleSortChange">
-        <slot></slot>
-      </el-table>
-    </div>
-    <div v-if="showTableFooter" class="me-table-footer">
-      <el-pagination
-        v-if="showPagination"
-        class="me-table-pagination"
-        :style="{ marginLeft: layout.includes('total') ? '5px' : 0 }"
-        size="small"
-        background
-        :hide-on-single-page="hideOnSinglePage"
-        v-model:current-page="currentPage"
-        @change="handleChange"
-        :page-size="pageSize"
-        :page-sizes="[20, 50, 100]"
-        @update:page-size="updatePageSize"
-        :total="sortedData.length"
-        :layout />
-      <el-dropdown
-        v-if="showExportMenu"
-        class="me-table-more-wrap"
-        trigger="click"
-        placement="top-end"
-        @command="handleExportCommand">
-        <me-icon icon="el-icon-more-filled" class="icon-btn me-table-more" />
-        <template #dropdown>
-          <el-dropdown-menu>
-            <el-dropdown-item command="copyRawJson">{{
-              t('meTable.copyRawJson')
-            }}</el-dropdown-item>
-            <el-dropdown-item v-if="exportRows" command="copyJson">{{
-              t('meTable.copyJson')
-            }}</el-dropdown-item>
-            <el-dropdown-item v-if="exportRows" command="copyCsv">{{
-              t('meTable.copyCsv')
-            }}</el-dropdown-item>
-            <el-dropdown-item v-if="exportRows" command="copyTsv">{{
-              t('meTable.copyTsv')
-            }}</el-dropdown-item>
-            <el-dropdown-item v-if="exportRows" command="copyHtml">{{
-              t('meTable.copyHtml')
-            }}</el-dropdown-item>
-            <el-dropdown-item v-if="exportRows" command="copyMarkdown">{{
-              t('meTable.copyMarkdown')
-            }}</el-dropdown-item>
-            <el-dropdown-item command="exportRawJson" divided>{{
-              t('meTable.exportRawJson')
-            }}</el-dropdown-item>
-            <el-dropdown-item v-if="exportRows" command="exportJson">{{
-              t('meTable.exportJson')
-            }}</el-dropdown-item>
-            <el-dropdown-item v-if="exportRows" command="exportCsv">{{
-              t('meTable.exportCsv')
-            }}</el-dropdown-item>
-            <el-dropdown-item v-if="exportRows" command="exportTsv">{{
-              t('meTable.exportTsv')
-            }}</el-dropdown-item>
-            <el-dropdown-item v-if="exportRows" command="exportHtml">{{
-              t('meTable.exportHtml')
-            }}</el-dropdown-item>
-            <el-dropdown-item v-if="exportRows" command="exportMarkdown">{{
-              t('meTable.exportMarkdown')
-            }}</el-dropdown-item>
-            <el-dropdown-item v-if="exportRows" command="exportExcel">{{
-              t('meTable.exportExcel')
-            }}</el-dropdown-item>
-          </el-dropdown-menu>
+      <el-auto-resizer>
+        <template #default="{ width, height }">
+          <el-table-v2
+            ref="v2Ref"
+            class="me-table-v2"
+            :columns="v2Columns"
+            :data="v2Data"
+            :width="width"
+            :height="height"
+            :fixed="v2ColumnsTotalWidth > width"
+            :row-height="V2_ROW_HEIGHT"
+            :header-height="V2_ROW_HEIGHT"
+            :row-key="V2_ROW_KEY"
+            :sort-state="v2SortState"
+            :footer-height="v2FooterHeight"
+            :row-class="v2RowClass"
+            :row-event-handlers="v2RowEventHandlers"
+            @column-sort="handleV2ColumnSort">
+            <template #cell="{ column, cellData, rowData, rowIndex }">
+              <el-checkbox
+                v-if="meColumnOf(column.key)?.selection"
+                :model-value="isRowSelected(rowData)"
+                @change="(v: boolean) => toggleRowSelected(rowData, v)" />
+              <div v-else-if="isPlainSlotColumn(column.key)" class="me-cell-slot">
+                <slot
+                  :name="`cell-${String(column.key)}`"
+                  :row="rowData"
+                  :index="rowIndex"
+                  :value="cellData" />
+              </div>
+              <el-tooltip
+                v-else
+                :content="cellText(meColumnOf(column.key), rowData, rowIndex, cellData)"
+                placement="top"
+                :persistent="false"
+                :show-after="300"
+                :disabled="cellTooltipDisabled">
+                <div class="me-cell-ellipsis" @mouseenter="updateCellTooltipDisabled">
+                  <slot
+                    :name="`cell-${String(column.key)}`"
+                    :row="rowData"
+                    :index="rowIndex"
+                    :value="cellData">
+                    {{ cellText(meColumnOf(column.key), rowData, rowIndex, cellData) }}
+                  </slot>
+                </div>
+              </el-tooltip>
+            </template>
+            <template #header-cell="{ column }">
+              <el-checkbox
+                v-if="meColumnOf(column.key)?.selection"
+                :model-value="isAllSelected"
+                :indeterminate="isSomeSelected"
+                @change="(v: boolean) => toggleSelectAll(v)" />
+              <slot v-else :name="`header-${String(column.key)}`" :column="meColumnOf(column.key)">
+                <el-tooltip v-if="column.headerTip" :content="column.headerTip" placement="top">
+                  <span>{{ column.title }}</span>
+                </el-tooltip>
+                <span v-else>{{ column.title }}</span>
+              </slot>
+            </template>
+            <!-- 空态描述可定制（未传时用 EP 默认 ElEmpty 文案）；总数与导出进表格自带 #footer（固定行，高度从主体扣除） -->
+            <template #empty>
+              <el-empty :description="emptyText" />
+            </template>
+            <template #footer>
+              <div v-if="sortedData.length" class="me-table-footer">
+                <span class="me-table-total">{{ footerTotalText }}</span>
+                <el-dropdown
+                  class="me-table-more-wrap"
+                  trigger="click"
+                  placement="top-end"
+                  @command="handleExportCommand">
+                  <me-icon icon="el-icon-more-filled" class="icon-btn me-table-more" />
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item
+                        v-for="item in exportMenuItems"
+                        :key="item.command"
+                        :command="item.command"
+                        :divided="item.divided">
+                        {{ item.label }}
+                      </el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
+              </div>
+            </template>
+          </el-table-v2>
         </template>
-      </el-dropdown>
+      </el-auto-resizer>
     </div>
   </div>
 </template>
@@ -371,30 +505,102 @@ defineExpose({
   height: 100%;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
 
   .me-table-main {
     flex: 1;
     height: 0;
+    // 外框挂 main 上（v2 根自身的 border/outline 会被内部绝对定位网格与子背景盖住、或挤内容盒）；
+    // main 内容盒相应缩 2px，resizer 量到的恰是内尺寸，width 取值刚好；
+    // --el-table-border 仅定义在 .el-table-v2 根节点作用域，祖先元素取不到，故直接用其指向的同源全局变量
+    border: 1px solid var(--el-border-color-lighter);
   }
 
+  // 表内 footer（#footer 插槽的固定行）：撑满行高，左右留白与单元格内边距对齐
   .me-table-footer {
+    height: 100%;
     display: flex;
     align-items: center;
-    margin-top: 10px;
     gap: 4px;
+    padding: 0 12px;
+    // 顶边划出与表体的边界（末行底线已去掉，不补这里就看不出分界）
+    border-top: var(--el-table-border);
+    // v2 footer 默认透明而表体刷 --el-bg-color，弹框内叠底底色不同会出色差带，对齐表体
+    background-color: var(--el-bg-color);
 
-    .me-table-pagination {
+    .me-table-total {
       flex: 1;
       min-width: 0;
     }
 
     .me-table-more-wrap {
       flex-shrink: 0;
-      margin-left: auto;
-      margin-right: 5px;
       font-size: 16px;
     }
+  }
+}
+
+// 与 el-table（stripe + border）的视觉对齐
+.me-table-v2 {
+  // 行文字色对齐 el-table（v2 行单元格不设 color，会继承页面主文字色而偏亮一档）
+  color: var(--el-table-text-color);
+
+  // 单元格内边距与 el-table 的 .cell 一致；列间竖线模拟 border 表
+  :deep(.el-table-v2__header-cell),
+  :deep(.el-table-v2__row-cell) {
+    padding: 0 12px;
+  }
+
+  :deep(.el-table-v2__header-cell + .el-table-v2__header-cell),
+  :deep(.el-table-v2__row-cell + .el-table-v2__row-cell) {
+    border-left: var(--el-table-border);
+  }
+
+  // 固定列由 v2 单独渲染在左/右独立网格（主网格只留占位单元格），相邻选择器的列间线接不过去：
+  // 接缝处补线（右固定首列加左边、左固定末列加右边），与 el-table border 表的固定列边缘一致
+  :deep(.el-table-v2__right .el-table-v2__header-cell:first-child),
+  :deep(.el-table-v2__right .el-table-v2__row-cell:first-child) {
+    border-left: var(--el-table-border);
+  }
+
+  :deep(.el-table-v2__left .el-table-v2__header-cell:last-child),
+  :deep(.el-table-v2__left .el-table-v2__row-cell:last-child) {
+    border-right: var(--el-table-border);
+  }
+
+  // 行分隔线与 hover 底色 EP 已有等价默认样式；此处仅去掉末行线，表底线交由外框承担（否则与外框底线双线）
+  :deep(.el-table-v2__row:last-child) {
+    border-bottom: none;
+  }
+
+  // 行底色统一经 --me-row-bg 下发，覆盖优先级对齐 el-table：hover > 行级高亮 > 斑马纹；
+  // 页面级高亮（如当前编辑行）在各自样式里只设该变量，不再与内置底色比选择器特异性
+  :deep(.el-table-v2__row) {
+    background-color: var(--me-row-bg, transparent);
+  }
+
+  :deep(.me-v2-stripe) {
+    --me-row-bg: var(--el-fill-color-lighter);
+  }
+
+  // 行类重复一次抬高特异性：页面级高亮变量规则在父组件样式（注入晚于本组件），
+  // 不压过它 hover 就会被高亮吞掉（el-table 里 hover 恒最优先）
+  :deep(.el-table-v2__row.el-table-v2__row:hover),
+  :deep(.el-table-v2__row.el-table-v2__row.is-hovered) {
+    --me-row-bg: var(--el-table-row-hover-bg-color);
+  }
+
+  // 单元格内容单行省略（截断检测与 el-table show-overflow-tooltip 一致）；
+  // 包裹节点属本组件模板，scoped 即可，自定义单元格插槽内容也被它包裹
+  .me-cell-ellipsis {
+    width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  // 纯插槽列包裹层：撑满单元格供插槽内容整格布局，不裁剪（溢出内边距区由单元格边界兜底）
+  .me-cell-slot {
+    width: 100%;
   }
 }
 </style>

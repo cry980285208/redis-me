@@ -3,10 +3,10 @@
 import { computed, inject, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import type { MeColumn } from '@/components/me-table-column'
 import { clientTip as tips } from '@/locales/client'
 import { shareProvideKey } from '@/types/me-interface'
 import type { RedisClientInfo, RedisCommand } from '@/types/tauri-specta'
-import type { TableExportMatrix } from '@/utils/export'
 import { meConfirm, meHumanSeconds, meCommands, meOk } from '@/utils/util'
 import NodeList from '@/views/ext/NodeList.vue'
 // `client_list` 实际载荷字段齐全；`Required` 与 specta 在 `#[serde(default)]` 下生成的可选字段对齐
@@ -22,8 +22,6 @@ const clientType = ref('')
 const keyword = ref('')
 const loading = ref(false)
 const dataList = ref<RedisClientListRow[]>([])
-const sortProperty = ref('id')
-const sortOrder = ref('ascending')
 // #endregion
 
 // #region 计算属性
@@ -35,30 +33,6 @@ const filterDataList = computed(() => {
     row => !key || row.addr.toLowerCase().includes(key) || row.name.toLowerCase().includes(key),
   )
 })
-
-// MeTable 导出：由行数据直接计算展示文本，与表格列定义一致（改列时同步改这里）
-function exportRows(data: unknown[]): TableExportMatrix {
-  return {
-    headers: [
-      'ID',
-      t('redisClient.addr'),
-      t('redisClient.name'),
-      t('redisClient.age'),
-      t('redisClient.idle'),
-      t('redisClient.cmd'),
-      ...otherProps,
-    ],
-    rows: (data as RedisClientListRow[]).map(row => [
-      String(row.id),
-      row.addr,
-      row.name,
-      String(meHumanSeconds(row.age)),
-      String(meHumanSeconds(row.idle)),
-      row.cmd,
-      ...otherProps.map(p => String((row as Record<string, unknown>)[p] ?? '')),
-    ]),
-  }
-}
 // #endregion
 
 // #region 面板操作
@@ -145,6 +119,46 @@ function propWidth(item: string) {
   if (item.length == 5) return 100
   return 130
 }
+
+// 字段列公共部分：prop=key、可排序、表头提示取字段说明（无说明回落字段名）
+function fieldCol(
+  key: string,
+  title: string,
+  extra: Partial<MeColumn<RedisClientListRow>> = {},
+): MeColumn<RedisClientListRow> {
+  return { key, prop: key, title, sortable: true, headerTip: tipMap.value[key] || key, ...extra }
+}
+
+// MeTable 列描述：单一来源，表格与导出共用（持续/空闲文本由 formatter 计算，与界面展示一致；
+// 操作列无取值源不参与导出）
+const clientColumns = computed<MeColumn<RedisClientListRow>[]>(() => [
+  fieldCol('id', 'ID', { width: 100, align: 'right' }),
+  fieldCol('addr', t('redisClient.addr'), { width: 180 }),
+  fieldCol('name', t('redisClient.name'), { width: 160 }),
+  fieldCol('age', t('redisClient.age'), {
+    width: 140,
+    align: 'right',
+    formatter: row => String(meHumanSeconds(row.age)),
+  }),
+  fieldCol('idle', t('redisClient.idle'), {
+    width: 120,
+    align: 'right',
+    formatter: row => String(meHumanSeconds(row.idle)),
+  }),
+  fieldCol('cmd', t('redisClient.cmd'), { minWidth: 200 }),
+  ...otherProps.map(prop => fieldCol(prop, prop, { width: propWidth(prop), align: 'right' })),
+  ...(canEdit.value
+    ? [
+        {
+          key: 'action',
+          title: t('action'),
+          width: 80,
+          align: 'center' as const,
+          fixed: 'right' as const,
+        },
+      ]
+    : []),
+])
 // #endregion
 </script>
 
@@ -178,104 +192,20 @@ function propWidth(item: string) {
     </div>
     <div class="table">
       <me-table
-        :data="filterDataList"
-        ref="table"
         v-loading="loading"
+        :data="filterDataList"
+        :columns="clientColumns"
+        :total="dataList.length"
         :default-sort="{ prop: 'id', order: 'ascending' }"
-        height="100%"
-        export-name="client"
-        :export-rows="exportRows">
-        <el-table-column
-          label="ID"
-          prop="id"
-          show-overflow-tooltip
-          sortable
-          width="100"
-          align="right">
-          <template #header>
-            <el-tooltip :content="tipMap['id'] || 'id'" placement="top">
-              <span>ID</span>
-            </el-tooltip>
-          </template>
-        </el-table-column>
-        <el-table-column prop="addr" show-overflow-tooltip width="180" sortable>
-          <template #header>
-            <el-tooltip :content="tipMap['addr'] || 'addr'" placement="top">
-              <span>{{ t('redisClient.addr') }}</span>
-            </el-tooltip>
-          </template>
-        </el-table-column>
-        <el-table-column prop="name" show-overflow-tooltip width="160" sortable>
-          <template #header>
-            <el-tooltip :content="tipMap['name'] || 'name'" placement="top">
-              <span>{{ t('redisClient.name') }}</span>
-            </el-tooltip>
-          </template>
-        </el-table-column>
-        <el-table-column
-          prop="age"
-          show-overflow-tooltip
-          sortable
-          width="140"
-          align="right"
-          :formatter="(row: RedisClientListRow) => meHumanSeconds(row.age)">
-          <template #header>
-            <el-tooltip :content="tipMap['age'] || 'age'" placement="top">
-              <span>{{ t('redisClient.age') }}</span>
-            </el-tooltip>
-          </template>
-        </el-table-column>
-        <el-table-column
-          prop="idle"
-          show-overflow-tooltip
-          sortable
-          width="120"
-          align="right"
-          :formatter="(row: RedisClientListRow) => meHumanSeconds(row.idle)">
-          <template #header>
-            <el-tooltip :content="tipMap['idle'] || 'idle'" placement="top">
-              <span>{{ t('redisClient.idle') }}</span>
-            </el-tooltip>
-          </template>
-        </el-table-column>
-        <el-table-column prop="cmd" show-overflow-tooltip sortable min-width="200">
-          <template #header>
-            <el-tooltip :content="tipMap['cmd'] || 'cmd'" placement="top">
-              <span>{{ t('redisClient.cmd') }}</span>
-            </el-tooltip>
-          </template>
-        </el-table-column>
-
-        <el-table-column
-          v-for="item in otherProps"
-          :key="item"
-          :prop="item"
-          show-overflow-tooltip
-          sortable
-          :width="propWidth(item)"
-          align="right">
-          <template #header>
-            <el-tooltip :content="tipMap[item] || item" placement="top">
-              <span>{{ item }}</span>
-            </el-tooltip>
-          </template>
-        </el-table-column>
-
-        <el-table-column
-          :label="t('action')"
-          width="80"
-          align="center"
-          fixed="right"
-          v-if="canEdit">
-          <template #default="scope">
-            <me-icon
-              :info="t('redisClient.killClientHint')"
-              icon="el-icon-CircleCloseFilled"
-              class="icon-btn"
-              @click="killClient(scope.row)"
-              style="justify-content: center" />
-          </template>
-        </el-table-column>
+        export-name="client">
+        <template #cell-action="{ row }">
+          <me-icon
+            :info="t('redisClient.killClientHint')"
+            icon="el-icon-CircleCloseFilled"
+            class="icon-btn"
+            style="justify-content: center"
+            @click="killClient(row)" />
+        </template>
       </me-table>
     </div>
   </div>

@@ -3,9 +3,9 @@
 import { computed, inject, onUnmounted, ref, watchEffect } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import type { MeColumn, MeFilterValue } from '@/components/me-table-column'
 import { shareProvideKey } from '@/types/me-interface'
 import type { RedisKey_Deserialize, RedisKeySize_Serialize } from '@/types/tauri-specta'
-import type { TableExportMatrix } from '@/utils/export'
 import { clearKeyMemoryCacheForConn } from '@/utils/key-memory-cache'
 import { clearKeyTypeCacheForConn } from '@/utils/key-type-cache'
 import { useMemoryScan } from '@/utils/memory-scan'
@@ -17,7 +17,6 @@ import {
   meConfirm,
   meCopy,
   meDeleteKey,
-  meFilterHandler,
   meHumanSize,
   meCommands,
   meOk,
@@ -86,9 +85,17 @@ onUnmounted(() => {
   void stop()
 })
 
+// 类型列头筛选已选值（空数组即不限）
+const typeFilter = ref<MeFilterValue[]>([])
+
 const filterDataList = computed(() => {
   const key = keyword.value.toLowerCase()
-  return dataList.value.filter(row => !key || row.key?.toLowerCase().indexOf(key) > -1)
+  const types = typeFilter.value
+  return dataList.value.filter(
+    row =>
+      (!key || row.key?.toLowerCase().indexOf(key) > -1) &&
+      (!types.length || types.includes(row.type)),
+  )
 })
 const filterTypes = computed(() => {
   return [...new Set(dataList.value.map(d => d.type))].map(d => ({
@@ -97,17 +104,35 @@ const filterTypes = computed(() => {
   }))
 })
 
-// MeTable 导出：由行数据直接计算展示文本，与表格列定义一致（改列时同步改这里）
-function exportRows(data: unknown[]): TableExportMatrix {
-  return {
-    headers: [t('redisMemory.type'), t('redisMemory.key'), t('redisMemory.size')],
-    rows: (data as RedisKeySize_Serialize[]).map(row => [
-      toKeyTypeLabel(row.type),
-      row.key,
-      meHumanSize(row.size),
-    ]),
-  }
-}
+// 列描述：展示与导出文本单一来源；类型列单元格走插槽渲染 el-text（文本最长约 70px < 100px 列宽，不会截断故无色差）
+const memoryColumns = computed<MeColumn<RedisKeySize_Serialize>[]>(() => [
+  { key: 'selection', width: 50, align: 'center', selection: true },
+  {
+    key: 'type',
+    prop: 'type',
+    title: t('redisMemory.type'),
+    width: 100,
+    sortable: true,
+    formatter: row => toKeyTypeLabel(row.type),
+  },
+  { key: 'key', prop: 'key', title: t('redisMemory.key'), minWidth: 200 },
+  {
+    key: 'size',
+    prop: 'size',
+    title: t('redisMemory.size'),
+    width: 120,
+    sortable: true,
+    formatter: row => meHumanSize(row.size),
+  },
+  {
+    key: 'action',
+    title: t('action'),
+    // 与值区操作列同方案：宽 90px，3 图标两端对齐、2 图标（只读）均布
+    width: 90,
+    align: 'center',
+    fixed: 'right',
+  },
+])
 
 function chooseKey(redisKey: RedisKey_Deserialize) {
   share.redisKey = redisKey
@@ -233,65 +258,44 @@ function batchDelKey() {
     <div class="table">
       <me-table
         :data="filterDataList"
-        ref="table"
+        :columns="memoryColumns"
+        :total="dataList.length"
         :default-sort="{ prop: 'size', order: 'descending' }"
         export-name="memory"
-        :export-rows="exportRows"
         @selection-change="selectionChange">
-        <el-table-column type="selection" width="50" align="center" />
-        <el-table-column
-          :label="t('redisMemory.type')"
-          prop="type"
-          width="100"
-          show-overflow-tooltip
-          sortable
-          :filters="filterTypes"
-          :filter-method="meFilterHandler">
-          <template #default="scope">
-            <el-text :type="meType(scope.row.type)">{{ toKeyTypeLabel(scope.row.type) }}</el-text>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('redisMemory.key')" prop="key" show-overflow-tooltip>
-          <template #default="scope">
-            {{ scope.row.key }}
-          </template>
-        </el-table-column>
-        <el-table-column
-          :label="t('redisMemory.size')"
-          prop="size"
-          width="120"
-          sortable
-          show-overflow-tooltip>
-          <template #default="scope">
-            {{ meHumanSize(scope.row.size) }}
-          </template>
-        </el-table-column>
-        <el-table-column
-          :label="t('action')"
-          :width="canEdit ? 100 : 65"
-          fixed="right"
-          align="center">
-          <template #default="scope">
-            <div class="me-flex">
-              <me-icon
-                :info="t('copy')"
-                icon="el-icon-document-copy"
-                class="icon-btn"
-                @click="meCopy(scope.row.key)" />
-              <me-icon
-                :info="t('redisMemory.chooseKey')"
-                icon="el-icon-view"
-                class="icon-btn"
-                @click="chooseKey(scope.row)" />
-              <me-icon
-                :info="t('delete')"
-                icon="el-icon-delete"
-                class="icon-btn"
-                @click="delKey(scope.row)"
-                v-if="canEdit" />
-            </div>
-          </template>
-        </el-table-column>
+        <!-- 类型列头筛选：v2 无内置筛选 UI -->
+        <template #header-type>
+          <me-column-filter
+            v-model="typeFilter"
+            :title="t('redisMemory.type')"
+            :options="filterTypes" />
+        </template>
+        <template #cell-type="{ row }">
+          <el-text :type="meType(row.type)">{{ toKeyTypeLabel(row.type) }}</el-text>
+        </template>
+        <template #cell-action="{ row }">
+          <!-- 与值区操作列同方案：3 图标两端对齐、只读 2 图标均布 -->
+          <div
+            class="me-flex"
+            :style="{ justifyContent: canEdit ? 'space-between' : 'space-evenly' }">
+            <me-icon
+              :info="t('copy')"
+              icon="el-icon-document-copy"
+              class="icon-btn"
+              @click="meCopy(row.key)" />
+            <me-icon
+              :info="t('redisMemory.chooseKey')"
+              icon="el-icon-view"
+              class="icon-btn"
+              @click="chooseKey(row)" />
+            <me-icon
+              v-if="canEdit"
+              :info="t('delete')"
+              icon="el-icon-delete"
+              class="icon-btn"
+              @click="delKey(row)" />
+          </div>
+        </template>
       </me-table>
     </div>
   </div>

@@ -12,10 +12,10 @@ import {
 } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import type { MeColumn } from '@/components/me-table-column'
 import MeWebsite from '@/components/MeWebsite.vue'
 import { infoTip as tips } from '@/locales/info'
 import { shareProvideKey } from '@/types/me-interface'
-import type { TableExportMatrix } from '@/utils/export'
 import { enrichNodeList } from '@/utils/redis-display'
 import { bus, INFO_REFRESH, meCommands } from '@/utils/util'
 import NodeList from '@/views/ext/NodeList.vue'
@@ -34,12 +34,14 @@ const share = inject(shareProvideKey)!
 // #endregion
 
 // #region 核心状态
+// INFO 详情行：tag 分类名、键名、值
+type InfoRow = { key: string; value: string; tag: string }
 // INFO 原文与解析结果
 const node = ref('') // 指定节点
 const raw = ref('') // 原始信息
 const dic = ref<Record<string, string>>({}) // 字典形式
 const tagList = ref<string[]>([]) // 标签名列表
-const tagTable = ref<{ key: string; value: string; tag: string }[]>([]) // tag 分类名、键名、值
+const tagTable = ref<InfoRow[]>([])
 const keyCount = ref(0) // 键数量
 const infoNode = ref('')
 
@@ -186,18 +188,20 @@ const filterDataList = computed(() => {
   )
 })
 
-// MeTable 导出：由行数据直接计算展示文本，与表格列定义一致（改列时同步改这里）
-function exportRows(data: unknown[]): TableExportMatrix {
-  return {
-    headers: [t('redisInfo.tag'), t('redisInfo.key'), t('redisInfo.value'), t('redisInfo.tip')],
-    rows: (data as { tag: string; key: string; value: string }[]).map(row => [
-      row.tag,
-      row.key,
-      row.value,
-      tipMap.value[row.key] ?? '',
-    ]),
-  }
-}
+// MeTable 列描述：单一来源，表格与导出共用（说明列文本由 formatter 计算，与界面展示一致）
+const infoColumns = computed<MeColumn<InfoRow>[]>(() => [
+  { key: 'tag', prop: 'tag', title: t('redisInfo.tag'), width: 100 },
+  { key: 'key', prop: 'key', title: t('redisInfo.key'), minWidth: 150 },
+  { key: 'value', prop: 'value', title: t('redisInfo.value'), minWidth: 150 },
+  {
+    key: 'tip',
+    title: t('redisInfo.tip'),
+    minWidth: 200,
+    // 灰色加在单元格节点（而非内部 span）：截断省略号与文字同色继承
+    className: 'col-tip-info',
+    formatter: row => tipMap.value[row.key] ?? '',
+  },
+])
 
 const tableRef = useTemplateRef('table')
 function tagChange() {
@@ -474,16 +478,12 @@ const nodeGroups = computed(() => {
         </div>
       </template>
 
-      <me-table ref="table" :data="filterDataList" export-name="info" :export-rows="exportRows">
-        <el-table-column prop="tag" :label="t('redisInfo.tag')" width="100" />
-        <el-table-column prop="key" :label="t('redisInfo.key')" show-overflow-tooltip />
-        <el-table-column prop="value" :label="t('redisInfo.value')" show-overflow-tooltip />
-        <el-table-column :label="t('redisInfo.tip')" show-overflow-tooltip>
-          <template #default="scope">
-            <span style="color: var(--el-color-info)">{{ tipMap[scope.row.key] }}</span>
-          </template>
-        </el-table-column>
-      </me-table>
+      <me-table
+        ref="table"
+        :data="filterDataList"
+        :columns="infoColumns"
+        :total="tagTable.length"
+        export-name="info" />
     </el-card>
   </div>
 
@@ -605,6 +605,11 @@ const nodeGroups = computed(() => {
   }
   :deep(.el-card__body) {
     padding: 0;
+  }
+
+  // 说明列灰色：加在单元格节点，省略号与文字同色
+  :deep(.col-tip-info) {
+    color: var(--el-color-info);
   }
 
   // 工具：刷新 / 网络吞吐

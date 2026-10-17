@@ -4,10 +4,10 @@ import type { FormItemRule } from 'element-plus'
 import { computed, inject, nextTick, reactive, ref, useTemplateRef, watchEffect } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import type { MeColumn } from '@/components/me-table-column'
 import MeWebsite from '@/components/MeWebsite.vue'
 import { shareProvideKey } from '@/types/me-interface'
 import type { RedisSlowLog } from '@/types/tauri-specta'
-import type { TableExportMatrix } from '@/utils/export'
 // 官网参考: https://redis.ac.cn/docs/latest/commands/slowlog-get/
 import { meCopy, meCommands, meOk } from '@/utils/util'
 import NodeList from '@/views/ext/NodeList.vue'
@@ -25,7 +25,8 @@ const slowerGetCount = ref(Math.min(slowerMaxLen.value, 200))
 const keyword = ref('')
 const loading = ref(false)
 const dataList = ref<RedisSlowLog[]>([])
-const sortProperty = ref('cost')
+// 初值与表格 default-sort 一致，避免挂载时表内排序与数据层排序打架
+const sortProperty = ref('time')
 const sortOrder = ref('descending')
 const node = ref('')
 
@@ -57,41 +58,51 @@ const filterDataList = computed(() => {
 })
 
 function sortChange({ prop, order }: { prop: string; order: string | null }) {
-  if (order) {
-    sortProperty.value = prop
-    sortOrder.value = order
-  } else {
-    sortProperty.value = 'time'
-    sortOrder.value = 'descending'
-  }
+  // 取消排序时回到默认（时间倒序），与表格 default-sort 一致
+  sortProperty.value = order ? prop : 'time'
+  sortOrder.value = order ?? 'descending'
 }
 
-// MeTable 导出：由行数据直接计算展示文本，与表格列定义一致（改列时同步改这里）
-function exportRows(data: unknown[]): TableExportMatrix {
-  const cluster = !!share.conn?.cluster
-  const headers = [
-    t('redisSlow.time'),
-    t('redisSlow.cost'),
-    t('redisSlow.command'),
-    t('redisSlow.clientName'),
-    t('redisSlow.client'),
-  ]
-  if (cluster) headers.push(t('redisSlow.node'))
-  return {
-    headers,
-    rows: (data as RedisSlowLog[]).map(row => {
-      const cells = [
-        row.time,
-        `${Math.round(row.cost ?? 0)} ms`,
-        row.command,
-        row.clientName,
-        row.client,
+// 列描述：展示与导出文本单一来源；排序在 filterDataList 里做（空值行恒排末尾），故列用 custom
+const slowColumns = computed<MeColumn<RedisSlowLog>[]>(() => [
+  { key: 'time', prop: 'time', title: t('redisSlow.time'), width: 180, sortable: 'custom' },
+  {
+    key: 'cost',
+    prop: 'cost',
+    title: t('redisSlow.cost'),
+    width: 90,
+    align: 'right',
+    sortable: 'custom',
+    formatter: row => `${Math.round(row.cost ?? 0)} ms`,
+  },
+  {
+    key: 'command',
+    prop: 'command',
+    title: t('redisSlow.command'),
+    minWidth: 200,
+    sortable: 'custom',
+  },
+  {
+    key: 'clientName',
+    prop: 'clientName',
+    title: t('redisSlow.clientName'),
+    width: 140,
+    sortable: 'custom',
+  },
+  { key: 'client', prop: 'client', title: t('redisSlow.client'), width: 180, sortable: 'custom' },
+  // 集群下才需要区分节点
+  ...(share.conn?.cluster
+    ? [
+        {
+          key: 'node',
+          prop: 'node',
+          title: t('redisSlow.node'),
+          width: 180,
+          sortable: 'custom' as const,
+        },
       ]
-      if (cluster) cells.push(row.node)
-      return cells
-    }),
-  }
-}
+    : []),
+])
 
 async function apiConfigGet() {
   const data = await meCommands.configGet(share.conn!.id, 'slowlog*', node.value)
@@ -254,63 +265,13 @@ const rules = computed(() => ({
     </div>
     <div class="table">
       <me-table
-        :data="filterDataList"
-        ref="table"
         v-loading="loading"
+        :data="filterDataList"
+        :columns="slowColumns"
+        :total="dataList.length"
         :default-sort="{ prop: 'time', order: 'descending' }"
         export-name="slowlog"
-        :export-rows="exportRows"
-        @sort-change="sortChange"
-        border
-        stripe>
-        <!--
-      <el-table-column :label="t('action')" width="80" align="center">
-          <template #default="scope">
-            <me-icon
-                :info="t('copy')"
-                icon="el-icon-document-copy"
-                class="icon-btn"
-                @click="meCopy(scope.row.command)"
-                style="justify-content: center"
-            />
-          </template>
-        </el-table-column>-->
-        <el-table-column :label="t('redisSlow.time')" prop="time" width="180" sortable />
-        <el-table-column
-          :label="t('redisSlow.cost')"
-          prop="cost"
-          width="90"
-          align="right"
-          sortable
-          show-overflow-tooltip>
-          <template #default="scope"> {{ Math.round(scope.row.cost) }} ms </template>
-        </el-table-column>
-        <el-table-column
-          :label="t('redisSlow.command')"
-          prop="command"
-          min-width="120"
-          sortable
-          show-overflow-tooltip />
-        <el-table-column
-          :label="t('redisSlow.clientName')"
-          prop="clientName"
-          width="140"
-          sortable
-          show-overflow-tooltip />
-        <el-table-column
-          :label="t('redisSlow.client')"
-          prop="client"
-          width="180"
-          sortable
-          show-overflow-tooltip />
-        <el-table-column
-          :label="t('redisSlow.node')"
-          prop="node"
-          width="180"
-          show-overflow-tooltip
-          sortable
-          v-if="share.conn?.cluster" />
-      </me-table>
+        @sort-change="sortChange" />
     </div>
 
     <!-- 编辑慢参数弹框 -->

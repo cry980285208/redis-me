@@ -4,6 +4,7 @@
 import { computed, inject, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import type { MeColumn } from '@/components/me-table-column'
 import { shareProvideKey } from '@/types/me-interface'
 import type { AclUserDetail } from '@/types/tauri-specta'
 import {
@@ -15,7 +16,6 @@ import {
   summarizeSelectors,
   type AclEditModel,
 } from '@/utils/acl'
-import type { TableExportMatrix } from '@/utils/export'
 import { meCommands, meConfirm, meOk, meWarn } from '@/utils/util'
 
 import AclDryrun from './AclDryrun.vue'
@@ -68,29 +68,52 @@ const filterUsers = computed(() => {
   })
 })
 
-// MeTable 导出：由行数据直接计算展示文本，与表格列定义一致（改列时同步改这里）
-function exportRows(data: unknown[]): TableExportMatrix {
-  return {
-    headers: [
-      t('redisACL.username'),
-      t('redisACL.status'),
-      t('redisACL.commandRules'),
-      t('redisACL.keyPatternsCol'),
-      t('redisACL.channelPatternsCol'),
-      t('redisACL.selectorsCol'),
-    ],
-    rows: (data as AclUserDetail[]).map(row => [
-      row.username,
-      `${row.enabled ? t('redisACL.enabled') : t('redisACL.disabled')}${
-        row.nopass ? ' ' + t('redisACL.passwordNopass') : ''
-      }`,
-      row.commandRules.length ? row.commandRules.join(' ') : '--',
-      summarizeRules(row.keyPatterns, 2),
-      summarizeRules(row.channelPatterns, 2),
-      summarizeSelectors(row.selectors, 2),
-    ]),
-  }
+// 状态列导出/提示文本（单元格走 #cell-status 插槽渲染 el-tag）
+function statusText(row: AclUserDetail): string {
+  return `${row.enabled ? t('redisACL.enabled') : t('redisACL.disabled')}${
+    row.nopass ? ` ${t('redisACL.passwordNopass')}` : ''
+  }`
 }
+
+// 列描述：展示与导出文本单一来源；操作列为纯插槽列（无 formatter）不进导出矩阵
+const userColumns = computed<MeColumn<AclUserDetail>[]>(() => [
+  { key: 'username', prop: 'username', title: t('redisACL.username'), width: 120 },
+  {
+    key: 'status',
+    title: t('redisACL.status'),
+    width: 128,
+    align: 'center',
+    formatter: row => statusText(row),
+  },
+  {
+    key: 'commandRules',
+    title: t('redisACL.commandRules'),
+    minWidth: 120,
+    formatter: row => {
+      const rules = row.commandRules
+      return rules.length ? rules.join(' ') : '--'
+    },
+  },
+  {
+    key: 'keyPatterns',
+    title: t('redisACL.keyPatternsCol'),
+    width: 96,
+    formatter: row => summarizeRules(row.keyPatterns, 2),
+  },
+  {
+    key: 'channelPatterns',
+    title: t('redisACL.channelPatternsCol'),
+    width: 88,
+    formatter: row => summarizeRules(row.channelPatterns, 2),
+  },
+  {
+    key: 'selectors',
+    title: t('redisACL.selectorsCol'),
+    width: 120,
+    formatter: row => summarizeSelectors(row.selectors, 2),
+  },
+  { key: 'action', title: t('action'), width: 80, align: 'center' },
+])
 const previewCommand = computed(() => buildAclPreviewCommand(form))
 // 危险命令黑名单 ↔ form.commandRules 中的 -@dangerous，由 UserAdd 双向绑定
 const dangerousBlocked = computed({
@@ -357,90 +380,63 @@ void refresh()
     </div>
 
     <div class="table">
-      <me-table :data="filterUsers" export-name="acl-users" :export-rows="exportRows">
-        <el-table-column
-          prop="username"
-          :label="t('redisACL.username')"
-          width="120"
-          show-overflow-tooltip />
-        <el-table-column
-          :label="t('redisACL.status')"
-          width="128"
-          align="center"
-          show-overflow-tooltip>
-          <template #default="{ row }">
-            <el-tag
-              size="small"
-              :type="row.enabled ? (row.nopass ? 'warning' : 'success') : 'info'"
-              class="status-tag">
-              {{ row.enabled ? t('redisACL.enabled') : t('redisACL.disabled') }}
-              <span v-if="row.nopass" class="status-nopass">{{
-                t('redisACL.passwordNopass')
-              }}</span>
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('redisACL.commandRules')" min-width="120" show-overflow-tooltip>
-          <template #default="{ row }">{{
-            row.commandRules.length ? row.commandRules.join(' ') : '--'
-          }}</template>
-        </el-table-column>
-        <el-table-column :label="t('redisACL.keyPatternsCol')" width="96" show-overflow-tooltip>
-          <template #default="{ row }">{{ summarizeRules(row.keyPatterns, 2) }}</template>
-        </el-table-column>
-        <el-table-column :label="t('redisACL.channelPatternsCol')" width="88" show-overflow-tooltip>
-          <template #default="{ row }">{{ summarizeRules(row.channelPatterns, 2) }}</template>
-        </el-table-column>
-        <el-table-column :label="t('redisACL.selectorsCol')" width="120" show-overflow-tooltip>
-          <template #default="{ row }">{{ summarizeSelectors(row.selectors, 2) }}</template>
-        </el-table-column>
-        <el-table-column :label="t('action')" width="80" align="center">
-          <template #default="{ row }">
-            <div class="action-icons">
-              <me-icon
-                v-if="canEdit"
-                icon="el-icon-edit"
-                class="icon-btn"
-                :info="t('edit')"
-                @click="openEdit(row)" />
-              <me-icon
-                v-else
-                icon="el-icon-view"
-                class="icon-btn"
-                :info="t('view')"
-                @click="openView(row)" />
-              <el-dropdown
-                trigger="click"
-                placement="bottom-end"
-                @command="(cmd: string) => handleRowCommand(row, cmd)">
-                <me-icon icon="el-icon-more-filled" class="icon-btn" />
-                <template #dropdown>
-                  <el-dropdown-menu>
-                    <el-dropdown-item v-if="dryrunSupported" command="dryrun">
-                      <me-icon icon="me-icon-terminal" :name="t('redisACL.dryRun')" />
-                    </el-dropdown-item>
-                    <el-dropdown-item v-if="canEdit" command="resetPassword">
-                      <me-icon icon="el-icon-key" :name="t('redisACL.resetPassword')" />
-                    </el-dropdown-item>
-                    <el-dropdown-item v-if="canEdit" command="toggleEnabled" divided>
-                      <me-icon
-                        :icon="row.enabled ? 'el-icon-circle-close' : 'el-icon-check'"
-                        :name="
-                          row.enabled ? t('redisACL.disableUser') : t('redisACL.enableUser')
-                        " />
-                    </el-dropdown-item>
-                    <el-dropdown-item v-if="canEdit" command="copy">
-                      <me-icon icon="el-icon-document-copy" :name="t('redisACL.copyUser')" />
-                    </el-dropdown-item>
-                    <el-dropdown-item v-if="canEdit && row.username !== 'default'" command="delete">
-                      <me-icon icon="el-icon-delete" :name="t('redisACL.deleteUser')" />
-                    </el-dropdown-item>
-                  </el-dropdown-menu>
-                </template>
-              </el-dropdown>
-            </div>
-          </template>
-        </el-table-column>
+      <me-table
+        :data="filterUsers"
+        :columns="userColumns"
+        :total="users.length"
+        export-name="acl-users">
+        <template #cell-status="{ row }">
+          <el-tag
+            size="small"
+            :type="row.enabled ? (row.nopass ? 'warning' : 'success') : 'info'"
+            class="status-tag">
+            {{ row.enabled ? t('redisACL.enabled') : t('redisACL.disabled') }}
+            <span v-if="row.nopass" class="status-nopass">{{ t('redisACL.passwordNopass') }}</span>
+          </el-tag>
+        </template>
+        <template #cell-action="{ row }">
+          <div class="action-icons">
+            <me-icon
+              v-if="canEdit"
+              icon="el-icon-edit"
+              class="icon-btn"
+              :info="t('edit')"
+              @click="openEdit(row)" />
+            <me-icon
+              v-else
+              icon="el-icon-view"
+              class="icon-btn"
+              :info="t('view')"
+              @click="openView(row)" />
+            <el-dropdown
+              trigger="click"
+              placement="bottom-end"
+              @command="(cmd: string) => handleRowCommand(row, cmd)">
+              <me-icon icon="el-icon-more-filled" class="icon-btn" />
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item v-if="dryrunSupported" command="dryrun">
+                    <me-icon icon="me-icon-terminal" :name="t('redisACL.dryRun')" />
+                  </el-dropdown-item>
+                  <el-dropdown-item v-if="canEdit" command="resetPassword">
+                    <me-icon icon="el-icon-key" :name="t('redisACL.resetPassword')" />
+                  </el-dropdown-item>
+                  <el-dropdown-item v-if="canEdit" command="toggleEnabled" divided>
+                    <me-icon
+                      :icon="row.enabled ? 'el-icon-circle-close' : 'el-icon-check'"
+                      :name="row.enabled ? t('redisACL.disableUser') : t('redisACL.enableUser')" />
+                  </el-dropdown-item>
+                  <el-dropdown-item v-if="canEdit" command="copy">
+                    <me-icon icon="el-icon-document-copy" :name="t('redisACL.copyUser')" />
+                  </el-dropdown-item>
+                  <el-dropdown-item v-if="canEdit && row.username !== 'default'" command="delete">
+                    <me-icon icon="el-icon-delete" :name="t('redisACL.deleteUser')" />
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </div>
+        </template>
       </me-table>
     </div>
   </div>

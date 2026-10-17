@@ -3,6 +3,7 @@ import type { App } from 'vue'
 
 import MeButton from '../components/MeButton.vue'
 import MeCode from '../components/MeCode.vue'
+import MeColumnFilter from '../components/MeColumnFilter.vue'
 import MeContext from '../components/MeContext.vue'
 import MeDialog from '../components/MeDialog.vue'
 import MeFileInput from '../components/MeFileInput.vue'
@@ -23,6 +24,7 @@ export default function setupMe(app: App): void {
   app.component('me-context', MeContext)
   app.component('me-file-input', MeFileInput)
   app.component('me-table', MeTable)
+  app.component('me-column-filter', MeColumnFilter)
   app.component('me-dialog', MeDialog)
   app.component('me-tab-pane', MeTabPane)
   app.component('me-ttl', MeTTL)

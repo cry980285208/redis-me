@@ -1,15 +1,25 @@
 ---
-description: 修改 me-table 表格列时，必须同步检查并更新对应 exportRows 导出逻辑
+description: 修改 me-table 表格列时只维护 columns 列描述：导出矩阵由列描述自动生成，禁止手写导出行
 alwaysApply: true
 ---
 
-# me-table 列与 exportRows 同步
+# me-table 列与导出同步
 
-MeTable（`me-table`）的界面列由各视图模板里的 `el-table-column` 定义，而导出内容（JSON/CSV/HTML/Markdown/Excel）由各视图传入的 `exportRows` 从数据层计算，两者是独立的两份描述。修改表格列时必须同步检查 `exportRows`，避免导出与界面不一致：
+MeTable（`me-table`）是虚拟滚动表（el-table-v2），**列只有一种描述方式：`columns`（`MeColumn[]`）**，
+它同时驱动渲染、排序、导出矩阵与具名插槽（`cell-${key}` / `header-${key}`）。
 
-1. **增删列、调整列顺序** → 同步更新 `headers` 与每行 cells 的数量和顺序。
-2. **条件列**（集群 node、VectorSet attrs、类型切换等 `v-if` 列）→ 同步 `exportRows` 里对应的条件分支，条件判断与模板保持一致。
-3. **单元格展示逻辑**（formatter、slot 文本拼接、单位后缀等）→ 同步 `exportRows` 里的文本计算。
-4. 每个 `exportRows` 上方有注释「与表格列定义一致（改列时同步改这里）」，就在该处修改。
+- 改列时只维护列描述：增删列、调顺序、条件列（集群 node、VectorSet attrs、类型切换等）都在 `columns` 的
+  computed 里改，导出矩阵由 `exportMatrixFromColumns` 自动跟随（表头取 title、序号列表头为 `#`；
+  跳过勾选列与无取值源的纯插槽列，如操作列）。
+- `formatter` 是**显示与导出文本的单一来源**，不要为导出另写一份文本计算；与 `prop` 原值等价的
+  `formatter` 不要写（缺省即按 prop 取值并转文本：null → 空串、对象 → JSON）。
+- 列描述写 `computed<MeColumn<行类型>[]>`，`formatter` / `sortMethod` 直接拿到行类型，
+  不要在回调里写 `row as Xxx` 断言。
+- 只有富交互内容（链接、标签、图标按钮、置灰提示等）才用 `#cell-${key}` 插槽；插槽内容仍被单元格省略号
+  包裹，`formatter` 继续负责导出与悬停全文，两者语义要一致。
+- 着色加在列的 `className`（配 `:deep(.类)`），不要加在插槽内的 span/el-text 上，否则省略号与文字异色；
+  行级着色用 `rowClass` + 包裹层 CSS 变量下发颜色。
+- 排序默认由 MeTable 内部完成（`sortable: true`，支持 `sortMethod`）；需要「空值行恒排末尾」等特殊顺序时
+  用 `sortable: 'custom'` 并在父组件 `sort-change` 里自行排 `:data`。
 
-完成后自查一遍：导出列数/顺序/条件与模板列逐一对应，再交用户验证。
+完成后自查一遍：界面列、条件列、导出列三者逐一对应，再交用户验证。

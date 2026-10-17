@@ -410,3 +410,34 @@ MeTable 此时预计超 700 行，按职责拆：`useTableSort.ts`（现有 59~1
 - 不改 `src/utils/export.ts` 的导出格式与文件保存逻辑。
 - 不把 `MeTable.vue` 拆成两个组件（方案 B 已否）。
 - 不在 34.0 之前动任何 UI。
+
+---
+
+## 九、实施结果（与本计划的偏离）
+
+本计划的「双内核 + 按数据量分档迁移」在落地后被用户推翻：**20 处 `<me-table>` 全部迁到虚拟内核，MeTable 只保留 el-table-v2 一个内核**（34.9 的 C/D 档判据作废）。最终形态：
+
+- `columns`（`MeColumn[]`）由可选变**必传**，是渲染 / 排序 / 导出矩阵 / 具名插槽的唯一来源；`el-table-column` 默认插槽、`exportRows` prop、`virtual` prop、分页（`currentPage` / `pageSize` / `layout` / `hide-on-single-page`）全部删除。
+- 底部状态栏改用 v2 自带的 `#footer` 固定行（总数 +「…」导出菜单），无数据时高度收为 0。
+- v2 缺的能力由 MeTable 自建：勾选列（`selectedSeeds` + symbol 行键）、列头筛选（`MeColumnFilter.vue`）、溢出提示（`me-cell-ellipsis` + mouseenter 检测截断）、行单击/双击（`row-event-handlers` 桥接 attrs）、斑马纹（`rowClass` 组合 `me-v2-stripe`）。
+- 行样式不能用 v2 的 `row-style`（只作用于行节点、盖不住单元格背景），统一改「`rowClass` 加类 + 包裹层 CSS 变量下发颜色」；单元格着色一律加在列 `className` 上，否则省略号与文字异色。
+- 排序仍由 MeTable 内部 `orderBy` 完成（保留 `sortMethod`）；v2 只有升/降两态、无第三次点击取消，`sort-change` 的 `order === null` 分支保留作兜底。需要「空值行恒排末尾」的表（`RedisSlow`）用 `sortable: 'custom'` 在父级排。
+- v2 的 `rowIndex` 是 `data` 数组的**绝对下标**（见 `table-v2/src/table-grid.mjs` 的 `data[params.rowIndex]`），可直接替代 el-table 的 `scope.$index`，无需再用行 class 反查页内下标。
+- 顺带修掉一个存量 bug：MeTable 关了 `inheritAttrs` 且未把 `class` / `style` 绑到根节点，调用方传的类与 CSS 变量（如命令日志高亮色）被静默丢弃。
+
+复核阶段的精简与修正：
+
+- 「可导出列」判据抽成 `exportableColumns()` 单一函数，MeTable 的导出菜单可用性与 `exportMatrixFromColumns` 共用，不再各判一遍。
+- 列描述统一写 `computed<MeColumn<行类型>[]>`：`formatter` / `sortMethod` 直接拿到行类型，去掉约 25 处 `row as Xxx` 断言。
+- 与 `prop` 原值等价的 `formatter` 全部删除（`toCellText` 已覆盖 string / number / boolean / null）。
+- 排序方式改为「一律从当前排序列的列描述读」（`sortCol` computed，取代 `sortMethod` / `isCustomSort` 两个 ref）：
+  修掉 `default-sort` 初值不走列上 `sortMethod`、以及 `sortable: 'custom'` 列在初始 `default-sort` 下仍被 MeTable 内部 `orderBy` 二次排序（会打乱父级「空值行恒排末尾」的顺序）两个问题。
+- `RedisSlow` 的 `sortProperty` 初值由 `'cost'` 改为 `'time'`，与表格 `default-sort` 一致（原先挂载时数据按耗时排、表头箭头指时间）。
+- `RedisClient` 的字段列改由 `fieldCol()` 工厂生成（prop / sortable / headerTip 三处重复收敛到一处，列定义从 ~80 行降到 ~25 行）。
+
+手测反馈后的视觉对齐修正（与 el-table 逐条比对 EP 样式表确认根因）：
+
+- 行文字色：`.el-table` 根节点设 `color: var(--el-table-text-color)`（regular 档），v2 行单元格不设 color 会继承页面主文字色而偏亮 → `.me-table-v2` 补同一变量。
+- 行底色优先级：行底色统一经 `--me-row-bg` 变量下发（hover > 行级高亮 > 斑马纹，与 el-table 的 td/tr 覆盖序一致）；此前斑马纹与页面高亮（如 RedisValue 当前编辑行）直接写 `background-color`，特异性压过 EP 的 hover 规则，导致斑马行/高亮行 hover 无反馈。页面级高亮改设变量（`field-set-row` → `--me-row-bg`）。
+- 操作列图标被裁：`.me-cell-ellipsis` 恒 `overflow:hidden` 按内容盒（列宽 − 24px 内边距）裁剪，而 el-table 的 `.cell` 不裁溢出内容（图标溢入内边距区）→ 纯插槽列（无 prop/formatter/index，即 `isExportableColumn` 为假的非勾选列）不再套截断包裹与溢出提示，插槽内容自定尺寸、仅由单元格 `overflow:hidden` 在单元格边界兜底裁剪。
+- 列头筛选面板底栏对齐 EP 内置筛选面板（`.el-table-filter__bottom`）：横线与备选项分隔 + 文字按钮（常规色、hover 主色、禁用灰色），备选项区单独滚动、底栏固定。

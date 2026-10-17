@@ -4,6 +4,7 @@ import { useStorage } from '@vueuse/core'
 import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import type { MeColumn } from '@/components/me-table-column'
 import { connUiProvideKey, shareProvideKey } from '@/types/me-interface'
 import type {
   SearchHit,
@@ -11,7 +12,6 @@ import type {
   SearchIndexInfo,
   SearchSynGroup,
 } from '@/types/tauri-specta'
-import type { TableExportMatrix } from '@/utils/export'
 import { FT_QUERY_HISTORY_KEY, rememberFtQuery } from '@/utils/query-history'
 import { indexAlterDraft, indexDdl } from '@/utils/search-ddl'
 import { defaultSettings } from '@/utils/settings-defaults'
@@ -151,13 +151,17 @@ const filteredTagRows = computed(() => {
   return values.map(value => ({ value }))
 })
 
-// 与表格列定义一致（改列时同步改这里）
-function exportTagRows(data: unknown[]): TableExportMatrix {
-  return {
-    headers: ['#', t('redisSearch.tagValsValue')],
-    rows: (data as { value: string }[]).map((row, index) => [String(index + 1), row.value]),
-  }
-}
+// 列描述：序号列 + 值列（展示与导出单一来源）
+const tagColumns = computed<MeColumn[]>(() => [
+  { key: 'index', title: '#', width: 60, align: 'center', index: true },
+  {
+    key: 'value',
+    prop: 'value',
+    title: t('redisSearch.tagValsValue'),
+    minWidth: 200,
+    sortable: true,
+  },
+])
 
 // 一组一行。词在界面上用逗号拼开，导出同一份文本。
 const filteredSynRows = computed(() => {
@@ -169,17 +173,15 @@ const filteredSynRows = computed(() => {
   )
 })
 
-// 与表格列定义一致（操作列不导出）
-function exportSynRows(data: unknown[]): TableExportMatrix {
-  return {
-    headers: ['#', t('redisSearch.synGroup'), t('redisSearch.synTerms')],
-    rows: (data as { group: string; terms: string }[]).map((row, index) => [
-      String(index + 1),
-      row.group,
-      row.terms,
-    ]),
-  }
-}
+// 列描述：操作列仅可写时出现（纯插槽列不进导出矩阵）
+const synColumns = computed<MeColumn[]>(() => [
+  { key: 'index', title: '#', width: 60, align: 'center', index: true },
+  { key: 'group', prop: 'group', title: t('redisSearch.synGroup'), width: 160, sortable: true },
+  { key: 'terms', prop: 'terms', title: t('redisSearch.synTerms'), minWidth: 200, sortable: true },
+  ...(canEdit.value
+    ? [{ key: 'action', title: t('action'), width: 80, align: 'center' as const }]
+    : []),
+])
 
 // 结果里的字段名可能是 attribute，也可能是 identifier，两种都交给后端认向量。
 function vectorFieldNames(index: SearchIndexInfo): string[] {
@@ -193,42 +195,87 @@ function vectorFieldNames(index: SearchIndexInfo): string[] {
   return names
 }
 
-// 与索引表列一致（操作列不导出）
-function exportIndexes(data: unknown[]): TableExportMatrix {
-  const rows = (data as SearchIndexInfo[]).map(row => [
-    row.name,
-    row.prefixes,
-    row.numDocs,
-    row.numRecords || '—',
-    row.numTerms || '—',
-    String(row.fields.length),
-  ])
-  return {
-    headers: [
-      t('redisSearch.name'),
-      t('redisSearch.prefixes'),
-      t('redisSearch.numDocs'),
-      t('redisSearch.records'),
-      t('redisSearch.terms'),
-      t('redisSearch.fields'),
-    ],
-    rows,
-  }
-}
+// 索引表列描述：带 headerTip 的列由 #header-${key} 插槽渲染为「标题 + ⓘ 图标」
+const indexColumns = computed<MeColumn<SearchIndexInfo>[]>(() => [
+  { key: 'name', prop: 'name', title: t('redisSearch.name'), minWidth: 160, fixed: 'left' },
+  {
+    key: 'prefixes',
+    prop: 'prefixes',
+    title: t('redisSearch.prefixes'),
+    minWidth: 160,
+    headerTip: t('redisSearch.prefixTip'),
+  },
+  {
+    key: 'numDocs',
+    prop: 'numDocs',
+    title: t('redisSearch.numDocs'),
+    width: 90,
+    align: 'right',
+    headerTip: t('redisSearch.docsTip'),
+  },
+  {
+    key: 'records',
+    title: t('redisSearch.records'),
+    width: 100,
+    align: 'right',
+    headerTip: t('redisSearch.recordsTip'),
+    formatter: row => row.numRecords || '—',
+  },
+  {
+    key: 'terms',
+    title: t('redisSearch.terms'),
+    width: 90,
+    align: 'right',
+    headerTip: t('redisSearch.termsTip'),
+    formatter: row => row.numTerms || '—',
+  },
+  // 点数字打开字段定义，不单独占一列操作
+  {
+    key: 'fields',
+    title: t('redisSearch.fields'),
+    width: 90,
+    align: 'center',
+    headerTip: t('redisSearch.fieldsTip'),
+    // 链接蓝加在单元格节点：截断省略号与 el-link 文字同色
+    className: 'col-link',
+    formatter: row => String(row.fields.length),
+  },
+  {
+    key: 'action',
+    title: t('action'),
+    width: Number(t('redisSearch.actionWidth')),
+    align: 'center',
+    fixed: 'right',
+  },
+])
 
-// 与结果表列一致。向量格导出完整数组，不是界面上被省略后的样子。
-function exportHits(data: unknown[]): TableExportMatrix {
-  const headers = [t('redisSearch.docKey')]
-  if (withScores.value) headers.push(t('redisSearch.score'))
-  headers.push(...resultColumns.value)
-  const rows = (data as SearchHit[]).map(hit => {
-    const cells = [hit.key]
-    if (withScores.value) cells.push(hit.score ?? '')
-    for (const name of resultColumns.value) cells.push(fieldValue(hit, name))
-    return cells
-  })
-  return { headers, rows }
-}
+// 需渲染 ⓘ 图标的列头（一份 markup 生成多列）
+const indexHeaderTips = computed(() =>
+  indexColumns.value
+    .filter(col => col.headerTip)
+    .map(col => ({ key: col.key, title: col.title ?? '', tip: col.headerTip ?? '' })),
+)
+
+// 命中结果列：字段列跟本次命中走（不跟 schema 对齐），key 加 f- 前缀避开 key/score 列名冲突
+const hitColumns = computed<MeColumn<SearchHit>[]>(() => [
+  {
+    key: 'key',
+    prop: 'key',
+    title: t('redisSearch.docKey'),
+    width: 180,
+    fixed: 'left',
+    className: 'col-link',
+  },
+  ...(withScores.value
+    ? [{ key: 'score', prop: 'score', title: t('redisSearch.score'), width: 200 }]
+    : []),
+  ...resultColumns.value.map(name => ({
+    key: `f-${name}`,
+    title: name,
+    minWidth: Math.max(140, name.length * 8 + 28),
+    formatter: (row: SearchHit) => fieldValue(row, name),
+  })),
+])
 
 const filteredQueryHistory = computed(() => {
   const q = queryText.value.trim().toLowerCase()
@@ -667,127 +714,65 @@ onUnmounted(() => {
 
       <div class="table">
         <me-table
-          :data="filteredIndexes"
           v-loading="loadingList"
-          export-name="search-indexes"
-          :export-rows="exportIndexes"
-          row-key="name">
-          <el-table-column
-            prop="name"
-            :label="t('redisSearch.name')"
-            fixed="left"
-            show-overflow-tooltip />
-          <el-table-column prop="prefixes" :label="t('redisSearch.prefixes')" show-overflow-tooltip>
-            <template #header>
-              <me-icon
-                icon="el-icon-info-filled"
-                :icon-left="false"
-                placement="top"
-                :name="t('redisSearch.prefixes')"
-                :info="t('redisSearch.prefixTip')" />
-            </template>
-          </el-table-column>
-
-          <el-table-column
-            prop="numDocs"
-            :label="t('redisSearch.numDocs')"
-            width="90"
-            align="right">
-            <template #header>
-              <me-icon
-                icon="el-icon-info-filled"
-                :icon-left="false"
-                placement="top"
-                :name="t('redisSearch.numDocs')"
-                :info="t('redisSearch.docsTip')" />
-            </template>
-          </el-table-column>
-          <el-table-column :label="t('redisSearch.records')" width="100" align="right">
-            <template #header>
-              <me-icon
-                icon="el-icon-info-filled"
-                :icon-left="false"
-                placement="top"
-                :name="t('redisSearch.records')"
-                :info="t('redisSearch.recordsTip')" />
-            </template>
-            <template #default="{ row }">{{ row.numRecords || '—' }}</template>
-          </el-table-column>
-
-          <el-table-column :label="t('redisSearch.terms')" width="90" align="right">
-            <template #header>
-              <me-icon
-                icon="el-icon-info-filled"
-                :icon-left="false"
-                placement="top"
-                :name="t('redisSearch.terms')"
-                :info="t('redisSearch.termsTip')" />
-            </template>
-            <template #default="{ row }">{{ row.numTerms || '—' }}</template>
-          </el-table-column>
-
+          :data="filteredIndexes"
+          :columns="indexColumns"
+          :total="indexes.length"
+          export-name="search-indexes">
+          <!-- 列头 ⓘ 提示：一份 markup 生成多列 -->
+          <template v-for="h in indexHeaderTips" :key="h.key" #[`header-${h.key}`]>
+            <me-icon
+              icon="el-icon-info-filled"
+              :icon-left="false"
+              placement="top"
+              :name="h.title"
+              :info="h.tip" />
+          </template>
           <!-- 点数字打开字段定义，不单独占一列操作 -->
-          <el-table-column :label="t('redisSearch.fields')" width="90" align="center">
-            <template #header>
-              <me-icon
-                icon="el-icon-info-filled"
-                :icon-left="false"
-                placement="top"
-                :name="t('redisSearch.fields')"
-                :info="t('redisSearch.fieldsTip')" />
-            </template>
-            <template #default="{ row }">
-              <el-link type="primary" underline="never" @click="openIndex(row, 'fields')">
-                {{ row.fields.length }}
-              </el-link>
-            </template>
-          </el-table-column>
-
+          <template #cell-fields="{ row }">
+            <el-link type="primary" underline="never" @click="openIndex(row, 'fields')">
+              {{ row.fields.length }}
+            </el-link>
+          </template>
           <!-- 查询做成按钮；浏览、信息、DDL、修改、Tag 集合、同义词组在更多里，修改和删除只在可写时出现 -->
-          <el-table-column
-            :label="t('action')"
-            :width="t('redisSearch.actionWidth')"
-            fixed="right"
-            align="center">
-            <template #default="{ row }">
-              <div class="action-icons">
-                <el-button type="primary" plain size="small" @click="openQuery(row)">
-                  {{ t('redisSearch.query') }}
-                </el-button>
-                <el-dropdown
-                  trigger="click"
-                  placement="bottom-end"
-                  @command="(cmd: string) => onMore(row, cmd)">
-                  <me-icon icon="el-icon-more-filled" class="icon-btn" />
-                  <template #dropdown>
-                    <el-dropdown-menu>
-                      <el-dropdown-item command="browse">
-                        <me-icon icon="me-icon-list" :name="t('redisSearch.browse')" />
-                      </el-dropdown-item>
-                      <el-dropdown-item command="info">
-                        <me-icon icon="el-icon-info-filled" :name="t('redisSearch.info')" />
-                      </el-dropdown-item>
-                      <el-dropdown-item command="ddl">
-                        <me-icon icon="me-icon-copy-command" :name="t('redisSearch.ddl')" />
-                      </el-dropdown-item>
-                      <el-dropdown-item v-if="canEdit" command="alter">
-                        <me-icon icon="el-icon-edit" :name="t('redisSearch.alter')" />
-                      </el-dropdown-item>
-                      <el-dropdown-item command="tags">
-                        <me-icon icon="el-icon-collection-tag" :name="t('redisSearch.tagVals')" />
-                      </el-dropdown-item>
-                      <el-dropdown-item command="syn">
-                        <me-icon icon="el-icon-connection" :name="t('redisSearch.synDump')" />
-                      </el-dropdown-item>
-                      <el-dropdown-item v-if="canEdit" command="drop">
-                        <me-icon icon="el-icon-delete" :name="t('redisSearch.drop')" />
-                      </el-dropdown-item>
-                    </el-dropdown-menu>
-                  </template>
-                </el-dropdown>
-              </div>
-            </template>
-          </el-table-column>
+          <template #cell-action="{ row }">
+            <div class="action-icons">
+              <el-button type="primary" plain size="small" @click="openQuery(row)">
+                {{ t('redisSearch.query') }}
+              </el-button>
+              <el-dropdown
+                trigger="click"
+                placement="bottom-end"
+                @command="(cmd: string) => onMore(row, cmd)">
+                <me-icon icon="el-icon-more-filled" class="icon-btn" />
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="browse">
+                      <me-icon icon="me-icon-list" :name="t('redisSearch.browse')" />
+                    </el-dropdown-item>
+                    <el-dropdown-item command="info">
+                      <me-icon icon="el-icon-info-filled" :name="t('redisSearch.info')" />
+                    </el-dropdown-item>
+                    <el-dropdown-item command="ddl">
+                      <me-icon icon="me-icon-copy-command" :name="t('redisSearch.ddl')" />
+                    </el-dropdown-item>
+                    <el-dropdown-item v-if="canEdit" command="alter">
+                      <me-icon icon="el-icon-edit" :name="t('redisSearch.alter')" />
+                    </el-dropdown-item>
+                    <el-dropdown-item command="tags">
+                      <me-icon icon="el-icon-collection-tag" :name="t('redisSearch.tagVals')" />
+                    </el-dropdown-item>
+                    <el-dropdown-item command="syn">
+                      <me-icon icon="el-icon-connection" :name="t('redisSearch.synDump')" />
+                    </el-dropdown-item>
+                    <el-dropdown-item v-if="canEdit" command="drop">
+                      <me-icon icon="el-icon-delete" :name="t('redisSearch.drop')" />
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+            </div>
+          </template>
         </me-table>
       </div>
     </template>
@@ -850,31 +835,13 @@ onUnmounted(() => {
       </div>
 
       <div class="table" v-loading="loadingQuery">
-        <me-table :data="hits" export-name="search-hits" :export-rows="exportHits">
+        <me-table :data="hits" :columns="hitColumns" export-name="search-hits">
           <!-- 点键打开键值页，不走键树的 chooseKey -->
-          <el-table-column
-            :label="t('redisSearch.docKey')"
-            width="180"
-            fixed="left"
-            show-overflow-tooltip>
-            <template #default="{ row }">
-              <el-link type="primary" underline="never" @click="openDoc(row.key)">
-                {{ row.key }}
-              </el-link>
-            </template>
-          </el-table-column>
-          <el-table-column v-if="withScores" :label="t('redisSearch.score')" width="200">
-            <template #default="{ row }">{{ row.score }}</template>
-          </el-table-column>
-          <!-- 列跟本次命中走，不跟 schema 对齐；不换行，超出由表格提示 -->
-          <el-table-column
-            v-for="col in resultColumns"
-            :key="col"
-            :label="col"
-            :min-width="Math.max(140, col.length * 8 + 28)"
-            show-overflow-tooltip>
-            <template #default="{ row }">{{ fieldValue(row, col) }}</template>
-          </el-table-column>
+          <template #cell-key="{ row }">
+            <el-link type="primary" underline="never" @click="openDoc(row.key)">
+              {{ row.key }}
+            </el-link>
+          </template>
         </me-table>
       </div>
     </template>
@@ -908,7 +875,7 @@ onUnmounted(() => {
       </el-table>
     </me-dialog>
 
-    <!-- FT.TAGVALS。左下拉、右输入框 + 搜索，表用 me-table，条数由分页自己显示。 -->
+    <!-- FT.TAGVALS。左下拉、右输入框 + 搜索，表用 me-table，条数由表格底栏显示。 -->
     <me-dialog
       v-model="tagVisible"
       :title="t('redisSearch.tagVals')"
@@ -938,24 +905,15 @@ onUnmounted(() => {
         <div class="dialog-table-main">
           <me-table
             :data="filteredTagRows"
+            :columns="tagColumns"
+            :total="tagValues.length"
             export-name="tag-vals"
-            :export-rows="exportTagRows"
-            height="100%"
-            stripe
-            border
-            :default-sort="{ prop: 'value', order: 'ascending' }">
-            <el-table-column type="index" label="#" width="60" align="center" />
-            <el-table-column
-              :label="t('redisSearch.tagValsValue')"
-              prop="value"
-              show-overflow-tooltip
-              sortable />
-          </me-table>
+            :default-sort="{ prop: 'value', order: 'ascending' }" />
         </div>
       </div>
     </me-dialog>
 
-    <!-- FT.SYNDUMP。一组一行，词用逗号拼开。条数由分页自己显示。 -->
+    <!-- FT.SYNDUMP。一组一行，词用逗号拼开。条数由表格底栏显示。 -->
     <me-dialog
       v-model="synVisible"
       :title="t('redisSearch.synDump')"
@@ -981,36 +939,20 @@ onUnmounted(() => {
         <div class="dialog-table-main">
           <me-table
             :data="filteredSynRows"
+            :columns="synColumns"
+            :total="synGroups.length"
             export-name="synonyms"
-            :export-rows="exportSynRows"
-            height="100%"
-            stripe
-            border
             :default-sort="{ prop: 'group', order: 'ascending' }">
-            <el-table-column type="index" label="#" width="60" align="center" />
-            <el-table-column
-              :label="t('redisSearch.synGroup')"
-              prop="group"
-              width="160"
-              show-overflow-tooltip
-              sortable />
-            <el-table-column
-              :label="t('redisSearch.synTerms')"
-              prop="terms"
-              show-overflow-tooltip
-              sortable />
-            <el-table-column v-if="canEdit" :label="t('action')" width="80" align="center">
-              <template #default="{ row }">
-                <div class="action-icons">
-                  <me-icon
-                    icon="el-icon-edit"
-                    class="icon-btn"
-                    hint
-                    :name="t('edit')"
-                    @click="openSynEdit(row)" />
-                </div>
-              </template>
-            </el-table-column>
+            <template #cell-action="{ row }">
+              <div class="action-icons">
+                <me-icon
+                  icon="el-icon-edit"
+                  class="icon-btn"
+                  hint
+                  :name="t('edit')"
+                  @click="openSynEdit(row)" />
+              </div>
+            </template>
           </me-table>
         </div>
       </div>
@@ -1186,13 +1128,9 @@ onUnmounted(() => {
     align-items: center;
   }
 
-  /* 右对齐、居中列里的说明图标跟着列走 */
-  :deep(th.is-right .cell > .icon-main) {
-    justify-content: flex-end;
-  }
-
-  :deep(th.is-center .cell > .icon-main) {
-    justify-content: center;
+  // 链接列蓝：加在单元格节点，截断省略号与 el-link 文字同色
+  :deep(.col-link) {
+    color: var(--el-color-primary);
   }
 
   .table {

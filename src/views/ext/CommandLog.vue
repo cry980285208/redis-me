@@ -5,9 +5,9 @@ import { listen } from '@tauri-apps/api/event'
 import { computed, inject, nextTick, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import type { MeColumn } from '@/components/me-table-column'
 import { shareProvideKey } from '@/types/me-interface'
 import type { CommandLogEntry } from '@/types/tauri-specta'
-import type { TableExportMatrix } from '@/utils/export'
 import { meCommands, meConfirm, meOk } from '@/utils/util'
 // #endregion
 
@@ -314,32 +314,38 @@ const filterLogs = computed(() => {
   })
 })
 
-// MeTable 导出：由行数据直接计算展示文本，与表格列定义一致（改列时同步改这里）
-function exportRows(data: unknown[]): TableExportMatrix {
-  return {
-    headers: [
-      t('commandLog.time'),
-      t('commandLog.duration'),
-      t('commandLog.db'),
-      t('commandLog.command'),
-    ],
-    rows: (data as CommandLogEntry[]).map(row => [
-      row.timestamp.includes(' ') ? row.timestamp.split(' ')[1] : row.timestamp,
-      `${row.durationMs} ms`,
-      String(row.dbIndex),
-      row.fullCommand,
-    ]),
-  }
+// 时间列只展示时分秒（日期对实时日志无信息量）
+function logTimeText(timestamp: string): string {
+  return timestamp.includes(' ') ? timestamp.split(' ')[1] : timestamp
 }
 
-// 表格行样式：高亮最近1秒内的命令
-function rowClassName({ row }: { row: CommandLogEntry }) {
-  return highlightIds.value.has(row.id) ? 'command-log-row--new' : ''
-}
+// 列描述：展示与导出文本单一来源；命令列单元格走 #cell-command 插槽（带错误/慢命令标记）
+const logColumns = computed<MeColumn<CommandLogEntry>[]>(() => [
+  {
+    key: 'timestamp',
+    prop: 'timestamp',
+    title: t('commandLog.time'),
+    width: 118,
+    sortable: true,
+    formatter: row => logTimeText(row.timestamp),
+  },
+  {
+    key: 'durationMs',
+    prop: 'durationMs',
+    title: t('commandLog.duration'),
+    width: 90,
+    align: 'right',
+    sortable: true,
+    formatter: row => `${row.durationMs} ms`,
+  },
+  { key: 'dbIndex', prop: 'dbIndex', title: t('commandLog.db'), width: 56, align: 'center' },
+  // 命令列取值即 prop 原值（单元格经 #cell-command 附加错误/慢命令标记）
+  { key: 'command', prop: 'fullCommand', title: t('commandLog.command'), minWidth: 360 },
+])
 
-function rowStyle({ row }: { row: CommandLogEntry }) {
-  if (!highlightIds.value.has(row.id)) return {}
-  return { color: highlightColor.value }
+// 高亮最近 1 秒内的命令：行类由 MeTable rowClass 提供，颜色经包裹层 --me-log-new 变量下发
+function logRowClass(row: unknown): string {
+  return highlightIds.value.has((row as CommandLogEntry).id) ? 'command-log-row--new' : ''
 }
 
 // 加载命令日志（从后端获取历史记录）
@@ -392,71 +398,47 @@ function clearLogs() {
     </template>
     <me-table
       class="command-log-table"
-      :data="filterLogs"
-      export-name="command-log"
-      :export-rows="exportRows"
-      height="100%"
       v-loading="loading"
-      stripe
-      border
+      :data="filterLogs"
+      :columns="logColumns"
+      :total="logs.length"
       :empty-text="loading ? ' ' : t('commandLog.empty')"
-      :row-class-name="rowClassName"
-      :row-style="rowStyle">
-      <el-table-column
-        prop="timestamp"
-        :label="t('commandLog.time')"
-        width="118"
-        class-name="col-nowrap"
-        sortable
-        show-overflow-tooltip>
-        <template #default="{ row }">
-          {{ row.timestamp.includes(' ') ? row.timestamp.split(' ')[1] : row.timestamp }}
-        </template>
-      </el-table-column>
-      <el-table-column
-        :label="t('commandLog.duration')"
-        width="90"
-        align="right"
-        prop="durationMs"
-        sortable>
-        <template #default="{ row }">{{ row.durationMs }} ms</template>
-      </el-table-column>
-      <el-table-column prop="dbIndex" :label="t('commandLog.db')" width="56" align="center" />
-      <el-table-column min-width="360">
-        <template #header>
-          <div class="command-log-header">
-            <span class="command-log-header__label">{{ t('commandLog.command') }}</span>
-            <div class="command-log-header__tools" @mousedown.stop>
-              <me-button
-                icon="el-icon-delete"
-                :info="t('commandLog.clear')"
-                :disabled="logs.length === 0"
-                placement="top"
-                @click="clearLogs" />
-              <el-input
-                v-model="keyword"
-                :placeholder="t('commandLog.keyword')"
-                class="command-log-header__search"
-                clearable />
-            </div>
+      :row-class="logRowClass"
+      :style="{ '--me-log-new': highlightColor }"
+      export-name="command-log">
+      <template #header-command>
+        <div class="command-log-header">
+          <span class="command-log-header__label">{{ t('commandLog.command') }}</span>
+          <div class="command-log-header__tools" @mousedown.stop>
+            <me-button
+              icon="el-icon-delete"
+              :info="t('commandLog.clear')"
+              :disabled="logs.length === 0"
+              placement="top"
+              @click="clearLogs" />
+            <el-input
+              v-model="keyword"
+              :placeholder="t('commandLog.keyword')"
+              class="command-log-header__search"
+              clearable />
           </div>
-        </template>
-        <template #default="{ row }">
-          <div class="command-log-cmd-row">
-            <span class="command-log-cmd" :title="row.fullCommand">{{ row.fullCommand }}</span>
-            <span v-if="row.error" class="command-log-cmd__flag">
-              <el-tooltip :content="row.error" placement="top" :show-after="300">
-                <span aria-hidden="true">❎</span>
-              </el-tooltip>
-            </span>
-            <span v-else-if="row.durationMs > SLOW_MS" class="command-log-cmd__flag">
-              <el-tooltip :content="t('commandLog.slowHint')" placement="top" :show-after="300">
-                <span aria-hidden="true">⚠️</span>
-              </el-tooltip>
-            </span>
-          </div>
-        </template>
-      </el-table-column>
+        </div>
+      </template>
+      <template #cell-command="{ row }">
+        <div class="command-log-cmd-row">
+          <span class="command-log-cmd" :title="row.fullCommand">{{ row.fullCommand }}</span>
+          <span v-if="row.error" class="command-log-cmd__flag">
+            <el-tooltip :content="row.error" placement="top" :show-after="300">
+              <span aria-hidden="true">❎</span>
+            </el-tooltip>
+          </span>
+          <span v-else-if="row.durationMs > SLOW_MS" class="command-log-cmd__flag">
+            <el-tooltip :content="t('commandLog.slowHint')" placement="top" :show-after="300">
+              <span aria-hidden="true">⚠️</span>
+            </el-tooltip>
+          </span>
+        </div>
+      </template>
     </me-table>
   </el-dialog>
 </template>
@@ -637,11 +619,8 @@ function clearLogs() {
   line-height: 1;
 }
 
-:deep(.col-nowrap .cell) {
-  white-space: nowrap;
-}
-
-:deep(.command-log-row--new .cell) {
-  color: inherit;
+// 高亮行文字色：变量由 me-table 包裹层 inline style 提供，类由 rowClass 加在行节点（运行时添加须 :deep）
+:deep(.command-log-row--new) {
+  color: var(--me-log-new);
 }
 </style>

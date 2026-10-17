@@ -5,9 +5,9 @@
 import { computed, inject, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import type { MeColumn } from '@/components/me-table-column'
 import { shareProvideKey } from '@/types/me-interface'
 import type { RedisVSimItem } from '@/types/tauri-specta'
-import type { TableExportMatrix } from '@/utils/export'
 import {
   IPC_WIRE_FORMAT,
   meFormatViewValue,
@@ -44,11 +44,9 @@ const highlightColor = computed(() => share.conn?.color || share.color || 'var(-
 function isHighSimilarity(row: RedisVSimItem) {
   return (row.score ?? 0) >= HIGH_SIMILARITY
 }
-function rowClassName({ row }: { row: RedisVSimItem }) {
-  return isHighSimilarity(row) ? 'vsim-high-similarity' : ''
-}
-function rowStyle({ row }: { row: RedisVSimItem }) {
-  return isHighSimilarity(row) ? { color: highlightColor.value } : {}
+// 行类由 MeTable rowClass 提供，高亮色经包裹层 --me-vsim-high 变量下发（与命令日志同方案）
+function vsimRowClass(row: unknown): string {
+  return isHighSimilarity(row as RedisVSimItem) ? 'vsim-high-similarity' : ''
 }
 const filteredList = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
@@ -182,19 +180,16 @@ function seedSearch(row: RedisVSimItem) {
   void query()
 }
 
-// MeTable 导出：由行数据直接计算展示文本，与表格列定义一致（改列时同步改这里）
-function exportRows(data: unknown[]): TableExportMatrix {
-  const headers = ['#', t('redisValue.element'), t('redisValue.score')]
-  if (withAttribs.value) headers.push(t('fieldSet.attrs'))
-  return {
-    headers,
-    rows: (data as RedisVSimItem[]).map((row, index) => {
-      const cells = [String(index + 1), row.key, String(row.score ?? '')]
-      if (withAttribs.value) cells.push(row.attrs || '')
-      return cells
-    }),
-  }
-}
+// 列描述：展示与导出文本单一来源；attrs 列与操作列只在需要时出现
+const vsimColumns = computed<MeColumn[]>(() => [
+  { key: 'index', title: '#', width: 55, align: 'center', index: true },
+  { key: 'key', prop: 'key', title: t('redisValue.element'), minWidth: 120, sortable: true },
+  { key: 'score', prop: 'score', title: t('redisValue.score'), minWidth: 120, sortable: true },
+  ...(withAttribs.value
+    ? [{ key: 'attrs', prop: 'attrs', title: t('fieldSet.attrs'), minWidth: 120, sortable: true }]
+    : []),
+  { key: 'action', title: t('action'), width: 70, align: 'center' },
+])
 
 // redis-cli 风格引号：双引号包裹 + 转义 \ " 换行等
 function quoteCliArg(s: string): string {
@@ -293,51 +288,23 @@ defineExpose({ open })
       </div>
       <div class="vsim-main">
         <me-table
-          v-if="filteredList.length"
-          layout="sizes, prev, pager, next"
           :data="filteredList"
+          :columns="vsimColumns"
+          :total="itemList.length"
+          :empty-text="loading ? ' ' : t('redisValue.vSimEmpty')"
           export-name="vsim"
-          :export-rows="exportRows"
-          height="100%"
-          stripe
-          border
-          :row-class-name="rowClassName"
-          :row-style="rowStyle"
+          :row-class="vsimRowClass"
+          :style="{ '--me-vsim-high': highlightColor }"
           :default-sort="{ prop: 'score', order: 'descending' }">
-          <el-table-column type="index" label="#" width="55" align="center" />
-          <el-table-column
-            :label="t('redisValue.element')"
-            prop="key"
-            min-width="120"
-            show-overflow-tooltip
-            sortable />
-          <el-table-column
-            :label="t('redisValue.score')"
-            prop="score"
-            min-width="120"
-            show-overflow-tooltip
-            sortable />
-          <el-table-column
-            v-if="withAttribs"
-            :label="t('fieldSet.attrs')"
-            prop="attrs"
-            min-width="120"
-            show-overflow-tooltip
-            sortable />
           <!-- 行操作：以此为种子查询 -->
-          <el-table-column :label="t('action')" width="70" align="center">
-            <template #default="scope">
-              <div class="me-flex" style="justify-content: center">
-                <me-icon
-                  :info="t('redisValue.vSimSeed')"
-                  icon="me-icon-rank"
-                  class="icon-btn"
-                  @click.stop="seedSearch(scope.row)" />
-              </div>
-            </template>
-          </el-table-column>
+          <template #cell-action="{ row }">
+            <me-icon
+              :info="t('redisValue.vSimSeed')"
+              icon="me-icon-rank"
+              class="icon-btn"
+              @click.stop="seedSearch(row)" />
+          </template>
         </me-table>
-        <el-empty v-else-if="!loading" :description="t('redisValue.vSimEmpty')" />
       </div>
     </div>
   </me-dialog>
@@ -400,13 +367,11 @@ defineExpose({ open })
   .vsim-main {
     flex: 1;
     min-height: 0;
-
-    // 高相似度整行高亮：颜色由 row-style 内联到 tr，单元格继承（与命令日志一致）
-    :deep(.vsim-high-similarity) {
-      .cell {
-        color: inherit;
-      }
-    }
   }
+}
+
+// 高相似度整行高亮：变量由 me-table 包裹层 inline style 提供，类由 rowClass 加在行节点（运行时添加须 :deep）
+:deep(.vsim-high-similarity) {
+  color: var(--me-vsim-high);
 }
 </style>

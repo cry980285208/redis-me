@@ -4,10 +4,10 @@ import { sortBy } from 'lodash'
 import { computed, inject, nextTick, reactive, ref, useTemplateRef, watch, watchEffect } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import type { MeColumn } from '@/components/me-table-column'
 import MeWebsite from '@/components/MeWebsite.vue'
 import { configTip as tips, redisConfDict, valkeyConfDict } from '@/locales/config'
 import { shareProvideKey } from '@/types/me-interface'
-import type { TableExportMatrix } from '@/utils/export'
 import { pickVersionAtOrBelow, sortVersionsDesc } from '@/utils/redis-version'
 import { meCopy, meCommands, meOk } from '@/utils/util'
 import NodeList from '@/views/ext/NodeList.vue'
@@ -74,23 +74,36 @@ const filterDataList = computed(() => {
   )
 })
 
-// MeTable 导出：由行数据直接计算展示文本，与表格列定义一致（改列时同步改这里）
-function exportRows(data: unknown[]): TableExportMatrix {
-  return {
-    headers: [
-      t('redisConfig.param'),
-      t('redisConfig.value'),
-      `${dictVersion.value} ${t('redisConfig.defaultConfig')}`,
-      t('redisConfig.tip'),
-    ],
-    rows: (data as ConfigTableRow[]).map(row => [
-      row.param,
-      row.value,
-      dictRaw.value[row.param] ?? '',
-      tipMap.value[row.param] ?? '',
-    ]),
-  }
-}
+// MeTable 列描述：单一来源，表格与导出共用（默认配置/说明取值由 formatter 计算，与界面展示一致）
+const configColumns = computed<MeColumn<ConfigTableRow>[]>(() => [
+  { key: 'param', prop: 'param', title: t('redisConfig.param'), minWidth: 180, sortable: true },
+  { key: 'value', prop: 'value', title: t('redisConfig.value'), minWidth: 100 },
+  {
+    key: 'default',
+    title: `${dictVersion.value} ${t('redisConfig.defaultConfig')}`,
+    minWidth: 120,
+    formatter: row => dictRaw.value[row.param] ?? '',
+  },
+  {
+    key: 'tip',
+    title: t('redisConfig.tip'),
+    minWidth: 200,
+    // 灰色加在单元格节点（而非内部 span）：截断省略号与文字同色继承
+    className: 'col-tip-info',
+    formatter: row => tipMap.value[row.param] ?? '',
+  },
+  ...(canEdit.value
+    ? [
+        {
+          key: 'action',
+          title: t('action'),
+          width: 80,
+          align: 'center' as const,
+          fixed: 'right' as const,
+        },
+      ]
+    : []),
+])
 // #endregion
 
 // #region 配置文件加载
@@ -174,9 +187,10 @@ async function refresh() {
 }
 refresh()
 
-// 行样式展示
-function calcRowStyle({ row }: { row: ConfigTableRow }) {
-  return { color: row.value === dictRaw.value[row.param] ? '' : share.color }
+// 差异行标记：配置值与默认值不一致时加类，颜色由包裹层 --me-config-diff 变量提供
+function diffRowClass(row: unknown): string {
+  const r = row as ConfigTableRow
+  return r.value === dictRaw.value[r.param] ? '' : 'cfg-diff'
 }
 
 async function editConfig(row: ConfigTableRow) {
@@ -243,49 +257,22 @@ async function configSet() {
       </div>
     </div>
 
-    <div class="table">
+    <div class="table" :style="{ '--me-config-diff': share.color }">
       <me-table
-        :data="filterDataList"
-        ref="table"
         v-loading="loading"
-        :row-style="calcRowStyle"
-        export-name="config"
-        :export-rows="exportRows">
-        <el-table-column
-          :label="t('redisConfig.param')"
-          prop="param"
-          sortable
-          show-overflow-tooltip />
-        <el-table-column :label="t('redisConfig.value')" prop="value" show-overflow-tooltip />
-        <el-table-column
-          :label="dictVersion + ' ' + t('redisConfig.defaultConfig')"
-          prop="value"
-          show-overflow-tooltip>
-          <template #default="scope">
-            {{ dictRaw[scope.row.param] }}
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('redisConfig.tip')" show-overflow-tooltip>
-          <template #default="scope">
-            <span style="color: var(--el-color-info)">{{ tipMap[scope.row.param] }}</span>
-          </template>
-        </el-table-column>
-
-        <el-table-column
-          :label="t('action')"
-          width="80"
-          align="center"
-          fixed="right"
-          v-if="canEdit">
-          <template #default="scope">
-            <me-icon
-              :info="t('redisConfig.configSet')"
-              icon="el-icon-edit"
-              class="icon-btn"
-              @click="editConfig(scope.row)"
-              style="justify-content: center" />
-          </template>
-        </el-table-column>
+        :data="filterDataList"
+        :columns="configColumns"
+        :total="dataList.length"
+        :row-class="diffRowClass"
+        export-name="config">
+        <template #cell-action="{ row }">
+          <me-icon
+            :info="t('redisConfig.configSet')"
+            icon="el-icon-edit"
+            class="icon-btn"
+            style="justify-content: center"
+            @click="editConfig(row)" />
+        </template>
       </me-table>
     </div>
 
@@ -356,6 +343,16 @@ async function configSet() {
     margin-top: 10px;
     flex-grow: 1;
     height: 0;
+
+    // 差异行文字色：变量由包裹层 inline style 提供，类由 MeTable rowClass 加在行节点（运行时添加须 :deep）
+    :deep(.cfg-diff) {
+      color: var(--me-config-diff);
+    }
+
+    // 说明列灰色：加在单元格节点，省略号与文字同色
+    :deep(.col-tip-info) {
+      color: var(--el-color-info);
+    }
   }
 }
 </style>

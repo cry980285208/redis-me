@@ -4,9 +4,9 @@
 import { computed, inject, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import type { MeColumn } from '@/components/me-table-column'
 import { shareProvideKey } from '@/types/me-interface'
 import type { BytesFormat, RedisZsetRangeItem } from '@/types/tauri-specta'
-import type { TableExportMatrix } from '@/utils/export'
 import { meFormatViewValue, type ViewBytesFormat } from '@/utils/format'
 import { meCommands } from '@/utils/util'
 // #endregion
@@ -33,17 +33,12 @@ const filteredList = computed(() => {
   )
 })
 
-// MeTable 导出：由行数据直接计算展示文本，与表格列定义一致（改列时同步改这里）
-function exportRows(data: unknown[]): TableExportMatrix {
-  return {
-    headers: ['#', t('redisValue.value'), t('redisValue.score')],
-    rows: (data as RedisZsetRangeItem[]).map((row, index) => [
-      String(index + 1),
-      row.value,
-      String(row.score),
-    ]),
-  }
-}
+// 列描述：序号 + 值 + 分值（展示与导出同一来源）
+const zsetColumns = computed<MeColumn[]>(() => [
+  { key: 'index', title: '#', width: 60, align: 'center', index: true },
+  { key: 'value', prop: 'value', title: t('redisValue.value'), minWidth: 200, sortable: true },
+  { key: 'score', prop: 'score', title: t('redisValue.score'), width: 140, sortable: true },
+])
 // #endregion
 
 let currentValFmt: BytesFormat | null = null
@@ -129,24 +124,12 @@ defineExpose({ open })
       </div>
       <div class="zset-range-main">
         <me-table
-          v-if="filteredList.length"
-          layout="sizes, prev, pager, next"
           :data="filteredList"
+          :columns="zsetColumns"
+          :total="itemList.length"
+          :empty-text="loading ? ' ' : t('redisValue.zsetRangeEmpty')"
           export-name="zset-range"
-          :export-rows="exportRows"
-          height="100%"
-          stripe
-          border
-          :default-sort="{ prop: 'score', order: reverse ? 'descending' : 'ascending' }">
-          <el-table-column type="index" label="#" width="60" align="center" />
-          <el-table-column
-            :label="t('redisValue.value')"
-            prop="value"
-            show-overflow-tooltip
-            sortable />
-          <el-table-column :label="t('redisValue.score')" prop="score" width="140" sortable />
-        </me-table>
-        <el-empty v-else-if="!loading" :description="t('redisValue.zsetRangeEmpty')" />
+          :default-sort="{ prop: 'score', order: reverse ? 'descending' : 'ascending' }" />
       </div>
     </div>
   </me-dialog>

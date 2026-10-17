@@ -383,6 +383,9 @@ export default {
     exportOk: 'Export Success',
     exportErr: 'Export Failed',
     exportEmpty: 'No data',
+    total: 'Total {total}',
+    totalFiltered: 'Total {filtered} / {total}',
+    filterReset: 'Reset',
   },
 
   util: {

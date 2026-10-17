@@ -368,16 +368,6 @@ export function meHumanSeconds(seconds: number | undefined | null): string | num
 }
 
 export { meTtlSeconds } from './ttl'
-
-export function meFilterHandler<T extends Record<string, unknown>>(
-  value: unknown,
-  row: T,
-  column: { property?: string },
-): boolean {
-  const property = column.property
-  if (!property) return false
-  return row[property] === value
-}
 // #endregion
 
 // #region Redis 键：删除（组合确认框与 meCommands）

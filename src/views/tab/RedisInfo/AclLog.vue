@@ -5,9 +5,9 @@ import dayjs from 'dayjs'
 import { computed, inject, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import type { MeColumn } from '@/components/me-table-column'
 import { shareProvideKey } from '@/types/me-interface'
 import type { AclLogEntry } from '@/types/tauri-specta'
-import type { TableExportMatrix } from '@/utils/export'
 import { meCommands, meConfirm, meOk } from '@/utils/util'
 // #endregion
 
@@ -31,35 +31,41 @@ const filterLogs = computed(() => {
   })
 })
 
-// MeTable 导出：由行数据直接计算展示文本，与表格列定义一致（改列时同步改这里）
-function exportRows(data: unknown[]): TableExportMatrix {
-  return {
-    headers: [
-      t('redisACL.logCount'),
-      t('redisACL.logReason'),
-      t('redisACL.logContext'),
-      t('redisACL.logObject'),
-      t('redisACL.username'),
-      t('redisACL.logAge'),
-      t('redisACL.logEntryId'),
-      t('redisACL.logTimeCreated'),
-      t('redisACL.logTimeUpdated'),
-      t('redisACL.logClient'),
-    ],
-    rows: (data as AclLogEntry[]).map(row => [
-      String(row.count),
-      row.reason,
-      row.context,
-      row.object,
-      row.username,
-      formatAge(row.ageSeconds ?? Number.NaN),
-      String(row.entryId),
-      formatTimestamp(row.timestampCreated),
-      formatTimestamp(row.timestampLastUpdated),
-      row.clientInfo || '--',
-    ]),
-  }
-}
+// 列描述：展示与导出文本单一来源（formatter 优先于 prop 取值）
+const logColumns = computed<MeColumn<AclLogEntry>[]>(() => [
+  { key: 'count', prop: 'count', title: t('redisACL.logCount'), width: 72, align: 'center' },
+  { key: 'reason', prop: 'reason', title: t('redisACL.logReason'), width: 100 },
+  { key: 'context', prop: 'context', title: t('redisACL.logContext'), width: 88 },
+  { key: 'object', prop: 'object', title: t('redisACL.logObject'), minWidth: 150 },
+  { key: 'username', prop: 'username', title: t('redisACL.username'), width: 96 },
+  {
+    key: 'age',
+    title: t('redisACL.logAge'),
+    width: 100,
+    align: 'right',
+    formatter: row => formatAge(row.ageSeconds ?? Number.NaN),
+  },
+  { key: 'entryId', prop: 'entryId', title: t('redisACL.logEntryId'), width: 88, align: 'right' },
+  {
+    key: 'timeCreated',
+    title: t('redisACL.logTimeCreated'),
+    width: 180,
+    formatter: row => formatTimestamp(row.timestampCreated),
+  },
+  {
+    key: 'timeUpdated',
+    title: t('redisACL.logTimeUpdated'),
+    width: 180,
+    formatter: row => formatTimestamp(row.timestampLastUpdated),
+  },
+  {
+    key: 'clientInfo',
+    prop: 'clientInfo',
+    title: t('redisACL.logClient'),
+    minWidth: 160,
+    formatter: row => row.clientInfo || '--',
+  },
+])
 // #endregion
 
 // #region 面板操作
@@ -129,51 +135,12 @@ function clearLogs() {
       </div>
       <div class="table">
         <me-table
-          v-if="logs.length"
-          :data="filterLogs"
-          export-name="acl-log"
-          :export-rows="exportRows"
-          height="100%"
           v-loading="loading"
-          stripe
-          border>
-          <el-table-column prop="count" :label="t('redisACL.logCount')" width="72" align="center" />
-          <el-table-column
-            prop="reason"
-            :label="t('redisACL.logReason')"
-            width="100"
-            class-name="col-nowrap"
-            show-overflow-tooltip />
-          <el-table-column prop="context" :label="t('redisACL.logContext')" width="88" />
-          <el-table-column
-            prop="object"
-            :label="t('redisACL.logObject')"
-            min-width="150"
-            show-overflow-tooltip />
-          <el-table-column prop="username" :label="t('redisACL.username')" width="96" />
-          <el-table-column :label="t('redisACL.logAge')" width="100" align="right">
-            <template #default="{ row }">{{ formatAge(row.ageSeconds) }}</template>
-          </el-table-column>
-          <el-table-column
-            prop="entryId"
-            :label="t('redisACL.logEntryId')"
-            width="88"
-            align="right" />
-          <el-table-column :label="t('redisACL.logTimeCreated')" width="180" show-overflow-tooltip>
-            <template #default="{ row }">{{ formatTimestamp(row.timestampCreated) }}</template>
-          </el-table-column>
-          <el-table-column :label="t('redisACL.logTimeUpdated')" width="180" show-overflow-tooltip>
-            <template #default="{ row }">{{ formatTimestamp(row.timestampLastUpdated) }}</template>
-          </el-table-column>
-          <el-table-column
-            prop="clientInfo"
-            :label="t('redisACL.logClient')"
-            min-width="160"
-            show-overflow-tooltip>
-            <template #default="{ row }">{{ row.clientInfo || '--' }}</template>
-          </el-table-column>
-        </me-table>
-        <el-empty v-else-if="!loading" :description="t('redisACL.logEmpty')" />
+          :data="filterLogs"
+          :columns="logColumns"
+          :total="logs.length"
+          :empty-text="t('redisACL.logEmpty')"
+          export-name="acl-log" />
       </div>
     </div>
   </me-dialog>
@@ -200,10 +167,6 @@ function clearLogs() {
     margin-top: 10px;
     flex-grow: 1;
     height: 0;
-
-    :deep(.col-nowrap .cell) {
-      white-space: nowrap;
-    }
   }
 }
 </style>

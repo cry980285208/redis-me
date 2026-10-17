@@ -14,6 +14,7 @@ import {
 } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import type { MeColumn } from '@/components/me-table-column'
 import MeSelectUpDownIcon from '@/components/MeSelectUpDownIcon.vue'
 import { shareProvideKey, connUiProvideKey } from '@/types/me-interface'
 import type {
@@ -33,7 +34,6 @@ import {
   type DetectedViewAuto,
   type DetectedViewFormat,
 } from '@/utils/detect-view-format'
-import type { TableExportMatrix } from '@/utils/export'
 import { useFavorites, addFavorite, removeFavorite, isFavorited } from '@/utils/favorite'
 import {
   IPC_WIRE_FORMAT,
@@ -1187,7 +1187,7 @@ const fieldSetIndex = ref(-1)
 const fieldSetReadonly = ref(false)
 const fieldEditIndex = ref(-1) // list/array：Redis 下标；hash：配合 fieldEditKey
 const fieldEditKey = ref('')
-const fieldSetRow = ref<ValueTableRow | null>(null) // 分页下不能用 index 反查行
+const fieldSetRow = ref<ValueTableRow | null>(null) // 排序/筛选后 index 会变，行对象另存
 
 function fieldAdd() {
   const rv = redisValue.value
@@ -1225,17 +1225,6 @@ function prepareFieldRowContext(row: ValueTableRow) {
   }
 }
 
-function pageRowIndexFromEvent(event: MouseEvent): number {
-  const tr = event.currentTarget as HTMLElement | null
-  if (!tr) return -1
-  for (const className of tr.classList) {
-    if (className.startsWith('table-row-index-')) {
-      return Number.parseInt(className.slice('table-row-index-'.length), 10)
-    }
-  }
-  return -1
-}
-
 // 展示与参数
 function formatFieldTtl(ttl: number | undefined, expireAtMs?: number | null): string {
   return formatFieldTtlCell(ttl, expireAtMs)
@@ -1253,54 +1242,87 @@ function compareFieldRowValue(a: ValueTableRow, b: ValueTableRow): number {
   })
 }
 
-// MeTable 导出：由行数据直接计算展示文本，与表格列定义一致（改列时同步改这里）
-function exportValueTableRows(data: unknown[]): TableExportMatrix {
-  const headers: string[] = ['#']
-  const cells: ((row: ValueTableRow, index: number) => string)[] = [
-    (_row, index) => String(index + 1),
+// MeTable 列描述：按类型动态出列，展示与导出文本单一来源
+const valueColumns = computed<MeColumn<ValueTableRow>[]>(() => {
+  const cols: MeColumn<ValueTableRow>[] = [
+    { key: 'seq', title: '#', width: 50, align: 'center', index: true },
   ]
   if (streamType.value) {
-    headers.push(t('redisValue.id'))
-    cells.push(row => {
-      const id = String(row.id ?? '')
-      const date = streamIdToDate(id)
-      return date ? `${id} ${date}` : id
+    cols.push({
+      key: 'id',
+      prop: 'id',
+      title: t('redisValue.id'),
+      width: 350,
+      sortable: true,
+      formatter: row => {
+        const id = String(row.id ?? '')
+        const date = streamIdToDate(id)
+        return date ? `${id} ${date}` : id
+      },
     })
   }
   if (hashType.value || timeseriesType.value) {
-    headers.push(timeseriesType.value ? t('redisValue.timestamp') : t('redisValue.key'))
-    cells.push(row => {
-      const ts = String(row.key ?? '')
-      if (!timeseriesType.value) return formatTableCell(row.key)
-      const date = tsTimestampToDate(ts)
-      return date ? `${ts} ${date}` : ts
+    cols.push({
+      key: 'key',
+      prop: 'key',
+      title: timeseriesType.value ? t('redisValue.timestamp') : t('redisValue.key'),
+      // TimeSeries 宽度对齐 Stream ID；Hash 为弹性列
+      ...(timeseriesType.value ? { width: 350 } : { minWidth: 180 }),
+      sortable: true,
+      formatter: row => {
+        const key = row.key
+        if (!timeseriesType.value) return formatTableCell(key)
+        const ts = String(key ?? '')
+        const date = tsTimestampToDate(ts)
+        return date ? `${ts} ${date}` : ts
+      },
     })
   }
   if (listType.value || arrayType.value) {
-    headers.push(t('redisValue.index'))
-    cells.push(row => String(row.index ?? ''))
+    cols.push({
+      key: 'index',
+      prop: 'index',
+      title: t('redisValue.index'),
+      width: 100,
+      sortable: true,
+    })
   }
-  headers.push(vectorsetType.value ? t('redisValue.element') : t('redisValue.value'))
-  cells.push(row => fieldRowDisplayValue(row))
+  cols.push({
+    key: 'value',
+    prop: 'value',
+    title: vectorsetType.value ? t('redisValue.element') : t('redisValue.value'),
+    minWidth: 180,
+    sortable: true,
+    sortMethod: compareFieldRowValue,
+    formatter: row => fieldRowDisplayValue(row),
+  })
+  // VectorSet：元素 → 向量 → 属性（与编辑/新增一致）
   if (vectorsetType.value) {
-    headers.push(t('fieldSet.vector'))
-    cells.push(row => String(row.vector ?? ''))
-    headers.push(t('fieldSet.attrs'))
-    cells.push(row => String(row.attrs ?? ''))
+    cols.push({ key: 'vector', prop: 'vector', title: t('fieldSet.vector'), minWidth: 180 })
+    cols.push({ key: 'attrs', prop: 'attrs', title: t('fieldSet.attrs'), minWidth: 180 })
   }
   if (zsetType.value) {
-    headers.push(t('redisValue.score'))
-    cells.push(row => String(row.score ?? ''))
+    cols.push({
+      key: 'score',
+      prop: 'score',
+      title: t('redisValue.score'),
+      width: 140,
+      sortable: true,
+    })
   }
   if (showHashFieldTtlOption.value && scanHashFieldTtl.value) {
-    headers.push(t('redisValue.ttl'))
-    cells.push(row => formatFieldTtl(row.ttl, row.expireAtMs))
+    cols.push({
+      key: 'ttl',
+      prop: 'ttl',
+      title: t('redisValue.ttl'),
+      width: 180,
+      formatter: row => formatFieldTtl(row.ttl, row.expireAtMs),
+    })
   }
-  return {
-    headers,
-    rows: (data as ValueTableRow[]).map((row, index) => cells.map(fn => fn(row, index))),
-  }
-}
+  // 操作列宽 90px：3 图标两端对齐、2 图标均布都放得下，且离边缘不局促
+  cols.push({ key: 'action', title: t('action'), width: 90, align: 'center', fixed: 'right' })
+  return cols
+})
 function buildFieldGetParam(row?: ValueTableRow): RedisFieldGet_Deserialize | null {
   const rv = redisValue.value
   const rk = share.redisKey
@@ -1361,23 +1383,17 @@ async function openFieldPanel(row: ValueTableRow, index: number, readonly: boole
   fieldSetRef.value?.open(params)
 }
 
-function rowClassName({ rowIndex }: { row: ValueTableRow; rowIndex: number }) {
-  const classes = [`table-row-index-${rowIndex}`]
-  if (fieldSetIndex.value === rowIndex) classes.push('field-set-row')
-  return classes.join(' ')
+function rowClassName(row: unknown, rowIndex: number): string {
+  return fieldSetIndex.value === rowIndex ? 'field-set-row' : ''
 }
 
-function rowDblClick(row: ValueTableRow, _column: unknown, event: MouseEvent) {
+function rowDblClick(row: ValueTableRow, rowIndex: number, event: MouseEvent) {
   if ((event.target as HTMLElement)?.closest('.field-row-actions')) return
-  const rowIndex = pageRowIndexFromEvent(event)
-  if (rowIndex < 0) return
   openFieldPanel(row, rowIndex, !(canEdit.value && !streamType.value))
 }
 
-function rowClick(row: ValueTableRow, _column: unknown, event: MouseEvent) {
+function rowClick(row: ValueTableRow, rowIndex: number) {
   if (fieldSetIndex.value === -1) return
-  const rowIndex = pageRowIndexFromEvent(event)
-  if (rowIndex < 0) return
   openFieldPanel(row, rowIndex, fieldSetReadonly.value)
 }
 
@@ -1387,7 +1403,7 @@ function onFieldPanelOutsideClick(e: MouseEvent) {
   const el = e.target as HTMLElement | null
   if (!el) return
   if (el.closest('.field-set')) return
-  if (el.closest('.el-table__body tbody tr')) return
+  if (el.closest('.el-table-v2__row')) return
   fieldSetInit()
 }
 
@@ -2324,245 +2340,164 @@ onUnmounted(() => {
             </div>
           </div>
           <div class="table-view">
-            <!-- 类型或键变化时重建，页码回到第 1 页 -->
+            <!-- 类型或键变化时重建：滚动位置与排序回到初始 -->
             <me-table
               :key="`${redisValue?.type ?? ''}\0${share.redisKey?.key ?? ''}`"
-              layout="sizes, prev, pager, next"
               :data="tableDisplayList"
+              :columns="valueColumns"
               :default-sort="tableDefaultSort"
-              border
-              stripe
-              ref="table"
-              height="100%"
               export-name="value"
-              :export-rows="exportValueTableRows"
-              :row-class-name="rowClassName"
+              :row-class="rowClassName"
               @row-click="rowClick"
               @row-dblclick="rowDblClick">
-              <!-- 索引 -->
-              <el-table-column label="#" type="index" width="50" align="center">
-                <template #default="scope">
-                  <div class="index-cell">
-                    <template v-if="fieldSetIndex !== scope.$index">{{
-                      scope.$index + 1
-                    }}</template>
-                    <me-icon
-                      v-else
-                      :icon="fieldSetReadonly ? 'el-icon-view' : 'el-icon-edit'"
-                      :style="{ color: share.color }"></me-icon>
-                  </div>
-                </template>
-              </el-table-column>
+              <!-- 序号：当前编辑行改显图标 -->
+              <template #cell-seq="{ index }">
+                <div class="index-cell">
+                  <template v-if="fieldSetIndex !== index">{{ index + 1 }}</template>
+                  <me-icon
+                    v-else
+                    :icon="fieldSetReadonly ? 'el-icon-view' : 'el-icon-edit'"
+                    :style="{ color: share.color }"></me-icon>
+                </div>
+              </template>
 
-              <!-- Stream ID -->
-              <el-table-column
-                :label="t('redisValue.id')"
-                prop="id"
-                width="350"
-                sortable
-                v-if="streamType">
-                <template #default="{ row }">
-                  <div class="me-flex" style="width: 100%">
-                    <span>{{ row.id }}</span>
-                    <span v-if="streamIdToDate(row.id)" style="color: var(--el-color-info)">
-                      {{ streamIdToDate(row.id) }}
-                    </span>
-                  </div>
-                </template>
-              </el-table-column>
+              <!-- Stream ID：附带可读时间 -->
+              <template #cell-id="{ row }">
+                <div class="me-flex" style="width: 100%">
+                  <span>{{ row.id }}</span>
+                  <span v-if="streamIdToDate(row.id)" style="color: var(--el-color-info)">
+                    {{ streamIdToDate(row.id) }}
+                  </span>
+                </div>
+              </template>
 
-              <!-- Hash / TimeSeries：键或时间戳（TS 宽度对齐 Stream ID） -->
-              <el-table-column
-                :label="timeseriesType ? t('redisValue.timestamp') : t('redisValue.key')"
-                prop="key"
-                :width="timeseriesType ? 350 : undefined"
-                sortable
-                v-if="hashType || timeseriesType">
-                <template #default="scope">
-                  <div v-if="timeseriesType" class="me-flex" style="width: 100%">
-                    <span>{{ scope.row.key }}</span>
-                    <span
-                      v-if="tsTimestampToDate(String(scope.row.key ?? ''))"
-                      style="color: var(--el-color-info)">
-                      {{ tsTimestampToDate(String(scope.row.key ?? '')) }}
-                    </span>
-                  </div>
-                  <template v-else>{{ formatTableCell(scope.row.key) }}</template>
-                </template>
-              </el-table-column>
+              <!-- Hash 键 / TimeSeries 时间戳（附带可读时间） -->
+              <template #cell-key="{ row }">
+                <div v-if="timeseriesType" class="me-flex" style="width: 100%">
+                  <span>{{ row.key }}</span>
+                  <span
+                    v-if="tsTimestampToDate(String(row.key ?? ''))"
+                    style="color: var(--el-color-info)">
+                    {{ tsTimestampToDate(String(row.key ?? '')) }}
+                  </span>
+                </div>
+                <template v-else>{{ formatTableCell(row.key) }}</template>
+              </template>
 
-              <!-- List / Array 索引 -->
-              <el-table-column
-                :label="t('redisValue.index')"
-                prop="index"
-                width="100"
-                sortable
-                v-if="listType || arrayType" />
-
-              <!-- 字段值 / Vector Set 元素名 -->
-              <el-table-column
-                :label="vectorsetType ? t('redisValue.element') : t('redisValue.value')"
-                prop="value"
-                min-width="180"
-                sortable
-                :sort-method="compareFieldRowValue">
-                <template #default="scope">
-                  {{ fieldRowDisplayValue(scope.row) }}
-                </template>
-              </el-table-column>
-
-              <!-- VectorSet：元素 → 向量 → 属性（与编辑/新增一致） -->
-              <el-table-column
-                :label="t('fieldSet.vector')"
-                prop="vector"
-                min-width="180"
-                v-if="vectorsetType">
-                <template #default="scope">
-                  {{ scope.row.vector || '' }}
-                </template>
-              </el-table-column>
-
-              <el-table-column
-                :label="t('fieldSet.attrs')"
-                prop="attrs"
-                min-width="180"
-                v-if="vectorsetType">
-                <template #default="scope">
-                  {{ scope.row.attrs || '' }}
-                </template>
-              </el-table-column>
-
-              <!-- 分数 -->
-              <el-table-column
-                :label="t('redisValue.score')"
-                prop="score"
-                width="140"
-                sortable
-                v-if="zsetType" />
-
-              <!-- TTL -->
-              <el-table-column
-                :label="t('redisValue.ttl')"
-                width="180"
-                prop="ttl"
-                v-if="showHashFieldTtlOption && scanHashFieldTtl">
-                <template #default="scope">
-                  <el-tooltip
-                    placement="top"
-                    :persistent="false"
-                    :show-after="300"
-                    :disabled="scope.row.ttl == null || scope.row.ttl < 0">
-                    <template #content>
-                      <FieldTtlHint :ttl="scope.row.ttl" :expire-at-ms="scope.row.expireAtMs" />
-                    </template>
-                    <span>{{ formatFieldTtl(scope.row.ttl, scope.row.expireAtMs) }}</span>
-                  </el-tooltip>
-                </template>
-              </el-table-column>
+              <!-- TTL：悬浮展开绝对时间 -->
+              <template #cell-ttl="{ row }">
+                <el-tooltip
+                  placement="top"
+                  :persistent="false"
+                  :show-after="300"
+                  :disabled="row.ttl == null || row.ttl < 0">
+                  <template #content>
+                    <FieldTtlHint :ttl="row.ttl" :expire-at-ms="row.expireAtMs" />
+                  </template>
+                  <span>{{ formatFieldTtl(row.ttl, row.expireAtMs) }}</span>
+                </el-tooltip>
+              </template>
 
               <!-- 操作 -->
-              <el-table-column :label="t('action')" width="80" fixed="right" align="center">
-                <template #default="scope">
-                  <div class="field-row-actions me-flex" style="justify-content: center; gap: 8px">
-                    <me-icon
-                      v-if="canEdit && !streamType"
-                      :info="t('edit')"
-                      icon="el-icon-edit"
-                      class="icon-btn"
-                      @click.stop="openFieldPanel(scope.row, scope.$index, false)" />
-                    <me-icon
-                      v-else
-                      :info="t('view')"
-                      icon="el-icon-view"
-                      class="icon-btn"
-                      @click.stop="openFieldPanel(scope.row, scope.$index, true)" />
-                    <!-- VectorSet：以此元素 VSIM 查询 -->
-                    <me-icon
-                      v-if="vectorsetType"
-                      :info="t('redisValue.vSimTitle')"
-                      icon="me-icon-rank"
-                      class="icon-btn"
-                      @click.stop="showVSimWithElement(fieldRowDisplayValue(scope.row))" />
-                    <!-- 删除（非 VectorSet 保持现有） -->
-                    <el-popconfirm
-                      v-if="canEdit && !vectorsetType"
-                      :hide-after="0"
-                      :title="t('redisValue.deleteConfirm')"
-                      @confirm.stop="fieldDel(scope.row)">
-                      <template #reference>
-                        <me-icon :info="t('delete')" icon="el-icon-delete" class="icon-btn" />
-                      </template>
-                    </el-popconfirm>
-                    <el-dropdown
-                      trigger="click"
-                      placement="bottom-end"
-                      @command="(cmd: string) => onFieldRowMoreCommand(cmd, scope.row)">
-                      <me-icon icon="el-icon-more-filled" class="icon-btn" />
-                      <template #dropdown>
-                        <el-dropdown-menu>
-                          <el-dropdown-item
-                            v-if="supportsFieldRowRefresh(redisValue.type)"
-                            command="refreshRow">
-                            <me-icon
-                              icon="el-icon-refresh-right"
-                              :name="t('redisValue.refreshFieldRow')" />
-                          </el-dropdown-item>
-                          <el-dropdown-item v-if="hashType || timeseriesType" command="copyKey">
-                            <me-icon icon="el-icon-document-copy" :name="t('redisValue.copyKey')" />
-                          </el-dropdown-item>
-                          <el-dropdown-item v-if="listType || arrayType" command="copyIndex">
-                            <me-icon
-                              icon="el-icon-document-copy"
-                              :name="t('redisValue.copyIndex')" />
-                          </el-dropdown-item>
-                          <el-dropdown-item v-if="streamType" command="copyStreamId">
-                            <me-icon
-                              icon="el-icon-document-copy"
-                              :name="t('redisValue.copyStreamId')" />
-                          </el-dropdown-item>
-                          <el-dropdown-item command="copyValue">
-                            <me-icon
-                              icon="el-icon-document-copy"
-                              :name="
-                                vectorsetType
-                                  ? t('redisValue.copyElement')
-                                  : t('redisValue.copyValue')
-                              " />
-                          </el-dropdown-item>
-                          <!-- VectorSet：复制向量、复制属性（与列序一致） -->
-                          <el-dropdown-item v-if="vectorsetType" command="copyVector">
-                            <me-icon
-                              icon="el-icon-document-copy"
-                              :name="t('redisValue.copyVector')" />
-                          </el-dropdown-item>
-                          <el-dropdown-item v-if="vectorsetType" command="copyAttrs">
-                            <me-icon
-                              icon="el-icon-document-copy"
-                              :name="t('redisValue.copyAttrs')" />
-                          </el-dropdown-item>
-                          <el-dropdown-item v-if="zsetType" command="copyScore">
-                            <me-icon
-                              icon="el-icon-document-copy"
-                              :name="t('redisValue.copyScore')" />
-                          </el-dropdown-item>
-                          <el-dropdown-item command="copyAsCommand">
-                            <me-icon
-                              icon="me-icon-copy-command"
-                              :name="t('redisValue.copyAsCommand')" />
-                          </el-dropdown-item>
-                          <el-dropdown-item v-if="zsetType" command="showZsetRank">
-                            <me-icon icon="me-icon-rank" :name="t('redisValue.showZsetRank')" />
-                          </el-dropdown-item>
-                          <!-- VectorSet：删除放最下面，避免误操作 -->
-                          <el-dropdown-item v-if="vectorsetType && canEdit" command="deleteElement">
-                            <me-icon icon="el-icon-delete" :name="t('delete')" />
-                          </el-dropdown-item>
-                        </el-dropdown-menu>
-                      </template>
-                    </el-dropdown>
-                  </div>
-                </template>
-              </el-table-column>
+              <template #cell-action="{ row, index }">
+                <!-- 图标数随只读/流类型变化：3 个两端对齐铺满、2 个均布，避免少量图标挤在一侧 -->
+                <div
+                  class="field-row-actions me-flex"
+                  :style="{
+                    justifyContent: canEdit || vectorsetType ? 'space-between' : 'space-evenly',
+                  }">
+                  <me-icon
+                    v-if="canEdit && !streamType"
+                    :info="t('edit')"
+                    icon="el-icon-edit"
+                    class="icon-btn"
+                    @click.stop="openFieldPanel(row, index, false)" />
+                  <me-icon
+                    v-else
+                    :info="t('view')"
+                    icon="el-icon-view"
+                    class="icon-btn"
+                    @click.stop="openFieldPanel(row, index, true)" />
+                  <!-- VectorSet：以此元素 VSIM 查询 -->
+                  <me-icon
+                    v-if="vectorsetType"
+                    :info="t('redisValue.vSimTitle')"
+                    icon="me-icon-rank"
+                    class="icon-btn"
+                    @click.stop="showVSimWithElement(fieldRowDisplayValue(row))" />
+                  <!-- 删除（非 VectorSet 保持现有） -->
+                  <el-popconfirm
+                    v-if="canEdit && !vectorsetType"
+                    :hide-after="0"
+                    :title="t('redisValue.deleteConfirm')"
+                    @confirm.stop="fieldDel(row)">
+                    <template #reference>
+                      <me-icon :info="t('delete')" icon="el-icon-delete" class="icon-btn" />
+                    </template>
+                  </el-popconfirm>
+                  <el-dropdown
+                    trigger="click"
+                    placement="bottom-end"
+                    @command="(cmd: string) => onFieldRowMoreCommand(cmd, row)">
+                    <me-icon icon="el-icon-more-filled" class="icon-btn" />
+                    <template #dropdown>
+                      <el-dropdown-menu>
+                        <el-dropdown-item
+                          v-if="supportsFieldRowRefresh(redisValue.type)"
+                          command="refreshRow">
+                          <me-icon
+                            icon="el-icon-refresh-right"
+                            :name="t('redisValue.refreshFieldRow')" />
+                        </el-dropdown-item>
+                        <el-dropdown-item v-if="hashType || timeseriesType" command="copyKey">
+                          <me-icon icon="el-icon-document-copy" :name="t('redisValue.copyKey')" />
+                        </el-dropdown-item>
+                        <el-dropdown-item v-if="listType || arrayType" command="copyIndex">
+                          <me-icon icon="el-icon-document-copy" :name="t('redisValue.copyIndex')" />
+                        </el-dropdown-item>
+                        <el-dropdown-item v-if="streamType" command="copyStreamId">
+                          <me-icon
+                            icon="el-icon-document-copy"
+                            :name="t('redisValue.copyStreamId')" />
+                        </el-dropdown-item>
+                        <el-dropdown-item command="copyValue">
+                          <me-icon
+                            icon="el-icon-document-copy"
+                            :name="
+                              vectorsetType
+                                ? t('redisValue.copyElement')
+                                : t('redisValue.copyValue')
+                            " />
+                        </el-dropdown-item>
+                        <!-- VectorSet：复制向量、复制属性（与列序一致） -->
+                        <el-dropdown-item v-if="vectorsetType" command="copyVector">
+                          <me-icon
+                            icon="el-icon-document-copy"
+                            :name="t('redisValue.copyVector')" />
+                        </el-dropdown-item>
+                        <el-dropdown-item v-if="vectorsetType" command="copyAttrs">
+                          <me-icon icon="el-icon-document-copy" :name="t('redisValue.copyAttrs')" />
+                        </el-dropdown-item>
+                        <el-dropdown-item v-if="zsetType" command="copyScore">
+                          <me-icon icon="el-icon-document-copy" :name="t('redisValue.copyScore')" />
+                        </el-dropdown-item>
+                        <el-dropdown-item command="copyAsCommand">
+                          <me-icon
+                            icon="me-icon-copy-command"
+                            :name="t('redisValue.copyAsCommand')" />
+                        </el-dropdown-item>
+                        <el-dropdown-item v-if="zsetType" command="showZsetRank">
+                          <me-icon icon="me-icon-rank" :name="t('redisValue.showZsetRank')" />
+                        </el-dropdown-item>
+                        <!-- VectorSet：删除放最下面，避免误操作 -->
+                        <el-dropdown-item v-if="vectorsetType && canEdit" command="deleteElement">
+                          <me-icon icon="el-icon-delete" :name="t('delete')" />
+                        </el-dropdown-item>
+                      </el-dropdown-menu>
+                    </template>
+                  </el-dropdown>
+                </div>
+              </template>
             </me-table>
             <!-- 字段编辑 -->
             <FieldSet
@@ -3006,38 +2941,22 @@ onUnmounted(() => {
       width: 100%;
       position: relative;
 
-      :deep(.el-table) {
-        // 单行省略：不依赖 show-overflow-tooltip（避免悬停气泡）
-        // Mac/WebKit：长无空格串（向量、JSON）会按内容撑开列，表头与同行操作列错位；
-        // table-layout:fixed 下 max-width:0 锁住列宽；break-all 降低 min-content。
-        .el-table__cell {
-          overflow: hidden;
-          max-width: 0;
-        }
-        .cell {
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-          word-break: break-all;
-          min-width: 0;
-        }
+      // 当前编辑行高亮：类由 rowClass 加在表格行节点（运行时添加须 :deep）；
+      // 底色经 MeTable 的 --me-row-bg 变量下发（优先级斑马纹之上、hover 之下，与 el-table 一致）
+      :deep(.el-table-v2__row.field-set-row) {
+        --me-row-bg: var(--el-color-warning-light-9);
+      }
 
-        .field-set-row {
-          --el-table-tr-bg-color: var(--el-color-warning-light-9);
-        }
+      // 以下为本组件传给 MeTable 的插槽内容（序号列、行操作），属父作用域，直接写
+      .index-cell {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
 
-        // 序号列：编辑态图标与行号均居中
-        .index-cell {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-
-        // 已在 :deep(.el-table) 内，勿再套 :deep（否则会残留给 lightningcss）
-        .field-row-actions {
-          .icon-btn {
-            font-size: 16px;
-          }
+      .field-row-actions {
+        .icon-btn {
+          font-size: 16px;
         }
       }
 

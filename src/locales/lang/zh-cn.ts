@@ -372,6 +372,9 @@ export default {
     exportOk: '导出成功',
     exportErr: '导出失败',
     exportEmpty: '暂无数据',
+    total: '共 {total} 条',
+    totalFiltered: '共 {filtered} / {total} 条',
+    filterReset: '重置',
   },
 
   util: {

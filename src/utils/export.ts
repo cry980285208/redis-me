@@ -83,7 +83,7 @@ export async function saveBinaryExport(
 
 // #region MeTable：矩阵格式转换
 
-/** MeTable exportRows 返回值：表头 + 文本矩阵 */
+/** MeTable 导出矩阵：表头 + 文本矩阵（由列描述生成） */
 export type TableExportMatrix = { headers: string[]; rows: string[][] }
 
 export function matrixToJson(headers: string[], rows: string[][]): string {

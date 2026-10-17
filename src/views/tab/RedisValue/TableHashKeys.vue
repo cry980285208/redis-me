@@ -1,12 +1,12 @@
 <script setup lang="ts">
 // #region 导入
-// Hash 全量字段名/值（HKEYS/HVALS）弹框：me-table 前端分页，避免万级卡顿
+// Hash 全量字段名/值（HKEYS/HVALS）弹框：me-table 虚拟滚动，万级字段也不卡
 import { computed, inject, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import type { MeColumn } from '@/components/me-table-column'
 import { shareProvideKey } from '@/types/me-interface'
 import type { BytesFormat } from '@/types/tauri-specta'
-import type { TableExportMatrix } from '@/utils/export'
 import { meFormatViewValue, type ViewBytesFormat } from '@/utils/format'
 import { meCommands } from '@/utils/util'
 // #endregion
@@ -46,17 +46,17 @@ const emptyText = computed(() =>
 
 const exportName = computed(() => (mode.value === 'keys' ? 'hash-keys' : 'hash-values'))
 
-// MeTable 导出：由行数据直接计算展示文本，与表格列定义一致（改列时同步改这里）
-function exportRows(data: unknown[]): TableExportMatrix {
-  const prop = columnProp.value
-  return {
-    headers: ['#', mode.value === 'keys' ? t('redisValue.key') : t('redisValue.value')],
-    rows: (data as Record<string, string>[]).map((row, index) => [
-      String(index + 1),
-      row[prop] ?? '',
-    ]),
-  }
-}
+// 列描述：序号列 + 内容列（列名与取值字段随模式变），展示与导出同一来源
+const hashColumns = computed<MeColumn[]>(() => [
+  { key: 'index', title: '#', width: 60, align: 'center', index: true },
+  {
+    key: columnProp.value,
+    prop: columnProp.value,
+    title: mode.value === 'keys' ? t('redisValue.key') : t('redisValue.value'),
+    minWidth: 200,
+    sortable: true,
+  },
+])
 // #endregion
 
 // #region 面板操作
@@ -96,23 +96,12 @@ defineExpose({ open })
       <el-input v-model="keyword" :placeholder="t('redisValue.tableKeyword')" clearable />
       <div class="table-hash-keys-main">
         <me-table
-          v-if="displayList.length"
-          layout="sizes, prev, pager, next"
           :data="displayList"
+          :columns="hashColumns"
+          :total="itemList.length"
+          :empty-text="loading ? ' ' : emptyText"
           :export-name="exportName"
-          :export-rows="exportRows"
-          height="100%"
-          stripe
-          border
-          :default-sort="{ prop: columnProp, order: 'ascending' }">
-          <el-table-column type="index" label="#" width="60" align="center" />
-          <el-table-column
-            :label="mode === 'keys' ? t('redisValue.key') : t('redisValue.value')"
-            :prop="columnProp"
-            show-overflow-tooltip
-            sortable />
-        </me-table>
-        <el-empty v-else-if="!loading" :description="emptyText" />
+          :default-sort="{ prop: columnProp, order: 'ascending' }" />
       </div>
     </div>
   </me-dialog>

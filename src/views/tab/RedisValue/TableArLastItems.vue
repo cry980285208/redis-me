@@ -4,9 +4,9 @@
 import { computed, inject, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import type { MeColumn } from '@/components/me-table-column'
 import { shareProvideKey } from '@/types/me-interface'
 import type { BytesFormat } from '@/types/tauri-specta'
-import type { TableExportMatrix } from '@/utils/export'
 import { meFormatViewValue, type ViewBytesFormat } from '@/utils/format'
 import { meCommands } from '@/utils/util'
 // #endregion
@@ -37,16 +37,22 @@ const filteredList = computed(() => {
   })
 })
 
-// MeTable 导出：由行数据直接计算展示文本，与表格列定义一致（改列时同步改这里）
-function exportRows(data: unknown[]): TableExportMatrix {
-  return {
-    headers: ['#', t('redisValue.value')],
-    rows: (data as ArLastItemsRow[]).map((row, index) => [
-      String(index + 1),
-      row.value == null ? t('redisValue.arLastItemsNil') : row.value,
-    ]),
-  }
-}
+// 列描述：展示与导出文本单一来源；空槽行的置灰文本走 #cell-value 插槽
+//（nil 标签固定为短文本，在 200px 列里永不截断，故不存在省略号色差）
+const arColumns = computed<MeColumn<ArLastItemsRow>[]>(() => [
+  { key: 'index', title: '#', width: 60, align: 'center', index: true },
+  {
+    key: 'value',
+    prop: 'value',
+    title: t('redisValue.value'),
+    minWidth: 200,
+    sortable: true,
+    formatter: row => {
+      const value = row.value
+      return value == null ? t('redisValue.arLastItemsNil') : value
+    },
+  },
+])
 // #endregion
 
 let currentValFmt: BytesFormat | null = null
@@ -129,29 +135,19 @@ defineExpose({ open })
       </div>
       <div class="ar-last-main">
         <me-table
-          v-if="filteredList.length"
-          layout="sizes, prev, pager, next"
           :data="filteredList"
-          export-name="ar-last-items"
-          :export-rows="exportRows"
-          height="100%"
-          stripe
-          border>
-          <el-table-column type="index" label="#" width="60" align="center" />
-          <el-table-column
-            :label="t('redisValue.value')"
-            prop="value"
-            show-overflow-tooltip
-            sortable>
-            <template #default="{ row }">
-              <el-text v-if="row.value == null" type="info">{{
-                t('redisValue.arLastItemsNil')
-              }}</el-text>
-              <span v-else>{{ row.value }}</span>
-            </template>
-          </el-table-column>
+          :columns="arColumns"
+          :total="itemList.length"
+          :empty-text="loading ? ' ' : t('redisValue.arLastItemsEmpty')"
+          export-name="ar-last-items">
+          <!-- 空槽置灰 -->
+          <template #cell-value="{ row }">
+            <el-text v-if="row.value == null" type="info">
+              {{ t('redisValue.arLastItemsNil') }}
+            </el-text>
+            <span v-else>{{ row.value }}</span>
+          </template>
         </me-table>
-        <el-empty v-else-if="!loading" :description="t('redisValue.arLastItemsEmpty')" />
       </div>
     </div>
   </me-dialog>

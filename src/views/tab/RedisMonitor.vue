@@ -4,9 +4,9 @@ import { listen } from '@tauri-apps/api/event'
 import { computed, inject, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import type { MeColumn } from '@/components/me-table-column'
 import MeWebsite from '@/components/MeWebsite.vue'
 import { shareProvideKey } from '@/types/me-interface'
-import type { TableExportMatrix } from '@/utils/export'
 import { meConfirm, meCopy, meCommands, meOk } from '@/utils/util'
 import NodeList from '@/views/ext/NodeList.vue'
 // #endregion
@@ -37,13 +37,12 @@ const filterDataList = computed(() => {
   })
 })
 
-// MeTable 导出：由行数据直接计算展示文本，与表格列定义一致（改列时同步改这里）
-function exportRows(data: unknown[]): TableExportMatrix {
-  return {
-    headers: [t('redisMonitor.time'), t('redisMonitor.command')],
-    rows: (data as MonitorRow[]).map(row => [row.datetime ?? '', row.command ?? '']),
-  }
-}
+// 列描述：时间列导出/悬停保留完整日期时间（取 prop 原值），单元格经 #cell-datetime 只显时分秒（与迁移前一致）
+const monitorColumns = computed<MeColumn[]>(() => [
+  { key: 'datetime', prop: 'datetime', title: t('redisMonitor.time'), width: 118, sortable: true },
+  { key: 'command', prop: 'command', title: t('redisMonitor.command'), minWidth: 200 },
+  { key: 'action', title: t('action'), width: 80, align: 'center' },
+])
 
 // 监控函数防抖
 const loading = ref(false)
@@ -120,31 +119,19 @@ onUnmounted(() => tauriUnlisten())
     <div class="table">
       <me-table
         :data="filterDataList"
-        ref="table"
+        :columns="monitorColumns"
+        :total="dataList.length"
         :default-sort="{ prop: 'datetime', order: 'descending' }"
-        export-name="monitor"
-        :export-rows="exportRows">
-        <el-table-column
-          :label="t('redisMonitor.time')"
-          prop="datetime"
-          width="118"
-          sortable
-          show-overflow-tooltip>
-          <template #default="{ row }">
-            {{ row.datetime?.slice(11) }}
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('redisMonitor.command')" prop="command" show-overflow-tooltip />
-        <el-table-column :label="t('action')" width="80" align="center">
-          <template #default="scope">
-            <me-icon
-              :info="t('copy')"
-              icon="el-icon-document-copy"
-              class="icon-btn"
-              @click="meCopy(scope.row.command)"
-              style="justify-content: center" />
-          </template>
-        </el-table-column>
+        export-name="monitor">
+        <template #cell-datetime="{ row }">{{ row.datetime?.slice(11) }}</template>
+        <template #cell-action="{ row }">
+          <me-icon
+            :info="t('copy')"
+            icon="el-icon-document-copy"
+            class="icon-btn"
+            style="justify-content: center"
+            @click="meCopy(row.command)" />
+        </template>
       </me-table>
     </div>
   </div>

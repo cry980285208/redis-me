@@ -3,9 +3,9 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import type { MeColumn, MeFilterValue } from '@/components/me-table-column'
 import MeWebsite from '@/components/MeWebsite.vue'
 import { commandHelp, type CommandHelpRow } from '@/locales/cmd'
-import type { TableExportMatrix } from '@/utils/export'
 import { sortVersionsDesc } from '@/utils/redis-version'
 import { isZh } from '@/utils/util'
 // #endregion
@@ -29,8 +29,9 @@ const props = withDefaults(
 const keyword = ref(props.initialKeyword)
 const group = ref(props.initialGroup)
 const tableKey = ref(0)
-// 列头筛选（MeTable 分页前先过滤全量数据，列上 filter-method 仅保留 UI）
-const activeFilters = ref<Record<string, unknown[]>>({})
+// 列头筛选已选值（MeTable 先过滤全量数据再排序/渲染）
+const sinceFilter = ref<MeFilterValue[]>([])
+const readonlyFilter = ref<MeFilterValue[]>([])
 
 const groupList = computed(() => new Set(commandHelp.value.map(row => row.group)))
 // 版本筛选项按语义版本降序（与运行配置参考列表共用 redis-version）
@@ -54,39 +55,41 @@ const filterDataList = computed(() => {
       row => row.title.toLowerCase().includes(key) || row.summary.toLowerCase().includes(key),
     )
   }
-  const sinces = activeFilters.value.since as string[] | undefined
-  if (sinces?.length) rows = rows.filter(row => sinces.includes(row.since))
-  const readonlys = activeFilters.value.readonly as boolean[] | undefined
-  if (readonlys?.length) rows = rows.filter(row => readonlys.includes(!!row.readonly))
+  const sinces = sinceFilter.value
+  if (sinces.length) rows = rows.filter(row => sinces.includes(row.since))
+  const readonlys = readonlyFilter.value
+  if (readonlys.length) rows = rows.filter(row => readonlys.includes(!!row.readonly))
   return rows
 })
 
-function onFilterChange(filters: Record<string, unknown[]>) {
-  // EP 每次只回传当前列，需合并保留其它列已选条件
-  activeFilters.value = { ...activeFilters.value, ...filters }
-}
+// 只读列表头：英文 Read-only 较宽，中文只读可窄一些
+const readonlyColWidth = computed(() => (isZh.value ? 88 : 120))
 
-// MeTable 导出：由行数据直接计算展示文本，与表格列定义一致（改列时同步改这里）
-function exportRows(data: unknown[]): TableExportMatrix {
-  return {
-    headers: [
-      t('redisTerminal.group'),
-      t('redisTerminal.command'),
-      t('redisTerminal.usage'),
-      t('redisTerminal.summary'),
-      t('redisTerminal.since'),
-      t('redisTerminal.readonly'),
-    ],
-    rows: (data as CommandHelpRow[]).map(row => [
-      row.group,
-      row.key,
-      row.usage,
-      row.summary,
-      row.since,
+// MeTable 列描述：单一来源，表格与导出共用（只读列文本由 formatter 计算，与界面展示一致）
+const helpColumns = computed<MeColumn<CommandHelpRow>[]>(() => [
+  { key: 'group', prop: 'group', title: t('redisTerminal.group'), width: 120, sortable: true },
+  {
+    key: 'key',
+    prop: 'key',
+    title: t('redisTerminal.command'),
+    width: 150,
+    sortable: true,
+    // 链接蓝加在单元格节点：截断省略号与 el-link 文字同色
+    className: 'col-cmd-link',
+  },
+  { key: 'usage', prop: 'usage', title: t('redisTerminal.usage'), minWidth: 200 },
+  { key: 'summary', prop: 'summary', title: t('redisTerminal.summary'), minWidth: 200 },
+  { key: 'since', prop: 'since', title: t('redisTerminal.since'), width: 100 },
+  {
+    key: 'readonly',
+    prop: 'readonly',
+    title: t('redisTerminal.readonly'),
+    width: readonlyColWidth.value,
+    align: 'center',
+    formatter: row =>
       row.readonly ? t('redisTerminal.readonlyYes') : t('redisTerminal.readonlyNo'),
-    ]),
-  }
-}
+  },
+])
 // #endregion
 
 // #region 面板操作
@@ -95,7 +98,8 @@ function exportRows(data: unknown[]): TableExportMatrix {
 function open(options?: { keyword?: string; group?: string }) {
   keyword.value = options?.keyword ?? props.initialKeyword
   group.value = options?.group ?? props.initialGroup
-  activeFilters.value = {}
+  sinceFilter.value = []
+  readonlyFilter.value = []
   tableKey.value++
   visible.value = true
 }
@@ -104,9 +108,6 @@ function open(options?: { keyword?: string; group?: string }) {
 function close() {
   visible.value = false
 }
-
-// 只读列表头：英文 Read-only 较宽，中文只读可窄一些
-const readonlyColWidth = computed(() => (isZh.value ? 88 : 120))
 
 defineExpose({ open, close })
 // #endregion
@@ -141,57 +142,29 @@ defineExpose({ open, close })
       <div class="cmd-table" style="margin-top: 10px; flex-grow: 1; height: 0">
         <me-table
           :key="tableKey"
-          ref="table"
           :data="filterDataList"
-          border
-          stripe
-          height="100%"
+          :columns="helpColumns"
+          :total="commandHelp.length"
           export-name="command"
-          :export-rows="exportRows"
-          :default-sort="{ prop: 'key', order: 'ascending' }"
-          @filter-change="onFilterChange">
-          <el-table-column
-            :label="t('redisTerminal.group')"
-            prop="group"
-            width="120"
-            show-overflow-tooltip
-            sortable />
-          <el-table-column
-            class-name="col-cmd"
-            :label="t('redisTerminal.command')"
-            prop="key"
-            width="150"
-            sortable>
-            <template #default="{ row }">
-              <!-- 悬停选站点，打开对应命令文档（路径统一为小写+空格转连字符） -->
-              <me-website to="command" :command="row.key" :label="row.key" margin-left="0" />
-            </template>
-          </el-table-column>
-          <el-table-column :label="t('redisTerminal.usage')" prop="usage" show-overflow-tooltip />
-          <el-table-column
-            :label="t('redisTerminal.summary')"
-            prop="summary"
-            show-overflow-tooltip />
-          <el-table-column
-            :label="t('redisTerminal.since')"
-            prop="since"
-            column-key="since"
-            width="100"
-            show-overflow-tooltip
-            :filters="sinceFilters"
-            :filter-method="() => true" />
-          <el-table-column
-            :label="t('redisTerminal.readonly')"
-            prop="readonly"
-            column-key="readonly"
-            :width="readonlyColWidth"
-            align="center"
-            :filters="readonlyFilters"
-            :filter-method="() => true">
-            <template #default="{ row }">
-              {{ row.readonly ? t('redisTerminal.readonlyYes') : t('redisTerminal.readonlyNo') }}
-            </template>
-          </el-table-column>
+          :default-sort="{ prop: 'key', order: 'ascending' }">
+          <!-- 命令名为文档链接（路径统一为小写+空格转连字符） -->
+          <template #cell-key="{ row }">
+            <me-website to="command" :command="row.key" :label="row.key" margin-left="0" />
+          </template>
+          <!-- 列头筛选：标题 + 下拉面板（v2 无内置筛选 UI） -->
+          <template #header-since>
+            <me-column-filter
+              v-model="sinceFilter"
+              :title="t('redisTerminal.since')"
+              :options="sinceFilters" />
+          </template>
+          <template #header-readonly>
+            <me-column-filter
+              v-model="readonlyFilter"
+              :title="t('redisTerminal.readonly')"
+              :options="readonlyFilters"
+              center />
+          </template>
         </me-table>
       </div>
     </div>
@@ -200,25 +173,9 @@ defineExpose({ open, close })
 
 <style scoped lang="scss">
 .cmd-table {
-  :deep(.el-table__header .cell:has(.el-table__column-filter-trigger)) {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-  }
-
-  :deep(.el-table__header th.is-center .cell:has(.el-table__column-filter-trigger)) {
-    justify-content: center;
-  }
-
-  :deep(.el-table__column-filter-trigger) {
-    flex-shrink: 0;
-  }
-
-  /* me-website（el-dropdown）在单元格内易顶对齐；命令名禁止换行 */
-  :deep(td.col-cmd .cell) {
-    display: flex;
-    align-items: center;
-    white-space: nowrap;
+  // 命令列链接蓝：加在单元格节点，省略号与 el-link 文字同色
+  :deep(.col-cmd-link) {
+    color: var(--el-color-primary);
   }
 }
 </style>
