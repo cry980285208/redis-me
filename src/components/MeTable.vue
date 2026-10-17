@@ -3,7 +3,7 @@
 // 列描述 columns 为单一来源：同时驱动渲染、排序、导出矩阵与具名插槽（cell-${key} / header-${key}）。
 // 排序与 el-table 的 default-sort、列 sortable / sort-method / sort-by 一致；
 // sortable="custom" 时不改行顺序，由父组件在 sort-change 中自行更新 :data。
-// 表内 footer 固定行：总数 +「…」导出菜单（RAW 项直接序列化数据永远可用，其余格式由列描述计算矩阵、不渲染 DOM）。
+// 表内 footer 固定行：总数 + #footer 插槽（调用方主动作，右侧紧邻导出）+「…」导出菜单贴右（RAW 项直接序列化数据永远可用，其余格式由列描述计算矩阵、不渲染 DOM）。
 import type { TableV2Instance } from 'element-plus'
 import { orderBy } from 'element-plus/es/components/table/src/util.mjs'
 import type { StyleValue } from 'vue'
@@ -45,6 +45,8 @@ const props = withDefaults(
     exportName?: string
     /** 底部总数覆盖：默认取 data.length；与筛选后数量不一致时 footer 显示「共 筛选 / 总数 条」 */
     total?: number
+    /** 底部总数文案完全覆盖：调用方自算（如键值页「共 总数 条，已加载 N，筛选 M」）；传了就不再由 total 推导 */
+    totalText?: string
     /** 空态文案（ElEmpty description）；不传用 EP 默认「暂无数据」 */
     emptyText?: string
     /** 自定义行类：如差异行着色标记；与内置 stripe 类组合 */
@@ -99,8 +101,9 @@ const sortedData = computed(() => {
 // #endregion
 
 // #region 底部状态：总数与导出菜单（无数据时都不显示，footer 高度收为 0）
-// 传了 total 覆盖且与筛选后数量不一致时显示「共 筛选 / 总数 条」
+// totalText 优先（调用方自算文案）；否则传了 total 覆盖且与筛选后数量不一致时显示「共 筛选 / 总数 条」
 const footerTotalText = computed(() => {
+  if (props.totalText) return props.totalText
   const filtered = sortedData.value.length
   const total = props.total ?? filtered
   if (total !== filtered) return t('meTable.totalFiltered', { filtered, total })
@@ -466,31 +469,37 @@ defineExpose({
                 <span v-else>{{ column.title }}</span>
               </slot>
             </template>
-            <!-- 空态描述可定制（未传时用 EP 默认 ElEmpty 文案）；总数与导出进表格自带 #footer（固定行，高度从主体扣除） -->
+            <!-- 空态描述可定制（未传时用 EP 默认 ElEmpty 文案）；总数与右区（#footer 插槽主动作 + 导出）进表格自带 #footer（固定行，高度从主体扣除） -->
             <template #empty>
               <el-empty :description="emptyText" />
             </template>
             <template #footer>
               <div v-if="sortedData.length" class="me-table-footer">
                 <span class="me-table-total">{{ footerTotalText }}</span>
-                <el-dropdown
-                  class="me-table-more-wrap"
-                  trigger="click"
-                  placement="top-end"
-                  @command="handleExportCommand">
-                  <me-icon icon="el-icon-more-filled" class="icon-btn me-table-more" />
-                  <template #dropdown>
-                    <el-dropdown-menu>
-                      <el-dropdown-item
-                        v-for="item in exportMenuItems"
-                        :key="item.command"
-                        :command="item.command"
-                        :divided="item.divided">
-                        {{ item.label }}
-                      </el-dropdown-item>
-                    </el-dropdown-menu>
-                  </template>
-                </el-dropdown>
+                <div class="me-table-footer-right">
+                  <!-- 主动作区：调用方经 #footer 插槽注入（如键值页「加载更多 / 加载全部」），右侧紧邻导出菜单 -->
+                  <div class="me-table-footer-actions">
+                    <slot name="footer" />
+                  </div>
+                  <el-dropdown
+                    class="me-table-more-wrap"
+                    trigger="click"
+                    placement="top-end"
+                    @command="handleExportCommand">
+                    <me-icon icon="el-icon-more-filled" class="icon-btn me-table-more" />
+                    <template #dropdown>
+                      <el-dropdown-menu>
+                        <el-dropdown-item
+                          v-for="item in exportMenuItems"
+                          :key="item.command"
+                          :command="item.command"
+                          :divided="item.divided">
+                          {{ item.label }}
+                        </el-dropdown-item>
+                      </el-dropdown-menu>
+                    </template>
+                  </el-dropdown>
+                </div>
               </div>
             </template>
           </el-table-v2>
@@ -530,6 +539,24 @@ defineExpose({
     .me-table-total {
       flex: 1;
       min-width: 0;
+    }
+
+    // 主动作区：与右区导出菜单统一 20px 节奏；字号继承表格（14px）不另设
+    .me-table-footer-actions {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    // 右区：主动作 + 导出菜单贴右，相邻间距均 20px；无主动作时导出照旧贴右
+    .me-table-footer-right {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 20px;
     }
 
     .me-table-more-wrap {

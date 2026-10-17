@@ -1933,6 +1933,10 @@ const textLength = computed(() => {
   // String=字节长度；集合/Array=总数（Array 的 ARLEN 单独一项，用竖线分隔）
   const rv = redisValue.value
   if (!rv || jsonType.value) return ''
+  // 表格视图的总数改由 MeTable footer「共 已加载 / 总数 条」展示，底栏不重复
+  if (viewType.value === 'table') return ''
+  // json 视图部分加载提示条已含总数与已加载，底栏不重复
+  if (showPartialLoadedAlert.value) return ''
   if (stringType.value) {
     return t('redisValue.textLength') + rv.length
   }
@@ -1951,12 +1955,33 @@ const textVectorDim = computed(() => {
   if (!rv || !vectorsetType.value || rv.vectorDim == null) return ''
   return t('redisValue.vectorDim') + rv.vectorDim
 })
+/** 已加载字段数：底栏「已扫描」、json 视图部分加载提示共用 */
+const fieldLoadedCount = computed(() => {
+  const rv = redisValue.value
+  return rv ? fieldValueRows(rv.value).length : 0
+})
+/** 字段表 footer 总数文案：总数 / 已加载 / 筛选 集中一处，按差异逐段展示（无服务端总数时不覆盖，走 MeTable 默认） */
+const fieldFooterTotalText = computed(() => {
+  const total = redisValue.value?.length ?? 0
+  if (total <= 0) return undefined
+  const loaded = fieldLoadedCount.value
+  const filtered = tableDisplayList.value.length
+  const segs = [t('meTable.total', { total })]
+  if (loaded !== total) segs.push(t('redisValue.loadedSeg', { loaded }))
+  if (filtered !== loaded) segs.push(t('redisValue.filteredSeg', { filtered }))
+  return segs.join(t('redisValue.totalSep'))
+})
+/** json 视图部分加载提示：JSON 只含已加载字段，需解释并给加载入口（与表格 footer 的加载按钮互补） */
+const showPartialLoadedAlert = computed(() => showMore.value && viewType.value === 'json')
 const textEntries = computed(() => {
   const rv = redisValue.value
   if (!rv || jsonType.value || stringType.value) return ''
-  const filtered = tableDisplayList.value.length
-  const loaded = fieldValueRows(rv.value).length
-  return t('redisValue.textEntries') + `${filtered} / ${loaded}`
+  // 表格视图的 已加载/筛选 已集中到 MeTable footer 总数文案，底栏不重复
+  if (viewType.value === 'table') return ''
+  // json 视图部分加载提示条已含总数与已加载，底栏不重复
+  if (showPartialLoadedAlert.value) return ''
+  // json 模式无法筛选，已扫描仅显示加载数量
+  return t('redisValue.textEntries') + fieldLoadedCount.value
 })
 // #endregion
 
@@ -2104,6 +2129,33 @@ onUnmounted(() => {
             </el-button>
             <el-button size="small" type="warning" plain :disabled="loading" @click="loadFullValue">
               {{ t('redisValue.valueTruncatedLoadAll') }}
+            </el-button>
+          </div>
+        </el-alert>
+        <!-- 部分加载提示：JSON 只含已加载字段，说明并提供加载入口（与大值截断提示同模式） -->
+        <el-alert
+          v-if="showPartialLoadedAlert"
+          type="warning"
+          :title="
+            t('redisValue.partialLoadedTitle', {
+              loaded: fieldLoadedCount,
+              total: redisValue?.length ?? 0,
+            })
+          "
+          show-icon
+          :closable="false"
+          class="value-truncated-alert">
+          <div class="value-truncated-actions">
+            <el-button size="small" :disabled="loading" @click="refreshKey(false, true, false)">
+              {{ t('redisValue.loadMore') }}
+            </el-button>
+            <el-button
+              size="small"
+              type="warning"
+              plain
+              :disabled="loading"
+              @click="refreshKey(false, true, true)">
+              {{ t('redisValue.loadAll') }}
             </el-button>
           </div>
         </el-alert>
@@ -2347,9 +2399,29 @@ onUnmounted(() => {
               :columns="valueColumns"
               :default-sort="tableDefaultSort"
               export-name="value"
+              :total-text="fieldFooterTotalText"
               :row-class="rowClassName"
               @row-click="rowClick"
               @row-dblclick="rowDblClick">
+              <!-- 加载更多/加载全部：进表格 footer 右侧主动作区（紧邻导出菜单）；el-link 图标+文字，比按钮轻量 -->
+              <template #footer>
+                <template v-if="showMore">
+                  <el-link
+                    type="primary"
+                    :underline="false"
+                    class="footer-load-link"
+                    @click="refreshKey(false, true, false)">
+                    <me-icon icon="me-icon-load-more" :name="t('redisValue.loadMore')" />
+                  </el-link>
+                  <el-link
+                    type="primary"
+                    :underline="false"
+                    class="footer-load-link"
+                    @click="refreshKey(false, true, true)">
+                    <me-icon icon="me-icon-load-all" :name="t('redisValue.loadAll')" />
+                  </el-link>
+                </template>
+              </template>
               <!-- 序号：当前编辑行改显图标 -->
               <template #cell-seq="{ index }">
                 <div class="index-cell">
@@ -2649,24 +2721,6 @@ onUnmounted(() => {
             :title="t('redisValue.autoDetected')">
             {{ detectedViewText }}
           </el-text>
-          <!-- 加载更多、加载全部 -->
-          <div class="me-flex" style="width: 45px; margin-left: 10px" v-if="showMore">
-            <me-icon
-              :name="t('redisValue.loadMore')"
-              icon="me-icon-load-more"
-              hint
-              placement="top"
-              class="icon-btn"
-              @click="refreshKey(false, true, false)" />
-            <me-icon
-              :name="t('redisValue.loadAll')"
-              icon="me-icon-load-all"
-              hint
-              placement="top"
-              class="icon-btn"
-              @click="refreshKey(false, true, true)" />
-          </div>
-
           <!-- 连接只读：隐藏；禁用时 tooltip 说明原因 -->
           <el-tooltip
             v-if="showSave"
@@ -2967,6 +3021,11 @@ onUnmounted(() => {
         z-index: 20;
         width: 60%;
         height: 100%;
+      }
+
+      // footer 加载链接（el-link）：文字加粗，在 footer 信息文字中突出动作
+      .footer-load-link {
+        font-weight: bold;
       }
     }
   }
