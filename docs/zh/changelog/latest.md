@@ -1,6 +1,6 @@
 # 5.x 更新日志
 
-## v5.4.3 (2026-10-18)
+## [v5.4.3](https://mp.weixin.qq.com/s/eeDPDhU_nVnVuScOzApK6g) (2026-10-18)
 
 ### ✨ 细节优化
 
