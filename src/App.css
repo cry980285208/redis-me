@@ -51,15 +51,17 @@
   height: 1em;
 }
 
-/* 文本选择: 整体禁用，个别地方放开（表格挂 .cell，勿挂 td） */
+/* 文本选择: 整体禁用，个别地方放开（表格挂内层内容包裹，勿挂 td/cell 本身，避免勾选列、操作列等空白/图标区也可选） */
 html {
   user-select: none;
   -webkit-user-select: none; /* Chrome, Safari */
   -moz-user-select: none; /* Firefox */
 }
 
+/* el-table（v1）用 .cell；el-table-v2（MeTable）数据列用 .me-cell-ellipsis（操作列 .me-cell-slot 只放图标按钮，不列入） */
 .el-descriptions__content,
 .el-table__body-wrapper .el-table__cell .cell,
+.el-table-v2__row-cell .me-cell-ellipsis,
 .el-tooltip,
 .el-text,
 .terminal {
