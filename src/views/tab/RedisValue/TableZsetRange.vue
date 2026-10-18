@@ -36,8 +36,8 @@ const filteredList = computed(() => {
 // 列描述：序号 + 值 + 分值（展示与导出同一来源）
 const zsetColumns = computed<MeColumn[]>(() => [
   { key: 'index', title: '#', width: 60, align: 'center', index: true },
-  { key: 'value', prop: 'value', title: t('redisValue.value'), minWidth: 200, sortable: true },
-  { key: 'score', prop: 'score', title: t('redisValue.score'), width: 140, sortable: true },
+  { key: 'value', prop: 'value', title: t('redisValue.value'), minWidth: 200 },
+  { key: 'score', prop: 'score', title: t('redisValue.score'), width: 140 },
 ])
 // #endregion
 

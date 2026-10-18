@@ -154,13 +154,7 @@ const filteredTagRows = computed(() => {
 // 列描述：序号列 + 值列（展示与导出单一来源）
 const tagColumns = computed<MeColumn[]>(() => [
   { key: 'index', title: '#', width: 60, align: 'center', index: true },
-  {
-    key: 'value',
-    prop: 'value',
-    title: t('redisSearch.tagValsValue'),
-    minWidth: 200,
-    sortable: true,
-  },
+  { key: 'value', prop: 'value', title: t('redisSearch.tagValsValue'), minWidth: 200 },
 ])
 
 // 一组一行。词在界面上用逗号拼开，导出同一份文本。
@@ -176,8 +170,8 @@ const filteredSynRows = computed(() => {
 // 列描述：操作列仅可写时出现（纯插槽列不进导出矩阵）
 const synColumns = computed<MeColumn[]>(() => [
   { key: 'index', title: '#', width: 60, align: 'center', index: true },
-  { key: 'group', prop: 'group', title: t('redisSearch.synGroup'), width: 160, sortable: true },
-  { key: 'terms', prop: 'terms', title: t('redisSearch.synTerms'), minWidth: 200, sortable: true },
+  { key: 'group', prop: 'group', title: t('redisSearch.synGroup'), width: 160 },
+  { key: 'terms', prop: 'terms', title: t('redisSearch.synTerms'), minWidth: 200 },
   ...(canEdit.value
     ? [{ key: 'action', title: t('action'), width: 80, align: 'center' as const }]
     : []),

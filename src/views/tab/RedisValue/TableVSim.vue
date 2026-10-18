@@ -183,10 +183,10 @@ function seedSearch(row: RedisVSimItem) {
 // 列描述：展示与导出文本单一来源；attrs 列与操作列只在需要时出现
 const vsimColumns = computed<MeColumn[]>(() => [
   { key: 'index', title: '#', width: 55, align: 'center', index: true },
-  { key: 'key', prop: 'key', title: t('redisValue.element'), minWidth: 120, sortable: true },
-  { key: 'score', prop: 'score', title: t('redisValue.score'), minWidth: 120, sortable: true },
+  { key: 'key', prop: 'key', title: t('redisValue.element'), minWidth: 120 },
+  { key: 'score', prop: 'score', title: t('redisValue.score'), minWidth: 120 },
   ...(withAttribs.value
-    ? [{ key: 'attrs', prop: 'attrs', title: t('fieldSet.attrs'), minWidth: 120, sortable: true }]
+    ? [{ key: 'attrs', prop: 'attrs', title: t('fieldSet.attrs'), minWidth: 120 }]
     : []),
   { key: 'action', title: t('action'), width: 70, align: 'center' },
 ])

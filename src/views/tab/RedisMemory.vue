@@ -112,7 +112,6 @@ const memoryColumns = computed<MeColumn<RedisKeySize_Serialize>[]>(() => [
     prop: 'type',
     title: t('redisMemory.type'),
     width: 100,
-    sortable: true,
     formatter: row => toKeyTypeLabel(row.type),
   },
   { key: 'key', prop: 'key', title: t('redisMemory.key'), minWidth: 200 },
@@ -121,7 +120,6 @@ const memoryColumns = computed<MeColumn<RedisKeySize_Serialize>[]>(() => [
     prop: 'size',
     title: t('redisMemory.size'),
     width: 120,
-    sortable: true,
     formatter: row => meHumanSize(row.size),
   },
   {

@@ -1264,7 +1264,6 @@ const valueColumns = computed<MeColumn<ValueTableRow>[]>(() => {
       prop: 'id',
       title: t('redisValue.id'),
       width: 350,
-      sortable: true,
       formatter: row => {
         const id = String(row.id ?? '')
         const date = streamIdToDate(id)
@@ -1279,7 +1278,6 @@ const valueColumns = computed<MeColumn<ValueTableRow>[]>(() => {
       title: timeseriesType.value ? t('redisValue.timestamp') : t('redisValue.key'),
       // TimeSeries 宽度对齐 Stream ID；Hash 为弹性列
       ...(timeseriesType.value ? { width: 350 } : { minWidth: 180 }),
-      sortable: true,
       formatter: row => {
         const key = row.key
         if (!timeseriesType.value) return formatTableCell(key)
@@ -1290,20 +1288,13 @@ const valueColumns = computed<MeColumn<ValueTableRow>[]>(() => {
     })
   }
   if (listType.value || arrayType.value) {
-    cols.push({
-      key: 'index',
-      prop: 'index',
-      title: t('redisValue.index'),
-      width: 100,
-      sortable: true,
-    })
+    cols.push({ key: 'index', prop: 'index', title: t('redisValue.index'), width: 100 })
   }
   cols.push({
     key: 'value',
     prop: 'value',
     title: vectorsetType.value ? t('redisValue.element') : t('redisValue.value'),
     minWidth: 180,
-    sortable: true,
     sortMethod: compareFieldRowValue,
     formatter: row => fieldRowDisplayValue(row),
   })
@@ -1313,13 +1304,7 @@ const valueColumns = computed<MeColumn<ValueTableRow>[]>(() => {
     cols.push({ key: 'attrs', prop: 'attrs', title: t('fieldSet.attrs'), minWidth: 180 })
   }
   if (zsetType.value) {
-    cols.push({
-      key: 'score',
-      prop: 'score',
-      title: t('redisValue.score'),
-      width: 140,
-      sortable: true,
-    })
+    cols.push({ key: 'score', prop: 'score', title: t('redisValue.score'), width: 140 })
   }
   if (showHashFieldTtlOption.value && scanHashFieldTtl.value) {
     cols.push({

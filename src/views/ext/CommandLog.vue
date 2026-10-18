@@ -326,7 +326,6 @@ const logColumns = computed<MeColumn<CommandLogEntry>[]>(() => [
     prop: 'timestamp',
     title: t('commandLog.time'),
     width: 118,
-    sortable: true,
     formatter: row => logTimeText(row.timestamp),
   },
   {
@@ -335,7 +334,6 @@ const logColumns = computed<MeColumn<CommandLogEntry>[]>(() => [
     title: t('commandLog.duration'),
     width: 90,
     align: 'right',
-    sortable: true,
     formatter: row => `${row.durationMs} ms`,
   },
   { key: 'dbIndex', prop: 'dbIndex', title: t('commandLog.db'), width: 56, align: 'center' },

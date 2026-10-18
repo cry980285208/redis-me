@@ -46,7 +46,6 @@ const arColumns = computed<MeColumn<ArLastItemsRow>[]>(() => [
     prop: 'value',
     title: t('redisValue.value'),
     minWidth: 200,
-    sortable: true,
     formatter: row => {
       const value = row.value
       return value == null ? t('redisValue.arLastItemsNil') : value

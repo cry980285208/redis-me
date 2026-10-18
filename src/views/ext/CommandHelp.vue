@@ -67,13 +67,12 @@ const readonlyColWidth = computed(() => (isZh.value ? 88 : 120))
 
 // MeTable 列描述：单一来源，表格与导出共用（只读列文本由 formatter 计算，与界面展示一致）
 const helpColumns = computed<MeColumn<CommandHelpRow>[]>(() => [
-  { key: 'group', prop: 'group', title: t('redisTerminal.group'), width: 120, sortable: true },
+  { key: 'group', prop: 'group', title: t('redisTerminal.group'), width: 120 },
   {
     key: 'key',
     prop: 'key',
     title: t('redisTerminal.command'),
     width: 150,
-    sortable: true,
     // 链接蓝加在单元格节点：截断省略号与 el-link 文字同色
     className: 'col-cmd-link',
   },

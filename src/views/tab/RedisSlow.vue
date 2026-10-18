@@ -25,9 +25,6 @@ const slowerGetCount = ref(Math.min(slowerMaxLen.value, 200))
 const keyword = ref('')
 const loading = ref(false)
 const dataList = ref<RedisSlowLog[]>([])
-// 初值与表格 default-sort 一致，避免挂载时表内排序与数据层排序打架
-const sortProperty = ref('time')
-const sortOrder = ref('descending')
 const node = ref('')
 
 // 最小为1
@@ -35,72 +32,35 @@ watchEffect(() => {
   if (slowerGetCount.value < 1) slowerGetCount.value = 1
 })
 
+// 只做关键词过滤；排序交给 MeTable（default-sort 时间倒序，与后端返回顺序一致）
 const filterDataList = computed(() => {
   const key = keyword.value.toLowerCase()
-  const arr = dataList.value.filter(
+  return dataList.value.filter(
     row =>
       !key ||
       row.command?.toLowerCase().indexOf(key) > -1 ||
       row.client?.toLowerCase().indexOf(key) > -1 ||
       row.clientName?.toLowerCase().indexOf(key) > -1,
   )
-
-  const prop = sortProperty.value as keyof RedisSlowLog
-  const isAsc = sortOrder.value === 'ascending'
-  const arr01 = arr.filter(d => d[prop])
-  const arr02 = arr.filter(d => !d[prop])
-  arr01.sort((a, b) => {
-    const av = a[prop] as string | number
-    const bv = b[prop] as string | number
-    return (av < bv ? -1 : av > bv ? 1 : 0) * (isAsc ? 1 : -1)
-  })
-  return [...arr01, ...arr02]
 })
 
-function sortChange({ prop, order }: { prop: string; order: string | null }) {
-  // 取消排序时回到默认（时间倒序），与表格 default-sort 一致
-  sortProperty.value = order ? prop : 'time'
-  sortOrder.value = order ?? 'descending'
-}
-
-// 列描述：展示与导出文本单一来源；排序在 filterDataList 里做（空值行恒排末尾），故列用 custom
+// 列描述：展示与导出文本单一来源；sortable 交由 MeTable 默认策略开启
 const slowColumns = computed<MeColumn<RedisSlowLog>[]>(() => [
-  { key: 'time', prop: 'time', title: t('redisSlow.time'), width: 180, sortable: 'custom' },
+  { key: 'time', prop: 'time', title: t('redisSlow.time'), width: 180 },
   {
     key: 'cost',
     prop: 'cost',
     title: t('redisSlow.cost'),
     width: 90,
     align: 'right',
-    sortable: 'custom',
     formatter: row => `${Math.round(row.cost ?? 0)} ms`,
   },
-  {
-    key: 'command',
-    prop: 'command',
-    title: t('redisSlow.command'),
-    minWidth: 200,
-    sortable: 'custom',
-  },
-  {
-    key: 'clientName',
-    prop: 'clientName',
-    title: t('redisSlow.clientName'),
-    width: 140,
-    sortable: 'custom',
-  },
-  { key: 'client', prop: 'client', title: t('redisSlow.client'), width: 180, sortable: 'custom' },
+  { key: 'command', prop: 'command', title: t('redisSlow.command'), minWidth: 200 },
+  { key: 'clientName', prop: 'clientName', title: t('redisSlow.clientName'), width: 140 },
+  { key: 'client', prop: 'client', title: t('redisSlow.client'), width: 180 },
   // 集群下才需要区分节点
   ...(share.conn?.cluster
-    ? [
-        {
-          key: 'node',
-          prop: 'node',
-          title: t('redisSlow.node'),
-          width: 180,
-          sortable: 'custom' as const,
-        },
-      ]
+    ? [{ key: 'node', prop: 'node', title: t('redisSlow.node'), width: 180 }]
     : []),
 ])
 
@@ -270,8 +230,7 @@ const rules = computed(() => ({
         :columns="slowColumns"
         :total="dataList.length"
         :default-sort="{ prop: 'time', order: 'descending' }"
-        export-name="slowlog"
-        @sort-change="sortChange" />
+        export-name="slowlog" />
     </div>
 
     <!-- 编辑慢参数弹框 -->

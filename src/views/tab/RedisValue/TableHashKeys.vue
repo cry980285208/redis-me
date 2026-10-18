@@ -54,7 +54,6 @@ const hashColumns = computed<MeColumn[]>(() => [
     prop: columnProp.value,
     title: mode.value === 'keys' ? t('redisValue.key') : t('redisValue.value'),
     minWidth: 200,
-    sortable: true,
   },
 ])
 // #endregion

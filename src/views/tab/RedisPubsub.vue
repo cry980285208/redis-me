@@ -41,13 +41,7 @@ const filterDataList = computed(() => {
 
 // 列描述：时间列导出/悬停保留完整日期时间（取 prop 原值），单元格经 #cell-datetime 只显时分秒（与迁移前一致）
 const pubsubColumns = computed<MeColumn[]>(() => [
-  {
-    key: 'datetime',
-    prop: 'datetime',
-    title: t('redisPubSub.datetime'),
-    width: 118,
-    sortable: true,
-  },
+  { key: 'datetime', prop: 'datetime', title: t('redisPubSub.datetime'), width: 118 },
   { key: 'channel', prop: 'channel', title: t('redisPubSub.channel'), minWidth: 150 },
   { key: 'message', prop: 'message', title: t('redisPubSub.message'), minWidth: 150 },
   { key: 'action', title: t('action'), width: 80, align: 'center' },

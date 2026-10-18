@@ -120,13 +120,13 @@ function propWidth(item: string) {
   return 130
 }
 
-// 字段列公共部分：prop=key、可排序、表头提示取字段说明（无说明回落字段名）
+// 字段列公共部分：prop=key、表头提示取字段说明（无说明回落字段名）；sortable 交由 MeTable 默认策略开启
 function fieldCol(
   key: string,
   title: string,
   extra: Partial<MeColumn<RedisClientListRow>> = {},
 ): MeColumn<RedisClientListRow> {
-  return { key, prop: key, title, sortable: true, headerTip: tipMap.value[key] || key, ...extra }
+  return { key, prop: key, title, headerTip: tipMap.value[key] || key, ...extra }
 }
 
 // MeTable 列描述：单一来源，表格与导出共用（持续/空闲文本由 formatter 计算，与界面展示一致；

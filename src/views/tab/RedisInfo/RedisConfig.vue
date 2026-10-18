@@ -76,7 +76,7 @@ const filterDataList = computed(() => {
 
 // MeTable 列描述：单一来源，表格与导出共用（默认配置/说明取值由 formatter 计算，与界面展示一致）
 const configColumns = computed<MeColumn<ConfigTableRow>[]>(() => [
-  { key: 'param', prop: 'param', title: t('redisConfig.param'), minWidth: 180, sortable: true },
+  { key: 'param', prop: 'param', title: t('redisConfig.param'), minWidth: 180 },
   { key: 'value', prop: 'value', title: t('redisConfig.value'), minWidth: 100 },
   {
     key: 'default',

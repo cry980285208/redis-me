@@ -39,7 +39,7 @@ const filterDataList = computed(() => {
 
 // 列描述：时间列导出/悬停保留完整日期时间（取 prop 原值），单元格经 #cell-datetime 只显时分秒（与迁移前一致）
 const monitorColumns = computed<MeColumn[]>(() => [
-  { key: 'datetime', prop: 'datetime', title: t('redisMonitor.time'), width: 118, sortable: true },
+  { key: 'datetime', prop: 'datetime', title: t('redisMonitor.time'), width: 118 },
   { key: 'command', prop: 'command', title: t('redisMonitor.command'), minWidth: 200 },
   { key: 'action', title: t('action'), width: 80, align: 'center' },
 ])
