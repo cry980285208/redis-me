@@ -344,6 +344,12 @@ function onSplitterBarMouseDown(e: MouseEvent): void {
   :deep(.el-splitter-bar) {
     width: 5px !important;
 
+    // EP 拖柄命中区默认 16px 宽（内联 width），向两侧面板溢出，鼠标贴面板边缘划过即点亮竖线；
+    // 压到 4px（与字段面板左缘拖柄同宽），只有真正瞄着缝隙去才亮线、可拖
+    .el-splitter-bar__dragger-horizontal {
+      width: 4px !important;
+    }
+
     // 竖线常驻隐藏（整条线显脏），仅悬停/拖动时显示，配色与字段面板左缘拖柄一致
     .el-splitter-bar__dragger-horizontal::before {
       background-color: transparent;

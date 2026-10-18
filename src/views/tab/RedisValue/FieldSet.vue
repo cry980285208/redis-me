@@ -779,14 +779,14 @@ onUnmounted(() => window.removeEventListener('keydown', onEscapeKey, true))
     cursor: ew-resize;
   }
 
-  // 左缘拖柄：绝对定位贴面板左缘；16px 透明命中区 + 2px 可见细线，配色对齐 el-splitter 横向拖柄
+  // 左缘拖柄：绝对定位贴面板左缘；4px 透明命中区（与主分栏拖柄同宽）+ 2px 可见细线，配色对齐 el-splitter 横向拖柄
   .field-set-resize {
     position: absolute;
     left: 0;
     top: 0;
     z-index: 1;
-    // 命中区只向内扩：卡片 overflow:hidden 会裁掉左溢部分；16px 也仅覆盖卡片自身 20px 内边距，不挡内容
-    width: 16px;
+    // 命中区只向内扩：卡片 overflow:hidden 会裁掉左溢部分；压到 4px 与主分栏一致，避免贴面板左缘划过误触发
+    width: 4px;
     height: 100%;
     background: transparent;
     cursor: ew-resize;
