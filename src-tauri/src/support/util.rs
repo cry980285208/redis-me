@@ -35,6 +35,11 @@ pub const CONNECTION_LOCK_TIMEOUT: Duration = Duration::from_secs(10); // 取连
 pub const CONNECTION_STALE_SECONDS: i64 = 10 * 60;
 pub const CONNECTION_CONNECT_TIMEOUT: Duration = Duration::from_secs(10); // 建连默认（TCP+握手+PING），设置可覆盖
 pub const CONNECTION_NORMAL_TIMEOUT: Duration = Duration::from_secs(30); // 连接操作默认操作时长
+/// 集群客户端内部命令重试次数。redis-rs 默认 16 次：当拓扑里的通告地址客户端不可达
+/// （如 cluster-announce-ip 配成 127.0.0.1/内网 IP）时，建连验证会「重连种子 + 刷新拓扑」
+/// 反复循环而长时间卡死，且单次重试的退避最长可达数百秒。降到 3 次仍能覆盖正常的
+/// MOVED/ASK 重定向与单次故障转移，又不至于把失败拖成分钟级。
+pub const CLUSTER_COMMAND_RETRIES: u32 = 3;
 
 pub const EVENT_SUBSCRIBE: &str = "subscribe";
 pub const EVENT_MONITOR: &str = "monitor";

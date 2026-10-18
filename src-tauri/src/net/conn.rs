@@ -3,7 +3,7 @@ use crate::net::proxy::build_proxy_dialer;
 use crate::net::ssh::SshDialer;
 use crate::net::tls;
 use crate::support::error::AppError;
-use crate::support::util::{AnyResult, parse_path};
+use crate::support::util::{AnyResult, CLUSTER_COMMAND_RETRIES, parse_path};
 use anyhow::{Context, bail};
 use log::{info, warn};
 use redis::cluster::{ClusterClient, ClusterConfig, ClusterConnection};
@@ -14,6 +14,8 @@ use redis::{
 use std::collections::HashMap;
 use std::fs;
 use std::sync::Arc;
+use std::sync::mpsc;
+use std::thread;
 use std::time::Duration;
 use url::Url;
 
@@ -98,7 +100,7 @@ pub fn get_client_cluster(
     let url = redis_url(conf)?;
     log_redis_url(conf, &url);
 
-    let mut builder = ClusterClient::builder(vec![url.to_string()]);
+    let mut builder = ClusterClient::builder(vec![url.to_string()]).retries(CLUSTER_COMMAND_RETRIES);
     if conf.is_resp3() {
         builder = builder.use_protocol(ProtocolVersion::RESP3);
     }
@@ -535,36 +537,64 @@ fn get_client_sentinel(
 }
 
 /// 阶段 1：按建连超时建连并 ping（集群入口节点）。
+///
+/// 与单机一致，整个「建连 + ping」以配置的建连超时为墙钟上限：放到后台线程执行，主线程
+/// `recv_timeout(connect_timeout)` 等结果，到点仍无结果就直接报错。这样能兜住 redis-rs 同步
+/// 集群客户端在拓扑通告地址不可达时（如 cluster-announce-ip 配成 127.0.0.1，外网连到客户端
+/// 本机）反复「重连种子 + 刷新拓扑」导致的长时间卡死——单次 socket 超时只约束一次连接/一条
+/// 命令，没有全局上限。超时后后台线程不会被强行取消（同步 connect 无法中断），但受
+/// `CLUSTER_COMMAND_RETRIES` 约束会在有限时间内自行结束并释放，不影响本次返回的错误。
+///
+/// 注意：集群发现阶段会顺序连接拓扑里的每个节点，节点很多或链路很慢时，健康集群也可能
+/// 需要接近甚至超过建连超时；此时应调大设置里的建连超时（单机同理，只是单机只有一次连接）。
 fn verify_cluster_connection(
     client: &ClusterClient,
     connect_timeout: Duration,
     conf: &ConnConfig,
 ) -> AnyResult<ClusterConnection> {
     info!("Redis集群连接验证，建连超时 {}s", connect_timeout.as_secs());
-    let result: AnyResult<ClusterConnection> = (|| {
-        let cc = ClusterConfig::new()
-            .set_connection_timeout(connect_timeout)
-            .set_response_timeout(connect_timeout);
-        let mut conn = client.get_connection_with_config(cc)?;
-        conn.set_read_timeout(Some(connect_timeout))?;
-        conn.set_write_timeout(Some(connect_timeout))?;
-        let _: () = conn.ping()?;
-        Ok(conn)
-    })();
-    match result {
-        Ok(conn) => {
+
+    let verify_client = client.clone();
+    let (tx, rx) = mpsc::channel::<redis::RedisResult<ClusterConnection>>();
+    thread::spawn(move || {
+        let result = (|| {
+            let cc = ClusterConfig::new()
+                .set_connection_timeout(connect_timeout)
+                .set_response_timeout(connect_timeout);
+            let mut conn = verify_client.get_connection_with_config(cc)?;
+            conn.set_read_timeout(Some(connect_timeout))?;
+            conn.set_write_timeout(Some(connect_timeout))?;
+            let _: () = conn.ping()?;
+            Ok(conn)
+        })();
+        let _ = tx.send(result);
+    });
+
+    let peer = Some((conf.host.clone(), conf.port));
+    match rx.recv_timeout(connect_timeout) {
+        Ok(Ok(conn)) => {
             info!("Redis集群连接验证通过");
             Ok(conn)
         }
-        Err(e) => {
+        Ok(Err(e)) => {
             warn!("Redis集群连接验证失败: {e}");
             Err(hint_if_ssl_required(
                 conf,
                 connect_timeout,
                 client.dialer(),
-                Some((conf.host.clone(), conf.port)),
-                e,
+                peer,
+                e.into(),
             ))
+        }
+        Err(_) => {
+            // 到点仍无结果：多为拓扑通告地址客户端不可达（如 cluster-announce-ip=127.0.0.1）
+            warn!(
+                "Redis集群连接验证超过建连超时 {}s，疑似 cluster-announce-ip 不可达",
+                connect_timeout.as_secs()
+            );
+            bail!(AppError::ClusterNodesUnreachable {
+                timeout_secs: connect_timeout.as_secs()
+            });
         }
     }
 }

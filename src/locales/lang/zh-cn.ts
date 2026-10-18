@@ -1329,6 +1329,8 @@ export default {
     tls_not_enabled: '服务端未开启 TLS，请取消勾选 SSL',
     ssl_required: '服务端已开启 TLS，请勾选 SSL',
     sentinel_master_not_found: '哨兵未找到主节点 "{name}"',
+    cluster_nodes_unreachable:
+      '集群建连超时（{timeout_secs}s）：拓扑通告的节点地址无法从本机访问，多为 cluster-announce-ip 配成了 127.0.0.1 或内网 IP，请改为客户端可达的地址后重试；若集群节点多或链路慢，也可在设置中调大建连超时',
     key_not_found: '"{key}" 键不存在',
     key_node_not_found: '未找到键 "{key}" 所在的节点',
     key_already_exists: '键 "{key}" 已存在',

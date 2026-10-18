@@ -35,6 +35,11 @@ pub enum AppError {
     SentinelMasterNotFound {
         name: String,
     },
+    /// 集群拓扑里的通告地址客户端不可达（如 cluster-announce-ip 配成 127.0.0.1/内网 IP），
+    /// 建连在墙钟上限内仍未完成
+    ClusterNodesUnreachable {
+        timeout_secs: u64,
+    },
     KeyNodeNotFound {
         key: String,
     },

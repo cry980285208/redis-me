@@ -1354,6 +1354,8 @@ Once an operation prevents Redis from keeping the space-saving encoding, special
     tls_not_enabled: 'The server does not have TLS enabled; please uncheck SSL',
     ssl_required: 'The server has TLS enabled; please check SSL',
     sentinel_master_not_found: 'Sentinel did not find master "{name}"',
+    cluster_nodes_unreachable:
+      'Cluster connection timed out ({timeout_secs}s): the announced node addresses are unreachable from this machine. This usually means cluster-announce-ip is set to 127.0.0.1 or a private IP; set it to an address the client can reach and retry. For large or high-latency clusters, you can also increase the connection timeout in settings',
     key_not_found: '"{key}" not found',
     key_node_not_found: 'Node not found for key "{key}"',
     key_already_exists: 'Key "{key}" already exists',
