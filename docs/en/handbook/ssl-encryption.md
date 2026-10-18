@@ -224,7 +224,7 @@ client.ping()
 ```toml
 [sync_reader]
 cluster = true
-address = "10.0.0.1:7001"    # any node of the old cluster, plaintext
+address = "10.0.0.1:7001" # any node of the old cluster, plaintext
 password = "old-password"
 tls = false
 sync_rdb = true
@@ -232,7 +232,7 @@ sync_aof = true
 
 [redis_writer]
 cluster = true
-address = "10.0.0.11:8001"   # any node of the new cluster
+address = "10.0.0.11:8001" # any node of the new cluster
 password = "new-password"
 tls = true
 

@@ -224,7 +224,7 @@ client.ping()
 ```toml
 [sync_reader]
 cluster = true
-address = "10.0.0.1:7001"    # 旧集群任意节点，明文
+address = "10.0.0.1:7001" # 旧集群任意节点，明文
 password = "old-password"
 tls = false
 sync_rdb = true
@@ -232,7 +232,7 @@ sync_aof = true
 
 [redis_writer]
 cluster = true
-address = "10.0.0.11:8001"   # 新集群任意节点
+address = "10.0.0.11:8001" # 新集群任意节点
 password = "new-password"
 tls = true
 

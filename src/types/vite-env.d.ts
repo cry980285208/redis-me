@@ -1,4 +1,4 @@
-/// <reference types="vite/client" />
+/// <reference types="vite-plus/client" />
 
 declare global {
   /** tauri 插件挂载的响应式全局（结构随业务扩展） */
