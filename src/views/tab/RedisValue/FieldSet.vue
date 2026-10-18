@@ -613,7 +613,7 @@ onUnmounted(() => window.removeEventListener('keydown', onEscapeKey, true))
     <template #header>
       <div class="me-flex" style="align-items: center">
         <span>{{ readonly ? t('fieldSet.viewField') : t('fieldSet.editField') }}</span>
-        <me-icon icon="el-icon-close" class="icon-btn" :info="t('close')" @click="cancel" />
+        <me-icon icon="el-icon-close" class="icon-btn" @click="cancel" />
       </div>
     </template>
     <el-form ref="formRef" class="field-set-form" :model="form" :rules="rules" label-position="top">

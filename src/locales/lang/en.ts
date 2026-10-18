@@ -502,7 +502,6 @@ export default {
     description: 'Records all Redis commands. Recent 1s commands highlighted',
     keyword: 'Filter displayed commands…',
     clear: 'Clear',
-    close: 'Close',
     clearConfirm: 'Clear command logs for this connection?',
     clearOk: 'Command logs cleared',
     empty: 'No commands logged yet',

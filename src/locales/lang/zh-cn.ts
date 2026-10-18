@@ -492,7 +492,6 @@ export default {
       '记录当前连接的所有Redis命令执行情况。最近1秒内执行的命令会以高亮颜色显示，便于追踪最新操作',
     keyword: '过滤已显示命令…',
     clear: '清空',
-    close: '关闭',
     clearConfirm: '确定清空当前连接的命令日志吗？',
     clearOk: '命令日志已清空',
     empty: '暂无命令记录',
