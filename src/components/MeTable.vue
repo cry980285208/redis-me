@@ -3,6 +3,8 @@
 // 列描述 columns 为单一来源：同时驱动渲染、排序、导出矩阵与具名插槽（cell-${key} / header-${key}）。
 // 排序与 el-table 的 default-sort、列 sortable / sort-method / sort-by 一致；
 // sortable="custom" 时不改行顺序，由父组件在 sort-change 中自行更新 :data。
+// 未显式指定 sortable 的数据列（有 prop/formatter、非勾选/序号列）默认可排序，免去逐列手写。
+// 表头点击三态循环 asc → desc → 无（对齐 el-table）；v2 原生仅 asc↔desc，取消态由本组件拦下。
 // 表内 footer 固定行：总数 + #footer 插槽（调用方主动作，右侧紧邻导出）+「…」导出菜单贴右（RAW 项直接序列化数据永远可用，其余格式由列描述计算矩阵、不渲染 DOM）。
 import type { TableV2Instance } from 'element-plus'
 import { orderBy } from 'element-plus/es/components/table/src/util.mjs'
@@ -132,6 +134,13 @@ const v2Data = computed(() => {
   return rows
 })
 
+// 列是否可排序：显式 sortable 优先；未指定时数据列默认开启（勾选列/序号列/纯插槽列无数据源，跳过）
+function isColumnSortable(col: MeColumn): boolean {
+  if (col.sortable !== undefined) return Boolean(col.sortable)
+  if (col.selection || col.index) return false
+  return Boolean(col.prop || col.formatter)
+}
+
 const v2Columns = computed(() =>
   props.columns.map(col => ({
     key: col.key,
@@ -143,7 +152,7 @@ const v2Columns = computed(() =>
     flexGrow: col.width ? 0 : (col.grow ?? 1),
     fixed: col.fixed,
     align: col.align,
-    sortable: Boolean(col.sortable),
+    sortable: isColumnSortable(col),
     class: col.className,
     headerClass: col.headerClassName,
   })),
@@ -164,17 +173,21 @@ const v2SortState = computed(() => {
 // v2 的 #footer 为表内固定行：高度从主体扣除、空态底部也让位；无数据时收为 0 让空态占满整表
 const v2FooterHeight = computed(() => (sortedData.value.length ? V2_ROW_HEIGHT : 0))
 
-// v2 原生只有 asc/desc 两态（无第三次点击取消排序）；对外仍按 el-table 的 sort-change 签名回传
+// v2 原生只有 asc/desc 两态；在 desc 后下一次点击（v2 循环回 asc）视为第三次点击，取消排序，对齐 el-table 三态；
+// 对外按 el-table 的 sort-change 签名回传，order 可为 null
 function handleV2ColumnSort({ key, order }: { key: string; order?: 'asc' | 'desc' }): void {
   const col = props.columns.find(c => c.key === key)
   if (!col) return
-  sortProp.value = col.prop ?? col.key
-  sortOrder.value = order === 'desc' ? 'descending' : 'ascending'
+  const prop = col.prop ?? col.key
+  // 当前列已 descending、v2 又发 asc（即循环回头）→ 取消排序
+  const cancel = sortProp.value === prop && sortOrder.value === 'descending' && order === 'asc'
+  sortProp.value = cancel ? null : prop
+  sortOrder.value = cancel ? null : order === 'desc' ? 'descending' : 'ascending'
 
   const onSortChange = attrs.onSortChange as
-    | ((p: { column: MeColumn; prop: string; order: string }) => void)
+    | ((p: { column: MeColumn; prop: string; order: string | null }) => void)
     | undefined
-  onSortChange?.({ column: col, prop: sortProp.value, order: sortOrder.value })
+  onSortChange?.({ column: col, prop, order: sortOrder.value })
 }
 
 // 行类：调用方 rowClass（如差异行标记）与内置 stripe 组合（0 起奇数行加浅色底，与 el-table stripe 对齐）

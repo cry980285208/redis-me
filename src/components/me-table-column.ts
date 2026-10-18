@@ -22,6 +22,7 @@ export type MeColumn<T = any> = {
   grow?: number
   fixed?: 'left' | 'right'
   align?: 'left' | 'center' | 'right'
+  /** 是否可排序；未指定时数据列（有 prop 或 formatter，且非勾选/序号列）默认可排序 */
   sortable?: boolean | 'custom'
   /** 自定义比较器；只在 MeTable 内部排序（orderBy），不交给表格组件 */
   sortMethod?: (a: T, b: T) => number
