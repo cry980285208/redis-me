@@ -297,14 +297,14 @@ async function configSet() {
               clearable
               style="flex: 1" />
             <el-tooltip
+              v-if="share.conn?.cluster"
               :content="t('redisConfig.autoBroadcastTip')"
               placement="top-end"
               :show-after="1000">
               <el-checkbox
                 v-model="form.autoBroadcast"
                 :label="t('redisConfig.autoBroadcast')"
-                style="margin-left: 20px"
-                v-if="share.conn?.cluster" />
+                style="margin-left: 20px" />
             </el-tooltip>
           </div>
         </el-form-item>
