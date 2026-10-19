@@ -1045,6 +1045,27 @@ api_model!(MonitorEvent {
     command: String,
 });
 
+api_model!(
+    /// 键空间通知事件：后端把 `__keyspace@`/`__keyevent@` 频道解析成 DB/键/事件后推给前端
+    NotifyEvent {
+        id: String,        // 连接 id，前端按此过滤
+        datetime: String,  // 与 SubscribeEvent 同格式
+        node: String,      // 集群节点地址；单机为空串
+        db: u16,           // 解析自频道
+        key: String,       // 解析后的键（display string）
+        event: String,     // 事件名，如 del / set / expired
+    }
+);
+
+api_model!(
+    /// 通知订阅参数：一次只订一族视角，避免 K+E 同开时同一事件重复成两行
+    NotifySubscribeParam {
+        perspective: String,     // keyevent | keyspace
+        db: Option<u16>,         // None = 所有库（@*）
+        pattern: Option<String>, // None/空 = 匹配全部（*）；否则作为频道 glob 模式（keyspace 匹配键名，keyevent 匹配事件名）
+    }
+);
+
 api_model!(CommandLogEvent {
     id: String,
     entry: CommandLogEntry,

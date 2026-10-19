@@ -68,6 +68,7 @@ api_commands!(
     publish(channel: &str, message: &str, msg_fmt: Option<BytesFormat>) -> (); // 发布消息
     subscribe_stop() -> ();                                      // 订阅消息停止
     monitor_stop()   -> ();                                      // 监控命令停止
+    notify_subscribe_stop() -> ();                               // 键空间通知订阅停止
     batch_del(param: RedisBatchKey) -> ();                       // 批量删除
     batch_ttl(param: RedisBatchTtl) -> ();                       // 批量更新过期时间
     mock_data(count: u64) -> ();                                 // 模拟数据
@@ -98,6 +99,7 @@ api_commands!(
     // 以下方法需要 app_handle（内部从 MeBase 获取）
     monitor(node: &str) -> ();                  // 监控命令
     subscribe(channel: Option<String>) -> ();   // 订阅消息
+    notify_subscribe(param: NotifySubscribeParam) -> (); // 键空间通知订阅
     export_csv(param: RedisExportCsv) -> ();    // 导出CSV
     import_csv(param: RedisImportCsv) -> ();    // 导入CSV
     import_cmd(file: String) -> ();             // 导入命令

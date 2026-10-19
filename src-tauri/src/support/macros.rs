@@ -185,6 +185,13 @@ macro_rules! me_client_forwards {
             )
         }
 
+        fn notify_subscribe_stop(&self) -> AnyResult<()> {
+            $crate::client::ops::notify::notify_subscribe_stop0(
+                self.get_conn()?,
+                self.notify_running.clone(),
+            )
+        }
+
         fn monitor_stop(&self) -> AnyResult<()> {
             $crate::client::ops::pubsub::monitor_stop0(self.monitor_running.clone())
         }

@@ -232,6 +232,8 @@ fn tauri_specta_commands() -> Commands<tauri::Wry> {
         subscribe_stop,
         monitor,
         monitor_stop,
+        notify_subscribe,
+        notify_subscribe_stop,
         batch_del,
         batch_ttl,
         export_csv,

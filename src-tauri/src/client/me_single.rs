@@ -5,6 +5,7 @@ use crate::client::ops::imp::{import_cmd_0_thread, import_csv_0_thread};
 use crate::client::ops::info::{parse_client_info, redis_value_to_log};
 use crate::client::ops::key::copy0;
 use crate::client::ops::key_scan::{batch_key0, scan_0_batch_count, scan_0_exact, scan_1_cmd};
+use crate::client::ops::notify::{build_notify_patterns, notify_subscribe_node0};
 use crate::client::ops::pubsub::{monitor0, subscribe0};
 use crate::client::ops::search::SearchCmd;
 use crate::client::state::MeBase;
@@ -47,6 +48,9 @@ impl Drop for MeSingle {
         // 未订阅不要 get_conn：空闲超过检查间隔会探活，过久或已关闭会直接重连，关闭时白开一条连接。
         if self.subscribe_running.load(Relaxed) {
             let _ = self.subscribe_stop();
+        }
+        if self.notify_running.load(Relaxed) {
+            let _ = self.notify_subscribe_stop();
         }
         let _ = self.monitor_stop();
         self.export_import_running.store(false, Relaxed);
@@ -310,6 +314,27 @@ impl MeClient for MeSingle {
         let app_handle = self.base().get_app_handle()?;
         let logger = self.base().command_logger.clone();
         monitor0(conn, running, app_handle, self.id.clone(), logger)
+    }
+
+    fn notify_subscribe(&self, param: NotifySubscribeParam) -> AnyResult<()> {
+        let conn = self
+            .client
+            .get_connection_with_timeout(self.connection_timeout)?;
+        let running = self.notify_running.clone();
+        let app_handle = self.base().get_app_handle()?;
+        let logger = self.base().command_logger.clone();
+        let patterns =
+            build_notify_patterns(&param.perspective, param.db, param.pattern.as_deref());
+        // 单机：node 传空串
+        notify_subscribe_node0(
+            conn,
+            running,
+            app_handle,
+            patterns,
+            self.id.clone(),
+            String::new(),
+            logger,
+        )
     }
 
     fn batch_del(&self, param: RedisBatchKey) -> AnyResult<()> {

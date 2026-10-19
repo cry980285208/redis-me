@@ -9,6 +9,7 @@ pub mod imp;
 pub mod info;
 pub mod key;
 pub mod key_scan;
+pub mod notify;
 pub mod pubsub;
 pub mod search;
 pub mod vector;

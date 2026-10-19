@@ -4,6 +4,7 @@ use crate::client::ops::exp::{export_cmd_0_thread, export_csv_0_thread};
 use crate::client::ops::imp::{import_cmd_0_thread, import_csv_0_thread};
 use crate::client::ops::info::{parse_client_info, redis_value_to_log};
 use crate::client::ops::key_scan::{batch_key0, scan_0_batch_count, scan_0_exact, scan_1_cmd};
+use crate::client::ops::notify::{build_notify_patterns, notify_subscribe_node0};
 use crate::client::ops::pubsub::{monitor0, subscribe0};
 use crate::client::ops::search::SearchCmd;
 use crate::client::state::MeBase;
@@ -58,6 +59,9 @@ impl Drop for MeCluster {
         // 未订阅不要 get_conn：空闲超过检查间隔会探活，过久或已关闭会直接重连，关闭时白开一条连接。
         if self.subscribe_running.load(Relaxed) {
             self.subscribe_stop().unwrap_or(());
+        }
+        if self.notify_running.load(Relaxed) {
+            self.notify_subscribe_stop().unwrap_or(());
         }
         self.monitor_stop().unwrap_or(());
         self.export_import_running.store(false, Relaxed);
@@ -459,6 +463,44 @@ impl MeClient for MeCluster {
         let app_handle = self.base().get_app_handle()?;
         let logger = self.base().command_logger.clone();
         monitor0(conn, running, app_handle, self.id.clone(), logger)
+    }
+
+    fn notify_subscribe(&self, param: NotifySubscribeParam) -> AnyResult<()> {
+        // 集群：通知按节点本地产生，对每个 master 各开一条专用连接、各起一个线程，共用 notify_running
+        let app_handle = self.base().get_app_handle()?;
+        let logger = self.base().command_logger.clone();
+        let patterns =
+            build_notify_patterns(&param.perspective, param.db, param.pattern.as_deref());
+        for node in self.get_node_list_master() {
+            let mut conf = self.conf.clone();
+            if let Some((host, port)) = node.split_once(":") {
+                conf.host = host.to_string();
+                conf.port = port.parse::<u16>()?;
+            }
+            let (client, _) =
+                // 复用集群上的 SSH 会话
+                get_client_single(&conf, self.connection_timeout, false, self.client.dialer())?;
+            let conn = init_single_connection(
+                &client,
+                conf.db,
+                self.connection_timeout,
+                self.command_timeout,
+                &conf,
+            )?;
+            // 订阅长连接：建连后去掉读写超时，否则空闲超过读写超时会断流
+            conn.set_read_timeout(None)?;
+            conn.set_write_timeout(None)?;
+            notify_subscribe_node0(
+                conn,
+                self.notify_running.clone(),
+                app_handle.clone(),
+                patterns.clone(),
+                self.id.clone(),
+                node.clone(),
+                logger.clone(),
+            )?;
+        }
+        Ok(())
     }
 
     fn batch_del(&self, param: RedisBatchKey) -> AnyResult<()> {

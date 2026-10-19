@@ -85,6 +85,8 @@ export const commands = {
 	subscribeStop: (id: string) => typedError<null, string>(__TAURI_INVOKE("subscribe_stop", { id })),
 	monitor: (id: string, node: string) => typedError<null, string>(__TAURI_INVOKE("monitor", { id, node })),
 	monitorStop: (id: string) => typedError<null, string>(__TAURI_INVOKE("monitor_stop", { id })),
+	notifySubscribe: (id: string, param: NotifySubscribeParam) => typedError<null, string>(__TAURI_INVOKE("notify_subscribe", { id, param })),
+	notifySubscribeStop: (id: string) => typedError<null, string>(__TAURI_INVOKE("notify_subscribe_stop", { id })),
 	batchDel: (id: string, param: RedisBatchKey_Deserialize) => typedError<null, string>(__TAURI_INVOKE("batch_del", { id, param })),
 	batchTtl: (id: string, param: RedisBatchTtl_Deserialize) => typedError<null, string>(__TAURI_INVOKE("batch_ttl", { id, param })),
 	exportCsv: (id: string, param: RedisExportCsv_Deserialize) => typedError<null, string>(__TAURI_INVOKE("export_csv", { id, param })),
@@ -288,6 +290,13 @@ export type FieldScanResult_Serialize = {
 	logicalLength?: number | null,
 	/**  Vector Set：VDIM（向量维度）；其它类型为 None */
 	vectorDim?: number | null,
+};
+
+/**  通知订阅参数：一次只订一族视角，避免 K+E 同开时同一事件重复成两行 */
+export type NotifySubscribeParam = {
+	perspective: string,
+	db: number | null,
+	pattern: string | null,
 };
 
 export type ProxyOption = {

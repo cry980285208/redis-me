@@ -21,6 +21,8 @@ pub type ApiResult<T> = Result<T, String>;
 // 常量定义
 pub const REDIS_ME_FIELD_TO_DELETE_TMP_VALUE: &str = "REDIS_ME_FIELD_TO_DELETE_TMP_VALUE";
 pub const REDIS_ME_SUBSCRIBE_STOP_CHANNEL: &str = "REDIS_ME_SUBSCRIBE_STOP_CHANNEL";
+/// 通知订阅专用停止频道：与发布订阅的停止频道分开，两个 Tab 同时订阅时互不串扰
+pub const REDIS_ME_NOTIFY_STOP_CHANNEL: &str = "REDIS_ME_NOTIFY_STOP_CHANNEL";
 pub const CONNECTION_CHECK_SECONDS: i64 = 30; // 30s 检查 1 次连接，避免频繁检查
 /// 已有连接的探活 PING。活连接通常远小于 1 秒；死连接少等，避免点击卡住。
 /// 测试连接和首次建连走 `CONNECTION_CONNECT_TIMEOUT`，不用这个值。
@@ -43,6 +45,7 @@ pub const CLUSTER_COMMAND_RETRIES: u32 = 3;
 
 pub const EVENT_SUBSCRIBE: &str = "subscribe";
 pub const EVENT_MONITOR: &str = "monitor";
+pub const EVENT_NOTIFY: &str = "notify";
 pub const EVENT_EXPORT: &str = "export";
 pub const EVENT_IMPORT: &str = "import";
 pub const EVENT_COMMAND_LOG: &str = "command-log";

@@ -22,6 +22,8 @@ pub struct MeBase {
     pub db: Arc<AtomicU16>,
     pub subscribe_running: Arc<AtomicBool>,
     pub monitor_running: Arc<AtomicBool>,
+    /// 通知（键空间/键事件）订阅独立开关：不复用 subscribe_running，可与发布订阅并行
+    pub notify_running: Arc<AtomicBool>,
     pub export_import_running: Arc<AtomicBool>,
     pub last_check_time: Arc<AtomicI64>,
     /// 已建立连接上的单次命令读写超时（init 时从 AppSettings 快照）
@@ -45,6 +47,7 @@ impl From<&ConnConfig> for MeBase {
             db: Arc::new(AtomicU16::new(conf.db)),
             subscribe_running: Arc::new(AtomicBool::new(false)),
             monitor_running: Arc::new(AtomicBool::new(false)),
+            notify_running: Arc::new(AtomicBool::new(false)),
             export_import_running: Arc::new(AtomicBool::new(false)),
             last_check_time: Arc::new(AtomicI64::new(Utc::now().timestamp())),
             command_timeout: CONNECTION_NORMAL_TIMEOUT,

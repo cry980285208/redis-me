@@ -106,6 +106,9 @@ pub trait MeClient: Send + Sync {
     fn subscribe_stop(&self) -> AnyResult<()>;
     fn monitor(&self, node: &str) -> AnyResult<()>;
     fn monitor_stop(&self) -> AnyResult<()>;
+    // 键空间通知（独立于发布订阅通道）
+    fn notify_subscribe(&self, param: NotifySubscribeParam) -> AnyResult<()>;
+    fn notify_subscribe_stop(&self) -> AnyResult<()>;
 
     // 导入导出
     fn export_csv(&self, param: RedisExportCsv) -> AnyResult<()>;
