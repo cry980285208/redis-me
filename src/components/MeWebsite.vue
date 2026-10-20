@@ -17,6 +17,11 @@ const DOC_PATHS = {
   slowlog: { redis: '/docs/latest/commands/slowlog-get/', valkey: '/commands/slowlog-get/' },
   monitor: { redis: '/docs/latest/commands/monitor/', valkey: '/commands/monitor/' },
   pubsub: { redis: '/docs/latest/commands/psubscribe/', valkey: '/commands/psubscribe/' },
+  // 键空间通知：开发指南页（非单命令）
+  notify: {
+    redis: '/docs/latest/develop/use/keyspace-notifications/',
+    valkey: '/topics/notifications/',
+  },
   acl: {
     redis: '/docs/latest/operate/oss_and_stack/management/security/acl/',
     valkey: '/topics/acl/',

@@ -7,6 +7,7 @@ import RedisChart from '@/views/tab/RedisChart.vue'
 import RedisInfo from '@/views/tab/RedisInfo/index.vue'
 import RedisMemory from '@/views/tab/RedisMemory.vue'
 import RedisMonitor from '@/views/tab/RedisMonitor.vue'
+import RedisNotify from '@/views/tab/RedisNotify.vue'
 import RedisPubsub from '@/views/tab/RedisPubsub.vue'
 import RedisSearch from '@/views/tab/RedisSearch.vue'
 import RedisSlow from '@/views/tab/RedisSlow.vue'
@@ -53,6 +54,9 @@ const memoryUsageSupported = computed(() => share.capabilities.memoryUsageSuppor
       </me-tab-pane>
       <me-tab-pane name="pubsub" icon="me-icon-pubsub" lazy>
         <RedisPubsub />
+      </me-tab-pane>
+      <me-tab-pane name="notify" icon="el-icon-bell" lazy>
+        <RedisNotify />
       </me-tab-pane>
       <me-tab-pane v-if="infoSupported" name="chart" icon="el-icon-data-line" lazy>
         <RedisChart />
