@@ -89,7 +89,8 @@ const app = inject(appProvideKey)!
 async function checkUpdate() {
   loading.value = true
   try {
-    await meCheckUpdate(false, { timeout: 10000 }, app)
+    // 每 endpoint 独立超时；gitee 在前，国外访问 gitee 挂起时最多等 5s 即降级到 github
+    await meCheckUpdate(false, { timeout: 5000 }, app)
   } finally {
     loading.value = false
   }
