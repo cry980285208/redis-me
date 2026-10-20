@@ -900,9 +900,9 @@ export default {
     clearMessage: '清空消息',
     dbCurrent: '当前库',
     dbAll: '全部库',
-    pattern: '匹配 pattern，默认 *',
+    pattern: '匹配 pattern',
     patternHint:
-      'keyspace 视角：匹配键名，如 user:*<br/>keyevent 视角：匹配事件名，如 *expired*<br/>留空 = * 匹配全部',
+      'keyevent 视角：匹配事件名，如 *expired*<br/>keyspace 视角：匹配键名，如 user:*<br/>留空 = * 匹配全部',
     keyword: '模糊筛选（键、事件、节点）',
     datetime: '时间',
     node: '节点',

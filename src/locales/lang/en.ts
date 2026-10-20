@@ -889,7 +889,7 @@ export default {
   redisNotify: {
     param: 'Param',
     editConfig: 'Edit Server Notify Config',
-    eventMode: 'Event mode',
+    eventMode: 'Mode',
     dbWhich: 'Database',
     preset: 'Presets',
     configStatus: 'Current',
@@ -917,9 +917,9 @@ export default {
     clearMessage: 'Clear',
     dbCurrent: 'Current DB',
     dbAll: 'All DBs',
-    pattern: 'Match pattern, default *',
+    pattern: 'Match pattern',
     patternHint:
-      'keyspace view: matches key names, e.g. user:*<br/>keyevent view: matches event names, e.g. *expired*<br/>Empty = * (match all)',
+      'keyevent view: matches event names, e.g. *expired*<br/>keyspace view: matches key names, e.g. user:*<br/>Empty = * (match all)',
     keyword: 'Filter (Key / Event / Node)',
     datetime: 'DateTime',
     node: 'Node',

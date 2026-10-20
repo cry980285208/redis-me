@@ -194,6 +194,14 @@ onUnmounted(() => unlisten?.())
           @click="clearData"
           :disabled="dataList.length === 0"
           placement="top" />
+        <!-- 编辑服务器配置（notify-keyspace-events），只读连接隐藏 -->
+        <me-button
+          icon="el-icon-edit"
+          :info="t('redisNotify.editConfig')"
+          style="margin-left: 10px"
+          v-if="canEdit"
+          placement="top"
+          @click="openEditDialog" />
         <!-- 订阅参数：两行（事件方式 / 哪个库），参考慢参数页 -->
         <el-dropdown
           placement="bottom-start"
@@ -222,14 +230,6 @@ onUnmounted(() => unlisten?.())
             </el-dropdown-menu>
           </template>
         </el-dropdown>
-        <!-- 编辑服务器配置（notify-keyspace-events），只读连接隐藏 -->
-        <me-button
-          icon="el-icon-edit"
-          :info="t('redisNotify.editConfig')"
-          style="margin-left: 10px"
-          v-if="canEdit"
-          placement="top"
-          @click="openEditDialog" />
         <!-- 订阅匹配模式：空即 *，语义随视角（键名 / 事件名） -->
         <el-input
           v-model="pattern"
