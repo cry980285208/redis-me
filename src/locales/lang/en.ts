@@ -1034,6 +1034,10 @@ export default {
     autoBroadcast: 'Auto Broadcast',
     readonlyHint: 'Executing commands is temporarily not supported in read-only mode',
     readonlyWriteHint: 'Write or non-readonly commands are not allowed in read-only mode',
+    unsupportedSubscribe:
+      'Subscription commands are not supported here, please use the "PubSub" panel',
+    unsupportedMonitor: 'MONITOR is not supported here, please use the "Monitor" panel',
+    unsupportedBlocking: 'Blocking commands are not supported in the terminal',
     autoCopyHint: 'Auto Copy Command Result',
     outputModeHint: 'Output format: redis-cli TTY / --raw / --json / --csv',
     outputStandard: 'TTY',

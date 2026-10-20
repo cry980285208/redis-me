@@ -30,6 +30,8 @@ export type MeBusEvents = {
   CONN_REFRESH: void
   /** 打开设置弹窗：顶部栏设置图标 emit，KeyHeader（挂载 AppSetting）监听 */
   OPEN_SETTING: void
+  /** 终端里 SELECT 成功：终端 emit（载荷为切到的库号），KeyMain 监听后重载键区 */
+  DB_SWITCH: number
 }
 
 // #region 本文件内部类型（Specta / 应用错误载荷）
@@ -68,6 +70,7 @@ export function takeSearchCreateDraft(): string | null {
 export const INFO_REFRESH = 'INFO_REFRESH'
 export const CONN_REFRESH = 'CONN_REFRESH'
 export const OPEN_SETTING = 'OPEN_SETTING'
+export const DB_SWITCH = 'DB_SWITCH'
 export const CONN_LIST_WINDOWS_SYNC = 'CONN_LIST_WINDOWS_SYNC'
 export const TREE_KEY_ID_PREFIX = '_TREE_KEY_ID_PREFIX_'
 

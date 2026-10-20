@@ -47,6 +47,7 @@ import { setTerminalKeyHints } from '@/utils/terminal-key-hints'
 import {
   bus,
   CONN_REFRESH,
+  DB_SWITCH,
   INFO_REFRESH,
   KEY_DELETE,
   KEY_RENAME,
@@ -766,6 +767,8 @@ onMounted(() => {
   bus.on(KEY_DELETE, deleteKey)
   bus.on(KEY_RENAME, renameKey)
   bus.on(CONN_REFRESH, refresh)
+  // 终端 SELECT 切库：刷新键列表（refresh 内部 initReset 会清掉选中键，回到干净态）
+  bus.on(DB_SWITCH, refresh)
   window.addEventListener('keydown', onKeyListRefreshHotkey, true)
   connUi.openKeyCopy = (redisKey: RedisKey_Deserialize) => {
     keyCopyRef.value?.open({ redisKey })
@@ -781,6 +784,7 @@ onUnmounted(() => {
   bus.off(KEY_DELETE, deleteKey)
   bus.off(KEY_RENAME, renameKey)
   bus.off(CONN_REFRESH, refresh)
+  bus.off(DB_SWITCH, refresh)
   window.removeEventListener('keydown', onKeyListRefreshHotkey, true)
 })
 
