@@ -80,7 +80,7 @@ const memoryUsageSupported = computed(() => share.capabilities.memoryUsageSuppor
   :deep(.el-tabs__item) {
     height: 30px;
     align-items: start;
-    padding: 0 12px;
+    padding: 0 10px;
   }
 
   :deep(.el-tabs__header) {
@@ -92,6 +92,17 @@ const memoryUsageSupported = computed(() => share.capabilities.memoryUsageSuppor
   // 比左侧连接栏 32px 少 1px，导致右列输入框顶边比左列高 1px；归零后左右完全对齐
   :deep(.el-tabs__nav-wrap) {
     margin-bottom: 0;
+  }
+
+  // 宽度不够时 EP 显示的左右滚动箭头默认定位在 40px 高的行内（line-height:40px），
+  // 而页签已改为 30px 高、内容顶部对齐，箭头会明显偏低；
+  // 这里让箭头行高与页签文字（约 20px 高）垂直居中对齐
+  :deep(.el-tabs__nav-prev),
+  :deep(.el-tabs__nav-next) {
+    top: 2px; // 抵消 header 的 padding-top，与页签内容同一基准线
+    height: 20px;
+    line-height: 20px;
+    font-size: 14px;
   }
 }
 </style>
