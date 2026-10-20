@@ -347,9 +347,9 @@ onUnmounted(() => unlisten?.())
   }
 
   .table {
+    margin-top: 10px;
     flex-grow: 1;
     height: 0;
-    margin: 10px 0;
   }
 }
 
