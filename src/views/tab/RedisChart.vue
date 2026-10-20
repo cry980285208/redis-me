@@ -695,7 +695,6 @@ watch(
   }
 
   .charts {
-    margin-top: -20px;
     flex-grow: 1;
 
     &:fullscreen {
