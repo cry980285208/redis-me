@@ -22,6 +22,9 @@ const channel = ref('')
 const keyword = ref('')
 const subscribing = ref(false)
 
+// 实时流软上限，防止长时间不清空撑爆内存 / 拖慢虚拟列表（与 CommandLog 同思路，阈值更宽）
+const MAX_ROWS = 10000
+
 interface PubsubRow {
   id?: string
   datetime?: string
@@ -111,7 +114,9 @@ async function tauriListen() {
   unlisten = await listen<PubsubRow>('subscribe', event => {
     const payload = event.payload
     if (payload.id !== share.conn!.id) return
-    dataList.value.push(payload)
+    // 新记录入头 → 数组天然时间倒序，显示层不再依赖 default-sort，省一次 MeTable orderBy 全表排序
+    dataList.value.unshift(payload)
+    if (dataList.value.length > MAX_ROWS) dataList.value.length = MAX_ROWS
   })
 }
 
@@ -169,7 +174,6 @@ onUnmounted(() => tauriUnlisten())
         :data="filterDataList"
         :columns="pubsubColumns"
         :total="dataList.length"
-        :default-sort="{ prop: 'datetime', order: 'descending' }"
         export-name="pubsub">
         <template #cell-datetime="{ row }">{{ row.datetime?.slice(11) }}</template>
         <template #cell-action="{ row }">
