@@ -80,7 +80,7 @@ const memoryUsageSupported = computed(() => share.capabilities.memoryUsageSuppor
   :deep(.el-tabs__item) {
     height: 30px;
     align-items: start;
-    padding: 0 10px;
+    padding: 0 12px;
   }
 
   :deep(.el-tabs__header) {
