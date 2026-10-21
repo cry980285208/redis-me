@@ -57,6 +57,16 @@ export interface AppMainShare {
   exportImportingTip: string
   exportImportingPercentage: number
   capabilities: ServerCapabilities
+  // #region 多TAB（多连接窗口 / 多键值窗口）
+  /** 多TAB：已打开的连接 TAB 列表（最多 10） */
+  openConns: UiConn[]
+  /** 多TAB：当前激活连接 TAB 的 conn.id */
+  activeConnId: string | null
+  /** 多TAB：已打开的键值 TAB 列表（最多 10，跨连接持久化） */
+  openKeys: Array<{ id: string; connId: string; db: number; redisKey: RedisKey_Deserialize }>
+  /** 多TAB：当前激活键值 TAB 的 id */
+  activeKeyId: string | null
+  // #endregion
 }
 
 /** AppMain 注入的更新/下载状态（与 `appProvideKey` 配对） */
@@ -93,6 +103,14 @@ export interface ConnUiInject {
   /** 由 KeyMain 挂载时赋值，键区切到索引查询并选中该索引 */
   browseSearchIndex: (name: string) => void
   runConnAction: (action: ConnShortcutAction) => void
+  // #region 多TAB（多连接窗口）
+  /** 多TAB：打开/聚焦连接 TAB（含 10 上限校验，首次打开才 connect，切换不重连） */
+  openConnTab: (conn: UiConn) => void
+  /** 多TAB：关闭连接 TAB（disconnect + 移除 + 切到相邻） */
+  closeConnTab: (connId: string) => void
+  /** 多TAB：重新连接并刷新能力（顶栏「刷新连接」） */
+  refreshConnTab: (conn: UiConn) => void
+  // #endregion
 }
 
 export const connUiProvideKey: InjectionKey<ConnUiInject> = Symbol('redis-me.connUi')

@@ -13,7 +13,7 @@ import { meType, toKeyTypeLabel } from '@/utils/redis-display'
 import { sameRedisKey } from '@/utils/redis-key'
 import {
   bus,
-  KEY_REFRESH,
+  KEY_OPEN_TAB,
   meConfirm,
   meCopy,
   meDeleteKey,
@@ -133,9 +133,8 @@ const memoryColumns = computed<MeColumn<RedisKeySize_Serialize>[]>(() => [
 ])
 
 function chooseKey(redisKey: RedisKey_Deserialize) {
-  share.redisKey = redisKey
-  share.tabName = 'value'
-  bus.emit(KEY_REFRESH)
+  // 多TAB：选中键 → 由 RedisValue 的 KEY_OPEN_TAB 监听打开/聚焦键值 TAB
+  bus.emit(KEY_OPEN_TAB, { connId: share.conn!.id, redisKey })
 }
 
 async function delKey(redisKey: RedisKey_Deserialize) {

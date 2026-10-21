@@ -3,10 +3,10 @@
 import { inject, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import { shareProvideKey, connUiProvideKey } from '@/types/me-interface'
+import { shareProvideKey, connUiProvideKey, type UiConn } from '@/types/me-interface'
 import { openNewWindow } from '@/utils/app-window'
 import { getConnIcon } from '@/utils/conn'
-import { bus, CONN_REFRESH, meCommands, meOk, OPEN_SETTING } from '@/utils/util'
+import { bus, meOk, OPEN_SETTING } from '@/utils/util'
 import AppAbout from '@/views/ext/AppAbout.vue'
 import AppSetting from '@/views/ext/AppSetting.vue'
 import AppShortcut from '@/views/ext/AppShortcut.vue'
@@ -45,11 +45,11 @@ onUnmounted(() => {
 async function handleCommand(command: string): Promise<void> {
   if (command === 'refreshConn') {
     if (!share.conn) return
-    const capabilities = await meCommands.connect(share.conn!.id)
-    Object.assign(share.capabilities, capabilities)
-    bus.emit(CONN_REFRESH)
+    // 多TAB：走连接状态机，重连后同步能力缓存
+    connUi.refreshConnTab(share.conn)
   } else if ('closeConn' === command) {
-    share.conn = null
+    // 多TAB：关闭当前连接 TAB（替代直接置空 share.conn）
+    if (share.conn) connUi.closeConnTab(share.conn.id)
   } else if ('commandLog' === command) {
     if (!share.conn) {
       meOk(t('keyHeader.commandLogNeedConn'))
@@ -71,19 +71,26 @@ async function handleCommand(command: string): Promise<void> {
     meOk(`TODO: ${command}`)
   }
 }
+
+/** 多TAB：顶部连接下拉 → 打开/聚焦该连接的 TAB；清空则关闭当前连接 TAB */
+function onConnChange(conn: UiConn | undefined): void {
+  if (conn) connUi.openConnTab(conn)
+  else if (share.conn) connUi.closeConnTab(share.conn.id)
+}
 // #endregion
 </script>
 
 <template>
   <div class="key-header">
     <el-select
-      v-model="share.conn"
+      :model-value="share.conn"
       :placeholder="t('keyHeader.connHint')"
       class="conn"
       clearable
       filterable
       :disabled="share.connList.length === 0"
-      value-key="id">
+      value-key="id"
+      @change="onConnChange">
       <el-option v-for="item in share.connList" :label="item.name" :value="item" :key="item.id">
         <div :style="{ color: item?.color }">
           <me-icon :icon="getConnIcon(item)" :name="item.name" />

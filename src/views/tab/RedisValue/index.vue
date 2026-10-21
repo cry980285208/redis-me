@@ -57,6 +57,12 @@ import {
 } from '@/utils/format'
 import { captureKeyMemoryWrite } from '@/utils/key-memory-cache'
 import { resolveKeyType } from '@/utils/key-type-cache'
+import {
+  closeAllKeyTabs,
+  closeKeyTab,
+  switchKeyTab,
+  visibleKeyTabs,
+} from '@/utils/key-tabs'
 import { toKeyTypeLabel } from '@/utils/redis-display'
 import {
   buildScanPattern,
@@ -117,6 +123,7 @@ import {
   type FieldScanViewState,
   type ValueTableRow,
 } from './helpers'
+import KeyTabStrip from './KeyTabStrip.vue'
 import TableArLastItems from './TableArLastItems.vue'
 import TableGroup from './TableGroup.vue'
 import TableHashKeys from './TableHashKeys.vue'
@@ -1981,6 +1988,11 @@ const textEntries = computed(() => {
 })
 // #endregion
 
+// #region 多TAB：键值 TAB
+// 状态与逻辑在 src/utils/key-tabs.ts（状态机挂在常驻的 AppMain 上），这里只做接入
+const keyTabs = computed(() => visibleKeyTabs(share))
+// #endregion
+
 // #region 生命周期
 // KEY_REFRESH=选中键加载值；与 KeyMain F5 刷新键列表无关
 const onKeyRefreshBus = () => {
@@ -1991,6 +2003,11 @@ const onKeyRefreshBus = () => {
 onMounted(() => {
   bus.on(KEY_REFRESH, onKeyRefreshBus)
   bus.on(KEY_DELETE, deleteKey)
+  // 多TAB：切连接时值区组件会重建，这里恢复当前连接激活的键值（否则值区空白）
+  if (share.redisKey) {
+    pendingAutoDetect.value = true
+    void refreshKey(true, false, false, true)
+  }
 })
 
 onUnmounted(() => {
@@ -2005,6 +2022,15 @@ onUnmounted(() => {
 <template>
   <!-- 扫描进度由搜索框内的进度环展示，避免 loading 遮罩拦截暂停/继续操作 -->
   <div class="redis-value">
+    <!-- 多TAB：键值 TAB 条（最多 10） -->
+    <KeyTabStrip
+      v-if="keyTabs.length"
+      :tabs="keyTabs"
+      :active-id="share.activeKeyId"
+      @switch="id => switchKeyTab(share, id)"
+      @close="id => closeKeyTab(share, id)"
+      @close-all="closeAllKeyTabs(share)" />
+
     <template v-if="share.redisKey && redisValue">
       <!-- 顶栏 -->
       <div class="value-header">

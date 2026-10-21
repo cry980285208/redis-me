@@ -34,8 +34,9 @@ import {
   isConnMinimalMode,
   mergeConnGroupsFromList,
 } from '@/utils/conn'
-import { clearKeyMemoryCacheForConn, onMemoryUsageUnsupported } from '@/utils/key-memory-cache'
-import { clearKeyTypeCacheForConn } from '@/utils/key-type-cache'
+import { useConnTabs } from '@/utils/conn-tabs'
+import { onMemoryUsageUnsupported } from '@/utils/key-memory-cache'
+import { useKeyTabs } from '@/utils/key-tabs'
 import { mergeImportedConnList } from '@/utils/rdm'
 import {
   isAppFullscreenHotkeyBlocked,
@@ -57,6 +58,7 @@ import KeyHeader from '@/views/KeyHeader.vue'
 import KeyMain from '@/views/KeyMain.vue'
 import TabConn from '@/views/TabConn.vue'
 
+import ConnTabStrip from './ConnTabStrip.vue'
 import TabMain from './TabMain.vue'
 // #endregion
 
@@ -76,6 +78,11 @@ onMemoryUsageUnsupported(connId => {
 
 // #region 连接切换
 
+// 多TAB：连接常驻，切换不重连（状态机在 src/utils/conn-tabs.ts）
+const connTabs = useConnTabs(share)
+// 多TAB：键值 TAB 状态机挂在常驻组件上，切连接导致值区重建时不会丢
+useKeyTabs(share)
+
 // 当环境发生变化时，销毁整个key和tag组件（避免状态保留）
 onMounted(() => {
   bus.on(CONN_REFRESH, toggleKeyTag)
@@ -84,6 +91,8 @@ onMounted(() => {
 onUnmounted(() => {
   bus.off(CONN_REFRESH, toggleKeyTag)
   window.removeEventListener('keydown', onGlobalConnHotkey, true)
+  // 多TAB：窗口关闭兜底，断开所有仍处于连接态的连接
+  connTabs.disposeAll()
 })
 
 // 切换连接时销毁key/tag组件
@@ -109,21 +118,16 @@ watch(
 
     if (newConn?.id === oldConn?.id) return
 
-    share.loading = true
+    // 多TAB：连接常驻，切走不 disconnect（关闭 TAB 时才断）
     connPrepared.value = false
 
     try {
-      if (oldConn) {
-        clearKeyTypeCacheForConn(oldConn.id)
-        clearKeyMemoryCacheForConn(oldConn.id)
-        await meCommands.disconnect(oldConn.id)
-      }
-
       if (newConn) {
         share.color = newConn.color ?? 'var(--el-color-primary)'
         share.readonly = !!newConn.readonly
-        const capabilities = await meCommands.connect(newConn.id)
-        Object.assign(share.capabilities, capabilities)
+        // 多TAB：已连接的连接直接用缓存的 capabilities（不重连）；未连接的兜底 connect 一次
+        const capabilities = await connTabs.ensureConnected(newConn)
+        if (capabilities) Object.assign(share.capabilities, capabilities)
         share.tabName =
           isConnMinimalMode(newConn) || !share.capabilities.infoSupported ? 'value' : 'info'
         connPrepared.value = true
@@ -219,6 +223,17 @@ const connUi = reactive({
     else if (action === 'newWindow') void openNewWindow()
     else if (action === 'fullscreen') void toggleAppFullscreen()
   },
+  // 多TAB：打开/关闭连接 TAB（绑定到本组件作用域内的实现）
+  openConnTab(conn: UiConn): void {
+    void connTabs.openConnTab(conn)
+  },
+  closeConnTab(connId: string): void {
+    void connTabs.closeConnTab(connId)
+  },
+  // 多TAB：重新连接并刷新能力（顶栏「刷新连接」）
+  refreshConnTab(conn: UiConn): void {
+    void connTabs.refreshConn(conn)
+  },
 })
 
 function onGlobalConnHotkey(e: KeyboardEvent): void {
@@ -298,23 +313,29 @@ function onSplitterBarMouseDown(e: MouseEvent): void {
 
       <!-- 右侧值 -->
       <el-splitter-panel v-model:size="valuePanelSize">
-        <TabConn v-if="!share.conn || !connPrepared" />
-        <template v-else>
-          <TabMain />
+        <div class="redis-tab-wrap">
+          <!-- 多TAB：连接条置于右侧最上方 -->
+          <ConnTabStrip v-if="share.openConns.length" />
+          <div class="tab-body">
+            <TabConn v-if="!share.conn || !connPrepared" />
+            <template v-else>
+              <TabMain />
 
-          <!-- 导入导出 -->
-          <el-progress
-            class="export-importing"
-            type="dashboard"
-            status="success"
-            :percentage="share.exportImportingPercentage"
-            v-if="share.exportImporting">
-            <template #default="{ percentage }">
-              <div class="percentage-value">{{ percentage }}%</div>
-              <div class="percentage-label">{{ share.exportImportingTip }}</div>
+              <!-- 导入导出 -->
+              <el-progress
+                class="export-importing"
+                type="dashboard"
+                status="success"
+                :percentage="share.exportImportingPercentage"
+                v-if="share.exportImporting">
+                <template #default="{ percentage }">
+                  <div class="percentage-value">{{ percentage }}%</div>
+                  <div class="percentage-label">{{ share.exportImportingTip }}</div>
+                </template>
+              </el-progress>
             </template>
-          </el-progress>
-        </template>
+          </div>
+        </div>
       </el-splitter-panel>
     </el-splitter>
 
@@ -338,6 +359,20 @@ function onSplitterBarMouseDown(e: MouseEvent): void {
     height: 100%;
     display: flex;
     flex-direction: column;
+  }
+
+  /* 多TAB：右侧连接条 + 值区主体布局 */
+  .redis-tab-wrap {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    position: relative; // 供内部绝对定位的进度条作参照
+  }
+
+  .tab-body {
+    flex: 1;
+    min-height: 0;
+    position: relative; // 供 export-importing 绝对定位
   }
 
   /* 中间分隔面板的样式调整 */

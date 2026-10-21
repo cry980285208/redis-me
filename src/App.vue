@@ -39,6 +39,15 @@ const share = reactive<AppMainShare>({
     redisSearchSupported: false,
     memoryUsageSupported: false,
   },
+
+  // #region 多TAB（多连接窗口 / 多键值窗口）
+  // 多TAB：已打开连接列表 + 激活连接 id
+  openConns: [],
+  activeConnId: null,
+  // 多TAB：已打开键值列表 + 激活键值 id（全局状态，跨组件生命周期持久化）
+  openKeys: [],
+  activeKeyId: null,
+  // #endregion
 })
 provide(shareProvideKey, share)
 

@@ -100,8 +100,9 @@ function deleteConn(conn: UiConn): void {
   })
 }
 
-const selectConn = debounce(async (conn: UiConn) => {
-  share.conn = conn
+const selectConn = debounce((conn: UiConn) => {
+  // 多TAB：点连接 → 打开/聚焦该连接的 TAB（不再直接切换 share.conn）
+  connUi.openConnTab(conn)
 }, 200)
 
 let sortables: Sortable[] = []
@@ -215,6 +216,9 @@ function deleteFolder(name: string): void {
 function clearAllConnections(): void {
   meConfirm(t('conn.clearConnectionsConfirm'), () => {
     share.connList.splice(0, share.connList.length)
+    // 多TAB：清空时关闭所有已打开的连接 TAB（触发各自 disconnect）
+    // 先取 id 快照：关闭过程会同步从 share.openConns 里移除元素
+    for (const id of share.openConns.map(c => c.id)) connUi.closeConnTab(id)
     share.conn = null
     // 清空连接时一并重置分组名列表与折叠状态
     connGroups.value.splice(0, connGroups.value.length)

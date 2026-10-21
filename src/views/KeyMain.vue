@@ -50,6 +50,7 @@ import {
   DB_SWITCH,
   INFO_REFRESH,
   KEY_DELETE,
+  KEY_OPEN_TAB,
   KEY_RENAME,
   KEY_REFRESH,
   meConfirm,
@@ -263,8 +264,30 @@ function onScanAction() {
 
 // 键名扫描历史。全文检索另记一份，和搜索页共用。
 const SEARCH_HISTORY_KEY = 'redis-me:search-history'
-const searchHistory = useStorage<string[]>(SEARCH_HISTORY_KEY, [])
-const ftQueryHistory = useStorage<string[]>(FT_QUERY_HISTORY_KEY, [])
+// 多TAB：历史按连接存储（{ connId: string[] }），多连接并行时互不干扰
+const allSearchHistory = useStorage<Record<string, string[]>>(SEARCH_HISTORY_KEY, {})
+const allFtQueryHistory = useStorage<Record<string, string[]>>(FT_QUERY_HISTORY_KEY, {})
+// 兼容旧版数据：旧版为全局共享数组，新版按连接存储，遇到旧结构直接重置
+if (Array.isArray(allSearchHistory.value)) allSearchHistory.value = {}
+if (Array.isArray(allFtQueryHistory.value)) allFtQueryHistory.value = {}
+
+/** 取当前连接的某份历史 */
+function historyOf(all: Record<string, string[]>): string[] {
+  const connId = share.conn?.id
+  if (!connId) return []
+  return all[connId] ?? []
+}
+
+/** 写当前连接的某份历史 */
+function setHistoryOf(all: Record<string, string[]>, list: string[]): void {
+  const connId = share.conn?.id
+  if (!connId) return
+  all[connId] = list
+}
+
+// 当前连接的搜索历史
+const searchHistory = computed(() => historyOf(allSearchHistory.value))
+const ftQueryHistory = computed(() => historyOf(allFtQueryHistory.value))
 const showHistory = ref(false)
 let historyHideTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -280,23 +303,32 @@ function addSearchHistory(query: string) {
   if (!query || query === '*' || loadFolder.value) return
   const trimmed = query.trim()
   if (!trimmed) return
-  searchHistory.value = [trimmed, ...searchHistory.value.filter(h => h !== trimmed)].slice(0, 10)
+  const connId = share.conn?.id
+  if (!connId) return
+  const list = allSearchHistory.value[connId] ?? []
+  setHistoryOf(allSearchHistory.value, [trimmed, ...list.filter(h => h !== trimmed)].slice(0, 10))
 }
 
 function removeSearchHistory(item: string) {
   if (searchMode.value) {
-    ftQueryHistory.value = ftQueryHistory.value.filter(h => h !== item)
+    setHistoryOf(
+      allFtQueryHistory.value,
+      (allFtQueryHistory.value[share.conn?.id ?? ''] ?? []).filter(h => h !== item),
+    )
     return
   }
-  searchHistory.value = searchHistory.value.filter(h => h !== item)
+  setHistoryOf(
+    allSearchHistory.value,
+    (allSearchHistory.value[share.conn?.id ?? ''] ?? []).filter(h => h !== item),
+  )
 }
 
 function clearSearchHistory() {
   if (searchMode.value) {
-    ftQueryHistory.value = []
+    setHistoryOf(allFtQueryHistory.value, [])
     return
   }
-  searchHistory.value = []
+  setHistoryOf(allSearchHistory.value, [])
 }
 
 function selectHistory(item: string) {
@@ -651,12 +683,10 @@ const showClusterDbLabel = computed(() =>
 
 const keyPrefix = ref('')
 
-// 选中键
+// 选中键：多TAB → 由 RedisValue 的 KEY_OPEN_TAB 监听打开/聚焦键值 TAB
 function chooseKey(redisKey: RedisKey_Deserialize): void {
   keyPrefix.value = redisKey.key + '-copy'
-  share.redisKey = redisKey
-  share.tabName = 'value'
-  bus.emit(KEY_REFRESH)
+  bus.emit(KEY_OPEN_TAB, { connId: share.conn!.id, redisKey })
 }
 
 function chooseFolder(folder: string): void {
@@ -1469,7 +1499,7 @@ async function runSearchKeys(append = false, loadAll = false, restart = false): 
   loading.value = true
   scanCancelled.value = false
   if (!append) {
-    ftQueryHistory.value = rememberFtQuery(ftQueryHistory.value, keyword.value)
+    setHistoryOf(allFtQueryHistory.value, rememberFtQuery(ftQueryHistory.value, keyword.value))
     scanPaused.value = false
     scanBatchCount.value = 0
     clearSearchHits()

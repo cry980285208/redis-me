@@ -32,6 +32,8 @@ export type MeBusEvents = {
   OPEN_SETTING: void
   /** 终端里 SELECT 成功：终端 emit（载荷为切到的库号），KeyMain 监听后重载键区 */
   DB_SWITCH: number
+  /** 多TAB：在值区打开/聚焦一个键的 TAB；connId 用于多连接时过滤目标 RedisValue */
+  KEY_OPEN_TAB: { connId: string; redisKey: RedisKey_Deserialize }
 }
 
 // #region 本文件内部类型（Specta / 应用错误载荷）
@@ -73,6 +75,7 @@ export const OPEN_SETTING = 'OPEN_SETTING'
 export const DB_SWITCH = 'DB_SWITCH'
 export const CONN_LIST_WINDOWS_SYNC = 'CONN_LIST_WINDOWS_SYNC'
 export const TREE_KEY_ID_PREFIX = '_TREE_KEY_ID_PREFIX_'
+export const KEY_OPEN_TAB = 'KEY_OPEN_TAB'
 
 // 预设颜色
 export const PREDEFINE_COLORS = [

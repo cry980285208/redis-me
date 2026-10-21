@@ -145,6 +145,9 @@ export default {
     clearConnections: 'Clear Conn',
     clearConnectionsConfirm: 'Clear all connections? This cannot be undone!',
     clearConnectionsOk: 'All connections cleared',
+    connTabsMax: 'Up to 10 connection tabs',
+    connTabsAdd: 'New Connection',
+    connTabsCloseAll: 'Close All Connections',
     keyword: 'Filter (Name, Host)',
     color: 'Color',
     other: 'Other',
@@ -1086,6 +1089,8 @@ export default {
     ttlUtc: 'UTC: {time}',
     ttlSeconds: 'TTL: {n} {unit}',
     deleteKey: 'Delete',
+    keyTabsMax: 'Up to 10 key tabs',
+    keyTabsCloseAll: 'Close All Keys',
     prettyHint:
       'Pretty is enabled by default. When enabled, it formats hash/list/set/json, etc. When disabled, it displays the raw value toString.',
     locationHint: 'View the cluster node where this key is located',
