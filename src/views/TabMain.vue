@@ -78,7 +78,9 @@ const memoryUsageSupported = computed(() => share.capabilities.memoryUsageSuppor
   }
 
   :deep(.el-tabs__item) {
-    height: 30px;
+    // 页签行整行占位与上下的连接条/键值条对齐（参照约 45px）：
+    // 2px(padding-top) + 40px(页签) + 2px(底部分隔线) = 44px
+    height: 40px;
     // EP 默认就是 align-items: center（内容垂直居中）。
     // 这里若改成 start，图标+文字会贴着顶部，比视觉中心高约 5px，看着不居中
     align-items: center;
@@ -86,7 +88,8 @@ const memoryUsageSupported = computed(() => share.capabilities.memoryUsageSuppor
   }
 
   :deep(.el-tabs__header) {
-    margin: 0 0 10px;
+    // 页签 30→40px，底部间距 10→2px，整行占位不变，下方内容位置不动
+    margin: 0 0 2px;
     padding-top: 2px;
   }
 
@@ -97,13 +100,12 @@ const memoryUsageSupported = computed(() => share.capabilities.memoryUsageSuppor
   }
 
   // 宽度不够时 EP 显示的左右滚动箭头默认定位在 40px 高的行内（line-height:44px），
-  // 而页签高度是 30px，箭头会与页签文字错位；
-  // 这里让箭头与页签同高同起点，图标随文字一起垂直居中
+  // 而页签高度是 40px，箭头要跟着一起居中，否则会与页签文字错位
   :deep(.el-tabs__nav-prev),
   :deep(.el-tabs__nav-next) {
     top: 0; // 与页签同一基准线（nav-wrap 顶部）
-    height: 30px; // 与页签同高
-    line-height: 30px;
+    height: 40px; // 与页签同高
+    line-height: 40px;
     font-size: 14px;
   }
 }

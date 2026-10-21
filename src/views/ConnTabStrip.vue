@@ -3,16 +3,22 @@
 // - 切换：点击 TAB → 激活该连接（不重连，由 AppMain watch 复位 UI）
 // - 关闭：点 × → connUi.closeConnTab（disconnect + 移除 + 切相邻）
 // - 新增：末尾「+」下拉列出尚未打开的连接 → connUi.openConnTab
-import { computed, inject } from 'vue'
+import { computed, inject, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import TabScrollbar from '@/components/TabScrollbar.vue'
 import { connUiProvideKey, shareProvideKey, type UiConn } from '@/types/me-interface'
 import { getConnIcon } from '@/utils/conn'
 import { MAX_CONN_TABS } from '@/utils/conn-tabs'
+import { useTabScrollbar } from '@/utils/tab-scrollbar'
 
 const share = inject(shareProvideKey)!
 const connUi = inject(connUiProvideKey)!
 const { t } = useI18n()
+
+// 多TAB：TAB 过多时出现滚动条（与 EP 左右切换箭头同步出现）
+const tabsRef = ref()
+const { scrollable, thumbWidth, thumbLeft, onThumbPointerDown } = useTabScrollbar(tabsRef)
 
 // el-tabs 的 v-model：与 share.activeConnId 双向同步
 const activeName = computed({
@@ -50,20 +56,30 @@ function closeAllConnections(): void {
 
 <template>
   <div class="conn-tab-strip">
-    <el-tabs
-      v-model="activeName"
-      type="card"
-      @tab-remove="onTabRemove">
-      <el-tab-pane
-        v-for="conn in share.openConns"
-        :key="conn.id"
-        :name="conn.id"
-        closable>
-        <template #label>
-          <span class="tab-label" :title="conn.name">{{ conn.name }}</span>
-        </template>
-      </el-tab-pane>
-    </el-tabs>
+    <div class="tabs-area">
+      <el-tabs
+        ref="tabsRef"
+        v-model="activeName"
+        type="card"
+        @tab-remove="onTabRemove">
+        <el-tab-pane
+          v-for="conn in share.openConns"
+          :key="conn.id"
+          :name="conn.id"
+          closable>
+          <template #label>
+            <span class="tab-label" :title="conn.name">{{ conn.name }}</span>
+          </template>
+        </el-tab-pane>
+      </el-tabs>
+
+      <!-- 多TAB：溢出时才出现（与左右切换箭头同步） -->
+      <TabScrollbar
+        v-if="scrollable"
+        :thumb-width="thumbWidth"
+        :thumb-left="thumbLeft"
+        @pointerdown="onThumbPointerDown" />
+    </div>
 
     <el-dropdown
       v-if="canAdd && candidates.length"
@@ -108,7 +124,7 @@ function closeAllConnections(): void {
 
   // 让 tabs 占据剩余空间，将按钮组推到最右侧
   :deep(.el-tabs) {
-    flex: 1;
+    flex-shrink: 0; // 宽度由 .tabs-area 控制，自身不参与纵向伸缩
     min-width: 0;
 
     .el-tabs__header {
@@ -210,6 +226,14 @@ function closeAllConnections(): void {
         }
       }
     }
+  }
+
+  // tabs 区域：纵向排列（tabs + 滚动条），占满剩余宽度
+  .tabs-area {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
   }
 
   .add-btn {

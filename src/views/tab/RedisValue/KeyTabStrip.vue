@@ -3,10 +3,12 @@
 // - 点击：切换激活的键（父组件负责切换并刷新值）
 // - 关闭：点 × → 关闭该键值 TAB
 // - 右侧按钮：关闭当前连接/库的全部键值 TAB
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import TabScrollbar from '@/components/TabScrollbar.vue'
 import type { KeyTab } from '@/utils/key-tabs'
+import { useTabScrollbar } from '@/utils/tab-scrollbar'
 
 const props = defineProps<{
   /** 当前连接/库可见的键值 TAB */
@@ -25,6 +27,10 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+
+// 多TAB：TAB 过多时出现滚动条（与 EP 左右切换箭头同步出现）
+const tabsRef = ref()
+const { scrollable, thumbWidth, thumbLeft, onThumbPointerDown } = useTabScrollbar(tabsRef)
 
 // el-tabs v-model：get 返回当前激活 id；set 由用户点击触发切换
 const activeName = computed({
@@ -45,13 +51,27 @@ function onTabRemove(name: string | number): void {
 
 <template>
   <div class="key-tab-strip">
-    <el-tabs v-model="activeName" type="card" @tab-click="onTabClick" @tab-remove="onTabRemove">
-      <el-tab-pane v-for="tab in props.tabs" :key="tab.id" :name="tab.id" closable>
-        <template #label>
-          <span class="key-tab-label" :title="tab.redisKey.key">{{ tab.redisKey.key }}</span>
-        </template>
-      </el-tab-pane>
-    </el-tabs>
+    <div class="tabs-area">
+      <el-tabs
+        ref="tabsRef"
+        v-model="activeName"
+        type="card"
+        @tab-click="onTabClick"
+        @tab-remove="onTabRemove">
+        <el-tab-pane v-for="tab in props.tabs" :key="tab.id" :name="tab.id" closable>
+          <template #label>
+            <span class="key-tab-label" :title="tab.redisKey.key">{{ tab.redisKey.key }}</span>
+          </template>
+        </el-tab-pane>
+      </el-tabs>
+
+      <!-- 多TAB：溢出时才出现（与左右切换箭头同步） -->
+      <TabScrollbar
+        v-if="scrollable"
+        :thumb-width="thumbWidth"
+        :thumb-left="thumbLeft"
+        @pointerdown="onThumbPointerDown" />
+    </div>
     <span
       class="close-all-keys-btn"
       :title="t('redisValue.keyTabsCloseAll')"
@@ -71,7 +91,7 @@ function onTabRemove(name: string | number): void {
   flex-shrink: 0;
 
   :deep(.el-tabs) {
-    flex: 1;
+    flex-shrink: 0; // 宽度由 .tabs-area 控制，自身不参与纵向伸缩
     min-width: 0;
 
     .el-tabs__header {
@@ -167,6 +187,14 @@ function onTabRemove(name: string | number): void {
         }
       }
     }
+  }
+
+  // tabs 区域：纵向排列（tabs + 滚动条），占满剩余宽度
+  .tabs-area {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
   }
 
   .close-all-keys-btn {

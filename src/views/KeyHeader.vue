@@ -4,7 +4,6 @@ import { inject, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { shareProvideKey, connUiProvideKey, type UiConn } from '@/types/me-interface'
-import { openNewWindow } from '@/utils/app-window'
 import { getConnIcon } from '@/utils/conn'
 import { bus, meOk, OPEN_SETTING } from '@/utils/util'
 import AppAbout from '@/views/ext/AppAbout.vue'
@@ -42,7 +41,7 @@ onUnmounted(() => {
 // #endregion
 
 // #region 命令处理
-async function handleCommand(command: string): Promise<void> {
+function handleCommand(command: string): void {
   if (command === 'refreshConn') {
     if (!share.conn) return
     // 多TAB：走连接状态机，重连后同步能力缓存
@@ -61,8 +60,6 @@ async function handleCommand(command: string): Promise<void> {
     })
   } else if ('setting' === command) {
     openSetting()
-  } else if ('window' === command) {
-    await openNewWindow()
   } else if ('info' === command) {
     aboutRef.value?.open()
     // } else if ('social' === command) {
@@ -120,10 +117,7 @@ function onConnChange(conn: UiConn | undefined): void {
             </el-dropdown-item>
           </template>
 
-          <el-dropdown-item command="window" :divided="!!share.conn">
-            <me-icon :name="t('keyHeader.newWindow')" icon="me-icon-window" />
-          </el-dropdown-item>
-          <el-dropdown-item command="setting" divided>
+          <el-dropdown-item command="setting" :divided="!!share.conn">
             <me-icon :name="t('keyHeader.setting')" icon="el-icon-setting" />
           </el-dropdown-item>
           <!-- 社交入口暂隐藏；恢复时同步解开 AppOfficial 的 import / ref / 组件挂载 -->
