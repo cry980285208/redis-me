@@ -37,7 +37,7 @@
       "resources/icons/icon.svg"
     ],
     "resources": [],
-    "createUpdaterArtifacts": true,
+    "createUpdaterArtifacts": false,
     "windows": {
       "wix": { "language": ["en-US", "zh-CN"] },
       "nsis": { "languages": ["English", "SimpChinese"] },
