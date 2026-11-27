@@ -13,6 +13,8 @@ declare global {
       keySort?: string
       /** 键列表是否显示 MEMORY USAGE。只在键列表菜单切换，默认关 */
       keyShowMemory?: boolean
+      /** 键列表是否显示 PTTL。只在键列表菜单切换，默认关 */
+      keyShowTtl?: boolean
       keyHeight?: number
       /** Hash/List 等值区默认展示：auto 默认表格、记住手动切换 | table 始终表格 */
       fieldShow?: 'auto' | 'table'
@@ -20,8 +22,8 @@ declare global {
       fieldShowView?: 'json' | 'table'
       /** Hash 字段 TTL 列上次开关，换键/刷新沿用 */
       hashFieldTtl?: boolean
-      /** 首页连接列表：平铺 / 分组 */
-      connShow?: 'flat' | 'group'
+      /** 顶栏页签的可见集合，渲染顺序按 src/utils/app/tabs.ts 的注册顺序 */
+      tabsVisible?: string[]
       /** 分组名顺序（与 conn.meta.group 配合） */
       connGroups?: string[]
       /** 各分组是否展开，键 '' 表示默认分组 */
@@ -29,6 +31,8 @@ declare global {
       uiFont?: string[]
       codeFont?: string[]
       autoUpdate?: boolean
+      /** 更新源。auto 按中国大陆时区先 Gitee、否则先 GitHub，失败再试另一个；gitee / github 只用那一个 */
+      updateSource?: 'auto' | 'gitee' | 'github'
       /** 自定义 STRING 值编解码脚本配置 */
       /** auto：内置识别落到 Hex 时参与试解，默认关 */
       customCodecs?: { name: string; command: string; auto?: boolean }[]

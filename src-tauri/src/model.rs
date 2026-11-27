@@ -51,6 +51,11 @@ api_model!(
 
         host: String,
         port: u16,
+        // 传输：缺省 tcp。unix 时用 socket_path；未开 SSH 为本机套接字，开了 SSH 则由跳板在远端打开
+        #[serde(default)]
+        network: String,
+        #[serde(default)]
+        socket_path: String,
         username: String,
         password: String,
         db: u16,
@@ -117,6 +122,11 @@ impl ConnConfig {
         self.protocol_version().supports_resp3()
     }
 
+    /// 仅 `network=unix` 走套接字。空串和其它值都当 TCP，兼容旧连接。
+    pub fn is_unix(&self) -> bool {
+        self.network.eq_ignore_ascii_case("unix")
+    }
+
     /// 极简模式（meta.uiMode=minimal）：仅键值与终端；连接时跳过 CLIENT SETNAME
     pub fn is_minimal_mode(&self) -> bool {
         matches!(
@@ -141,6 +151,31 @@ api_model!(
         master_name: String,
         master_username: String,
         master_password: String,
+    }
+);
+
+api_model!(
+    /// 信息页哨兵拓扑。只含这条连接监视的那一个 master。
+    SentinelTopology {
+        master_name: String,
+        /// 本次查询连上的哨兵，取连接配置里的 host:port。`SENTINEL sentinels` 不含自己。
+        self_addr: String,
+        /// 该 master 的 quorum；哨兵没报则为 0
+        quorum: u64,
+        master: SentinelPeer,
+        replicas: Vec<SentinelPeer>,
+        /// 其他哨兵，已去掉和 self_addr 相同的地址
+        sentinels: Vec<SentinelPeer>,
+    }
+);
+
+api_model!(
+    /// 哨兵眼里的一个节点。flags 为哨兵原文，如 `master`、`slave,s_down`。
+    SentinelPeer {
+        addr: String,
+        flags: String,
+        /// 副本的 master-link-down-time，毫秒。主库和哨兵为 0
+        link_down_ms: u64,
     }
 );
 
@@ -425,6 +460,21 @@ api_model!(FieldScanResult {
     vector_dim: Option<u64>,
 });
 
+// 大值下载：把 STRING 键的原始字节分块写到前端选好的本地路径
+api_model!(RedisValueDownload {
+    key: RedisKey,
+    file: String,
+});
+
+// STRING 大值下载进度（后台线程 emit，避免阻塞 Tauri 命令线程导致 macOS UI 不刷新）
+api_model!(ValueDownloadEvent {
+    id: String,
+    percent: u8,
+    finished: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+});
+
 // Redis键: 由于键是字节存储的，考虑转换为utf-8字符串显示后可能会丢失信息，因此封装为对象
 // 备注: bytes 序列化为 base64。合法 UTF-8 键可省略 bytes（空 Vec），to_bytes 回退 key.as_bytes()；
 //       非法 UTF-8 / 二进制键必须带 bytes，key 仅作 lossy 展示。
@@ -572,6 +622,39 @@ api_model!(RedisImportCsv {
     ttl: i64,
     handle_ttl: String, // TTL处理: 尝试读取 parse, 自定义 custom, 永久 forever
     handle_conflict: String, // 冲突处理: 覆盖 replace, 忽略 ignore
+});
+
+// 跨连接键传输参数。源/目标按配置 id 后台新建专用连接，结束后断开。
+api_model!(RedisMigrateParam {
+    task_id: String,
+    source_conn_id: String,
+    target_conn_id: String,
+    source_db: u16,
+    target_db: u16,
+    /// 与导出一致；有 key_list 时可不依赖
+    #[serde(rename = "match")]
+    pattern: String,
+    key_list: Vec<RedisKey>,
+    /// restore | command
+    mode: String,
+    /// skip | replace
+    handle_conflict: String,
+    /// continue | stop
+    on_error: String,
+});
+
+api_model!(RedisMigrateProbe {
+    source_conn_id: String,
+    target_conn_id: String,
+    source_db: u16,
+    target_db: u16,
+    /// restore | command
+    mode: String,
+});
+
+api_model!(MigrateProbeResult {
+    ok: bool,
+    message: String,
 });
 
 // Hash条目
@@ -856,6 +939,19 @@ api_model!(RedisSetParam {
 });
 
 // 执行命令
+api_model!(WorkbenchTable {
+    columns: Vec<String>,
+    rows: Vec<Vec<String>>,
+    /// 可点进值页的列。没有键列时为空。
+    key_column: Option<u32>,
+    truncated: bool,
+});
+
+api_model!(WorkbenchExec {
+    text: String,
+    table: Option<WorkbenchTable>,
+});
+
 api_model!(RedisCommand {
     command: String,
     node: Option<String>,
@@ -975,8 +1071,9 @@ api_model!(RedisKeySize {
     #[specta(type = String)]
     bytes: Vec<u8>, // 修改、删除等依据（JSON 为 Base64 字符串）
 
+    // 未查 TYPE（如目录内存分析）时为空串，不写成 unknown
     #[serde(rename = "type")]
-    key_type: String ,  // 类型
+    key_type: String, // 类型
     size: u64,        // 大小
 });
 
@@ -1029,6 +1126,7 @@ api_model!(
         rbp: u64,       // 客户端连接以来其读取缓冲区的峰值大小。在 Redis 7.0 中添加
         rbs: u64,       // 客户端读取缓冲区当前大小（字节）。在 Redis 7.0 中添加
         io_thread: u64, // 分配给客户端的 I/O 线程 ID。在 Redis 8.0 中添加
+        raw: String,    // CLIENT LIST 原始行，供前端复制
     }
 );
 
@@ -1048,12 +1146,12 @@ api_model!(MonitorEvent {
 api_model!(
     /// 键空间通知事件：后端把 `__keyspace@`/`__keyevent@` 频道解析成 DB/键/事件后推给前端
     NotifyEvent {
-        id: String,        // 连接 id，前端按此过滤
-        datetime: String,  // 与 SubscribeEvent 同格式
-        node: String,      // 集群节点地址；单机为空串
-        db: u16,           // 解析自频道
-        key: String,       // 解析后的键（display string）
-        event: String,     // 事件名，如 del / set / expired
+        id: String,       // 连接 id，前端按此过滤
+        datetime: String, // 与 SubscribeEvent 同格式
+        node: String,     // 集群节点地址；单机为空串
+        db: u16,          // 解析自频道
+        key: String,      // 解析后的键（display string）
+        event: String,    // 事件名，如 del / set / expired
     }
 );
 
@@ -1078,6 +1176,24 @@ api_model!(ExportImportEvent {
     total_count: u64,
     ignore_count: u64,
     finished: bool
+});
+
+// 键传输进度（字段对齐 ExportImportEvent，id 为 task_id）
+api_model!(MigrateEvent {
+    id: String,
+    ok_count: u64,
+    err_count: u64,
+    total_count: u64,
+    ignore_count: u64,
+    finished: bool,
+    #[serde(default)]
+    current_key: String,
+    /// 本条是一次失败时的键名；任务级失败或非失败进度为空
+    #[serde(default)]
+    error_key: String,
+    /// 本条是一次失败时的原因（AppError JSON 或 Redis 原文）；否则为空
+    #[serde(default)]
+    error_message: String,
 });
 
 // ACL 用户详情（由 ACL GETUSER 结构化转换而来）
@@ -1220,5 +1336,31 @@ mod tests {
         conf.meta
             .insert("protocol".into(), ConnMetaValue::String("resp2".into()));
         assert!(!conf.is_resp3());
+    }
+
+    /// 未查 TYPE 时 type 是空串；有类型时照常带上。空串不写成 unknown。
+    #[test]
+    fn redis_key_size_empty_type_is_blank() {
+        let bare = RedisKeySize {
+            key: "k".into(),
+            bytes: vec![],
+            key_type: String::new(),
+            size: 1,
+        };
+        let with_type = RedisKeySize {
+            key: "k".into(),
+            bytes: vec![],
+            key_type: "string".into(),
+            size: 1,
+        };
+        let bare_json = serde_json::to_value(&bare).unwrap();
+        let typed_json = serde_json::to_value(&with_type).unwrap();
+        assert_eq!(bare_json.get("type").and_then(|v| v.as_str()), Some(""));
+        assert_eq!(
+            typed_json.get("type").and_then(|v| v.as_str()),
+            Some("string")
+        );
+        let back: RedisKeySize = serde_json::from_value(bare_json).unwrap();
+        assert!(back.key_type.is_empty());
     }
 }

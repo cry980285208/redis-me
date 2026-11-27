@@ -5,11 +5,12 @@ import { useI18n } from 'vue-i18n'
 
 import { shareProvideKey } from '@/types/me-interface'
 import type { RedisKey_Deserialize } from '@/types/tauri-specta'
-import { BYTES_FORMAT, meFormatBytes, meToBase64 } from '@/utils/format'
-import { invalidateKeyMemory } from '@/utils/key-memory-cache'
-import { invalidateKeyType } from '@/utils/key-type-cache'
-import { redisKeyWireBase64 } from '@/utils/redis-key'
-import { bus, KEY_RENAME, meCommands, meErr, meOk } from '@/utils/util'
+import { bus, KEY_RENAME, meCommands, meErr, meOk } from '@/utils/app/util'
+import { BYTES_FORMAT, meFormatBytes, meToBase64 } from '@/utils/codec/format'
+import { invalidateKeyMemory } from '@/utils/redis/key-memory-cache'
+import { invalidateKeyTtl } from '@/utils/redis/key-ttl-cache'
+import { invalidateKeyType } from '@/utils/redis/key-type-cache'
+import { redisKeyWireBase64 } from '@/utils/redis/redis-key'
 // #endregion
 
 // #region 核心状态
@@ -63,6 +64,7 @@ async function submit() {
     const apiNewKey = await meCommands.rename(id, k, newKey)
     invalidateKeyType(id, oldKey)
     invalidateKeyMemory(id, oldKey)
+    invalidateKeyTtl(id, oldKey)
     k.key = apiNewKey.key
     k.bytes = apiNewKey.bytes
     // 右侧详情直接绑 redisKey；左侧树靠 shallowRef 重建，需通知 KeyMain flush

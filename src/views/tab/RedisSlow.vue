@@ -4,13 +4,12 @@ import type { FormItemRule } from 'element-plus'
 import { computed, inject, nextTick, reactive, ref, useTemplateRef, watchEffect } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import type { MeColumn } from '@/components/me-table-column'
-import MeWebsite from '@/components/MeWebsite.vue'
+import type { MeColumn } from '@/components/me-table/column'
+import NodeList from '@/components/MeNodeList.vue'
 import { shareProvideKey } from '@/types/me-interface'
 import type { RedisSlowLog } from '@/types/tauri-specta'
 // 官网参考: https://redis.ac.cn/docs/latest/commands/slowlog-get/
-import { meCopy, meCommands, meOk } from '@/utils/util'
-import NodeList from '@/views/ext/NodeList.vue'
+import { meCopy, meCommands, meOk } from '@/utils/app/util'
 // #endregion
 
 // #region 核心状态
@@ -32,19 +31,7 @@ watchEffect(() => {
   if (slowerGetCount.value < 1) slowerGetCount.value = 1
 })
 
-// 只做关键词过滤；排序交给 MeTable（default-sort 时间倒序，与后端返回顺序一致）
-const filterDataList = computed(() => {
-  const key = keyword.value.toLowerCase()
-  return dataList.value.filter(
-    row =>
-      !key ||
-      row.command?.toLowerCase().indexOf(key) > -1 ||
-      row.client?.toLowerCase().indexOf(key) > -1 ||
-      row.clientName?.toLowerCase().indexOf(key) > -1,
-  )
-})
-
-// 列描述：展示与导出文本单一来源；sortable 交由 MeTable 默认策略开启
+// 列描述：展示与导出文本单一来源；关键词（command/client/clientName）与节点列头筛选均由 MeTable 内部处理；排序交给 MeTable（default-sort 时间倒序，与后端返回顺序一致）
 const slowColumns = computed<MeColumn<RedisSlowLog>[]>(() => [
   { key: 'time', prop: 'time', title: t('redisSlow.time'), width: 180 },
   {
@@ -55,12 +42,33 @@ const slowColumns = computed<MeColumn<RedisSlowLog>[]>(() => [
     align: 'right',
     formatter: row => `${Math.round(row.cost ?? 0)} ms`,
   },
-  { key: 'command', prop: 'command', title: t('redisSlow.command'), minWidth: 200 },
-  { key: 'clientName', prop: 'clientName', title: t('redisSlow.clientName'), width: 140 },
-  { key: 'client', prop: 'client', title: t('redisSlow.client'), width: 180 },
+  {
+    key: 'command',
+    prop: 'command',
+    title: t('redisSlow.command'),
+    minWidth: 200,
+    searchable: true,
+  },
+  {
+    key: 'clientName',
+    prop: 'clientName',
+    title: t('redisSlow.clientName'),
+    width: 140,
+    searchable: true,
+  },
+  { key: 'client', prop: 'client', title: t('redisSlow.client'), width: 180, searchable: true },
   // 集群下才需要区分节点
   ...(share.conn?.cluster
-    ? [{ key: 'node', prop: 'node', title: t('redisSlow.node'), width: 180 }]
+    ? [
+        {
+          key: 'node',
+          prop: 'node',
+          title: t('redisSlow.node'),
+          width: 180,
+          // 列头筛选：MeTable 自动去重生成选项并内部过滤
+          filterable: true,
+        },
+      ]
     : []),
 ])
 
@@ -211,7 +219,6 @@ const rules = computed(() => ({
           placement="top"
           @click="openEditDialog" />
         <node-list v-model="node" clearable style="margin-left: 10px" @change="refresh" />
-        <me-website to="slowlog" />
       </div>
 
       <div>
@@ -226,11 +233,16 @@ const rules = computed(() => ({
     <div class="table">
       <me-table
         v-loading="loading"
-        :data="filterDataList"
+        :data="dataList"
+        :keyword="keyword"
         :columns="slowColumns"
-        :total="dataList.length"
         :default-sort="{ prop: 'time', order: 'descending' }"
-        export-name="slowlog" />
+        export-name="slowlog">
+        <!-- 官网：紧挨合计行「更多」左侧 -->
+        <template #footer>
+          <me-website to="slowlog" />
+        </template>
+      </me-table>
     </div>
 
     <!-- 编辑慢参数弹框 -->
@@ -239,7 +251,8 @@ const rules = computed(() => ({
       v-model="editShow"
       align-center
       width="450px"
-      destroy-on-close>
+      destroy-on-close
+      draggable>
       <el-form ref="formRef" :model="form" :rules="rules" label-width="80px">
         <el-form-item :label="t('redisSlow.slowerThan')" prop="slowerThan">
           <div style="width: 100%">
@@ -275,10 +288,20 @@ const rules = computed(() => ({
       </el-form>
 
       <template #footer>
-        <el-button @click="editShow = false">{{ t('cancel') }}</el-button>
-        <el-button type="primary" :loading="editLoading" @click="saveSlowParam">{{
-          t('save')
-        }}</el-button>
+        <div class="me-dialog-footer">
+          <!-- 慢参数 CONFIG SET 固定广播所有节点（仅集群显示） -->
+          <me-icon
+            v-if="share.conn?.cluster"
+            class="footer-tip"
+            icon="el-icon-info-filled"
+            :name="t('clusterUpdateAllTip')" />
+          <div class="footer-btns">
+            <el-button @click="editShow = false">{{ t('cancel') }}</el-button>
+            <el-button type="primary" :loading="editLoading" @click="saveSlowParam">{{
+              t('save')
+            }}</el-button>
+          </div>
+        </div>
       </template>
     </el-dialog>
   </div>

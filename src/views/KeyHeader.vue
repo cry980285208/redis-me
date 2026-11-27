@@ -1,15 +1,22 @@
 <script setup lang="ts">
 // #region 导入
-import { inject, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, inject, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { shareProvideKey, connUiProvideKey, type UiConn } from '@/types/me-interface'
-import { getConnIcon } from '@/utils/conn'
-import { bus, meOk, OPEN_SETTING } from '@/utils/util'
-import AppAbout from '@/views/ext/AppAbout.vue'
-import AppSetting from '@/views/ext/AppSetting.vue'
-import AppShortcut from '@/views/ext/AppShortcut.vue'
-import CommandLog from '@/views/ext/CommandLog.vue'
+import {
+  bus,
+  meOk,
+  OPEN_KEY_MIGRATE,
+  OPEN_SETTING,
+} from '@/utils/app/util'
+import type { MeBusEvents } from '@/utils/app/util'
+import { connsInGroupOrder, getConnIcon } from '@/utils/conn'
+import AppAbout from '@/views/app/AppAbout.vue'
+import AppSetting from '@/views/app/AppSetting.vue'
+import AppShortcut from '@/views/app/AppShortcut.vue'
+import KeyMigrate from '@/views/key/KeyMigrate.vue'
+import CommandLog from '@/views/tools/CommandLog.vue'
 // #endregion
 
 // #region 核心状态
@@ -17,10 +24,19 @@ const share = inject(shareProvideKey)!
 const connUi = inject(connUiProvideKey)!
 const { t } = useI18n()
 
+// 下拉顺序与分组视图一致，不跟 connList 的原始存放顺序
+const orderedConnList = computed(() =>
+  connsInGroupOrder(
+    share.connList,
+    Array.isArray(meTauri.settings.connGroups) ? meTauri.settings.connGroups : [],
+  ),
+)
+
 const dialog = reactive({ commandLog: false })
 const settingRef = ref<InstanceType<typeof AppSetting>>()
 const shortcutRef = ref<InstanceType<typeof AppShortcut>>()
 const aboutRef = ref<InstanceType<typeof AppAbout>>()
+const keyMigrateRef = ref<InstanceType<typeof KeyMigrate>>()
 function openSetting(): void {
   settingRef.value?.open()
 }
@@ -29,14 +45,20 @@ function openShortcuts(): void {
   shortcutRef.value?.open()
 }
 
+function openKeyMigrate(payload: MeBusEvents['OPEN_KEY_MIGRATE'] = {}): void {
+  nextTick(() => keyMigrateRef.value?.open(payload))
+}
+
 onMounted(() => {
   connUi.openSetting = openSetting
   connUi.openShortcuts = openShortcuts
   // 顶部栏设置图标与本组件非父子关系，经 bus 通知打开本处挂载的设置弹窗
   bus.on(OPEN_SETTING, openSetting)
+  bus.on(OPEN_KEY_MIGRATE, openKeyMigrate)
 })
 onUnmounted(() => {
   bus.off(OPEN_SETTING, openSetting)
+  bus.off(OPEN_KEY_MIGRATE, openKeyMigrate)
 })
 // #endregion
 
@@ -60,6 +82,8 @@ function handleCommand(command: string): void {
     })
   } else if ('setting' === command) {
     openSetting()
+  } else if ('keyMigrate' === command) {
+    openKeyMigrate({})
   } else if ('info' === command) {
     aboutRef.value?.open()
     // } else if ('social' === command) {
@@ -88,7 +112,7 @@ function onConnChange(conn: UiConn | undefined): void {
       :disabled="share.connList.length === 0"
       value-key="id"
       @change="onConnChange">
-      <el-option v-for="item in share.connList" :label="item.name" :value="item" :key="item.id">
+      <el-option v-for="item in orderedConnList" :label="item.name" :value="item" :key="item.id">
         <div :style="{ color: item?.color }">
           <me-icon :icon="getConnIcon(item)" :name="item.name" />
         </div>
@@ -113,10 +137,13 @@ function onConnChange(conn: UiConn | undefined): void {
               <me-icon :name="t('keyHeader.closeConn')" icon="el-icon-circle-close" />
             </el-dropdown-item>
             <el-dropdown-item command="commandLog">
-              <me-icon :name="t('keyHeader.commandLog')" icon="el-icon-document" />
+              <me-icon :name="t('keyHeader.commandLog')" icon="me-icon-log" />
             </el-dropdown-item>
           </template>
 
+          <el-dropdown-item command="keyMigrate">
+            <me-icon :name="t('keyHeader.keyMigrate')" icon="el-icon-switch" />
+          </el-dropdown-item>
           <el-dropdown-item command="setting" :divided="!!share.conn">
             <me-icon :name="t('keyHeader.setting')" icon="el-icon-setting" />
           </el-dropdown-item>
@@ -136,6 +163,7 @@ function onConnChange(conn: UiConn | undefined): void {
     <AppAbout ref="aboutRef" />
     <!-- <AppOfficial ref="officialRef" /> -->
     <CommandLog v-model="dialog.commandLog" />
+    <KeyMigrate ref="keyMigrateRef" />
   </div>
 </template>
 

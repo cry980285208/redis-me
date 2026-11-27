@@ -1,5 +1,7 @@
 <script setup lang="ts">
 // #region 导入
+import { listen } from '@tauri-apps/api/event'
+import { save } from '@tauri-apps/plugin-dialog'
 import { useIntervalFn, useNow } from '@vueuse/core'
 import {
   computed,
@@ -14,7 +16,7 @@ import {
 } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import type { MeColumn } from '@/components/me-table-column'
+import { type MeColumn, truncateCellDisplay } from '@/components/me-table/column'
 import MeSelectUpDownIcon from '@/components/MeSelectUpDownIcon.vue'
 import { shareProvideKey, connUiProvideKey } from '@/types/me-interface'
 import type {
@@ -26,15 +28,35 @@ import type {
   RedisKey_Deserialize,
   ScanCursor,
 } from '@/types/tauri-specta'
-import { isConnMinimalMode } from '@/utils/conn'
+import { defaultSettings } from '@/utils/app/settings-defaults'
+import {
+  bus,
+  KEY_DELETE,
+  KEY_REFRESH,
+  requestSearchCreate,
+  meCommands,
+  meCommandsQuiet,
+  meConfirm,
+  meCopy,
+  meDeleteKey,
+  meErr,
+  formatSpectaErrorForUser,
+  meHumanSeconds,
+  estimateStringMemory,
+  meHumanSize,
+  meFormatDisplayValue,
+  meJsonNormal,
+  meOk,
+  meWarn,
+  sleep,
+} from '@/utils/app/util'
 import {
   detectViewFormatAuto,
   detectedCustomLabel,
   detectedViewLabel,
   type DetectedViewAuto,
   type DetectedViewFormat,
-} from '@/utils/detect-view-format'
-import { useFavorites, addFavorite, removeFavorite, isFavorited } from '@/utils/favorite'
+} from '@/utils/codec/detect-view-format'
 import {
   IPC_WIRE_FORMAT,
   VIEW_FORMAT_OPTIONS,
@@ -54,48 +76,32 @@ import {
   readonlyViewTip,
   viewFmtForField,
   type ViewBytesFormat,
-} from '@/utils/format'
-import { captureKeyMemoryWrite } from '@/utils/key-memory-cache'
-import { resolveKeyType } from '@/utils/key-type-cache'
+} from '@/utils/codec/format'
+import { isConnMinimalMode } from '@/utils/conn'
+import { useFavorites, addFavorite, removeFavorite, isFavorited } from '@/utils/redis/favorite'
+import { captureKeyMemoryWrite } from '@/utils/redis/key-memory-cache'
+import { invalidateKeyTtl } from '@/utils/redis/key-ttl-cache'
+import { resolveKeyType } from '@/utils/redis/key-type-cache'
 import {
   closeAllKeyTabs,
   closeKeyTab,
   switchKeyTab,
   visibleKeyTabs,
 } from '@/utils/key-tabs'
-import { toKeyTypeLabel } from '@/utils/redis-display'
+import { toKeyTypeLabel } from '@/utils/redis/redis-display'
 import {
   buildScanPattern,
   buildLocalFilterPattern,
   compileRedisGlobFilter,
   computeScanProgress,
-} from '@/utils/redis-glob'
-import { indexCreateDraft, type IndexDraftField } from '@/utils/search-ddl'
-import { defaultSettings } from '@/utils/settings-defaults'
-import { meTtlFromAt, meTtlToAt } from '@/utils/ttl'
-import {
-  bus,
-  KEY_DELETE,
-  KEY_REFRESH,
-  requestSearchCreate,
-  meCommands,
-  meConfirm,
-  meCopy,
-  meDeleteKey,
-  meErr,
-  meHumanSeconds,
-  estimateStringMemory,
-  meHumanSize,
-  meFormatDisplayValue,
-  meJsonNormal,
-  meOk,
-  meWarn,
-  sleep,
-} from '@/utils/util'
-import CommandHelp from '@/views/ext/CommandHelp.vue'
-import FieldAdd from '@/views/ext/FieldAdd.vue'
-import TTLSet from '@/views/ext/TTLSet.vue'
+} from '@/utils/redis/redis-glob'
+import { indexCreateDraft, type IndexDraftField } from '@/utils/redis/search-ddl'
+import { normalizeTsRangeBound } from '@/utils/redis/ts-range'
+import { meTtlFromAt, meTtlToAt } from '@/utils/redis/ttl'
 import KeyRename from '@/views/key/KeyRename.vue'
+import CommandHelp from '@/views/tools/CommandHelp.vue'
+import FieldAdd from '@/views/tools/FieldAdd.vue'
+import TTLSet from '@/views/tools/TTLSet.vue'
 
 import CustomCodec from './CustomCodec.vue'
 import FieldSet from './FieldSet.vue'
@@ -109,7 +115,6 @@ import {
   isStringLikeType,
   listRowRedisIndex,
   mergeFieldScanPage,
-  normalizeTsRangeBound,
   parseListIndexInput,
   removeScannedFieldRow,
   pinFieldExpireAt,
@@ -239,7 +244,10 @@ const VALUE_PREVIEW_BYTES = computed(
   () => (window.meTauri.settings.valuePreviewBytes as number) ?? defaultSettings.valuePreviewBytes,
 )
 const forceFullValue = ref(false) // 用户确认后 GET 全量
+const fullValueLoading = ref(false) // 「仍要加载全部」专用，与换键 loading 分离
 const valueTruncatedDismissed = ref(false)
+const valueDownloading = ref(false) // 大值下载中，防重复点击
+const valueDownloadPercent = ref(0) // 下载进度百分比，后端每块 emit 更新
 const valueTruncated = computed(() => redisValue.value?.valueTruncated ?? false)
 const showValueTruncatedAlert = computed(
   () => stringType.value && valueTruncated.value && !valueTruncatedDismissed.value,
@@ -333,6 +341,12 @@ const effectiveViewFormat = computed<ViewBytesFormat>(() => {
   if (bytesFormat.value !== 'auto') return bytesFormat.value
   if (detectedCustomName.value) return customFormatValue(detectedCustomName.value)
   return detectedView.value
+})
+// 非 STRING 始终可切（JSON 视图缩进 / 同步字段面板初始值）；STRING 仅 utf8·strjson·vector32
+const prettyEnabled = computed(() => {
+  if (!stringType.value) return true
+  const fmt = effectiveViewFormat.value
+  return fmt === 'utf8' || fmt === 'strjson' || fmt === 'vector32'
 })
 const gzipReadonly = computed(
   () => bytesFormat.value === 'auto' && stringType.value && detectedGzip.value,
@@ -683,15 +697,40 @@ const dataList = computed(() => {
   return data
 })
 
+/**
+ * 字段表 wire→展示文本：随 dataList / 编码（及 formatTableCell 同源依赖）整表解一次，
+ * 渲染 / 过滤 / 排序只查表，避免每格反复解码 MB 级值。Stream 的 value 是对象，不进此缓存。
+ */
+const fieldWireDisplayText = computed(() => {
+  const map = new Map<string, string>()
+  const put = (raw: unknown) => {
+    if (raw == null || raw === '') return
+    const wire = String(raw)
+    if (map.has(wire)) return
+    map.set(wire, formatTableCell(wire))
+  }
+  for (const row of dataList.value) {
+    put(row.key)
+    if (typeof row.value === 'string') put(row.value)
+  }
+  return map
+})
+
+function wireDisplay(raw: unknown): string {
+  const wire = String(raw ?? '')
+  if (!wire) return ''
+  return fieldWireDisplayText.value.get(wire) ?? formatTableCell(wire)
+}
+
 // List/Stream：关键词本地包含过滤（TimeSeries 无本地过滤框，靠时间/数值区间）
 const filterDataList = computed(() => {
   const key = fieldKeyword.value.toLowerCase()
   return dataList.value.filter(row => {
     if (!key) return true
     if (timeseriesType.value) return true
-    if ((formatTableCell(row.key).toLowerCase() ?? '').indexOf(key) > -1) return true
+    if ((wireDisplay(row.key).toLowerCase() ?? '').indexOf(key) > -1) return true
     if ((row.id?.toLowerCase() ?? '').indexOf(key) > -1) return true
-    const cell = streamType.value ? JSON.stringify(row.value) : formatTableCell(row.value)
+    const cell = streamType.value ? JSON.stringify(row.value) : wireDisplay(row.value)
     if (cell.toLowerCase().indexOf(key) > -1) return true
     if ((row.score?.toString() ?? '').indexOf(key) > -1) return true
     if (String(row.index ?? '').indexOf(key) > -1) return true
@@ -710,15 +749,15 @@ const filterFieldList = computed(() => {
   // Vector Set：按元素名（row.value）本地过滤（向量浮点无检索意义；相似度走 VSIM）
   if (vectorsetType.value) {
     return dataList.value.filter(
-      row => row.value != null && row.value !== '' && matchFn(formatTableCell(row.value)),
+      row => row.value != null && row.value !== '' && matchFn(wireDisplay(row.value)),
     )
   }
   return dataList.value.filter(row => {
     if (row.key != null && row.key !== '') {
-      if (matchFn(formatTableCell(row.key))) return true
+      if (matchFn(wireDisplay(row.key))) return true
     }
     if (row.value != null && row.value !== '') {
-      if (matchFn(formatTableCell(row.value))) return true
+      if (matchFn(wireDisplay(row.value))) return true
     }
     if (row.score != null && matchFn(String(row.score))) {
       return true
@@ -908,9 +947,65 @@ function prepareManualKeyRefresh() {
   valueTruncatedDismissed.value = false // 手动刷新重新展示大值提示
 }
 async function loadFullValue() {
-  if (loading.value) return
+  if (loading.value || fullValueLoading.value) return
   forceFullValue.value = true
-  await refreshKey(false)
+  fullValueLoading.value = true
+  try {
+    await refreshKey(false)
+  } finally {
+    fullValueLoading.value = false
+  }
+}
+
+/** 默认文件名取键名最后一段 + .txt，过滤各系统非法字符 */
+function downloadFileName(keyName: string): string {
+  const seg = keyName.split(':').filter(Boolean).pop() ?? keyName
+  return `${seg.replace(/[\\/:*?"<>|]/g, '_').trim() || 'value'}.txt`
+}
+
+/** 与后端 ValueDownloadEvent 一致；后台线程 emit，命令立即返回 */
+interface ValueDownloadProgressPayload {
+  id: string
+  percent: number
+  finished: boolean
+  error?: string
+}
+
+// 下载到本地：先选路径（取消则不拉数据），再交后端 STRLEN+分块 GETRANGE 直写盘，不占前端内存
+async function downloadValue() {
+  if (!share.conn || !share.redisKey || valueDownloading.value) return
+  // 不限定扩展名时不传 filters：macOS 保存面板会把 `*` 过滤器追加成 `name.txt.*`
+  const path = await save({ defaultPath: downloadFileName(share.redisKey.key) })
+  if (!path) return
+  const connId = share.conn.id
+  valueDownloading.value = true
+  valueDownloadPercent.value = 0
+  let resolveDone!: () => void
+  let rejectDone!: (reason: Error) => void
+  const waitFinished = new Promise<void>((resolve, reject) => {
+    resolveDone = resolve
+    rejectDone = reject
+  })
+  // 只在本次下载期间监听进度，结束后立即卸载；事件名为后端 EVENT_VALUE_DOWNLOAD 的 "value-download"
+  const unlisten = await listen<ValueDownloadProgressPayload>('value-download', e => {
+    const p = e.payload
+    if (p.id !== connId) return
+    valueDownloadPercent.value = p.percent
+    if (!p.finished) return
+    if (p.error) rejectDone(new Error(p.error))
+    else resolveDone()
+  })
+  try {
+    await meCommands.valueDownload(connId, { key: share.redisKey, file: path })
+    await waitFinished
+    meOk(t('redisValue.valueTruncatedDownloadOk'))
+  } catch (e) {
+    // 线程内失败经 rejectDone；invoke 失败为 string 且已由 meCommands 弹窗
+    if (e instanceof Error && e.message) meErr(formatSpectaErrorForUser(e.message))
+  } finally {
+    unlisten()
+    valueDownloading.value = false
+  }
 }
 
 // 内置识别落到 Hex 后，按列表顺序试勾选的自定义编码。成功的 stdout 直接当展示。
@@ -1082,6 +1177,9 @@ async function refreshKey(
 ) {
   if (!share.conn || !share.redisKey) return
 
+  // 换键：立刻停掉「仍要加载全部」转圈（提示条不收起，等新结果自然替换）
+  if (reset) fullValueLoading.value = false
+
   if (loading.value) {
     if (!restart) return
     scanCancelled.value = true
@@ -1251,7 +1349,7 @@ function fieldRowDisplayValue(row: ValueTableRow): string {
   if (streamType.value) return JSON.stringify(row.value)
   // TimeSeries value 为数值明文，不做 base64 wire 解码
   if (timeseriesType.value) return String(row.value ?? '')
-  return formatTableCell(row.value)
+  return wireDisplay(row.value)
 }
 function compareFieldRowValue(a: ValueTableRow, b: ValueTableRow): number {
   return fieldRowDisplayValue(a).localeCompare(fieldRowDisplayValue(b), undefined, {
@@ -1287,7 +1385,7 @@ const valueColumns = computed<MeColumn<ValueTableRow>[]>(() => {
       ...(timeseriesType.value ? { width: 350 } : { minWidth: 180 }),
       formatter: row => {
         const key = row.key
-        if (!timeseriesType.value) return formatTableCell(key)
+        if (!timeseriesType.value) return wireDisplay(key)
         const ts = String(key ?? '')
         const date = tsTimestampToDate(ts)
         return date ? `${ts} ${date}` : ts
@@ -1464,7 +1562,7 @@ async function refreshFieldRow(row: ValueTableRow) {
     const param = buildFieldGetParam(row)
     if (!param) return
     try {
-      const data = await meCommands.fieldGet(conn.id, param, false)
+      const data = await meCommandsQuiet.fieldGet(conn.id, param)
       applyFieldGetResult(rv, data, row)
       meOk(t('redisValue.refreshFieldRowOk'))
       return
@@ -1522,7 +1620,7 @@ function onFieldRowMoreCommand(command: string, row: ValueTableRow) {
   } else if (command === 'refreshRow') {
     void refreshFieldRow(row)
   } else if (command === 'copyKey') {
-    meCopy(timeseriesType.value ? String(row.key ?? '') : formatTableCell(row.key ?? ''))
+    meCopy(timeseriesType.value ? String(row.key ?? '') : wireDisplay(row.key ?? ''))
   } else if (command === 'copyValue') {
     meCopy(fieldRowDisplayValue(row))
   } else if (command === 'copyAttrs') {
@@ -1581,7 +1679,7 @@ async function onFieldSetSuccess() {
     return
   }
   try {
-    const data = await meCommands.fieldGet(share.conn!.id, param, false)
+    const data = await meCommandsQuiet.fieldGet(share.conn!.id, param)
     const row = fieldSetRow.value
     if (row) applyFieldGetResult(rv, data, row)
     fieldSetInit()
@@ -1837,6 +1935,8 @@ async function setValue() {
       keyType: rv.type,
       inputFormat: jsonType.value ? 'utf8' : IPC_WIRE_FORMAT, // JSON=utf8；STRING=base64 wire
     })
+    // SET 会重写过期，列表上的 TTL 缓存不能留着旧的到期时刻
+    invalidateKeyTtl(share.conn!.id, share.redisKey!)
     meOk(t('saveOk'))
     await refreshKey()
   } finally {
@@ -2146,12 +2246,32 @@ onUnmounted(() => {
             }}
           </p>
           <div class="value-truncated-actions">
-            <el-button size="small" @click="dismissValueTruncated">
+            <el-button
+              size="small"
+              :disabled="loading || valueDownloading"
+              @click="dismissValueTruncated">
               {{ t('redisValue.valueTruncatedDismiss') }}
             </el-button>
-            <el-button size="small" type="warning" plain :disabled="loading" @click="loadFullValue">
+            <el-button
+              size="small"
+              type="warning"
+              plain
+              :loading="fullValueLoading"
+              :disabled="valueDownloading"
+              @click="loadFullValue">
               {{ t('redisValue.valueTruncatedLoadAll') }}
             </el-button>
+            <el-button
+              size="small"
+              plain
+              :loading="valueDownloading"
+              :disabled="loading"
+              @click="downloadValue">
+              {{ t('redisValue.valueTruncatedDownload') }}
+            </el-button>
+            <span v-if="valueDownloading" class="value-download-progress"
+              >{{ valueDownloadPercent }}%</span
+            >
           </div>
         </el-alert>
         <!-- 部分加载提示：JSON 只含已加载字段，说明并提供加载入口（与大值截断提示同模式） -->
@@ -2181,9 +2301,10 @@ onUnmounted(() => {
             </el-button>
           </div>
         </el-alert>
-        <!-- json显示；识别中用半透明 loading 盖在 Hex 上 -->
+        <!-- json显示；auto 按内容特征推 json/yaml/markdown；识别中用半透明 loading 盖在 Hex 上 -->
         <me-code
           v-if="viewType === 'json'"
+          mode="auto"
           :loading="customProbePending && stringType"
           :loading-text="t('customCodec.probing', { name: customProbeName })"
           :key="valueEditorRemountKey"
@@ -2415,11 +2536,13 @@ onUnmounted(() => {
           </div>
           <div class="table-view">
             <!-- 类型或键变化时重建：滚动位置与排序回到初始 -->
+            <!-- 溢出 tooltip 关闭：大值靠点行/双击进 FieldSet→me-code 查看（迁 MeTable 前即如此） -->
             <me-table
               :key="`${redisValue?.type ?? ''}\0${share.redisKey?.key ?? ''}`"
               :data="tableDisplayList"
               :columns="valueColumns"
               :default-sort="tableDefaultSort"
+              :show-overflow-tooltip="false"
               export-name="value"
               :total-text="fieldFooterTotalText"
               :row-class="rowClassName"
@@ -2465,7 +2588,7 @@ onUnmounted(() => {
                 </div>
               </template>
 
-              <!-- Hash 键 / TimeSeries 时间戳（附带可读时间） -->
+              <!-- Hash 键 / TimeSeries 时间戳（附带可读时间）；Hash 键可能很大，进 DOM 须截断 -->
               <template #cell-key="{ row }">
                 <div v-if="timeseriesType" class="me-flex" style="width: 100%">
                   <span>{{ row.key }}</span>
@@ -2475,7 +2598,7 @@ onUnmounted(() => {
                     {{ tsTimestampToDate(String(row.key ?? '')) }}
                   </span>
                 </div>
-                <template v-else>{{ formatTableCell(row.key) }}</template>
+                <template v-else>{{ truncateCellDisplay(wireDisplay(row.key)) }}</template>
               </template>
 
               <!-- TTL：悬浮展开绝对时间 -->
@@ -2610,12 +2733,13 @@ onUnmounted(() => {
       <!-- 底栏 -->
       <div class="value-footer me-flex" @click="onFieldPanelOutsideClick">
         <div class="me-flex" style="align-items: center">
-          <!-- 美化/复制 -->
+          <!-- 美化/复制：不可美化时不展示，避免与「关闭」同色混淆 -->
           <me-icon
+            v-if="prettyEnabled"
             placement="top-start"
             :info="t('redisValue.prettyHint')"
             class="icon-btn"
-            :style="{ opacity: isPretty ? 1 : 0.2 }"
+            :style="{ opacity: isPretty ? 1 : 0.5 }"
             icon="el-icon-magic-stick"
             @click="isPretty = !isPretty" />
 
@@ -2928,6 +3052,13 @@ onUnmounted(() => {
         display: flex;
         gap: 8px;
       }
+
+      .value-download-progress {
+        align-self: center;
+        font-size: 12px;
+        color: var(--el-text-color-secondary);
+        font-variant-numeric: tabular-nums;
+      }
     }
 
     // 表格工具栏：扫描 / 范围 / 精确 / 更多
@@ -2970,24 +3101,22 @@ onUnmounted(() => {
         width: 250px;
         flex-shrink: 0;
 
-        // 左侧精确勾选；右侧暂停/继续和查询
-        :deep(.el-input__prefix) {
-          :deep(.suffix-exact-checkbox) {
-            height: auto;
+        // 左侧精确勾选。内层再写 :deep() 时 Vue 不会改写，lightningcss 会当成非法伪类
+        :deep(.el-input__prefix .suffix-exact-checkbox) {
+          height: auto;
 
-            .el-checkbox__inner {
-              border-color: var(--el-text-color-secondary);
-              background-color: transparent;
-            }
+          .el-checkbox__inner {
+            border-color: var(--el-text-color-secondary);
+            background-color: transparent;
+          }
 
-            &:hover .el-checkbox__inner {
-              border-color: var(--el-color-primary);
-            }
+          &:hover .el-checkbox__inner {
+            border-color: var(--el-color-primary);
+          }
 
-            &.is-checked .el-checkbox__inner {
-              background-color: var(--el-color-primary);
-              border-color: var(--el-color-primary);
-            }
+          &.is-checked .el-checkbox__inner {
+            background-color: var(--el-color-primary);
+            border-color: var(--el-color-primary);
           }
         }
 
@@ -3043,6 +3172,14 @@ onUnmounted(() => {
         z-index: 20;
         width: 60%;
         height: 100%;
+      }
+
+      // 加载更多 / 加载全部：文字链接间距与右侧「更多」都略疏于图标簇默认 8px
+      :deep(.me-table-footer-actions) {
+        gap: 16px;
+      }
+      :deep(.me-table-footer-right) {
+        gap: 16px;
       }
 
       // footer 加载链接（el-link）：文字加粗，在 footer 信息文字中突出动作

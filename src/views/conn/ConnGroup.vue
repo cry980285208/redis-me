@@ -6,15 +6,16 @@ import { nextTick, onBeforeUnmount, onMounted, useTemplateRef, watch } from 'vue
 import { useI18n } from 'vue-i18n'
 
 import type { UiConn } from '@/types/me-interface'
+import { PREDEFINE_COLORS } from '@/utils/app/util'
 import type { ConnGroupSection } from '@/utils/conn'
 import {
   applyConnGroupOrder,
+  connEndpoint,
   getConnGroup,
   getConnIcon,
   moveConnInGroup,
   moveConnToGroup,
 } from '@/utils/conn'
-import { PREDEFINE_COLORS } from '@/utils/util'
 // #endregion
 
 // #region 核心状态
@@ -258,7 +259,7 @@ onBeforeUnmount(() => destroySortables())
             class="conn-host"
             :icon-left="false"
             icon="el-icon-rank"
-            :name="conn.host + ':' + conn.port" />
+            :name="connEndpoint(conn)" />
           <span class="conn-actions row-actions" @click.stop>
             <el-color-picker
               size="small"

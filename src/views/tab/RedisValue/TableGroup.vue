@@ -7,7 +7,7 @@ import { useI18n } from 'vue-i18n'
 
 import { shareProvideKey } from '@/types/me-interface'
 import type { XInfoConsumer, XInfoGroup } from '@/types/tauri-specta'
-import { meCommands } from '@/utils/util'
+import { meCommands } from '@/utils/app/util'
 // #endregion
 
 // #region 核心状态
@@ -59,7 +59,7 @@ defineExpose({ open })
 </script>
 
 <template>
-  <me-dialog title="Groups" icon="el-icon-coin" v-model="visible" width="900">
+  <me-dialog title="Groups" icon="el-icon-grid" v-model="visible" width="900">
     <div v-loading="loading" class="table-group">
       <el-table
         ref="table"

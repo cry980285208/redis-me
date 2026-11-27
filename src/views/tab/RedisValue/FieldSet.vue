@@ -13,10 +13,19 @@ import type {
   RedisFieldValue,
 } from '@/types/tauri-specta'
 import {
+  meCommands,
+  meCommandsQuiet,
+  meCopy,
+  meErr,
+  meFormatDisplayValue,
+  meJsonNormal,
+  meOk,
+} from '@/utils/app/util'
+import {
   detectViewFormatAuto,
   detectedCustomLabel,
   detectedViewLabel,
-} from '@/utils/detect-view-format'
+} from '@/utils/codec/detect-view-format'
 import {
   IPC_WIRE_FORMAT,
   autoCustomCodecs,
@@ -35,9 +44,8 @@ import {
   probeAutoCustomCodecs,
   readonlyViewTip,
   type ViewBytesFormat,
-} from '@/utils/format'
-import { meCommands, meCopy, meErr, meFormatDisplayValue, meJsonNormal, meOk } from '@/utils/util'
-import { parseAttrsInput, parseVectorInput } from '@/utils/vector'
+} from '@/utils/codec/format'
+import { parseAttrsInput, parseVectorInput } from '@/utils/redis/vector'
 // #endregion
 
 // 字段编辑面板：fieldScan 返回的 wire（恒 base64）→ 前端按编码展示/编辑 → field_set 写回。
@@ -257,12 +265,13 @@ async function syncFieldEditor() {
     form.value.fieldValue = e instanceof Error ? e.message : String(e)
     decodeFailed.value = true
   } finally {
-    if (gen !== fieldProbeGen) return
-    fieldProbeName.value = ''
-    // 晚一拍再允许编辑器回写，避免空内容盖住刚写入的解码结果
-    void nextTick(() => {
-      if (gen === fieldProbeGen) editorLoading.value = false
-    })
+    if (gen === fieldProbeGen) {
+      fieldProbeName.value = ''
+      // 晚一拍再允许编辑器回写，避免空内容盖住刚写入的解码结果
+      void nextTick(() => {
+        if (gen === fieldProbeGen) editorLoading.value = false
+      })
+    }
   }
 }
 // #endregion
@@ -316,8 +325,22 @@ function togglePretty() {
     if (attrs.ok) {
       attrsText.value = meFormatDisplayValue(attrs.json, fieldPretty.value)
     }
-  } else {
-    void syncFieldEditor()
+  } else if (!timeseriesType.value) {
+    // 同步重算展示即可，不走 syncFieldEditor（会开 editorLoading，保存钮闪一下）
+    const wire =
+      fieldViewFmt.value === 'auto' && detectedAuto.value.gzip
+        ? detectedAuto.value.wire
+        : srcFieldWire.value
+    const fmt = effectiveFieldViewFmt.value
+    if (!wire) {
+      form.value.fieldValue = ''
+    } else if (!fieldPretty.value && fmt === 'strjson') {
+      form.value.fieldValue = base64WireToUtf8Display(wire)
+    } else if (fmt === 'utf8' || fmt === 'vector32') {
+      form.value.fieldValue = meFormatDisplayValue(meFormatViewValue(wire, fmt), fieldPretty.value)
+    } else {
+      form.value.fieldValue = meFormatViewValue(wire, fmt)
+    }
   }
   codeRemountKey.value++
 }
@@ -542,7 +565,7 @@ async function refreshField() {
   if (!conn || !param || isRefreshing.value) return
   isRefreshing.value = true
   try {
-    const data = await meCommands.fieldGet(conn.id, param, false)
+    const data = await meCommandsQuiet.fieldGet(conn.id, param)
     applyFieldGetToForm(data)
     await syncFieldEditor()
     codeRemountKey.value++
@@ -660,6 +683,7 @@ onUnmounted(() => window.removeEventListener('keydown', onEscapeKey, true))
         :label="vectorsetType ? t('fieldSet.vector') : t('fieldSet.value')"
         class="field-value-item">
         <me-code
+          mode="auto"
           :loading="!!fieldProbeName"
           :loading-text="t('customCodec.probing', { name: fieldProbeName })"
           :key="codeRemountKey"
@@ -688,13 +712,11 @@ onUnmounted(() => window.removeEventListener('keydown', onEscapeKey, true))
       <div class="field-set-footer me-flex">
         <div class="field-set-footer-left">
           <me-icon
+            v-if="prettyEnabled"
             placement="top-start"
             :info="t('fieldSet.prettyHint')"
             class="icon-btn"
-            :style="{
-              opacity: prettyEnabled && fieldPretty ? 1 : 0.2,
-              cursor: prettyEnabled ? 'pointer' : 'default',
-            }"
+            :style="{ opacity: fieldPretty ? 1 : 0.5 }"
             icon="el-icon-magic-stick"
             @click="togglePretty" />
           <me-icon

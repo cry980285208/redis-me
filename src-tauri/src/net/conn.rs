@@ -1,4 +1,4 @@
-use crate::model::{ConnConfig, SslOption};
+use crate::model::{ConnConfig, SentinelPeer, SentinelTopology, SslOption};
 use crate::net::proxy::build_proxy_dialer;
 use crate::net::ssh::SshDialer;
 use crate::net::tls;
@@ -21,6 +21,7 @@ use url::Url;
 
 /// 按连接配置试连一次。集群走集群客户端，其余走单机客户端。
 pub fn test_conn(conf: &ConnConfig, connect_timeout: Duration) -> AnyResult<()> {
+    reject_unix_combo(conf)?;
     if conf.cluster {
         get_client_cluster(conf, connect_timeout, true)?;
     } else {
@@ -29,20 +30,186 @@ pub fn test_conn(conf: &ConnConfig, connect_timeout: Duration) -> AnyResult<()> 
     Ok(())
 }
 
-/// 向哨兵查询 master 列表。查询前关掉 sentinel 标志，避免拨号层再走哨兵解析。
+/// 向哨兵查询 master 列表。连的是配置里的哨兵进程，不是主库。
 pub fn sentinel_masters(
     conf: &ConnConfig,
     connect_timeout: Duration,
     command_timeout: Duration,
 ) -> AnyResult<Vec<HashMap<String, String>>> {
-    let mut conf = conf.clone();
-    conf.sentinel = false;
-    let (client, _) = get_client_single(&conf, connect_timeout, false, None)?;
-    let mut conn =
-        init_single_connection(&client, conf.db, connect_timeout, command_timeout, &conf)?;
+    let mut conn = open_sentinel_session(conf, connect_timeout, command_timeout)?;
     let masters: Vec<HashMap<String, String>> =
-        redis::cmd("sentinel").arg("masters").query(&mut conn)?;
+        redis::cmd("SENTINEL").arg("MASTERS").query(&mut conn)?;
     Ok(masters)
+}
+
+/// 向哨兵查询当前连接监视的那一组：主库、副本、其他哨兵。
+/// 不能走已经连上的主库会话，主库不认 `SENTINEL`。
+/// `REPLICAS` 在旧版本不存在时退回 `SLAVES`。
+pub fn sentinel_topology(
+    conf: &ConnConfig,
+    connect_timeout: Duration,
+    command_timeout: Duration,
+) -> AnyResult<SentinelTopology> {
+    let master_name = conf.sentinel_option.master_name.clone();
+    if master_name.is_empty() {
+        bail!(AppError::SentinelMasterNotFound { name: master_name });
+    }
+    let mut conn = open_sentinel_session(conf, connect_timeout, command_timeout)?;
+    let masters: Vec<HashMap<String, String>> =
+        redis::cmd("SENTINEL").arg("MASTERS").query(&mut conn)?;
+    let master = select_monitored_master(&masters, &master_name)?;
+    let replicas = query_sentinel_replicas(&mut conn, &master_name)?;
+    let sentinels: Vec<HashMap<String, String>> = redis::cmd("SENTINEL")
+        .arg("SENTINELS")
+        .arg(&master_name)
+        .query(&mut conn)?;
+    let topology = assemble_sentinel_topology(conf, &master_name, master, &replicas, &sentinels);
+    info!(
+        "哨兵拓扑 {}:{} master {master_name}，副本 {}，其他哨兵 {}",
+        conf.host,
+        conf.port,
+        topology.replicas.len(),
+        topology.sentinels.len()
+    );
+    Ok(topology)
+}
+
+/// 连上配置里的哨兵进程。关掉 sentinel 标志，避免拨号层再去解析 master。
+fn open_sentinel_session(
+    conf: &ConnConfig,
+    connect_timeout: Duration,
+    command_timeout: Duration,
+) -> AnyResult<Connection> {
+    reject_unix_combo(conf)?;
+    let mut sent = conf.clone();
+    sent.sentinel = false;
+    // 配置里的 db 属于主库；哨兵不认 SELECT
+    sent.db = 0;
+    let (client, _) = get_client_single(&sent, connect_timeout, false, None)?;
+    init_single_connection(&client, 0, connect_timeout, command_timeout, &sent)
+}
+
+fn select_monitored_master<'a>(
+    masters: &'a [HashMap<String, String>],
+    master_name: &str,
+) -> AnyResult<&'a HashMap<String, String>> {
+    masters
+        .iter()
+        .find(|item| map_field(item, "name") == master_name)
+        .ok_or_else(|| {
+            AppError::SentinelMasterNotFound {
+                name: master_name.into(),
+            }
+            .into()
+        })
+}
+
+/// Redis 5 起叫 REPLICAS，更早只有 SLAVES。权限错误不退回，避免多打一枪。
+fn query_sentinel_replicas(
+    conn: &mut Connection,
+    master_name: &str,
+) -> AnyResult<Vec<HashMap<String, String>>> {
+    match redis::cmd("SENTINEL")
+        .arg("REPLICAS")
+        .arg(master_name)
+        .query(conn)
+    {
+        Ok(rows) => Ok(rows),
+        Err(err) if unknown_sentinel_subcommand(&err) => {
+            let rows = redis::cmd("SENTINEL")
+                .arg("SLAVES")
+                .arg(master_name)
+                .query(conn)?;
+            Ok(rows)
+        }
+        Err(err) => Err(err.into()),
+    }
+}
+
+fn unknown_sentinel_subcommand(err: &RedisError) -> bool {
+    let msg = err.to_string().to_ascii_lowercase();
+    msg.contains("unknown subcommand") || msg.contains("unknown command")
+}
+
+fn assemble_sentinel_topology(
+    conf: &ConnConfig,
+    master_name: &str,
+    master: &HashMap<String, String>,
+    replicas: &[HashMap<String, String>],
+    sentinels: &[HashMap<String, String>],
+) -> SentinelTopology {
+    let self_addr = sentinel_self_addr(conf);
+    let mut replicas: Vec<SentinelPeer> =
+        replicas.iter().map(|item| peer_from(item, true)).collect();
+    replicas.sort_by(|a, b| a.addr.cmp(&b.addr));
+    let mut sentinels: Vec<SentinelPeer> = sentinels
+        .iter()
+        .map(|item| peer_from(item, false))
+        .filter(|peer| !peer.addr.eq_ignore_ascii_case(&self_addr))
+        .collect();
+    sentinels.sort_by(|a, b| a.addr.cmp(&b.addr));
+    SentinelTopology {
+        master_name: master_name.to_string(),
+        self_addr,
+        quorum: parse_u64(map_field(master, "quorum")),
+        master: peer_from(master, false),
+        replicas,
+        sentinels,
+    }
+}
+
+fn sentinel_self_addr(conf: &ConnConfig) -> String {
+    let host = conf.host.trim().trim_matches(|c| c == '[' || c == ']');
+    format!("{host}:{}", conf.port)
+}
+
+fn peer_from(map: &HashMap<String, String>, replica: bool) -> SentinelPeer {
+    SentinelPeer {
+        addr: peer_addr(map),
+        flags: if replica {
+            replica_flags(map)
+        } else {
+            map_field(map, "flags").trim().to_string()
+        },
+        link_down_ms: if replica {
+            parse_u64(map_field(map, "master-link-down-time"))
+        } else {
+            0
+        },
+    }
+}
+
+fn peer_addr(map: &HashMap<String, String>) -> String {
+    let ip = map_field(map, "ip").trim();
+    let port = map_field(map, "port").trim();
+    if ip.is_empty() {
+        map_field(map, "name").trim().to_string()
+    } else if port.is_empty() {
+        ip.to_string()
+    } else {
+        format!("{ip}:{port}")
+    }
+}
+
+/// 副本链路不是 ok 时，把 master-link-status 接到 flags 后面，界面只看这一列。
+fn replica_flags(map: &HashMap<String, String>) -> String {
+    let flags = map_field(map, "flags").trim();
+    let status = map_field(map, "master-link-status").trim();
+    if status.is_empty() || status.eq_ignore_ascii_case("ok") {
+        flags.to_string()
+    } else if flags.is_empty() {
+        status.to_string()
+    } else {
+        format!("{flags},{status}")
+    }
+}
+
+fn map_field<'a>(map: &'a HashMap<String, String>, key: &str) -> &'a str {
+    map.get(key).map(String::as_str).unwrap_or("")
+}
+
+fn parse_u64(raw: &str) -> u64 {
+    raw.trim().parse().unwrap_or(0)
 }
 
 // 获取单机 Client；verify 为 true 时按 connect_timeout ping 验证（测试连接），为 false 时仅构建 Client（init 复用 TCP）
@@ -53,6 +220,7 @@ pub fn get_client_single(
     verify: bool,
     existing: Option<Arc<dyn ConnectionDialer>>,
 ) -> AnyResult<(Client, Option<Arc<dyn ConnectionDialer>>)> {
+    reject_unix_combo(conf)?;
     if conf.sentinel && conf.sentinel_option.master_name.is_empty() {
         bail!(AppError::SentinelMasterNotFound {
             name: conf.sentinel_option.master_name.clone()
@@ -93,6 +261,7 @@ pub fn get_client_cluster(
     connect_timeout: Duration,
     verify: bool,
 ) -> AnyResult<ClusterClient> {
+    reject_unix_combo(conf)?;
     let dialer = resolve_dialer(conf, connect_timeout, None)?;
     if conf.ssl {
         reject_if_plaintext_redis(conf, connect_timeout, dialer.clone())?;
@@ -100,7 +269,8 @@ pub fn get_client_cluster(
     let url = redis_url(conf)?;
     log_redis_url(conf, &url);
 
-    let mut builder = ClusterClient::builder(vec![url.to_string()]).retries(CLUSTER_COMMAND_RETRIES);
+    let mut builder =
+        ClusterClient::builder(vec![url.to_string()]).retries(CLUSTER_COMMAND_RETRIES);
     if conf.is_resp3() {
         builder = builder.use_protocol(ProtocolVersion::RESP3);
     }
@@ -176,7 +346,13 @@ fn resolve_dialer(
         bail!(AppError::SshAndProxyMutuallyExclusive);
     }
     if conf.ssh {
-        Ok(Some(SshDialer::connect(&conf.ssh_option, connect_timeout)?))
+        // unix + SSH：路径留在 Dialer 上，开 channel 时走 direct-streamlocal，不经过本机套接字
+        let socket_path = conf.is_unix().then(|| conf.socket_path.trim().to_string());
+        Ok(Some(SshDialer::connect(
+            &conf.ssh_option,
+            connect_timeout,
+            socket_path,
+        )?))
     } else if conf.proxy {
         build_proxy_dialer(conf, connect_timeout)
     } else {
@@ -184,19 +360,53 @@ fn resolve_dialer(
     }
 }
 
+/// Unix 套接字只支持单机直连，或经 SSH 打开远端路径。集群 / 哨兵 / SSL / 代理在拨号前拒绝。
+fn reject_unix_combo(conf: &ConnConfig) -> AnyResult<()> {
+    if !conf.is_unix() {
+        return Ok(());
+    }
+    let path = conf.socket_path.trim();
+    if path.is_empty() {
+        bail!(AppError::UnixSocketPathRequired);
+    }
+    if !path.starts_with('/') {
+        bail!(AppError::UnixSocketPathInvalid);
+    }
+    if conf.cluster || conf.sentinel || conf.ssl || conf.proxy {
+        bail!(AppError::UnixSocketIncompatible);
+    }
+    // 本机 UnixStream 只在 unix 平台可用；Windows 要连远端套接字必须走 SSH
+    if !conf.ssh && !cfg!(unix) {
+        bail!(AppError::UnixSocketPlatformUnsupported);
+    }
+    Ok(())
+}
+
 /// 拼 redis-rs 用的连接 URL。裸 IPv6 加方括号；SSL 带 `#insecure`；RESP3 写在 query 里。
+///
+/// unix 且开了 SSH 时仍返回普通 `redis://` 占位地址：redis-rs 对 `unix://` 会丢掉 Dialer。
+/// 真正的远端路径在 `SshDialer` 上。
 fn redis_url(conf: &ConnConfig) -> AnyResult<Url> {
+    if conf.is_unix() && conf.ssh {
+        return redis_tcp_url(conf, "127.0.0.1", 6379);
+    }
+    if conf.is_unix() {
+        return redis_unix_url(conf);
+    }
+    redis_tcp_url(conf, &conf.host, conf.port)
+}
+
+/// TCP / TLS 地址。占位的 SSH+unix 也走这里，账号和 RESP3 与直连 TCP 相同。
+fn redis_tcp_url(conf: &ConnConfig, host: &str, port: u16) -> AnyResult<Url> {
     // 与前端 buildRedisUrl 一致：裸 IPv6 必须加 []，否则 Url 解析失败；哨兵发现的 master 常是无括号地址
-    let host = if conf.host.contains(':') && !conf.host.starts_with('[') {
-        format!("[{}]", conf.host)
+    let host = if host.contains(':') && !host.starts_with('[') {
+        format!("[{host}]")
     } else {
-        conf.host.clone()
+        host.to_string()
     };
     let mut url = Url::parse(&format!(
-        "{}://{}:{}",
+        "{}://{host}:{port}",
         if conf.ssl { "rediss" } else { "redis" },
-        host,
-        conf.port
     ))?;
     url.set_username(&conf.username).unwrap_or(());
     url.set_password(Some(&conf.password)).unwrap_or(());
@@ -209,18 +419,63 @@ fn redis_url(conf: &ConnConfig) -> AnyResult<Url> {
     Ok(url)
 }
 
-/// 打连接 URL 日志。密码固定打成 `******`。
+/// 本机套接字。redis-rs 从 query 读 `user` / `pass` / `protocol`，路径用 `to_file_path`。
+fn redis_unix_url(conf: &ConnConfig) -> AnyResult<Url> {
+    let path = encode_unix_path(conf.socket_path.trim());
+    let mut url = Url::parse(&format!("unix://{path}"))?;
+    {
+        let mut pairs = url.query_pairs_mut();
+        if !conf.username.is_empty() {
+            pairs.append_pair("user", &conf.username);
+        }
+        if !conf.password.is_empty() {
+            pairs.append_pair("pass", &conf.password);
+        }
+        if conf.is_resp3() {
+            pairs.append_pair("protocol", "resp3");
+        }
+    }
+    Ok(url)
+}
+
+/// 保留 `/`，其余按百分号编码，避免空格等字符让 `Url::parse` 失败。
+fn encode_unix_path(path: &str) -> String {
+    let mut out = String::new();
+    for b in path.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'/' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char);
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
+/// 打连接 URL 日志。密码固定打成 `******`。unix 打路径，不打 SSH 占位的 127.0.0.1。
 fn log_redis_url(conf: &ConnConfig, url: &Url) {
+    if conf.is_unix() {
+        info!(
+            "redis_url: unix {} user={} ssh={}{}",
+            conf.socket_path.trim(),
+            conf.username,
+            conf.ssh,
+            if conf.is_resp3() {
+                " protocol=resp3"
+            } else {
+                ""
+            }
+        );
+        return;
+    }
     info!(
         "redis_url: {}://{}:******@{}:{}{}{}",
         url.scheme(),
         conf.username,
         conf.host,
         conf.port,
-        url.query().map(|q| format!("?{}", q)).unwrap_or_default(),
-        url.fragment()
-            .map(|f| format!("#{}", f))
-            .unwrap_or_default()
+        url.query().map(|q| format!("?{q}")).unwrap_or_default(),
+        url.fragment().map(|f| format!("#{f}")).unwrap_or_default()
     );
 }
 
@@ -373,7 +628,8 @@ fn hint_if_ssl_required(
     peer: Option<(String, u16)>,
     err: anyhow::Error,
 ) -> anyhow::Error {
-    if conf.ssl || !looks_like_reset_or_parse(&error_chain_text(&err)) {
+    // 套接字不支持 SSL。SSH 场景的地址是占位 TCP，不能拿去探测 TLS。
+    if conf.is_unix() || conf.ssl || !looks_like_reset_or_parse(&error_chain_text(&err)) {
         return err;
     }
     let (host, port) = peer.unwrap_or_else(|| (conf.host.clone(), conf.port));
@@ -817,5 +1073,217 @@ mod tests {
         assert_eq!(url.username(), "u");
         assert_eq!(url.fragment(), Some("insecure"));
         assert!(url.query().unwrap_or("").contains("protocol=resp3"));
+    }
+
+    fn unix_conf(path: &str) -> ConnConfig {
+        ConnConfig {
+            network: "unix".into(),
+            socket_path: path.into(),
+            ..ConnConfig::default()
+        }
+    }
+
+    /// 本机套接字走 unix://，账号和协议在 query 里，路径里的空格要编码。
+    #[test]
+    fn local_unix_url_uses_query_credentials() {
+        let mut conf = unix_conf("/var/run/my redis.sock");
+        conf.username = "u".into();
+        conf.password = "p@ss".into();
+        conf.meta.insert(
+            "protocol".into(),
+            crate::model::ConnMetaValue::String("resp3".into()),
+        );
+        let url = redis_url(&conf).unwrap();
+        assert_eq!(url.scheme(), "unix");
+        assert!(
+            url.path().contains("my%20redis.sock") || url.as_str().contains("my%20redis.sock"),
+            "unexpected url: {}",
+            url.as_str()
+        );
+        let pairs: Vec<(String, String)> = url.query_pairs().into_owned().collect();
+        assert!(pairs.iter().any(|(k, v)| k == "user" && v == "u"));
+        assert!(pairs.iter().any(|(k, v)| k == "pass" && v == "p@ss"));
+        assert!(pairs.iter().any(|(k, v)| k == "protocol" && v == "resp3"));
+    }
+
+    /// SSH + unix 必须仍是 redis://，否则 redis-rs 会丢掉 Dialer 并在本机 connect。
+    #[test]
+    fn ssh_unix_url_stays_tcp() {
+        let mut conf = unix_conf("/var/run/redis/redis.sock");
+        conf.ssh = true;
+        conf.username = "u".into();
+        let url = redis_url(&conf).unwrap();
+        assert_eq!(url.scheme(), "redis");
+        assert!(
+            !url.as_str().contains("redis.sock"),
+            "unexpected url: {}",
+            url.as_str()
+        );
+        assert_eq!(url.username(), "u");
+    }
+
+    /// 套接字不能和集群一起用，而且在拨号前就拒绝。
+    #[test]
+    fn unix_cluster_rejected_before_io() {
+        let mut conf = unix_conf("/tmp/redis.sock");
+        conf.cluster = true;
+        let err = get_client_cluster(&conf, Duration::from_secs(1), false).unwrap_err();
+        assert!(
+            err.to_string().contains("unix_socket_incompatible"),
+            "unexpected error: {err}"
+        );
+    }
+
+    fn expect_err<T>(result: AnyResult<T>) -> String {
+        match result {
+            Ok(_) => panic!("expected error"),
+            Err(e) => e.to_string(),
+        }
+    }
+
+    /// 相对路径、空路径同样在拨号前拒绝。
+    #[test]
+    fn unix_path_must_be_absolute() {
+        let empty = expect_err(get_client_single(
+            &unix_conf(""),
+            Duration::from_secs(1),
+            false,
+            None,
+        ));
+        assert!(empty.contains("unix_socket_path_required"), "{empty}");
+        let rel = expect_err(get_client_single(
+            &unix_conf("tmp/redis.sock"),
+            Duration::from_secs(1),
+            false,
+            None,
+        ));
+        assert!(rel.contains("unix_socket_path_invalid"), "{rel}");
+    }
+
+    /// 非 unix 平台不能本机直连套接字。
+    #[cfg(not(unix))]
+    #[test]
+    fn local_unix_rejected_on_this_platform() {
+        let err = expect_err(get_client_single(
+            &unix_conf("/tmp/redis.sock"),
+            Duration::from_secs(1),
+            false,
+            None,
+        ));
+        assert!(
+            err.contains("unix_socket_platform_unsupported"),
+            "unexpected error: {err}"
+        );
+    }
+
+    /// redis-rs 能把本机 unix URL 解析成套接字地址（不发起连接）。
+    #[cfg(unix)]
+    #[test]
+    fn local_unix_url_parses() {
+        let url = redis_url(&unix_conf("/tmp/redis.sock")).unwrap();
+        redis::Client::open(url.to_string()).expect("unix url should parse");
+    }
+
+    fn pairs(items: &[(&str, &str)]) -> HashMap<String, String> {
+        items
+            .iter()
+            .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
+            .collect()
+    }
+
+    /// 没填 master 名时，在建连前拒绝。
+    #[test]
+    fn sentinel_topology_empty_master_name_fails_before_io() {
+        let conf = ConnConfig {
+            host: "127.0.0.1".into(),
+            port: 1,
+            sentinel: true,
+            ..ConnConfig::default()
+        };
+        let err = sentinel_topology(&conf, Duration::from_secs(1), Duration::from_secs(1))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("sentinel_master_not_found"),
+            "unexpected error: {err}"
+        );
+    }
+
+    /// 只留下配置里的 master；自己的通告地址从其他哨兵里去掉；副本按地址排序。
+    #[test]
+    fn sentinel_topology_assembles_one_master() {
+        let conf = ConnConfig {
+            host: "[::1]".into(),
+            port: 26379,
+            ..ConnConfig::default()
+        };
+        let masters = vec![
+            pairs(&[("name", "cache"), ("ip", "10.0.0.8"), ("port", "6379")]),
+            pairs(&[
+                ("name", "app"),
+                ("ip", "10.0.0.1"),
+                ("port", "6379"),
+                ("flags", "master"),
+                ("quorum", "2"),
+            ]),
+        ];
+        let master = select_monitored_master(&masters, "app").unwrap();
+        let replicas = vec![
+            pairs(&[
+                ("ip", "10.0.0.3"),
+                ("port", "6379"),
+                ("flags", "slave"),
+                ("master-link-status", "ok"),
+                ("master-link-down-time", "0"),
+            ]),
+            pairs(&[
+                ("ip", "10.0.0.2"),
+                ("port", "6379"),
+                ("flags", "slave,disconnected"),
+                ("master-link-status", "err"),
+                ("master-link-down-time", "1500"),
+            ]),
+        ];
+        let sentinels = vec![
+            pairs(&[("ip", "::1"), ("port", "26379"), ("flags", "sentinel")]),
+            pairs(&[
+                ("ip", "10.0.0.9"),
+                ("port", "26380"),
+                ("flags", "sentinel,s_down"),
+            ]),
+        ];
+        let topo = assemble_sentinel_topology(&conf, "app", master, &replicas, &sentinels);
+        assert_eq!(topo.self_addr, "::1:26379");
+        assert_eq!(topo.master.addr, "10.0.0.1:6379");
+        assert_eq!(topo.master.flags, "master");
+        assert_eq!(topo.quorum, 2);
+        assert_eq!(
+            topo.replicas
+                .iter()
+                .map(|peer| peer.addr.as_str())
+                .collect::<Vec<_>>(),
+            vec!["10.0.0.2:6379", "10.0.0.3:6379"]
+        );
+        assert_eq!(topo.replicas[0].flags, "slave,disconnected,err");
+        assert_eq!(topo.replicas[0].link_down_ms, 1500);
+        assert_eq!(topo.replicas[1].link_down_ms, 0);
+        assert_eq!(topo.sentinels.len(), 1);
+        assert_eq!(topo.sentinels[0].addr, "10.0.0.9:26380");
+        assert!(select_monitored_master(&masters, "missing").is_err());
+    }
+
+    /// 只有未知子命令才退回 SLAVES，权限错误保持原样。
+    #[test]
+    fn sentinel_replicas_subcommand_fallback_detects_unknown_only() {
+        let unknown = redis::RedisError::from((
+            redis::ErrorKind::Parse,
+            "ERR Unknown subcommand 'replicas'. Try SENTINEL HELP.",
+        ));
+        assert!(unknown_sentinel_subcommand(&unknown));
+        let denied = redis::RedisError::from((
+            redis::ErrorKind::Parse,
+            "NOPERM this user has no permissions to run the 'sentinel' command",
+        ));
+        assert!(!unknown_sentinel_subcommand(&denied));
     }
 }

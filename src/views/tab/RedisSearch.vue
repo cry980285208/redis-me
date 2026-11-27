@@ -4,7 +4,7 @@ import { useStorage } from '@vueuse/core'
 import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import type { MeColumn } from '@/components/me-table-column'
+import type { MeColumn } from '@/components/me-table/column'
 import { connUiProvideKey, shareProvideKey } from '@/types/me-interface'
 import type {
   SearchHit,
@@ -12,9 +12,7 @@ import type {
   SearchIndexInfo,
   SearchSynGroup,
 } from '@/types/tauri-specta'
-import { FT_QUERY_HISTORY_KEY, rememberFtQuery } from '@/utils/query-history'
-import { indexAlterDraft, indexDdl } from '@/utils/search-ddl'
-import { defaultSettings } from '@/utils/settings-defaults'
+import { defaultSettings } from '@/utils/app/settings-defaults'
 import {
   KEY_REFRESH,
   SEARCH_CREATE,
@@ -25,7 +23,9 @@ import {
   meFormatDisplayValue,
   meOk,
   meWarn,
-} from '@/utils/util'
+} from '@/utils/app/util'
+import { FT_QUERY_HISTORY_KEY, rememberFtQuery } from '@/utils/redis/query-history'
+import { indexAlterDraft, indexDdl } from '@/utils/redis/search-ddl'
 
 const { t } = useI18n()
 const share = inject(shareProvideKey)!
@@ -689,8 +689,6 @@ onUnmounted(() => {
           <el-button v-if="canEdit" icon="el-icon-document-add" @click="openSample">
             {{ t('redisSearch.sample') }}
           </el-button>
-          <!-- 列表上就能进官网，不必先打开某个索引的查询 -->
-          <me-website to="search" />
         </div>
         <div>
           <el-input
@@ -766,6 +764,10 @@ onUnmounted(() => {
                 </template>
               </el-dropdown>
             </div>
+          </template>
+          <!-- 官网：紧挨合计行「更多」左侧 -->
+          <template #footer>
+            <me-website to="search" />
           </template>
         </me-table>
       </div>
@@ -998,13 +1000,17 @@ onUnmounted(() => {
       <div class="create-body">
         <div style="margin-bottom: 12px">
           <el-text type="info">{{ t('redisSearch.createHint') }}</el-text>
-          <me-website to="ftCreate" />
         </div>
         <me-code
           v-model="createDraft"
           mode="redis"
           copyable
-          style="flex: 1; min-height: 0; height: auto" />
+          style="flex: 1; min-height: 0; height: auto">
+          <!-- 官网文档入口：代码区右下角，复制图标左侧 -->
+          <template #actions>
+            <me-website to="ftCreate" />
+          </template>
+        </me-code>
       </div>
       <template #footer>
         <el-button @click="createVisible = false">{{ t('cancel') }}</el-button>
@@ -1032,13 +1038,17 @@ onUnmounted(() => {
       <div class="create-body">
         <div style="margin-bottom: 12px">
           <el-text type="info">{{ t('redisSearch.alterHint') }}</el-text>
-          <me-website to="ftAlter" />
         </div>
         <me-code
           v-model="alterDraft"
           mode="redis"
           copyable
-          style="flex: 1; min-height: 0; height: auto" />
+          style="flex: 1; min-height: 0; height: auto">
+          <!-- 官网文档入口：代码区右下角，复制图标左侧 -->
+          <template #actions>
+            <me-website to="ftAlter" />
+          </template>
+        </me-code>
       </div>
       <template #footer>
         <el-button @click="alterVisible = false">{{ t('cancel') }}</el-button>

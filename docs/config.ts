@@ -55,7 +55,7 @@ function sidebarGuide() {
         { text: 'Custom Codec', link: '/usage/codec' },
         { text: 'Terminal', link: '/usage/terminal' },
         { text: 'Memory', link: '/usage/memory' },
-        { text: 'SlowLog', link: '/usage/slowlog' },
+        { text: 'Slowlog', link: '/usage/slowlog' },
         { text: 'Monitor', link: '/usage/monitor' },
         { text: 'Pub/Sub', link: '/usage/pubsub' },
         { text: 'Chart', link: '/usage/chart' },
@@ -97,6 +97,7 @@ function sidebarChangelog() {
       text: 'Changelog',
       items: [
         { text: 'latest', link: 'latest' },
+        { text: '5.x', link: '5.x' },
         { text: '4.x', link: '4.x' },
         { text: '3.x', link: '3.x' },
         { text: '2.x', link: '2.x' },

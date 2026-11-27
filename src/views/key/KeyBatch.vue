@@ -9,9 +9,10 @@ import { useI18n } from 'vue-i18n'
 
 import { shareProvideKey } from '@/types/me-interface'
 import type { RedisKey_Deserialize, ScanCursor } from '@/types/tauri-specta'
-import { clearKeyMemoryCacheForConn } from '@/utils/key-memory-cache'
-import { clearKeyTypeCacheForConn } from '@/utils/key-type-cache'
-import { meCommands, meOk, sleep } from '@/utils/util'
+import { meCommands, meOk, sleep } from '@/utils/app/util'
+import { clearKeyMemoryCacheForConn } from '@/utils/redis/key-memory-cache'
+import { clearKeyTtlCacheForConn } from '@/utils/redis/key-ttl-cache'
+import { clearKeyTypeCacheForConn } from '@/utils/redis/key-type-cache'
 // #endregion
 
 // #region 核心状态
@@ -121,12 +122,11 @@ function submit() {
       if (isExport.value) {
         await meCommands.exportCsv(share.conn!.id, form.value)
       } else {
-        await meCommands.batchDel(share.conn!.id, form.value)
+        const count = await meCommands.batchDel(share.conn!.id, form.value)
         clearKeyTypeCacheForConn(share.conn!.id)
         clearKeyMemoryCacheForConn(share.conn!.id)
-      }
-      if (!isExport.value) {
-        meOk(t('deleteOk'))
+        clearKeyTtlCacheForConn(share.conn!.id)
+        meOk(t('batchDeleteOk', { count }))
       }
       emit('success', batchMode.value)
       visible.value = false
@@ -204,7 +204,7 @@ const scanStatusText = computed(() => {
   return ''
 })
 
-// 批量删除和导出数据同时支持
+// 批量删除和数据导出同时支持
 const isExport = computed(() => batchMode.value === 'export')
 const title = computed(() => (isExport.value ? t('keyBatch.export') : t('keyBatch.delete')))
 const directTip = computed(() =>

@@ -1,12 +1,14 @@
 <script setup lang="ts">
-// #region 导入
 // 快捷键列表展示
 import { type as getOsType } from '@tauri-apps/plugin-os'
 
-import { displayShortcutKey, shortcutKbdClass, type ShortcutItem } from '@/utils/shortcut'
-// #endregion
+import {
+  displayShortcutKey,
+  shortcutItemKeys,
+  shortcutKbdClass,
+  type ShortcutItem,
+} from '@/utils/app/shortcut'
 
-// #region 核心状态
 const props = withDefaults(
   defineProps<{
     items: ShortcutItem[]
@@ -18,9 +20,7 @@ const props = withDefaults(
   }>(),
   { clickable: false, width: 'min(400px, 100%)', compact: false },
 )
-// #endregion
 
-// #region 面板操作
 const emit = defineEmits<{ action: [id: string] }>()
 
 const isMacOS = getOsType() === 'macos'
@@ -28,7 +28,10 @@ const isMacOS = getOsType() === 'macos'
 function onRowClick(item: ShortcutItem): void {
   if (props.clickable && item.id) emit('action', item.id)
 }
-// #endregion
+
+function rowKeys(item: ShortcutItem) {
+  return shortcutItemKeys(item, isMacOS)
+}
 </script>
 
 <template>
@@ -40,28 +43,21 @@ function onRowClick(item: ShortcutItem): void {
       v-for="item in items"
       :key="item.id ?? item.label"
       :class="{ 'gap-before': item.gapBefore }">
-      <button v-if="clickable" type="button" class="shortcut-row" @click="onRowClick(item)">
+      <component
+        :is="clickable ? 'button' : 'div'"
+        class="shortcut-row"
+        :type="clickable ? 'button' : undefined"
+        @click="clickable && onRowClick(item)">
         <span class="shortcut-label">{{ item.label }}</span>
         <span class="shortcut-keys" aria-hidden="true">
-          <template v-for="(key, i) in item.keys" :key="i">
-            <kbd :class="shortcutKbdClass(key, i, item.keys.length)">{{
+          <template v-for="(key, i) in rowKeys(item)" :key="i">
+            <kbd :class="shortcutKbdClass(key, i, rowKeys(item).length)">{{
               displayShortcutKey(key, isMacOS)
             }}</kbd>
-            <span v-if="i < item.keys.length - 1" class="shortcut-plus">+</span>
+            <span v-if="i < rowKeys(item).length - 1" class="shortcut-plus">+</span>
           </template>
         </span>
-      </button>
-      <div v-else class="shortcut-row">
-        <span class="shortcut-label">{{ item.label }}</span>
-        <span class="shortcut-keys" aria-hidden="true">
-          <template v-for="(key, i) in item.keys" :key="i">
-            <kbd :class="shortcutKbdClass(key, i, item.keys.length)">{{
-              displayShortcutKey(key, isMacOS)
-            }}</kbd>
-            <span v-if="i < item.keys.length - 1" class="shortcut-plus">+</span>
-          </template>
-        </span>
-      </div>
+      </component>
     </li>
   </ul>
 </template>

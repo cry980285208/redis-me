@@ -20,13 +20,22 @@ pub trait MeClient: Send + Sync {
     fn select_db(&self, db: u16) -> AnyResult<()>;
 
     // 信息与节点
-    fn info(&self, node: Option<String>) -> AnyResult<RedisInfo>;
-    fn info_list(&self) -> AnyResult<Vec<RedisInfo>>;
+    /// `section` 见 `ops::info::info_cmd`：空为默认 `INFO`，`"all"` 为 `INFO all`。
+    fn info(&self, node: Option<String>, section: Option<String>) -> AnyResult<RedisInfo>;
+    /// 各节点 INFO 列表。`node_filter`：**仅 `"all"`=全部节点**、
+    /// `"master"`/`"slave"`=按角色过滤、`"ip:port"`=仅指定节点；`None`/空串=不匹配（返回空）。单机忽略该参数。
+    /// `section` 与 `node_filter` 独立：前者是 INFO 段落，后者是选哪些节点。
+    fn info_list(
+        &self,
+        node_filter: Option<String>,
+        section: Option<String>,
+    ) -> AnyResult<Vec<RedisInfo>>;
     fn node_list(&self) -> AnyResult<Vec<RedisNode>>;
 
     // 扫描
     fn scan(&self, param: ScanParam) -> AnyResult<ScanResult>;
     fn field_scan(&self, param: FieldScanParam) -> AnyResult<FieldScanResult>;
+    fn value_download(&self, param: RedisValueDownload) -> AnyResult<()>;
 
     // 键
     fn ttl(&self, key: RedisKey, ttl: i64) -> AnyResult<()>;
@@ -38,9 +47,12 @@ pub trait MeClient: Send + Sync {
     fn key_type(&self, key: RedisKey) -> AnyResult<String>;
     /// 批量 MEMORY USAGE，与入参等长；键不存在为 None。不支持时直接报错，不发命令。
     fn key_memory(&self, keys: Vec<RedisKey>) -> AnyResult<Vec<Option<u64>>>;
+    /// 批量 PTTL（毫秒）。与入参等长：-1 无过期，-2 键不存在，正数是剩余毫秒。
+    fn key_pttl(&self, keys: Vec<RedisKey>) -> AnyResult<Vec<i64>>;
     fn key_slot(&self, key: RedisKey) -> AnyResult<u64>;
     fn key_node(&self, key: RedisKey) -> AnyResult<Vec<RedisNode>>;
-    fn batch_del(&self, param: RedisBatchKey) -> AnyResult<()>;
+    /// 批量删除。返回实际删除条数（各 `DEL` 回复之和）；没匹配到键时为 0。
+    fn batch_del(&self, param: RedisBatchKey) -> AnyResult<u64>;
     fn batch_ttl(&self, param: RedisBatchTtl) -> AnyResult<()>;
     fn flush_db(&self) -> AnyResult<()>;
     fn flush_all(&self) -> AnyResult<()>;
@@ -90,12 +102,15 @@ pub trait MeClient: Send + Sync {
 
     // 命令
     fn execute_command(&self, param: RedisCommand) -> AnyResult<String>;
+    fn workbench_exec(&self, param: RedisCommand) -> AnyResult<WorkbenchExec>;
     fn get_key_as_command(&self, key: RedisKey) -> AnyResult<String>;
     fn get_field_as_command(&self, param: RedisFieldAsCommand) -> AnyResult<String>;
 
     // 配置与诊断
     fn config_get(&self, pattern: &str, node: Option<String>) -> AnyResult<HashMap<String, String>>;
     fn config_set(&self, key: &str, value: &str, node: Option<String>) -> AnyResult<()>;
+    /// 把当前运行配置写回配置文件（CONFIG REWRITE）。`node` 为 `*` 时集群写全部节点。
+    fn config_rewrite(&self, node: Option<String>) -> AnyResult<()>;
     fn slow_log(&self, count: Option<u64>, node: Option<String>) -> AnyResult<Vec<RedisSlowLog>>;
     fn memory_usage_keys(&self, keys: &[RedisKey], size_limit: u64, need_key_type: bool) -> AnyResult<Vec<RedisKeySize>>;
     fn client_list(&self, node: Option<String>, client_type: Option<String>) -> AnyResult<Vec<RedisClientInfo>>;
@@ -115,6 +130,29 @@ pub trait MeClient: Send + Sync {
     fn import_csv(&self, param: RedisImportCsv) -> AnyResult<()>;
     fn import_cmd(&self, file: String) -> AnyResult<()>;
     fn mock_data(&self, count: u64) -> AnyResult<()>;
+
+    // 跨连接键传输（供 ops/migrate 调用；一般不直接给前端）
+    fn migrate_dump(&self, key: RedisKey) -> AnyResult<(Vec<u8>, i64)>;
+    fn migrate_restore(
+        &self,
+        key: RedisKey,
+        ttl_ms: i64,
+        payload: Vec<u8>,
+        replace: bool,
+    ) -> AnyResult<()>;
+    fn migrate_exists(&self, key: RedisKey) -> AnyResult<bool>;
+    fn migrate_pttl(&self, key: RedisKey) -> AnyResult<i64>;
+    fn migrate_pexpire(&self, key: RedisKey, ms: i64) -> AnyResult<()>;
+    fn migrate_read_payload(
+        &self,
+        key: RedisKey,
+    ) -> AnyResult<crate::client::ops::migrate_payload::KeyPayload>;
+    fn migrate_write_payload(
+        &self,
+        key: RedisKey,
+        payload: crate::client::ops::migrate_payload::KeyPayload,
+    ) -> AnyResult<()>;
+    fn migrate_command_available(&self, name: &str) -> AnyResult<()>;
 
     // ACL
     fn acl_users(&self) -> AnyResult<Vec<String>>;
@@ -140,12 +178,13 @@ pub trait MeClient: Send + Sync {
 
     /// 单节点监控图，由 INFO 换算。
     fn chart(&self, node: Option<String>) -> AnyResult<RedisChart> {
-        info_to_chart(self.info(node)?)
+        // 图表只要 default 段里的瞬时量，不拉 commandstats / latencystats
+        info_to_chart(self.info(node, None)?)
     }
 
-    /// 各节点监控图，由 INFO 列表换算。
-    fn chart_list(&self) -> AnyResult<Vec<RedisChart>> {
-        let info_list = self.info_list()?;
+    /// 各节点监控图，由 INFO 列表换算；`node_filter` 语义见 `info_list`。
+    fn chart_list(&self, node_filter: Option<String>) -> AnyResult<Vec<RedisChart>> {
+        let info_list = self.info_list(node_filter, None)?;
         info_list.into_iter().map(info_to_chart).collect()
     }
 
@@ -271,6 +310,18 @@ where
     }
 }
 
+/// RESP 回复解析被中断（如回复行含非法 UTF-8：Redis 回显被截断的多字节参数）时，
+/// redis-rs 只在 EOF 时关连接，解析错误却会留着内部 parser 缓存的半条回复，
+/// 导致同一条长连接后续命令全部错位。命中这类协议/IO 错误就该重建连接。
+///
+/// TODO: 这里是「出错后重建连接」的兜底恢复。更彻底的修复在 fork 侧——
+/// 把 redis-rs parser 对回复行的严格 `str::from_utf8` 改为 `from_utf8_lossy`，
+/// 从源头不再中断解析、不再残留半条回复。计划先改自有 fork（hepengju/redis-rs
+/// 分支 redis-me），验证后再向 redis-rs 原作者提 issue。
+pub fn is_protocol_desync_error(e: &redis::RedisError) -> bool {
+    matches!(e.kind(), redis::ErrorKind::Parse | redis::ErrorKind::Io)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -296,5 +347,18 @@ mod tests {
         assert_eq!(conn_reuse(false, 0), ConnReuse::Reconnect);
         // 时钟回拨时按仍在检查间隔内处理，不因为负数空闲去探活
         assert_eq!(conn_reuse(true, -5), ConnReuse::Keep);
+    }
+
+    /// 解析/IO 错误判为连接错位需重建；普通服务端应答错误（如 unknown command）不重连。
+    #[test]
+    fn protocol_desync_only_matches_parse_and_io() {
+        use redis::ErrorKind;
+        let parse = redis::RedisError::from((ErrorKind::Parse, "invalid utf-8 sequence"));
+        let io = redis::RedisError::from((ErrorKind::Io, "connection reset"));
+        assert!(is_protocol_desync_error(&parse));
+        assert!(is_protocol_desync_error(&io));
+
+        let server = redis::RedisError::from((ErrorKind::UnexpectedReturnType, "type mismatch"));
+        assert!(!is_protocol_desync_error(&server));
     }
 }

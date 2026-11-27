@@ -1,15 +1,16 @@
 import '@/App.css'
 import type { App } from 'vue'
 
+import MeCode from '../components/me-code/MeCode.vue'
+import MeColumnFilter from '../components/me-table/MeColumnFilter.vue'
+import MeTable from '../components/me-table/MeTable.vue'
 import MeButton from '../components/MeButton.vue'
-import MeCode from '../components/MeCode.vue'
-import MeColumnFilter from '../components/MeColumnFilter.vue'
 import MeContext from '../components/MeContext.vue'
+import MeCopyExport from '../components/MeCopyExport.vue'
 import MeDialog from '../components/MeDialog.vue'
 import MeFileInput from '../components/MeFileInput.vue'
 import MeIcon from '../components/MeIcon.vue'
 import MeScanControl from '../components/MeScanControl.vue'
-import MeTable from '../components/MeTable.vue'
 import MeTabPane from '../components/MeTabPane.vue'
 import MeTTL from '../components/MeTTL.vue'
 import MeWebsite from '../components/MeWebsite.vue'
@@ -24,6 +25,7 @@ export default function setupMe(app: App): void {
   app.component('me-context', MeContext)
   app.component('me-file-input', MeFileInput)
   app.component('me-table', MeTable)
+  app.component('me-copy-export', MeCopyExport)
   app.component('me-column-filter', MeColumnFilter)
   app.component('me-dialog', MeDialog)
   app.component('me-tab-pane', MeTabPane)

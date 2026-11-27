@@ -87,12 +87,20 @@ pub enum AppError {
         node: String,
     },
 
-    // 导入导出
+    // 导入导出 / 迁移
     ExportImportRunning,
+    /// 已有键传输任务在跑
+    MigrateRunning,
+    /// 源与目标不能是同一连接同一 DB
+    MigrateSameSourceTarget,
     EmptyKeyList,
     EmptyParameters,
     ImportInvalidLine {
         line: String,
+    },
+    /// 命令方式导出行数触达上限（Vector Set / TimeSeries），整键失败
+    MigrateCommandExportLimit {
+        key: String,
     },
 
     // SSH 相关
@@ -104,6 +112,14 @@ pub enum AppError {
     SshTimeout,
     /// 同一连接不能同时开 SSH 与代理
     SshAndProxyMutuallyExclusive,
+    /// Unix 套接字未填路径
+    UnixSocketPathRequired,
+    /// 路径不是绝对路径
+    UnixSocketPathInvalid,
+    /// Unix 套接字不能与集群、哨兵、SSL、代理同时使用
+    UnixSocketIncompatible,
+    /// 当前系统不能本机直连 Unix 套接字（需改走 SSH）
+    UnixSocketPlatformUnsupported,
 
     // 网络代理
     ProxyModeNotSupported {

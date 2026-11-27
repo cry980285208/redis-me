@@ -6,9 +6,10 @@ import type { App } from 'vue'
 
 import { normalizeAppLocale } from '@/locales'
 import { commands } from '@/types/tauri-specta'
-import { checkConnList, type ConnFromStore } from '@/utils/conn-compat'
-import { defaultSettings } from '@/utils/settings-defaults'
-import { meLog } from '@/utils/util'
+import { defaultSettings } from '@/utils/app/settings-defaults'
+import { resolveTabsVisible } from '@/utils/app/tabs'
+import { meLog } from '@/utils/app/util'
+import { checkConnList, type ConnFromStore } from '@/utils/conn/conn-compat'
 
 // 打包后关闭右键菜单
 if (import.meta.env.PROD) {
@@ -42,10 +43,20 @@ if (settings.fieldShow !== 'auto' && settings.fieldShow !== 'table') settings.fi
 if (settings.fieldShowView !== 'json' && settings.fieldShowView !== 'table')
   settings.fieldShowView = 'table'
 if (typeof settings.hashFieldTtl !== 'boolean') settings.hashFieldTtl = false
+if (
+  settings.updateSource !== 'auto' &&
+  settings.updateSource !== 'gitee' &&
+  settings.updateSource !== 'github'
+) {
+  settings.updateSource = 'auto'
+}
 if (typeof settings.keyShowMemory !== 'boolean') settings.keyShowMemory = false
+if (typeof settings.keyShowTtl !== 'boolean') settings.keyShowTtl = false
+// 顶栏页签可见集合：清洗未知名称、重复项，清空后回落默认
+settings.tabsVisible = resolveTabsVisible(settings.tabsVisible)
 // delete settings.keyLabel // v3.5+ 移除键名称全称/简称，统一简称
 if (!Array.isArray(settings.connGroups)) settings.connGroups = []
-if (settings.connShow !== 'flat' && settings.connShow !== 'group') settings.connShow = 'group'
+delete (settings as Record<string, unknown>).connShow // 连接列表只保留分组展示
 if (
   !settings.connGroupExpanded ||
   typeof settings.connGroupExpanded !== 'object' ||

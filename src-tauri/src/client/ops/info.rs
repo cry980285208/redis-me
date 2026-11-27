@@ -4,13 +4,23 @@ use crate::support::convert::{is_array_type, ui_xinfo_consumer, ui_xinfo_group};
 use crate::support::error::AppError;
 use crate::support::util::*;
 use anyhow::bail;
-use chrono::DateTime;
+use chrono::{DateTime, Local};
 use log::info;
 use parking_lot::MutexGuard;
 use redis::streams::{StreamInfoConsumersReply, StreamInfoGroupsReply};
-use redis::{Commands, FromRedisValue, Value, ValueType};
+use redis::{Cmd, Commands, FromRedisValue, Value, ValueType};
 use serde_json::{Map, Value as JsonValue};
 use std::collections::HashMap;
+
+/// 组装 `INFO`。`section` 为空时不带参数，即 Redis 的 default（不含 commandstats / latencystats）。
+/// 非空时作为单个参数，例如信息页传 `all`。这和集群 `info_list` 里表示「全部节点」的 `"all"` 不是一回事。
+pub fn info_cmd(section: Option<&str>) -> Cmd {
+    let mut cmd = redis::cmd("INFO");
+    if let Some(section) = section.map(str::trim).filter(|s| !s.is_empty()) {
+        cmd.arg(section);
+    }
+    cmd
+}
 
 /// Array ARINFO：元数据（默认不含 FULL）；RESP2 扁平键值对 / RESP3 Map。
 pub fn ar_info0(
@@ -175,6 +185,11 @@ pub fn parse_client_info(client_info: &str) -> AnyResult<RedisClientInfo> {
     for k in ["addr", "laddr", "name", "flags", "events", "cmd", "user"] {
         redis_client_put_str(&mut obj, &raw, k);
     }
+    // 原始行整行保留，供前端「复制」操作展示完整信息
+    obj.insert(
+        "raw".into(),
+        JsonValue::String(client_info.trim().to_string()),
+    );
 
     let client: RedisClientInfo = serde_json::from_value(JsonValue::Object(obj))?;
     Ok(client)
@@ -182,7 +197,11 @@ pub fn parse_client_info(client_info: &str) -> AnyResult<RedisClientInfo> {
 
 // info 信息转换成图表数据
 pub fn info_to_chart(redis_info: RedisInfo) -> AnyResult<RedisChart> {
-    let mut chart = RedisChart::default();
+    // 保留来源节点地址，供前端多节点折线区分（单机为空串）
+    let mut chart = RedisChart {
+        node: redis_info.node,
+        ..Default::default()
+    };
 
     let mut key_total = 0;
     for line in redis_info.info.lines() {
@@ -276,12 +295,14 @@ fn slow_log_from_map(map: Vec<(Value, Value)>, node: &str) -> AnyResult<RedisSlo
     })
 }
 
-// 时间戳 (秒) 转字符串
+// SLOWLOG 的 timestamp 是 Unix 秒。按本机时区展示，与命令日志、通知一致。
+// 用 chrono::Local，不引入 chrono-tz 的整库时区数据。
 fn timestamp_to_string(timestamp: i64) -> String {
-    let datetime = DateTime::from_timestamp(timestamp, 0)
+    DateTime::from_timestamp(timestamp, 0)
         .unwrap()
-        .with_timezone(&chrono_tz::Asia::Shanghai);
-    datetime.format("%Y-%m-%d %H:%M:%S").to_string()
+        .with_timezone(&Local)
+        .format("%Y-%m-%d %H:%M:%S")
+        .to_string()
 }
 
 /// `tot_mem` → `totMem`，与 `RedisClientInfo` 的 `rename_all = "camelCase"` 一致。
@@ -466,6 +487,24 @@ mod ts_info_parse_tests {
         assert_eq!(items[0].field, "size");
         assert_eq!(items[0].value, "2");
         assert!(parse_info_kv_items(Value::Int(1), "VINFO").is_err());
+    }
+}
+
+#[cfg(test)]
+mod info_cmd_tests {
+    use super::info_cmd;
+
+    /// 空段落不带参数；空白会被裁掉，`all` 作为单个参数发出。
+    #[test]
+    fn empty_section_is_bare_info_and_all_is_one_arg() {
+        let bare = String::from_utf8(info_cmd(None).get_packed_command()).unwrap();
+        assert_eq!(bare, "*1\r\n$4\r\nINFO\r\n");
+
+        let blank = String::from_utf8(info_cmd(Some("  ")).get_packed_command()).unwrap();
+        assert_eq!(blank, "*1\r\n$4\r\nINFO\r\n");
+
+        let all = String::from_utf8(info_cmd(Some("  all  ")).get_packed_command()).unwrap();
+        assert_eq!(all, "*2\r\n$4\r\nINFO\r\n$3\r\nall\r\n");
     }
 }
 

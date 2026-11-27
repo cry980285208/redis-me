@@ -38,11 +38,13 @@
     ],
     "resources": [],
     "createUpdaterArtifacts": false,
+    "category": "DeveloperTool",
     "windows": {
       "wix": { "language": ["en-US", "zh-CN"] },
       "nsis": { "languages": ["English", "SimpChinese"] },
       "webviewInstallMode": { "type": "skip" }
-    }
+    },
+    "linux": { "deb": { "section": "devel", "priority": "optional" } }
   },
   "plugins": {
     "updater": {

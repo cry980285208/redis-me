@@ -1,7 +1,6 @@
 <script setup lang="ts">
 // #region 导入
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { check, type Update } from '@tauri-apps/plugin-updater'
 import {
   computed,
   inject,
@@ -11,7 +10,6 @@ import {
   provide,
   reactive,
   ref,
-  shallowReactive,
   useTemplateRef,
   watch,
 } from 'vue'
@@ -21,13 +19,28 @@ import {
   appProvideKey,
   connUiProvideKey,
   shareProvideKey,
-  type AppMainInject,
   type ConnListWindowsSyncPayload,
   type ConnShortcutAction,
   type UiConn,
 } from '@/types/me-interface'
 import type { ConnConfig, RedisKey_Deserialize } from '@/types/tauri-specta'
-import { openNewWindow, toggleAppFullscreen } from '@/utils/app-window'
+import { checkAppUpdate, meCheckUpdate } from '@/utils/app/app-update'
+import { openNewWindow, toggleAppFullscreen } from '@/utils/app/app-window'
+import {
+  isAppFullscreenHotkeyBlocked,
+  matchAppFullscreenHotkey,
+  matchConnShortcutAction,
+} from '@/utils/app/shortcut'
+import { firstAvailableTab, resolveTabsVisible } from '@/utils/app/tabs'
+import {
+  bus,
+  CHECK_UPDATE,
+  CONN_LIST_WINDOWS_SYNC,
+  CONN_REFRESH,
+  meCommands,
+  meJsonParse,
+  meOk,
+} from '@/utils/app/util'
 import {
   collapseImportedConnGroups,
   collectKnownConnGroupNames,
@@ -35,22 +48,14 @@ import {
   mergeConnGroupsFromList,
 } from '@/utils/conn'
 import { useConnTabs } from '@/utils/conn-tabs'
-import { onMemoryUsageUnsupported } from '@/utils/key-memory-cache'
 import { useKeyTabs } from '@/utils/key-tabs'
-import { mergeImportedConnList } from '@/utils/rdm'
+import { mergeImportedConnList } from '@/utils/conn/rdm'
 import {
-  isAppFullscreenHotkeyBlocked,
-  matchAppFullscreenHotkey,
-  matchConnShortcutAction,
-} from '@/utils/shortcut'
-import {
-  bus,
-  CONN_LIST_WINDOWS_SYNC,
-  CONN_REFRESH,
-  meCommands,
-  meJsonParse,
-  meOk,
-} from '@/utils/util'
+  clearKeyMemoryCacheForConn,
+  onMemoryUsageUnsupported,
+} from '@/utils/redis/key-memory-cache'
+import { clearKeyTtlCacheForConn } from '@/utils/redis/key-ttl-cache'
+import { clearKeyTypeCacheForConn } from '@/utils/redis/key-type-cache'
 import ConnImport from '@/views/conn/ConnImport.vue'
 import ConnSave from '@/views/conn/ConnSave.vue'
 import KeyEmpty from '@/views/key/KeyEmpty.vue'
@@ -128,8 +133,14 @@ watch(
         // 多TAB：已连接的连接直接用缓存的 capabilities（不重连）；未连接的兜底 connect 一次
         const capabilities = await connTabs.ensureConnected(newConn)
         if (capabilities) Object.assign(share.capabilities, capabilities)
-        share.tabName =
-          isConnMinimalMode(newConn) || !share.capabilities.infoSupported ? 'value' : 'info'
+        // 落在可见集合里第一个可用页签：用户可能隐藏了信息页，不能再硬编码 info/value
+        share.tabName = firstAvailableTab(resolveTabsVisible(meTauri.settings.tabsVisible), {
+          minimal: isConnMinimalMode(newConn),
+          infoSupported: share.capabilities.infoSupported,
+          searchSupported: share.capabilities.redisSearchSupported,
+          memorySupported: share.capabilities.memoryUsageSupported,
+          aclSupported: share.capabilities.aclSupported,
+        })
         connPrepared.value = true
       }
     } catch {
@@ -168,19 +179,31 @@ onMounted(
 
 // #region 自动更新
 
-// shallowReactive：`Update` 含私有字段，deep reactive 会解成普通对象导致与 `AppMainInject` 不兼容
-const app = shallowReactive<AppMainInject>({
-  update: null,
-  downloading: false,
-  downloadPercentage: 0,
-})
-provide(appProvideKey, app)
+// 更新状态由 App.vue provide，标题栏与这里共用
+const app = inject(appProvideKey)!
 async function checkAutoUpdate(): Promise<void> {
   if (meTauri.isAppStore) return
   if (!meTauri.settings.autoUpdate) return
-  app.update = (await check().catch((): null => null)) as Update | null
+  app.update = await checkAppUpdate().catch((): null => null)
 }
 onMounted(checkAutoUpdate)
+
+// 顶部栏检查更新图标与本组件非父子关系，经 bus 触发，与设置里的「检查更新」同一条路径
+let updateCheckPending = false
+async function checkUpdateNow(): Promise<void> {
+  if (meTauri.isAppStore || updateCheckPending || app.downloading) return
+  updateCheckPending = true
+  try {
+    await meCheckUpdate(false, app)
+  } finally {
+    updateCheckPending = false
+  }
+}
+function onCheckUpdate(): void {
+  void checkUpdateNow()
+}
+onMounted(() => bus.on(CHECK_UPDATE, onCheckUpdate))
+onUnmounted(() => bus.off(CHECK_UPDATE, onCheckUpdate))
 // #endregion
 
 // #region 面板操作
@@ -351,7 +374,7 @@ function onSplitterBarMouseDown(e: MouseEvent): void {
 
 <style scoped lang="scss">
 .redis-main {
-  height: calc(100% - 30px);
+  height: calc(100% - 32px);
   padding: 0 8px 8px 8px;
   flex: 1;
 

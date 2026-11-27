@@ -1,56 +1,3 @@
-/* 无边框下拉：按选中文案收缩；后缀用 MeSelectUpDownIcon（db / 编解码等） */
-.me-select-plain {
-  flex: 0 0 auto;
-  --el-select-width: max-content;
-}
-
-.me-select-plain .el-select__wrapper {
-  width: max-content;
-  box-shadow: none !important;
-  background: transparent;
-  gap: 2px;
-}
-
-.me-select-plain .el-select__selection {
-  flex: 0 0 auto;
-  padding: 0 2px 0 4px;
-}
-
-/* 默认 absolute+width:100%，文案不进 max-content，须改回文档流 */
-.me-select-plain .el-select__selected-item.el-select__placeholder {
-  position: static;
-  transform: none;
-  width: auto;
-}
-
-/* 展开时 input 叠层；filterable 输入会卸掉 placeholder，定宽场景（如 db-select）需另用 prefix 占位 */
-.me-select-plain .el-select__input-wrapper {
-  position: absolute;
-  inset: 0 14px 0 4px;
-  display: flex;
-  align-items: center;
-}
-
-/* EP 默认 input height:24px，在 30px 框里会偏上；拉满后由 input 自身垂直居中文字 */
-.me-select-plain .el-select__input {
-  height: 100%;
-}
-
-.me-select-plain .el-select__suffix .el-icon {
-  font-size: 12px;
-  color: var(--el-text-color-placeholder);
-}
-
-/* upDown 图标固定方向，不随展开旋转 */
-.me-select-plain .el-select__suffix .el-icon.is-reverse {
-  transform: none;
-}
-
-.me-select-plain .me-select-plain-arrow {
-  width: 1em;
-  height: 1em;
-}
-
 /* 文本选择: 整体禁用，个别地方放开（表格挂内层内容包裹，勿挂 td/cell 本身，避免勾选列、操作列等空白/图标区也可选） */
 html {
   user-select: none;
@@ -58,9 +5,10 @@ html {
   -moz-user-select: none; /* Firefox */
 }
 
-/* el-table（v1）用 .cell；el-table-v2（MeTable）数据列用 .me-cell-ellipsis（操作列 .me-cell-slot 只放图标按钮，不列入） */
+/* el-table（v1）用 .cell；el-table-v2（MeTable）数据列：开 tooltip 时包 MeOverflowText（.me-overflow-text），关 tooltip 时用 .me-cell-ellipsis；操作列 .me-cell-slot 只放图标按钮，不列入 */
 .el-descriptions__content,
 .el-table__body-wrapper .el-table__cell .cell,
+.el-table-v2__row-cell .me-overflow-text,
 .el-table-v2__row-cell .me-cell-ellipsis,
 .el-tooltip,
 .el-text,
@@ -68,6 +16,13 @@ html {
   user-select: text;
   -webkit-user-select: text; /* Chrome, Safari */
   -moz-user-select: text; /* Firefox */
+}
+
+/* 下拉弹层同时带 el-tooltip。两条单类优先级相同，写成组合选择器，避免菜单文字被选中 */
+.el-popper.el-dropdown__popper {
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
 }
 
 /* 字体 */
@@ -81,15 +36,22 @@ html {
   /* vscode的默认字体: Menlo, Monaco, 'Courier New', monospace */
   /*
      MacOS: Menlo 支持中英文, Monaco 也支持中英文
-    Window: Consolas/黑体,
-     Linux: 可以自定义字体
+    Window: Consolas/黑体
+     Linux: 见 html[data-platform='linux']，不能写在 Menlo/Consolas 后面
      system-ui: 兜底
   */
-  --code-font: Menlo, Monaco, Consolas, 黑体, system-ui;
+  --code-font: Menlo, Monaco, Consolas, 'Noto Sans Mono', 'Ubuntu Mono', Consolas, 黑体, system-ui;
 }
 
 /* Linux WebKitGTK：减轻假粗/发糊（Yaak/JetPilot 同类补丁；勿用于 macOS） */
 html[data-platform='linux'] {
+  /*
+   * fontconfig 的 FcFontMatch 对没安装的家族名也会成功，并返回默认字体（Deepin 是思源黑体）。
+   * WebKitGTK 把这次命中当成该家族可用，不再试后面的名字。
+   * 设置里手选「Noto Sans Mono」时栈里只有它，所以能正常显示；默认栈把 Menlo 放前面就会整段落到思源黑体。
+   */
+  --code-font: 'Noto Sans Mono', 'Ubuntu Mono', monospace;
+
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -222,7 +184,24 @@ svg {
 }
 
 .icon-btn:hover {
-  color: var(--el-color-warning);
+  color: var(--el-color-primary);
+}
+
+/* 弹框底部：左侧集群/范围提示，右侧按钮（无提示时按钮仍靠 margin-left:auto 右对齐） */
+.me-dialog-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.me-dialog-footer .footer-tip {
+  margin-left: 20px;
+  color: var(--el-text-color-secondary);
+  line-height: 1.4;
+}
+.me-dialog-footer .footer-btns {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
 }
 
 /* 覆盖所有禁用按钮 */
@@ -249,4 +228,57 @@ svg {
   cursor:
     url(data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPHN2ZyB3aWR0aD0iMTZweCIgaGVpZ2h0PSIxNnB4IiB2aWV3Qm94PSIwIDAgMTYgMTYiIHZlcnNpb249IjEuMSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIiB4bWxuczp4bGluaz0iaHR0cDovL3d3dy53My5vcmcvMTk5OS94bGluayI+CiAgICA8IS0tIEdlbmVyYXRvcjogU2tldGNoIDYwLjEgKDg4MTMzKSAtIGh0dHBzOi8vc2tldGNoLmNvbSAtLT4KICAgIDx0aXRsZT5pY29uL+WFs+mXreWkh+S7vTwvdGl0bGU+CiAgICA8ZGVzYz5DcmVhdGVkIHdpdGggU2tldGNoLjwvZGVzYz4KICAgIDxkZWZzPgogICAgICAgIDxsaW5lYXJHcmFkaWVudCB4MT0iMTAwJSIgeTE9IjEwMCUiIHgyPSIwJSIgeTI9IjAlIiBpZD0ibGluZWFyR3JhZGllbnQtMSI+CiAgICAgICAgICAgIDxzdG9wIHN0b3AtY29sb3I9IiNERUNFQTgiIG9mZnNldD0iMCUiPjwvc3RvcD4KICAgICAgICAgICAgPHN0b3Agc3RvcC1jb2xvcj0iI0JEQTM3MyIgb2Zmc2V0PSIxMDAlIj48L3N0b3A+CiAgICAgICAgPC9saW5lYXJHcmFkaWVudD4KICAgIDwvZGVmcz4KICAgIDxnIGlkPSJpY29uL+WFs+mXreWkh+S7vSIgc3Ryb2tlPSJub25lIiBzdHJva2Utd2lkdGg9IjEiIGZpbGw9Im5vbmUiIGZpbGwtcnVsZT0iZXZlbm9kZCI+CiAgICAgICAgPGcgaWQ9IjI4IiBmaWxsPSIjRDhEOEQ4IiBvcGFjaXR5PSIwIj4KICAgICAgICAgICAgPHJlY3QgaWQ9IlJlY3RhbmdsZS0yIiB4PSIwIiB5PSIwIiB3aWR0aD0iMTYiIGhlaWdodD0iMTYiPjwvcmVjdD4KICAgICAgICA8L2c+CiAgICAgICAgPGcgaWQ9ImRpc2FibGUiIGZpbGw9InVybCgjbGluZWFyR3JhZGllbnQtMSkiIGZpbGwtcnVsZT0ibm9uemVybyI+CiAgICAgICAgICAgIDxwYXRoIGQ9Ik04LDAgQzEyLjQxODI3OCwwIDE2LDMuNTgxNzIyIDE2LDggQzE2LDEyLjQxODI3OCAxMi40MTgyNzgsMTYgOCwxNiBDMy41ODE3MjIsMTYgMCwxMi40MTgyNzggMCw4IEMwLDMuNTgxNzIyIDMuNTgxNzIyLDAgOCwwIFogTTMuMTMwNzMxNjYsNC40OTQ4NDk0OCBMMy4wODQyNTc1OCw0LjU1ODgzMzAyIEMyLjQwMTAwMTE2LDUuNTMzMDY1OTEgMiw2LjcxOTcwMzUzIDIsOCBDMiwxMS4zMTM3MDg1IDQuNjg2MjkxNSwxNCA4LDE0IEM5LjMwODgxNjgyLDE0IDEwLjUxOTc1NTYsMTMuNTgwOTM0MiAxMS41MDU5NTY2LDEyLjg2OTY2MjEgQzExLjQyOTE5NDIsMTIuODI1OTY5OSAxMS4zNTc3MDI0LDEyLjc3MTkxNiAxMS4yOTI4OTMyLDEyLjcwNzEwNjggTDMuMjkyODkzMjIsNC43MDcxMDY3OCBDMy4yMjgwODM5OSw0LjY0MjI5NzU1IDMuMTc0MDMwMTQsNC41NzA4MDU3OCAzLjEzMDczMTY2LDQuNDk0ODQ5NDggWiBNOCwyIEM2LjY5MTE4MzE4LDIgNS40ODAyNDQ0NCwyLjQxOTA2NTg1IDQuNDk0MDQzNDMsMy4xMzAzMzc4NyBDNC41NzA4MDU3OCwzLjE3NDAzMDE0IDQuNjQyMjk3NTUsMy4yMjgwODM5OSA0LjcwNzEwNjc4LDMuMjkyODkzMjIgTDEyLjcwNzEwNjgsMTEuMjkyODkzMiBDMTIuNzcxOTE2LDExLjM1NzcwMjQgMTIuODI1OTY5OSwxMS40MjkxOTQyIDEyLjg2OTI2ODMsMTEuNTA1MTUwNSBDMTMuNTgwOTM0MiwxMC41MTk3NTU2IDE0LDkuMzA4ODE2ODIgMTQsOCBDMTQsNC42ODYyOTE1IDExLjMxMzcwODUsMiA4LDIgWiIgaWQ9IuW9oueKtue7k+WQiCI+PC9wYXRoPgogICAgICAgIDwvZz4KICAgIDwvZz4KPC9zdmc+),
     auto !important;
+}
+
+/* 无边框下拉：按选中文案收缩；后缀用 MeSelectUpDownIcon（db / 编解码等） */
+.me-select-plain {
+  flex: 0 0 auto;
+  --el-select-width: max-content;
+}
+
+.me-select-plain .el-select__wrapper {
+  width: max-content;
+  box-shadow: none !important;
+  background: transparent;
+  gap: 2px;
+}
+
+.me-select-plain .el-select__selection {
+  flex: 0 0 auto;
+  padding: 0 2px 0 4px;
+}
+
+/* 默认 absolute+width:100%，文案不进 max-content，须改回文档流 */
+.me-select-plain .el-select__selected-item.el-select__placeholder {
+  position: static;
+  transform: none;
+  width: auto;
+}
+
+/* 展开时 input 叠层；filterable 输入会卸掉 placeholder，定宽场景（如 db-select）需另用 prefix 占位 */
+.me-select-plain .el-select__input-wrapper {
+  position: absolute;
+  inset: 0 14px 0 4px;
+  display: flex;
+  align-items: center;
+}
+
+/* EP 默认 input height:24px，在 30px 框里会偏上；拉满后由 input 自身垂直居中文字 */
+.me-select-plain .el-select__input {
+  height: 100%;
+}
+
+.me-select-plain .el-select__suffix .el-icon {
+  font-size: 12px;
+  color: var(--el-text-color-placeholder);
+}
+
+/* upDown 图标固定方向，不随展开旋转 */
+.me-select-plain .el-select__suffix .el-icon.is-reverse {
+  transform: none;
+}
+
+.me-select-plain .me-select-plain-arrow {
+  width: 1em;
+  height: 1em;
 }

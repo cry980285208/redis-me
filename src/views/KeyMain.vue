@@ -19,31 +19,6 @@ import { useI18n } from 'vue-i18n'
 import MeSelectUpDownIcon from '@/components/MeSelectUpDownIcon.vue'
 import { shareProvideKey, connUiProvideKey } from '@/types/me-interface'
 import type { RedisDB, RedisKey_Deserialize, ScanCursor } from '@/types/tauri-specta'
-import { folderKeyPrefix, folderMatchExpr, getConnKeySeparator } from '@/utils/conn'
-import {
-  useFavorites,
-  useFavoriteFolders,
-  useFavoriteSplitLayout,
-  addFavorite,
-  removeFavorite,
-  clearFavoritesForDb,
-  isFavorited,
-  addFavoriteFolder,
-  removeFavoriteFolder,
-  clearFavoriteFoldersForDb,
-} from '@/utils/favorite'
-import { clearKeyMemoryCacheForConn } from '@/utils/key-memory-cache'
-import { clearKeyTypeCacheForConn } from '@/utils/key-type-cache'
-import { FT_QUERY_HISTORY_KEY, rememberFtQuery } from '@/utils/query-history'
-import { KEY_TYPE_LIST, meKeyShort, toRedisTypeName } from '@/utils/redis-display'
-import {
-  buildScanPattern,
-  buildLocalFilterPattern,
-  compileRedisGlobFilter,
-  computeScanProgress,
-} from '@/utils/redis-glob'
-import { redisKeyId, sameRedisKey } from '@/utils/redis-key'
-import { setTerminalKeyHints } from '@/utils/terminal-key-hints'
 import {
   bus,
   CONN_REFRESH,
@@ -60,13 +35,40 @@ import {
   meOk,
   mePrompt,
   meWarn,
+  OPEN_KEY_MIGRATE,
   sleep,
-} from '@/utils/util'
-import FieldAdd from '@/views/ext/FieldAdd.vue'
-import TTLSet from '@/views/ext/TTLSet.vue'
+} from '@/utils/app/util'
+import { folderKeyPrefix, folderMatchExpr, getConnKeySeparator } from '@/utils/conn'
+import {
+  useFavorites,
+  useFavoriteFolders,
+  useFavoriteSplitLayout,
+  addFavorite,
+  removeFavorite,
+  clearFavoritesForDb,
+  isFavorited,
+  addFavoriteFolder,
+  removeFavoriteFolder,
+  clearFavoriteFoldersForDb,
+} from '@/utils/redis/favorite'
+import { clearKeyMemoryCacheForConn } from '@/utils/redis/key-memory-cache'
+import { clearKeyTtlCacheForConn } from '@/utils/redis/key-ttl-cache'
+import { clearKeyTypeCacheForConn } from '@/utils/redis/key-type-cache'
+import { FT_QUERY_HISTORY_KEY, rememberFtQuery } from '@/utils/redis/query-history'
+import { KEY_TYPE_LIST, meKeyShort, toRedisTypeName } from '@/utils/redis/redis-display'
+import {
+  buildScanPattern,
+  buildLocalFilterPattern,
+  compileRedisGlobFilter,
+  computeScanProgress,
+} from '@/utils/redis/redis-glob'
+import { redisKeyId, sameRedisKey } from '@/utils/redis/redis-key'
+import { setTerminalKeyHints } from '@/utils/redis/terminal-key-hints'
 import KeyCopy from '@/views/key/KeyCopy.vue'
 import KeyImport from '@/views/key/KeyImport.vue'
 import KeyRename from '@/views/key/KeyRename.vue'
+import FieldAdd from '@/views/tools/FieldAdd.vue'
+import TTLSet from '@/views/tools/TTLSet.vue'
 
 import KeyBatch from './key/KeyBatch.vue'
 import KeyFavoriteFolder from './key/KeyFavoriteFolder.vue'
@@ -369,7 +371,10 @@ async function onRefreshKey() {
   hideSearchHistory()
   // 收藏模式 F5：重载已展开的收藏目录，不触发主列表 SCAN
   if (favoriteMode.value) {
-    if (share.conn) clearKeyMemoryCacheForConn(share.conn.id)
+    if (share.conn) {
+      clearKeyMemoryCacheForConn(share.conn.id)
+      clearKeyTtlCacheForConn(share.conn.id)
+    }
     await favFolderPanelRef.value?.reloadExpanded()
     return
   }
@@ -486,8 +491,14 @@ async function stopScanIfRunning(): Promise<void> {
   }
 }
 
-// 扫描键；restart=true 时中断进行中的扫描并重新开始
-async function scanKey(useCursor = false, loadAll = false, restart = false): Promise<void> {
+// 扫描键；restart=true 时中断进行中的扫描并重新开始。
+// openExact：这次是精确新搜索。回来正好 1 条就直接打开。
+async function scanKey(
+  useCursor = false,
+  loadAll = false,
+  restart = false,
+  openExact = false,
+): Promise<void> {
   if (!share.conn) return
   if (loading.value) {
     if (!restart) return
@@ -504,8 +515,9 @@ async function scanKey(useCursor = false, loadAll = false, restart = false): Pro
       cursor.value = null
       scanBatchCount.value = 0
       scanBuffer = []
-      // 整表重扫时丢掉内存缓存，可见行会按新列表再查
+      // 整表重扫时丢掉内存和 TTL 缓存，可见行会按新列表再查
       clearKeyMemoryCacheForConn(share.conn.id)
+      clearKeyTtlCacheForConn(share.conn.id)
     }
 
     const firstScanKeys = await scanKeyCore()
@@ -515,6 +527,11 @@ async function scanKey(useCursor = false, loadAll = false, restart = false): Pro
       await scanKeyAuto(firstScanKeys)
     } else {
       await scanKeyAll()
+    }
+
+    // 被中途停掉的扫描结果不打开
+    if (openExact && !scanCancelled.value && cursor.value?.finished && scanBuffer.length === 1) {
+      chooseKey(scanBuffer[0])
     }
   } finally {
     loading.value = false
@@ -704,6 +721,16 @@ function contextKey(command: string, redisKey: RedisKey_Deserialize): void {
     addKey()
   } else if (command === 'copyKey') {
     meCopy(redisKey.key)
+  } else if (command === 'copyAsCommand') {
+    // 与键值页「复制为命令」同逻辑，右键不必先打开该键
+    void (async () => {
+      const text = await meCommands.getKeyAsCommand(share.conn!.id, redisKey)
+      if (!text.trim()) {
+        meWarn(t('redisValue.copyCommandEmpty'))
+        return
+      }
+      meCopy(text, t('redisValue.copyCommandOk'))
+    })()
   } else if (command === 'deleteKey') {
     meDeleteKey(share.conn!.id, redisKey)
   } else if (command === 'renameKey') {
@@ -882,6 +909,18 @@ const keyImportRef = useTemplateRef<InstanceType<typeof KeyImport>>('keyImportRe
 function importData(): void {
   keyImportRef.value?.open()
 }
+
+/** 连接扩展「键传输」：源锁定当前；有勾选则带入已选键 */
+function openKeyMigrate(): void {
+  if (!share.conn) return
+  bus.emit(OPEN_KEY_MIGRATE, {
+    sourceLocked: true,
+    sourceConnId: share.conn.id,
+    sourceDb: share.conn.db,
+    keyList: checkedKeyList.value.length > 0 ? [...checkedKeyList.value] : [],
+    match: checkedKeyList.value.length > 0 ? '' : '*',
+  })
+}
 function importStart(): void {
   share.exportImportingPercentage = 0
   share.exportImporting = true
@@ -960,11 +999,22 @@ const showKeyMemory = computed({
   },
 })
 
+const showKeyTtl = computed({
+  get() {
+    return !!meTauri.settings.keyShowTtl
+  },
+  set(newValue: boolean) {
+    meTauri.settings.keyShowTtl = newValue
+  },
+})
+
 async function handleCommand(command: string): Promise<void> {
   if (command === 'toggleKeyShow') {
     keyShowTree.value = !keyShowTree.value
   } else if (command === 'toggleKeyMemory') {
     showKeyMemory.value = !showKeyMemory.value
+  } else if (command === 'toggleKeyTtl') {
+    showKeyTtl.value = !showKeyTtl.value
   } else if (command === 'toggleKeySort') {
     sortByCount.value = !sortByCount.value
   } else if ('mockData' === command) {
@@ -973,6 +1023,8 @@ async function handleCommand(command: string): Promise<void> {
     exportFolder('*')
   } else if ('importData' === command) {
     importData()
+  } else if ('keyMigrate' === command) {
+    openKeyMigrate()
   } else if ('batchDelete' === command) {
     deleteFolder('*')
   } else if ('flushDb' === command) {
@@ -1002,6 +1054,7 @@ function flushDb(): void {
     await meCommands.flushDb(share.conn!.id)
     clearKeyTypeCacheForConn(share.conn!.id)
     clearKeyMemoryCacheForConn(share.conn!.id)
+    clearKeyTtlCacheForConn(share.conn!.id)
     meOk(t('keyMain.flushDbOk'))
     bus.emit(CONN_REFRESH)
     bus.emit(INFO_REFRESH)
@@ -1223,20 +1276,18 @@ function onKeysPanelContextFolder(command: string, folder: string): void {
   contextFolder(command, folder)
 }
 
-// 多选底栏批处理设计：
-// - 普通模式：导出 | TTL | 删除 | 收藏；对象=勾选叶子键
-// - 收藏上区（目录）：导出 | TTL | 删除 | 取消收藏
-// - 收藏下区（键）：仅取消收藏
-// - 导出/TTL/删除只处理「已 SCAN 上屏且已勾选」的叶子键（扫描多少处理多少），
-//   不因勾选目录根再去 path:* 二次 SCAN；仅勾选空目录根时这三项禁用
+// 多选底栏批处理设计：普通模式与收藏上下区同一套
+// - 导出 | 传输 | TTL | 删除 | 收藏或取消收藏；对象=已上屏勾选叶子键
+// - 收藏模式最后一项是取消收藏（上区目录根也算）
+// - 导出/传输/TTL/删除只处理已上屏且已勾选的叶子键（扫描多少处理多少），
+//   不因勾选目录根再去 path:* 二次 SCAN；仅勾选空目录根时这几项禁用
 // - 取消收藏：目录根 path + 勾选键都算（目录根不依赖是否已扫出子键）
-// 取消收藏等：键或目录根任一即可
 const checkedDisabled = computed(() => {
   if (share.exportImporting) return true
   if (favoriteMode.value) return favoriteCheckedCount.value === 0
   return checkedKeyList.value.length === 0
 })
-// 导出/TTL/删除：必须有已上屏的勾选叶子键
+// 导出/传输/TTL/删除：必须有已上屏的勾选叶子键
 const checkedKeysDisabled = computed(() => {
   if (share.exportImporting) return true
   return checkedKeyList.value.length === 0
@@ -1245,14 +1296,16 @@ const checkedBtnClass = computed(() => (checkedDisabled.value ? ['icon-disabled'
 const checkedKeysBtnClass = computed(() =>
   checkedKeysDisabled.value ? ['icon-disabled'] : ['icon-btn'],
 )
-// 收藏上区多选：展示导出/TTL/删除；下区走仅取消收藏的分支
-const favFolderBatchOps = computed(
-  () => favoriteMode.value && favoriteCheckedZone.value === 'folders',
-)
 
 function exportChecked(): void {
   if (checkedKeyList.value.length === 0) return
   keyBatchRef.value?.open({ match: '', keyList: checkedKeyList.value }, 'export')
+}
+
+/** 只传输已上屏勾选键；源锁定当前连接与库，不按 match 再扫 */
+function migrateChecked(): void {
+  if (checkedKeyList.value.length === 0) return
+  openKeyMigrate()
 }
 
 const ttlSetRef = useTemplateRef<InstanceType<typeof TTLSet>>('ttlSetRef')
@@ -1352,7 +1405,12 @@ function editDbName(db: number): void {
 /** 回车、加载更多、加载全部、暂停后继续。索引模式走 FT.SEARCH，否则仍是 SCAN。 */
 function queryKeyList(append: boolean, loadAll = false, restart = false): void {
   if (searchMode.value) void runSearchKeys(append, loadAll, restart)
-  else void scanKey(append, loadAll, restart)
+  else {
+    // 回车 / 点历史的精确搜索才打开；加载更多、暂停继续不打开
+    const openExact =
+      !append && !loadAll && exact.value && !favoriteMode.value && keyword.value.trim() !== ''
+    void scanKey(append, loadAll, restart, openExact)
+  }
 }
 
 function chooseKeyType(keyTypeSelected: string): void {
@@ -1504,6 +1562,7 @@ async function runSearchKeys(append = false, loadAll = false, restart = false): 
     scanBatchCount.value = 0
     clearSearchHits()
     clearKeyMemoryCacheForConn(share.conn.id)
+    clearKeyTtlCacheForConn(share.conn.id)
   }
   try {
     if (loadAll) await searchKeysAll()
@@ -1893,74 +1952,69 @@ async function searchKeysAll(): Promise<void> {
         </template>
       </div>
 
-      <!-- 多选底栏：见 script 中「多选底栏批处理设计」；导出/TTL/删除仅针对已上屏勾选键 -->
+      <!-- 多选底栏：见 script 中「多选底栏批处理设计」；导出/传输/TTL/删除仅针对已上屏勾选键 -->
       <div class="me-flex" v-else style="margin-left: 10px; gap: 5px">
-        <template v-if="!favoriteMode || favFolderBatchOps">
-          <el-link underline="never" :disabled="checkedKeysDisabled" @click="exportChecked">
-            <me-icon
-              :name="t('keyMain.exportChecked')"
-              icon="me-icon-export"
-              hint
-              :class="checkedKeysBtnClass"
-              placement="top" />
-          </el-link>
-          <el-link
-            underline="never"
-            :disabled="checkedKeysDisabled"
-            @click="ttlChecked"
-            v-if="canEdit">
-            <me-icon
-              :name="t('keyMain.ttlChecked')"
-              icon="el-icon-timer"
-              hint
-              :class="checkedKeysBtnClass"
-              placement="top" />
-          </el-link>
-          <el-link
-            underline="never"
-            :disabled="checkedKeysDisabled"
-            @click="deleteChecked"
-            v-if="canEdit">
-            <me-icon
-              :name="t('keyMain.deleteChecked')"
-              icon="el-icon-delete"
-              hint
-              :class="checkedKeysBtnClass"
-              placement="top" />
-          </el-link>
-          <!-- 普通：批量收藏；收藏上区：批量取消收藏（含目录根） -->
-          <el-link
-            v-if="!favoriteMode"
-            underline="never"
-            :disabled="checkedDisabled"
-            @click="favoriteChecked">
-            <me-icon
-              :name="t('keyMain.favoriteChecked')"
-              icon="el-icon-star-filled"
-              hint
-              :class="checkedBtnClass"
-              placement="top" />
-          </el-link>
-          <el-link v-else underline="never" :disabled="checkedDisabled" @click="unfavoriteChecked">
-            <me-icon
-              :name="t('keyMain.unfavoriteChecked')"
-              icon="el-icon-star"
-              hint
-              :class="checkedBtnClass"
-              placement="top" />
-          </el-link>
-        </template>
-        <!-- 收藏下区：仅取消收藏 -->
-        <template v-else>
-          <el-link underline="never" :disabled="checkedDisabled" @click="unfavoriteChecked">
-            <me-icon
-              :name="t('keyMain.unfavoriteChecked')"
-              icon="el-icon-star"
-              hint
-              :class="checkedBtnClass"
-              placement="top" />
-          </el-link>
-        </template>
+        <el-link underline="never" :disabled="checkedKeysDisabled" @click="exportChecked">
+          <me-icon
+            :name="t('keyMain.exportChecked')"
+            icon="me-icon-export"
+            hint
+            :class="checkedKeysBtnClass"
+            placement="top" />
+        </el-link>
+        <el-link underline="never" :disabled="checkedKeysDisabled" @click="migrateChecked">
+          <me-icon
+            :name="t('keyMain.migrateChecked')"
+            icon="el-icon-switch"
+            hint
+            :class="checkedKeysBtnClass"
+            placement="top" />
+        </el-link>
+        <el-link
+          underline="never"
+          :disabled="checkedKeysDisabled"
+          @click="ttlChecked"
+          v-if="canEdit">
+          <me-icon
+            :name="t('keyMain.ttlChecked')"
+            icon="el-icon-timer"
+            hint
+            :class="checkedKeysBtnClass"
+            placement="top" />
+        </el-link>
+        <el-link
+          underline="never"
+          :disabled="checkedKeysDisabled"
+          @click="deleteChecked"
+          v-if="canEdit">
+          <me-icon
+            :name="t('keyMain.deleteChecked')"
+            icon="el-icon-delete"
+            hint
+            :class="checkedKeysBtnClass"
+            placement="top" />
+        </el-link>
+        <!-- 普通：批量收藏；收藏上下区：批量取消收藏（上区含目录根） -->
+        <el-link
+          v-if="!favoriteMode"
+          underline="never"
+          :disabled="checkedDisabled"
+          @click="favoriteChecked">
+          <me-icon
+            :name="t('keyMain.favoriteChecked')"
+            icon="el-icon-star-filled"
+            hint
+            :class="checkedBtnClass"
+            placement="top" />
+        </el-link>
+        <el-link v-else underline="never" :disabled="checkedDisabled" @click="unfavoriteChecked">
+          <me-icon
+            :name="t('keyMain.unfavoriteChecked')"
+            icon="el-icon-star"
+            hint
+            :class="checkedBtnClass"
+            placement="top" />
+        </el-link>
       </div>
 
       <!-- 中间: 选中/过滤；收藏模式计数已在分区标题，此处不展示 -->
@@ -2000,6 +2054,9 @@ async function searchKeysAll(): Promise<void> {
                 <el-dropdown-item command="mockData" v-if="canEdit">
                   <me-icon :name="t('keyMain.mockData')" icon="el-icon-coffee-cup" />
                 </el-dropdown-item>
+                <el-dropdown-item command="keyMigrate">
+                  <me-icon :name="t('keyMain.keyMigrate')" icon="el-icon-switch" />
+                </el-dropdown-item>
 
                 <el-dropdown-item command="batchDelete" v-if="canEdit" divided>
                   <me-icon :name="t('keyMain.batchDelete')" icon="el-icon-delete" />
@@ -2019,6 +2076,11 @@ async function searchKeysAll(): Promise<void> {
                   "
                   icon="me-icon-memory" />
               </el-dropdown-item>
+              <el-dropdown-item command="toggleKeyTtl">
+                <me-icon
+                  :name="showKeyTtl ? t('keyMain.hideKeyTtl') : t('keyMain.showKeyTtl')"
+                  icon="el-icon-timer" />
+              </el-dropdown-item>
               <el-dropdown-item command="toggleKeyShow">
                 <me-icon
                   :name="keyShowTree ? t('keyMain.listView') : t('keyMain.treeView')"
@@ -2027,7 +2089,7 @@ async function searchKeysAll(): Promise<void> {
               <el-dropdown-item command="toggleKeySort" v-if="keyShowTree">
                 <me-icon
                   :name="sortByCount ? t('keyMain.sortByAlphabet') : t('keyMain.sortByCount')"
-                  icon="me-icon-alphabet"></me-icon>
+                  :icon="sortByCount ? 'me-icon-alphabet' : 'me-icon-rank'"></me-icon>
               </el-dropdown-item>
               <el-dropdown-item
                 v-if="favoriteMode && hasAnyFavorite"
@@ -2127,23 +2189,24 @@ async function searchKeysAll(): Promise<void> {
           color: var(--el-color-primary);
         }
       }
+    }
 
-      :deep(.suffix-exact-checkbox) {
-        height: auto;
+    // 内层再写 :deep() 时 Vue 不会改写，lightningcss 会把它当成非法伪类
+    :deep(.el-input__prefix .suffix-exact-checkbox) {
+      height: auto;
 
-        .el-checkbox__inner {
-          border-color: var(--el-text-color-secondary);
-          background-color: transparent;
-        }
+      .el-checkbox__inner {
+        border-color: var(--el-text-color-secondary);
+        background-color: transparent;
+      }
 
-        &:hover .el-checkbox__inner {
-          border-color: var(--el-color-primary);
-        }
+      &:hover .el-checkbox__inner {
+        border-color: var(--el-color-primary);
+      }
 
-        &.is-checked .el-checkbox__inner {
-          background-color: var(--el-color-primary);
-          border-color: var(--el-color-primary);
-        }
+      &.is-checked .el-checkbox__inner {
+        background-color: var(--el-color-primary);
+        border-color: var(--el-color-primary);
       }
     }
 

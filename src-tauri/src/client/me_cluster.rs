@@ -1,12 +1,15 @@
 use crate::client::me_client::*;
 use crate::client::ops::acl::build_acl_setuser_cmd;
 use crate::client::ops::exp::{export_cmd_0_thread, export_csv_0_thread};
+use crate::client::ops::field_scan::value_download_0_thread;
 use crate::client::ops::imp::{import_cmd_0_thread, import_csv_0_thread};
-use crate::client::ops::info::{parse_client_info, redis_value_to_log};
+use crate::client::ops::info::{info_cmd, parse_client_info, redis_value_to_log};
+use crate::client::ops::key::deleted_count;
 use crate::client::ops::key_scan::{batch_key0, scan_0_batch_count, scan_0_exact, scan_1_cmd};
 use crate::client::ops::notify::{build_notify_patterns, notify_subscribe_node0};
 use crate::client::ops::pubsub::{monitor0, subscribe0};
 use crate::client::ops::search::SearchCmd;
+use crate::client::ops::workbench::{finish_workbench, vector_fields_for_search};
 use crate::client::state::MeBase;
 use crate::me_client_forwards;
 use crate::model::*;
@@ -92,10 +95,10 @@ impl MeClient for MeCluster {
         bail!(AppError::ClusterDbSwitchNotSupported);
     }
 
-    fn info(&self, node: Option<String>) -> AnyResult<RedisInfo> {
+    fn info(&self, node: Option<String>, section: Option<String>) -> AnyResult<RedisInfo> {
         let mut conn = self.get_conn()?;
         let (route, exec_node) = self.get_node_route(node)?;
-        let value = conn.route_command(&redis::cmd("info"), route)?;
+        let value = conn.route_command(&info_cmd(section.as_deref()), route)?;
         let info: String = FromRedisValue::from_redis_value(value)?;
         Ok(RedisInfo {
             node: exec_node,
@@ -103,13 +106,32 @@ impl MeClient for MeCluster {
         })
     }
 
-    fn info_list(&self) -> AnyResult<Vec<RedisInfo>> {
+    fn info_list(
+        &self,
+        node_filter: Option<String>,
+        section: Option<String>,
+    ) -> AnyResult<Vec<RedisInfo>> {
+        // node_filter：仅 "all"=全部；含':'按地址精确匹配单节点，否则按角色（master/slave）子串匹配；
+        // None/空串/未识别值一律不匹配（调用方须传显式 token）
+        let Some(filter) = node_filter.as_deref().filter(|s| !s.is_empty()) else {
+            return Ok(vec![]);
+        };
         let mut conn = self.get_conn()?;
         let mut infos = vec![];
         for redis_node in &self.node_list {
+            if filter != "all" {
+                let hit = if filter.contains(':') {
+                    redis_node.node == filter
+                } else {
+                    redis_node.flags.contains(filter)
+                };
+                if !hit {
+                    continue;
+                }
+            }
             let node = redis_node.node.clone();
             let (route, _) = self.get_node_route(Some(node.clone()))?;
-            let value = conn.route_command(&redis::cmd("info"), route)?;
+            let value = conn.route_command(&info_cmd(section.as_deref()), route)?;
             let info: String = FromRedisValue::from_redis_value(value)?;
             infos.push(RedisInfo { node, info })
         }
@@ -252,16 +274,79 @@ impl MeClient for MeCluster {
         let value = if param.node.as_deref().unwrap_or("").is_empty()
             && param.auto_broadcast.unwrap_or(false)
         {
-            conn.req_command(&cmd)?
+            conn.req_command(&cmd)
         } else {
             let (route, _) = self.get_node_route(param.node)?;
-            conn.route_command(&cmd, route)?
+            conn.route_command(&cmd, route)
+        };
+        let value = match value {
+            Ok(value) => value,
+            Err(e) => {
+                // 解析类错误说明共享连接已错位（见 is_protocol_desync_error），重建后再抛错，避免污染后续命令
+                if is_protocol_desync_error(&e) {
+                    drop(conn);
+                    let _ = self.reconnect();
+                }
+                return Err(e.into());
+            }
         };
         Ok(redis_value_to_cli_display(
             value,
             param.output_mode,
             &cmd_name,
             &args,
+        ))
+    }
+
+    // 查询与 execute_command 相同，多拆出点名命令的表。
+    fn workbench_exec(&self, param: RedisCommand) -> AnyResult<WorkbenchExec> {
+        let (cmd_name, args) = parse_command(param.command.as_str())?;
+        if cmd_name.is_empty() {
+            return Ok(WorkbenchExec {
+                text: String::new(),
+                table: None,
+            });
+        };
+
+        let mut conn = self.get_conn()?;
+        let broadcast =
+            param.node.as_deref().unwrap_or("").is_empty() && param.auto_broadcast.unwrap_or(false);
+        // 指定节点或关掉广播时钉住这一次的路由。FT.INFO 和查询必须打到同一节点。
+        let route = if broadcast {
+            None
+        } else {
+            Some(self.get_node_route(param.node)?.0)
+        };
+        let mut cmd = redis::cmd(cmd_name.as_str());
+        cmd.arg(&args);
+        let value = if let Some(route) = &route {
+            conn.route_command(&cmd, route.clone())
+        } else {
+            conn.req_command(&cmd)
+        };
+        let value = match value {
+            Ok(value) => value,
+            Err(e) => {
+                if is_protocol_desync_error(&e) {
+                    drop(conn);
+                    let _ = self.reconnect();
+                }
+                return Err(e.into());
+            }
+        };
+        let vectors = vector_fields_for_search(&cmd_name, &args, |info| {
+            if let Some(route) = &route {
+                conn.route_command(info, route.clone())
+            } else {
+                conn.req_command(info)
+            }
+        });
+        Ok(finish_workbench(
+            value,
+            param.output_mode,
+            &cmd_name,
+            &args,
+            &vectors,
         ))
     }
 
@@ -295,6 +380,26 @@ impl MeClient for MeCluster {
             let (route, _) = self.get_node_route(node)?;
             let mut cfg = redis::cmd(&cmd);
             let cfg_cmd = cfg.arg("set").arg(key).arg(value);
+            let _ = conn.route_command(cfg_cmd, route)?;
+        }
+        Ok(())
+    }
+
+    fn config_rewrite(&self, node: Option<String>) -> AnyResult<()> {
+        let cmd = resolve_command_name(&self.conf, "config");
+        let mut conn = self.get_conn()?;
+        if "*" == node.clone().unwrap_or_default() {
+            let route = RoutingInfo::MultiNode((
+                MultipleNodeRoutingInfo::AllNodes,
+                Some(ResponsePolicy::AllSucceeded),
+            ));
+            let mut cfg = redis::cmd(&cmd);
+            let cfg_cmd = cfg.arg("rewrite");
+            let _ = conn.route_command(cfg_cmd, route)?;
+        } else {
+            let (route, _) = self.get_node_route(node)?;
+            let mut cfg = redis::cmd(&cmd);
+            let cfg_cmd = cfg.arg("rewrite");
             let _ = conn.route_command(cfg_cmd, route)?;
         }
         Ok(())
@@ -347,7 +452,8 @@ impl MeClient for MeCluster {
             if let Some(size) = size
                 && size >= size_limit
             {
-                out.push((keys[index].to_bytes().to_vec(), size, "unknown".into()));
+                // 未查 TYPE 时用空串，不写成 unknown
+                out.push((keys[index].to_bytes().to_vec(), size, String::new()));
             }
         }
         if need_key_type && !out.is_empty() {
@@ -378,6 +484,20 @@ impl MeClient for MeCluster {
         }
         let sizes: Vec<Option<u64>> = conn.cluster_pipe_query(&pipe, keys.len())?;
         Ok(sizes)
+    }
+
+    /// 列表右侧 TTL。ClusterPipeline 按槽拆开；PTTL 与入参等长，单位毫秒。
+    fn key_pttl(&self, keys: Vec<RedisKey>) -> AnyResult<Vec<i64>> {
+        if keys.is_empty() {
+            return Ok(vec![]);
+        }
+        let mut conn = self.get_conn()?;
+        let mut pipe = ClusterPipeline::with_capacity(keys.len());
+        for key in &keys {
+            pipe.cmd("pttl").arg(key.to_bytes());
+        }
+        let ttls: Vec<i64> = conn.cluster_pipe_query(&pipe, keys.len())?;
+        Ok(ttls)
     }
 
     fn client_list(
@@ -503,21 +623,23 @@ impl MeClient for MeCluster {
         Ok(())
     }
 
-    fn batch_del(&self, param: RedisBatchKey) -> AnyResult<()> {
+    fn batch_del(&self, param: RedisBatchKey) -> AnyResult<u64> {
         let key_list = batch_key0(self, param, false)?;
         if key_list.is_empty() {
-            return Ok(());
+            return Ok(0);
         }
 
         let size = key_list.len();
         let mut pipe = ClusterPipeline::with_capacity(size);
         for key in key_list {
-            pipe.del(&key).ignore();
+            // 保留 DEL 的整数回复，合计才是实际删掉的条数
+            pipe.del(&key);
         }
         let mut conn = self.get_conn()?;
-        let _: () = conn.cluster_pipe_query(&pipe, size)?;
-        info!("batch delete finished: {}", size);
-        Ok(())
+        let deleted: Vec<i64> = conn.cluster_pipe_query(&pipe, size)?;
+        let count = deleted_count(&deleted);
+        info!("batch delete finished: {count} of {size}");
+        Ok(count)
     }
 
     fn batch_ttl(&self, param: RedisBatchTtl) -> AnyResult<()> {
@@ -740,6 +862,14 @@ impl MeClient for MeCluster {
         let mut conn = self.get_conn()?;
         // 命令条数随 mock 字段数变化，汇总日志用估算值即可
         let _: () = conn.cluster_pipe_query(&pipe, count as usize * 50)?;
+        Ok(())
+    }
+
+    fn value_download(&self, param: RedisValueDownload) -> AnyResult<()> {
+        let conn = self.get_new_conn()?;
+        let id = self.id.clone();
+        let app_handle = self.base().get_app_handle()?;
+        thread::spawn(move || value_download_0_thread(conn, param, app_handle, id));
         Ok(())
     }
 

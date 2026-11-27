@@ -15,6 +15,8 @@ name = "redis_me_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
+# Windows 测试清单绕过见 build.rs / windows-app-manifest.xml。
+# 升到 tauri-build >= 2.8.0（https://github.com/tauri-apps/tauri/pull/16320）时一并删掉。
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
@@ -25,8 +27,8 @@ tauri-plugin-log = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-# 项目添加依赖
-redis = { version = "1", features = [
+# 项目添加依赖。redis-me-rs 是 redis-rs 1.8.2 的 fork，crate 名仍是 redis。
+redis = { package = "redis-me-rs", version = "1.8.2", features = [
   "acl",
   "cluster",
   "sentinel",
@@ -36,19 +38,18 @@ redis = { version = "1", features = [
   "tls-rustls-insecure",
 ] }
 url = "2"
-rustls = { version = "0.23.45", default-features = false, features = [
+rustls = { version = "0.23.46", default-features = false, features = [
   "ring",
   "std",
   "tls12",
   "logging",
 ] }
-parking_lot = "0.12"
+parking_lot = "0.13"
 log = "0.4"
 rand = "0.10"
 anyhow = { version = "1" }
 base64 = "0.23"
 chrono = "0.4"
-chrono-tz = "0.10"
 fern = { version = "0.7", features = ["colored"] }
 
 # 目录支持~和环境变量
@@ -58,7 +59,7 @@ shellexpand = "3"
 x509-parser = "0.18"
 
 # SSH 隧道支持（使用 russh 支持现代密钥格式）
-russh = { version = "0.64", default-features = false, features = ["flate2", "ring", "rsa"] }
+russh = { version = "0.65", default-features = false, features = ["flate2", "ring", "rsa"] }
 tokio = { version = "1", features = ["full"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
@@ -68,11 +69,12 @@ tauri-plugin-fs = "2"
 tauri-plugin-process = "2"
 tauri-plugin-os = "2"
 tauri-plugin-system-fonts = "2"
+tauri-plugin-clipboard-manager = "2"
 
 # 支持TS类型
-specta = { version = "2.0.0-rc.25", features = ["derive", "chrono", "serde_json"] }
-specta-typescript = "0.0.12"
-tauri-specta = { version = "2.0.0-rc.25", features = ["typescript"] }
+specta = { version = "2.0.0-rc.28", features = ["derive", "chrono", "serde_json"] }
+specta-typescript = "0.0.15"
+tauri-specta = { version = "2.0.0-rc.29", features = ["typescript"] }
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.56"
@@ -88,6 +90,12 @@ tauri-plugin-window-state = "2"
 name = "RedisME"
 path = "src/main.rs"
 
-# RedisME 的 redis-rs fork（X.509 v1、后续 ConnectionDialer 等都叠在这条分支）
-[patch.crates-io]
-redis = { git = "https://github.com/hepengju/redis-rs.git", branch = "redis-me" }
+# 安装包体积：体积优先的 release。不改变运行时功能。
+# opt-level=s 偏体积；LTO + codegen-units=1 去掉跨 crate 死代码；strip 去掉符号。
+# panic=abort 去掉展开表。命令路径不用 catch_unwind，panic 本来就会中断这次调用。
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

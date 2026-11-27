@@ -4,11 +4,11 @@ import { listen } from '@tauri-apps/api/event'
 import { computed, inject, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import type { MeColumn } from '@/components/me-table-column'
-import MeWebsite from '@/components/MeWebsite.vue'
+import type { MeColumn } from '@/components/me-table/column'
+import NodeList from '@/components/MeNodeList.vue'
 import { shareProvideKey } from '@/types/me-interface'
-import { meConfirm, meCopy, meCommands, meOk } from '@/utils/util'
-import NodeList from '@/views/ext/NodeList.vue'
+import { meConfirm, meCommands, meOk } from '@/utils/app/util'
+import { createRealtimeStream } from '@/utils/redis/realtime-stream'
 // #endregion
 
 // #region 核心状态
@@ -30,21 +30,20 @@ interface MonitorRow {
   datetime?: string
   command?: string
 }
-const dataList = ref<MonitorRow[]>([])
-const filterDataList = computed(() => {
-  const key = keyword.value.toLowerCase()
-  return dataList.value.filter(row => {
-    if (!key) return true
-    const text = `${row.command ?? ''} ${row.datetime ?? ''}`.toLowerCase()
-    return text.includes(key)
-  })
-})
+// 实时流：批量缓冲并入 dataList，避免 MONITOR 高频命令逐条头插拖慢主线程
+const stream = createRealtimeStream<MonitorRow>({ maxRows: MAX_ROWS })
+const dataList = stream.list
 
 // 列描述：时间列导出/悬停保留完整日期时间（取 prop 原值），单元格经 #cell-datetime 只显时分秒（与迁移前一致）
 const monitorColumns = computed<MeColumn[]>(() => [
   { key: 'datetime', prop: 'datetime', title: t('redisMonitor.time'), width: 118 },
-  { key: 'command', prop: 'command', title: t('redisMonitor.command'), minWidth: 200 },
-  { key: 'action', title: t('action'), width: 80, align: 'center' },
+  {
+    key: 'command',
+    prop: 'command',
+    title: t('redisMonitor.command'),
+    minWidth: 200,
+    searchable: true,
+  },
 ])
 
 // 监控函数防抖
@@ -56,6 +55,7 @@ const monitor = async () => {
       unlisten?.()
       await meCommands.monitorStop(share.conn!.id)
       monitoring.value = false
+      stream.flush() // 收尾：把缓冲里剩余命令立即并入，避免停用后丢尾部数据
       meOk(t('redisMonitor.monitorStopped'))
     } else {
       meConfirm(t('redisMonitor.monitorHint'), async () => {
@@ -70,8 +70,11 @@ const monitor = async () => {
   }
 }
 
+// 清空前二次确认（与命令日志页一致：防误点丢实时流数据）
 function clearData() {
-  dataList.value = []
+  meConfirm(t('redisMonitor.clearConfirm'), () => {
+    stream.clear()
+  })
 }
 
 // 监听消息
@@ -80,9 +83,7 @@ async function tauriListen() {
   unlisten = await listen<MonitorRow>('monitor', event => {
     const payload = event.payload
     if (payload.id !== share.conn!.id) return
-    // 新记录入头 → 数组天然时间倒序，显示层不再依赖 default-sort，省一次 MeTable orderBy 全表排序
-    dataList.value.unshift(payload)
-    if (dataList.value.length > MAX_ROWS) dataList.value.length = MAX_ROWS
+    stream.push(payload)
   })
 }
 
@@ -104,16 +105,15 @@ onUnmounted(() => tauriUnlisten())
           :disabled="dataList.length === 0"
           placement="top" />
         <node-list v-model="node" init-node :disabled="monitoring" style="margin-left: 10px" />
-        <me-website to="monitor" />
       </div>
       <div>
         <el-input
           v-model="keyword"
           :placeholder="t('redisMonitor.keyword')"
-          style="width: 280px; margin: 0 10px"
+          style="width: 220px; margin: 0 10px"
           clearable />
         <me-button
-          :icon="monitoring ? 'el-icon-video-pause' : 'el-icon-user'"
+          :icon="monitoring ? 'el-icon-video-pause' : 'el-icon-video-play'"
           @click="monitor"
           type="primary"
           :loading="loading">
@@ -122,19 +122,11 @@ onUnmounted(() => tauriUnlisten())
       </div>
     </div>
     <div class="table">
-      <me-table
-        :data="filterDataList"
-        :columns="monitorColumns"
-        :total="dataList.length"
-        export-name="monitor">
+      <me-table :data="dataList" :keyword="keyword" :columns="monitorColumns" export-name="monitor">
         <template #cell-datetime="{ row }">{{ row.datetime?.slice(11) }}</template>
-        <template #cell-action="{ row }">
-          <me-icon
-            :info="t('copy')"
-            icon="el-icon-document-copy"
-            class="icon-btn"
-            style="justify-content: center"
-            @click="meCopy(row.command)" />
+        <!-- 官网：紧挨合计行「更多」左侧 -->
+        <template #footer>
+          <me-website to="monitor" />
         </template>
       </me-table>
     </div>

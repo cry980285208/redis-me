@@ -7,9 +7,10 @@
 // 3. 不依赖任何 Rust 侧改动——上游的 clients 本来就是按 conn.id 缓存的，天然支持多连接。
 import i18n from '@/locales'
 import type { AppMainShare, ServerCapabilities, UiConn } from '@/types/me-interface'
-import { clearKeyMemoryCacheForConn } from '@/utils/key-memory-cache'
-import { clearKeyTypeCacheForConn } from '@/utils/key-type-cache'
-import { bus, CONN_REFRESH, meCommands, meWarn } from '@/utils/util'
+import { clearKeyMemoryCacheForConn } from '@/utils/redis/key-memory-cache'
+import { clearKeyTtlCacheForConn } from '@/utils/redis/key-ttl-cache'
+import { clearKeyTypeCacheForConn } from '@/utils/redis/key-type-cache'
+import { bus, CONN_REFRESH, meCommands, meWarn } from '@/utils/app/util'
 
 /** 多TAB：同时打开的连接 TAB 上限 */
 export const MAX_CONN_TABS = 10
@@ -86,9 +87,10 @@ export function useConnTabs(share: AppMainShare) {
     share.openConns.splice(idx, 1)
     connectedIds.delete(connId)
     capsCache.delete(connId)
-    // 该连接的键类型/内存占用缓存一并清掉，避免重连后读到旧值
+    // 该连接的键类型/内存占用/TTL缓存一并清掉，避免重连后读到旧值
     clearKeyTypeCacheForConn(connId)
     clearKeyMemoryCacheForConn(connId)
+    clearKeyTtlCacheForConn(connId)
     void meCommands.disconnect(connId)
     if (share.activeConnId === connId) {
       const neighbor = share.openConns[idx] ?? share.openConns[idx - 1] ?? null

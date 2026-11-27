@@ -11,7 +11,7 @@ import { computed, onMounted, onUnmounted, watch } from 'vue'
 import i18n from '@/locales'
 import type { AppMainShare } from '@/types/me-interface'
 import type { RedisKey_Deserialize } from '@/types/tauri-specta'
-import { bus, KEY_OPEN_TAB, KEY_REFRESH, meWarn } from '@/utils/util'
+import { bus, KEY_OPEN_TAB, KEY_REFRESH, meWarn } from '@/utils/app/util'
 
 const t = i18n.global.t
 

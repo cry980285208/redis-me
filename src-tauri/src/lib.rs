@@ -12,6 +12,7 @@ use rustls::crypto::ring::default_provider;
 #[cfg(any(debug_assertions, test))]
 use specta_typescript::Typescript;
 use std::fmt::Arguments;
+#[cfg(any(debug_assertions, test))]
 use std::path::PathBuf;
 use tauri::{Manager, TitleBarStyle};
 use tauri_plugin_log::fern::{
@@ -20,11 +21,12 @@ use tauri_plugin_log::fern::{
 };
 use tauri_plugin_log::{Target, TargetKind};
 use tauri_plugin_window_state::{StateFlags, WindowExt};
-use tauri_specta::{Builder, Commands, collect_commands};
+use tauri_specta::{Builder, Commands, ErrorHandlingMode, collect_commands};
 
 /// 启动应用：安装 rustls、注册命令、挂上插件，并显示主窗口。
 #[rustfmt::skip] // 行尾注释按列对齐，rustfmt 会把多余空格收成一个
 pub fn run() {
+    disable_webkit_dmabuf_renderer();
     install_rustls();
 
     let specta_builder = specta_builder();
@@ -42,6 +44,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())                  // 弹框选择文件
         .plugin(tauri_plugin_opener::init())                  // 打开外部链接
         .plugin(tauri_plugin_shell::init())                   // 自定义 Formatter 执行外部脚本
+        .plugin(tauri_plugin_clipboard_manager::init())       // 剪贴板读写（终端右键粘贴，绕开 WKWebView 权限限制）
         .plugin(init_logger().build())                        // 日志
         .setup(app_setup(specta_builder))                     // 挂上 specta 事件并显示主窗口
         .manage(AppState::default())                          // 状态管理，保持 Redis 连接
@@ -49,6 +52,25 @@ pub fn run() {
         .run(tauri::generate_context!())                      // 按 tauri.conf 启动
         .expect("error while running tauri application");     // 启动失败时退出
 }
+
+/// Linux 上关掉 WebKitGTK 的 DMA-BUF 渲染器，避免窗口白屏。
+///
+/// WebKit 2.42 起默认把页面画进一块 GPU 缓冲，再交给桌面合成器零拷贝上屏。
+/// Deepin 25 的 DDE、部分 Wayland 合成器和 NVIDIA 不接受这块缓冲的格式，合成失败后窗口停在白底。
+/// 改为共享内存上屏后页面能画出来。必须在创建 WebView 之前设置，这样 deb / rpm / AppImage 进程自己带上。
+/// 环境里已经有 `WEBKIT_DISABLE_DMABUF_RENDERER` 时不覆盖。
+#[cfg(target_os = "linux")]
+fn disable_webkit_dmabuf_renderer() {
+    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+        // SAFETY: 此时还没有 tauri / tokio 线程，没有并发的环境变量读取。
+        unsafe {
+            std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+        }
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn disable_webkit_dmabuf_renderer() {}
 
 /// 单实例。再次启动时聚焦已经在跑的窗口。
 /// https://tauri.app/zh-cn/plugin/single-instance/
@@ -77,7 +99,10 @@ fn install_rustls() {
 
 /// 注册 Tauri 命令。debug 构建时同时写出前端类型文件。
 fn specta_builder() -> Builder<tauri::Wry> {
+    // tauri-specta ≥ rc.29 默认 ErrorHandlingMode::Throw；前端 meCommands 依赖
+    // typedError 的 `{ status: 'ok'|'error' }` 解包，需显式保持 Result。
     let specta_builder = Builder::<tauri::Wry>::new()
+        .error_handling(ErrorHandlingMode::Result)
         .dangerously_cast_bigints_to_number()
         .commands(tauri_specta_commands());
 
@@ -158,13 +183,18 @@ fn tauri_specta_commands() -> Commands<tauri::Wry> {
         app_dir,
         is_app_store,
         restart_after_update,
+        check_app_update,
         test_conn,
         detect_system_proxy,
         masters,
+        sentinel_topology,
         conn_list,
         app_settings,
         connect,
         disconnect,
+        migrate_probe,
+        migrate_keys,
+        migrate_stop,
         db_list,
         select_db,
         info,
@@ -174,6 +204,7 @@ fn tauri_specta_commands() -> Commands<tauri::Wry> {
         node_list,
         scan,
         field_scan,
+        value_download,
         ttl,
         set,
         del,
@@ -208,6 +239,7 @@ fn tauri_specta_commands() -> Commands<tauri::Wry> {
         v_sim,
         object_info,
         execute_command,
+        workbench_exec,
         acl_users,
         acl_list_users,
         acl_getuser,
@@ -224,8 +256,10 @@ fn tauri_specta_commands() -> Commands<tauri::Wry> {
         slow_log,
         memory_usage,
         key_memory,
+        key_pttl,
         config_get,
         config_set,
+        config_rewrite,
         client_list,
         publish,
         subscribe,
@@ -255,6 +289,8 @@ fn tauri_specta_commands() -> Commands<tauri::Wry> {
 }
 
 /// 生成前端 TS 绑定路径（相对 `src-tauri` 的 `CARGO_MANIFEST_DIR`）。
+/// release 构建不导出类型，避免 `dead_code`。
+#[cfg(any(debug_assertions, test))]
 fn tauri_specta_typescript_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../src/types/tauri-specta.ts")
 }
@@ -268,6 +304,7 @@ mod specta_export_tests {
     #[test]
     fn export_tauri_specta_typescript_bindings() {
         Builder::<tauri::Wry>::new()
+            .error_handling(ErrorHandlingMode::Result)
             .dangerously_cast_bigints_to_number()
             .commands(tauri_specta_commands())
             .export(Typescript::default(), tauri_specta_typescript_path())

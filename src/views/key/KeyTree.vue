@@ -7,6 +7,7 @@ import { useI18n } from 'vue-i18n'
 
 import { shareProvideKey } from '@/types/me-interface'
 import type { RedisKey_Deserialize } from '@/types/tauri-specta'
+import { TREE_KEY_ID_PREFIX } from '@/utils/app/util'
 import {
   getConnKeySeparator,
   joinKeyPath,
@@ -14,10 +15,10 @@ import {
   keyUnderFolder,
   splitKeyPath,
 } from '@/utils/conn'
-import { redisKeyId, sameRedisKey } from '@/utils/redis-key'
-import { TREE_KEY_ID_PREFIX } from '@/utils/util'
+import { redisKeyId, sameRedisKey } from '@/utils/redis/redis-key'
 
 import KeyMemorySize from './KeyMemorySize.vue'
+import KeyTtlLabel from './KeyTtlLabel.vue'
 import KeyTypeTag from './KeyTypeTag.vue'
 // #endregion
 
@@ -189,6 +190,8 @@ const keyHeight = computed(() => meTauri.settings.keyHeight ?? 20)
 const showKeyMemory = computed(
   () => !!meTauri.settings.keyShowMemory && share.capabilities.memoryUsageSupported,
 )
+// 菜单开关才挂叶子并打 PTTL。PTTL 各版本都有，不必看能力位
+const showKeyTtl = computed(() => !!meTauri.settings.keyShowTtl)
 
 const isContextNodeFavorited = computed(() => {
   if (!contextMenuNode.value?.isLeaf) return false
@@ -631,15 +634,16 @@ function folderIconName(node: TreeNode): string {
               </div>
             </div>
             <div
-              v-if="showKeyMemory || isFavoritedLocal(node.data.redisKey)"
+              v-if="showKeyMemory || showKeyTtl || isFavoritedLocal(node.data.redisKey)"
               class="key-leaf-actions"
-              :class="{ 'is-star-only': !showKeyMemory }">
+              :class="{ 'is-star-only': !showKeyMemory && !showKeyTtl }">
               <me-icon
                 v-if="isFavoritedLocal(node.data.redisKey)"
                 icon="el-icon-star-filled"
                 style="color: #f7ba2a"
                 class="key-favorite-btn"
                 @click.stop="emit('contextKey', 'unfavoriteKey', node.data.redisKey)" />
+              <KeyTtlLabel v-if="showKeyTtl" :redis-key="node.data.redisKey" />
               <KeyMemorySize v-if="showKeyMemory" :redis-key="node.data.redisKey" />
             </div>
           </div>
@@ -681,8 +685,14 @@ function folderIconName(node: TreeNode): string {
           <el-dropdown-item command="copyKey">
             <me-icon icon="el-icon-document-copy" :name="t('keyTree.copyKey')" />
           </el-dropdown-item>
-          <el-dropdown-item v-if="canEdit && !showCheckbox && !favoriteMode" command="deleteKey">
-            <me-icon icon="el-icon-delete" :name="t('keyTree.deleteKey')" />
+          <el-dropdown-item command="copyAsCommand">
+            <me-icon icon="me-icon-copy-command" :name="t('redisValue.copyAsCommand')" />
+          </el-dropdown-item>
+          <el-dropdown-item v-if="canEdit" command="renameKey">
+            <me-icon icon="el-icon-edit" :name="t('redisValue.renameKey')" />
+          </el-dropdown-item>
+          <el-dropdown-item v-if="canEdit" command="duplicateKey">
+            <me-icon icon="el-icon-copy-document" :name="t('redisValue.duplicateKey')" />
           </el-dropdown-item>
           <el-dropdown-item :command="isContextNodeFavorited ? 'unfavoriteKey' : 'favoriteKey'">
             <me-icon
@@ -690,6 +700,13 @@ function folderIconName(node: TreeNode): string {
               :name="
                 isContextNodeFavorited ? t('keyTree.unfavoriteKey') : t('keyTree.favoriteKey')
               " />
+          </el-dropdown-item>
+          <!-- 删除置底并用分割线与上方操作区分 -->
+          <el-dropdown-item
+            v-if="canEdit && !showCheckbox && !favoriteMode"
+            command="deleteKey"
+            divided>
+            <me-icon icon="el-icon-delete" :name="t('keyTree.deleteKey')" />
           </el-dropdown-item>
         </template>
 
@@ -716,14 +733,25 @@ function folderIconName(node: TreeNode): string {
           <el-dropdown-item v-if="canEdit" command="addKey" :divided="isContextFavoriteFolderRoot">
             <me-icon icon="el-icon-circle-plus" :name="t('keyTree.addKey')" />
           </el-dropdown-item>
-          <el-dropdown-item command="copyFolder" :divided="isContextFavoriteFolderRoot && !canEdit">
-            <me-icon icon="el-icon-document-copy" :name="t('keyTree.copyFolder')" />
-          </el-dropdown-item>
-          <el-dropdown-item v-if="!showCheckbox && allowEnterCheckedMode" command="checkedMode">
+          <el-dropdown-item
+            v-if="!showCheckbox && allowEnterCheckedMode"
+            command="checkedMode"
+            :divided="isContextFavoriteFolderRoot && !canEdit">
             <me-icon icon="me-icon-checked" :name="t('keyMain.checkedMode')" />
           </el-dropdown-item>
-          <el-dropdown-item v-if="showCheckbox" command="exitCheckedMode">
+          <el-dropdown-item
+            v-if="showCheckbox"
+            command="exitCheckedMode"
+            :divided="isContextFavoriteFolderRoot && !canEdit">
             <me-icon icon="el-icon-circle-close" :name="t('keyMain.exitCheckedMode')" />
+          </el-dropdown-item>
+          <!-- 只读且多选入口也不出现时，复制路径才是重载项后的第一项 -->
+          <el-dropdown-item
+            command="copyFolder"
+            :divided="
+              isContextFavoriteFolderRoot && !canEdit && !showCheckbox && !allowEnterCheckedMode
+            ">
+            <me-icon icon="el-icon-document-copy" :name="t('keyTree.copyFolder')" />
           </el-dropdown-item>
 
           <!-- 收藏目录根：取消收藏；普通模式目录：收藏/取消 -->

@@ -3,14 +3,9 @@
 import { computed, inject, onUnmounted, ref, watchEffect } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import type { MeColumn, MeFilterValue } from '@/components/me-table-column'
+import type { MeColumn } from '@/components/me-table/column'
 import { shareProvideKey } from '@/types/me-interface'
 import type { RedisKey_Deserialize, RedisKeySize_Serialize } from '@/types/tauri-specta'
-import { clearKeyMemoryCacheForConn } from '@/utils/key-memory-cache'
-import { clearKeyTypeCacheForConn } from '@/utils/key-type-cache'
-import { useMemoryScan } from '@/utils/memory-scan'
-import { meType, toKeyTypeLabel } from '@/utils/redis-display'
-import { sameRedisKey } from '@/utils/redis-key'
 import {
   bus,
   KEY_OPEN_TAB,
@@ -20,7 +15,13 @@ import {
   meHumanSize,
   meCommands,
   meOk,
-} from '@/utils/util'
+} from '@/utils/app/util'
+import { clearKeyMemoryCacheForConn } from '@/utils/redis/key-memory-cache'
+import { clearKeyTtlCacheForConn } from '@/utils/redis/key-ttl-cache'
+import { clearKeyTypeCacheForConn } from '@/utils/redis/key-type-cache'
+import { useMemoryScan } from '@/utils/redis/memory-scan'
+import { meType, toKeyTypeLabel } from '@/utils/redis/redis-display'
+import { sameRedisKey } from '@/utils/redis/redis-key'
 
 // #region 核心状态
 const { t } = useI18n()
@@ -85,18 +86,7 @@ onUnmounted(() => {
   void stop()
 })
 
-// 类型列头筛选已选值（空数组即不限）
-const typeFilter = ref<MeFilterValue[]>([])
-
-const filterDataList = computed(() => {
-  const key = keyword.value.toLowerCase()
-  const types = typeFilter.value
-  return dataList.value.filter(
-    row =>
-      (!key || row.key?.toLowerCase().indexOf(key) > -1) &&
-      (!types.length || types.includes(row.type)),
-  )
-})
+// 类型列头筛选选项（自定义 text = 类型标签，值 = 原始 type）；作为 filterOptions 手动覆盖，保留标签文案
 const filterTypes = computed(() => {
   return [...new Set(dataList.value.map(d => d.type))].map(d => ({
     text: toKeyTypeLabel(d),
@@ -112,9 +102,11 @@ const memoryColumns = computed<MeColumn<RedisKeySize_Serialize>[]>(() => [
     prop: 'type',
     title: t('redisMemory.type'),
     width: 100,
+    // 列头筛选：MeTable 自动渲染面板并关排序、按原始 type 过滤（选项文案由 filterOptions 自定义）
+    filterOptions: filterTypes.value,
     formatter: row => toKeyTypeLabel(row.type),
   },
-  { key: 'key', prop: 'key', title: t('redisMemory.key'), minWidth: 200 },
+  { key: 'key', prop: 'key', title: t('redisMemory.key'), minWidth: 200, searchable: true },
   {
     key: 'size',
     prop: 'size',
@@ -157,10 +149,11 @@ function batchDelKey() {
         match: '',
         keyList: selection.value.map(row => ({ key: row.key, bytes: row.bytes })),
       }
-      await meCommands.batchDel(share.conn!.id, param)
+      const count = await meCommands.batchDel(share.conn!.id, param)
       clearKeyTypeCacheForConn(share.conn!.id)
       clearKeyMemoryCacheForConn(share.conn!.id)
-      meOk(t('deleteOk'))
+      clearKeyTtlCacheForConn(share.conn!.id)
+      meOk(t('batchDeleteOk', { count }))
       dataList.value = dataList.value.filter(
         rk => !param.keyList.some(del => sameRedisKey(rk, del)),
       )
@@ -254,19 +247,12 @@ function batchDelKey() {
     </div>
     <div class="table">
       <me-table
-        :data="filterDataList"
+        :data="dataList"
+        :keyword="keyword"
         :columns="memoryColumns"
-        :total="dataList.length"
         :default-sort="{ prop: 'size', order: 'descending' }"
         export-name="memory"
         @selection-change="selectionChange">
-        <!-- 类型列头筛选：v2 无内置筛选 UI -->
-        <template #header-type>
-          <me-column-filter
-            v-model="typeFilter"
-            :title="t('redisMemory.type')"
-            :options="filterTypes" />
-        </template>
         <template #cell-type="{ row }">
           <el-text :type="meType(row.type)">{{ toKeyTypeLabel(row.type) }}</el-text>
         </template>

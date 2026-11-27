@@ -282,15 +282,62 @@ pub fn parse_ft_info(name: &str, value: Value) -> AnyResult<SearchIndexInfo> {
     })
 }
 
+/// `FT.INFO` 里类型是 VECTOR 的字段。结果里的名字可能是 attribute，也可能是 identifier，两个都收。
+/// 回复形状不对时当没有向量字段，不让制表失败。
+pub fn vector_field_names(value: &Value) -> HashSet<String> {
+    let Ok(pairs) = as_pairs(value.clone()) else {
+        return HashSet::new();
+    };
+    let mut names = HashSet::new();
+    for (key, val) in pairs {
+        if !key.eq_ignore_ascii_case("attributes") {
+            continue;
+        }
+        let Ok(fields) = parse_attributes(val) else {
+            return names;
+        };
+        for field in fields {
+            if !field.field_type.eq_ignore_ascii_case("VECTOR") {
+                continue;
+            }
+            if !field.attribute.is_empty() {
+                names.insert(field.attribute);
+            }
+            if !field.identifier.is_empty() {
+                names.insert(field.identifier);
+            }
+        }
+    }
+    names
+}
+
 /// `FT.SEARCH`：RESP2 数组或 RESP3 Map。`vectors` 里的字段按小端 FLOAT32 解开。
 pub fn parse_ft_search(
     value: Value,
     with_scores: bool,
     vectors: &HashSet<String>,
 ) -> AnyResult<SearchQueryResult> {
+    parse_ft_search_opts(value, with_scores, vectors, false)
+}
+
+/// 工作台用。字段不是合法文本时：长度能对上就按小端 FLOAT32 解开，否则记成二进制长度。
+pub fn parse_ft_search_readable(
+    value: Value,
+    with_scores: bool,
+    vectors: &HashSet<String>,
+) -> AnyResult<SearchQueryResult> {
+    parse_ft_search_opts(value, with_scores, vectors, true)
+}
+
+fn parse_ft_search_opts(
+    value: Value,
+    with_scores: bool,
+    vectors: &HashSet<String>,
+    readable_binary: bool,
+) -> AnyResult<SearchQueryResult> {
     match value {
-        Value::Array(arr) => parse_search_array(arr, with_scores, vectors),
-        Value::Map(map) => parse_search_map(map, vectors),
+        Value::Array(arr) => parse_search_array(arr, with_scores, vectors, readable_binary),
+        Value::Map(map) => parse_search_map(map, vectors, readable_binary),
         _ => bail!(invalid("FT.SEARCH")),
     }
 }
@@ -664,7 +711,7 @@ fn ft_info_display_value(value: Value) -> Value {
 }
 
 fn fold_info_map(arr: Vec<Value>) -> Value {
-    if arr.len() % 2 != 0 {
+    if !arr.len().is_multiple_of(2) {
         return Value::Array(arr);
     }
     let mut pairs = Vec::with_capacity(arr.len() / 2);
@@ -763,7 +810,11 @@ fn parse_definition(value: Value) -> AnyResult<(String, String)> {
 }
 
 /// 文档字段：RESP2 交替数组，或 RESP3 Map。
-fn field_pairs(value: &Value, vectors: &HashSet<String>) -> AnyResult<Vec<SearchKv>> {
+fn field_pairs(
+    value: &Value,
+    vectors: &HashSet<String>,
+    readable_binary: bool,
+) -> AnyResult<Vec<SearchKv>> {
     match value {
         Value::Nil => Ok(Vec::new()),
         Value::Array(arr) => {
@@ -775,7 +826,7 @@ fn field_pairs(value: &Value, vectors: &HashSet<String>) -> AnyResult<Vec<Search
             while i < arr.len() {
                 let field = text(&arr[i]);
                 out.push(SearchKv {
-                    value: field_text(&field, &arr[i + 1], vectors),
+                    value: field_text(&field, &arr[i + 1], vectors, readable_binary),
                     field,
                 });
                 i += 2;
@@ -787,7 +838,7 @@ fn field_pairs(value: &Value, vectors: &HashSet<String>) -> AnyResult<Vec<Search
             .map(|(k, v)| {
                 let field = text(k);
                 SearchKv {
-                    value: field_text(&field, v, vectors),
+                    value: field_text(&field, v, vectors, readable_binary),
                     field,
                 }
             })
@@ -797,30 +848,48 @@ fn field_pairs(value: &Value, vectors: &HashSet<String>) -> AnyResult<Vec<Search
 }
 
 /// Hash 的 VECTOR 是小端 FLOAT32 二进制。JSON 数组仍是文本，不拆字节。
-fn field_text(name: &str, value: &Value, vectors: &HashSet<String>) -> String {
-    if vectors.contains(name) {
-        if let Value::BulkString(bytes) = value {
-            if let Ok(text) = std::str::from_utf8(bytes) {
-                if text.trim_start().starts_with('[') {
-                    return text.to_string();
-                }
-            }
-            if let Some(text) = format_f32_le(bytes) {
-                return text;
-            }
+fn field_text(
+    name: &str,
+    value: &Value,
+    vectors: &HashSet<String>,
+    readable_binary: bool,
+) -> String {
+    let Value::BulkString(bytes) = value else {
+        return text_sep(value);
+    };
+    if let Ok(text) = std::str::from_utf8(bytes) {
+        if vectors.contains(name) && text.trim_start().starts_with('[') {
+            return text.to_string();
         }
+        // 合法文本不按浮点拆，避免把 "bike" 这类字段解成数字
+        if !vectors.contains(name) {
+            return text.to_string();
+        }
+        if let Some(decoded) = format_f32_le(bytes) {
+            return decoded;
+        }
+        return text.to_string();
+    }
+    // 只有 schema 标明的向量才按浮点拆。其它二进制不猜，避免把任意 4 字节当成数字。
+    if vectors.contains(name)
+        && let Some(decoded) = format_f32_le(bytes)
+    {
+        return decoded;
+    }
+    if readable_binary {
+        return format!("(binary {})", bytes.len());
     }
     text_sep(value)
 }
 
 /// 长度是 4 的倍数时，按小端 FLOAT32 拼成 JSON 数组，和 JSON 文档里的向量一样。
-fn format_f32_le(bytes: &[u8]) -> Option<String> {
-    if bytes.is_empty() || bytes.len() % 4 != 0 {
+pub(crate) fn format_f32_le(bytes: &[u8]) -> Option<String> {
+    if bytes.is_empty() || !bytes.len().is_multiple_of(4) {
         return None;
     }
     let mut parts = Vec::with_capacity(bytes.len() / 4);
-    for chunk in bytes.chunks_exact(4) {
-        let n = f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+    for chunk in bytes.as_chunks::<4>().0 {
+        let n = f32::from_le_bytes(*chunk);
         parts.push(format_f32(n));
     }
     Some(format!("[{}]", parts.join(", ")))
@@ -846,6 +915,7 @@ fn parse_search_array(
     arr: Vec<Value>,
     with_scores: bool,
     vectors: &HashSet<String>,
+    readable_binary: bool,
 ) -> AnyResult<SearchQueryResult> {
     if arr.is_empty() {
         bail!(invalid("FT.SEARCH"));
@@ -873,7 +943,7 @@ fn parse_search_array(
             });
             continue;
         }
-        let fields = field_pairs(&arr[i], vectors)?;
+        let fields = field_pairs(&arr[i], vectors, readable_binary)?;
         i += 1;
         hits.push(SearchHit { key, score, fields });
     }
@@ -884,6 +954,7 @@ fn parse_search_array(
 fn parse_search_map(
     map: Vec<(Value, Value)>,
     vectors: &HashSet<String>,
+    readable_binary: bool,
 ) -> AnyResult<SearchQueryResult> {
     let mut total = 0u64;
     let mut raw_hits: Option<Value> = None;
@@ -907,7 +978,7 @@ fn parse_search_map(
             match k.as_str() {
                 "id" => key = text(&v),
                 "score" => score = Some(text(&v)),
-                "extra_attributes" => fields = field_pairs(&v, vectors)?,
+                "extra_attributes" => fields = field_pairs(&v, vectors, readable_binary)?,
                 _ => {}
             }
         }
@@ -950,6 +1021,36 @@ mod tests {
         assert!(!field.options.to_ascii_lowercase().contains("weight"));
         assert!(field.options.contains("WITHSUFFIXTRIE"));
         assert!(field.options.split_whitespace().any(|w| w == "SORTABLE"));
+    }
+
+    /// 向量字段收 attribute 和 identifier。普通字段不收。
+    #[test]
+    fn vector_field_names_keep_attribute_and_identifier() {
+        let value = Value::Array(vec![
+            b("attributes"),
+            Value::Array(vec![
+                Value::Array(vec![
+                    b("identifier"),
+                    b("$.embedding"),
+                    b("attribute"),
+                    b("embedding"),
+                    b("type"),
+                    b("VECTOR"),
+                ]),
+                Value::Array(vec![
+                    b("identifier"),
+                    b("title"),
+                    b("attribute"),
+                    b("title"),
+                    b("type"),
+                    b("TEXT"),
+                ]),
+            ]),
+        ]);
+        let names = vector_field_names(&value);
+        assert!(names.contains("embedding"));
+        assert!(names.contains("$.embedding"));
+        assert!(!names.contains("title"));
     }
 
     /// 读出列表用到的标量和字段，原文按终端 JSON 保留。
@@ -1008,7 +1109,7 @@ mod tests {
         bytes.extend(1.5f32.to_le_bytes());
         bytes.extend((-0.25f32).to_le_bytes());
         bytes.extend(0.0f32.to_le_bytes());
-        bytes.extend(0.123456789f32.to_le_bytes());
+        bytes.extend(0.123_456_79f32.to_le_bytes());
         let raw = Value::Array(vec![
             Value::Int(1),
             b("bikes:1"),

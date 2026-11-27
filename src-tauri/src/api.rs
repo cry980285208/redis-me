@@ -1,29 +1,29 @@
 use crate::api_commands;
-use crate::client::state::{ClientAccess, app_timeouts};
+use crate::client::state::{AppState, ClientAccess, app_timeouts};
 use crate::model::*;
 use crate::net::system_proxy;
 use crate::support::app_store;
 use crate::support::capabilities::ServerCapabilities;
+use crate::support::error::AppError;
 use crate::support::util::*;
 use specta::specta;
 use std::collections::HashMap;
-#[cfg(target_os = "macos")]
-use tauri::Manager;
 use tauri::utils::platform::current_exe;
-use tauri::{AppHandle, command};
+use tauri::{AppHandle, Manager, State, Webview, command};
 
 // 使用宏简化代码
 // to_api_result(app_handle.get_client(id).and_then(|client| client.$name($($param),*)))
 api_commands!(
     db_list() -> Vec<RedisDB>;                 // 数据库列表
     select_db(db: u16) -> ();                  // 切换数据库
-    info(node: Option<String>)  -> RedisInfo;  // 信息
-    info_list() -> Vec<RedisInfo>;             // 信息列表
+    info(node: Option<String>, section: Option<String>) -> RedisInfo; // 信息；section 空=默认 INFO，all=INFO all
+    info_list(node_filter: Option<String>, section: Option<String>) -> Vec<RedisInfo>; // 信息列表；node_filter 选节点，section 选 INFO 段落
     chart(node: Option<String>) -> RedisChart; // 图表
-    chart_list() -> Vec<RedisChart>;           // 图表列表
+    chart_list(node_filter: Option<String>) -> Vec<RedisChart>; // 图表列表（可按角色/节点过滤）
     node_list() -> Vec<RedisNode>;             // 节点列表
     scan(param: ScanParam) -> ScanResult;      // 扫描
     field_scan(param: FieldScanParam)  -> FieldScanResult;        // 字段扫描
+    value_download(param: RedisValueDownload) -> ();              // STRING 大值分块下载到本地文件
     //get(key: RedisKey, hash_key: Option<String>) -> RedisValue; // 获取值(不扫描，直接获取所有)
     ttl(key: RedisKey, ttl: i64) -> ();                           // 设置TTL
     set(param: RedisSetParam) -> ();                              // 设置值
@@ -59,17 +59,20 @@ api_commands!(
     v_sim(param: RedisVSim) -> Vec<RedisVSimItem>;                // Vector Set VSIM 相似度查询
     object_info(key: RedisKey) -> RedisObjectInfo;                // OBJECT 自省（ENCODING/IDLETIME/REFCOUNT/FREQ）
     execute_command(param: RedisCommand) -> String;               // 执行命令
+    workbench_exec(param: RedisCommand) -> WorkbenchExec;         // 工作台：文本 + 点名命令的表
     config_get(pattern: &str, node: Option<String>) -> HashMap<String, String>; // 获取配置
     config_set(key: &str, value: &str, node: Option<String>) -> ();             // 设置配置
+    config_rewrite(node: Option<String>) -> ();                                 // 运行配置写回文件
     slow_log(count: Option<u64>, node: Option<String>) -> Vec<RedisSlowLog>;    // 慢日志
     memory_usage(param: RedisMemoryParam) -> RedisMemoryResult;                 // 内存分析（一轮）
     key_memory(keys: Vec<RedisKey>) -> Vec<Option<u64>>;                        // 键列表批量 MEMORY USAGE
+    key_pttl(keys: Vec<RedisKey>) -> Vec<i64>;                                  // 键列表批量 PTTL（毫秒）
     client_list(node: Option<String>, client_type: Option<String>) -> Vec<RedisClientInfo>; // 客户端列表
     publish(channel: &str, message: &str, msg_fmt: Option<BytesFormat>) -> (); // 发布消息
     subscribe_stop() -> ();                                      // 订阅消息停止
     monitor_stop()   -> ();                                      // 监控命令停止
     notify_subscribe_stop() -> ();                               // 键空间通知订阅停止
-    batch_del(param: RedisBatchKey) -> ();                       // 批量删除
+    batch_del(param: RedisBatchKey) -> u64;                      // 批量删除，返回实际删除条数
     batch_ttl(param: RedisBatchTtl) -> ();                       // 批量更新过期时间
     mock_data(count: u64) -> ();                                 // 模拟数据
     key_type(key: RedisKey) -> String;                           // 获取键类型
@@ -130,6 +133,17 @@ pub fn is_app_store() -> bool {
     app_store::detect()
 }
 
+/// 按给定顺序检查更新。顺序由前端按更新源设置排好，每个地址单独计超时。
+#[command]
+#[specta]
+pub async fn check_app_update(
+    webview: Webview,
+    endpoints: Vec<String>,
+    timeout_ms: u64,
+) -> ApiResult<Option<crate::support::app_update::AppUpdateMetadata>> {
+    crate::support::app_update::check(webview, endpoints, timeout_ms).await
+}
+
 /// 更新安装完成后重启。macOS 上延迟 `open` 再退出，避免 single-instance 与 `relaunch()` 竞态。
 #[command]
 #[specta]
@@ -180,6 +194,23 @@ pub fn masters(app_handle: AppHandle, conf: ConnConfig) -> ApiResult<Vec<HashMap
     ))
 }
 
+/// 信息页哨兵拓扑。按连接 id 取出哨兵地址，临时连哨兵查询，不占用主库会话。
+#[command]
+#[specta]
+pub fn sentinel_topology(app_handle: AppHandle, id: &str) -> ApiResult<SentinelTopology> {
+    let (connect_timeout, command_timeout) = app_timeouts(&app_handle);
+    to_api_result((|| {
+        let state: State<AppState> = app_handle.state();
+        let conf = {
+            let map = state.connections.lock().unwrap();
+            map.get(id)
+                .cloned()
+                .ok_or(AppError::ConnectionNotFound { id: id.into() })?
+        };
+        crate::net::conn::sentinel_topology(&conf, connect_timeout, command_timeout)
+    })())
+}
+
 // 连接信息发送到后端
 #[command]
 #[specta]
@@ -210,6 +241,36 @@ pub fn connect(app_handle: AppHandle, id: &str) -> ApiResult<ServerCapabilities>
 #[specta]
 pub fn disconnect(app_handle: AppHandle, id: &str) -> ApiResult<()> {
     to_api_result(app_handle.disconnect(id))
+}
+
+/// 跨连接键传输：开始前探测 DUMP/RESTORE 或 TYPE。
+#[command]
+#[specta]
+pub fn migrate_probe(
+    app_handle: AppHandle,
+    param: RedisMigrateProbe,
+) -> ApiResult<MigrateProbeResult> {
+    to_api_result(crate::client::ops::migrate::migrate_probe(
+        &app_handle,
+        param,
+    ))
+}
+
+/// 跨连接键传输：后台新建两端连接并串行复制键；进度事件 `migrate`。
+#[command]
+#[specta]
+pub fn migrate_keys(app_handle: AppHandle, param: RedisMigrateParam) -> ApiResult<()> {
+    to_api_result(crate::client::ops::migrate::migrate_keys_start(
+        app_handle, param,
+    ))
+}
+
+/// 取消正在进行的键传输。
+#[command]
+#[specta]
+pub fn migrate_stop(app_handle: AppHandle) -> ApiResult<()> {
+    crate::client::ops::migrate::migrate_stop(&app_handle);
+    Ok(())
 }
 
 // ------------------------------ 仅本文件使用 ------------------------------

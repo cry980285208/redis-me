@@ -1,13 +1,15 @@
 use crate::client::me_client::*;
 use crate::client::ops::acl::acl_build_rules;
 use crate::client::ops::exp::{export_cmd_0_thread, export_csv_0_thread};
+use crate::client::ops::field_scan::value_download_0_thread;
 use crate::client::ops::imp::{import_cmd_0_thread, import_csv_0_thread};
-use crate::client::ops::info::{parse_client_info, redis_value_to_log};
-use crate::client::ops::key::copy0;
+use crate::client::ops::info::{info_cmd, parse_client_info, redis_value_to_log};
+use crate::client::ops::key::{copy0, deleted_count};
 use crate::client::ops::key_scan::{batch_key0, scan_0_batch_count, scan_0_exact, scan_1_cmd};
 use crate::client::ops::notify::{build_notify_patterns, notify_subscribe_node0};
 use crate::client::ops::pubsub::{monitor0, subscribe0};
 use crate::client::ops::search::SearchCmd;
+use crate::client::ops::workbench::{finish_workbench, vector_fields_for_search};
 use crate::client::state::MeBase;
 use crate::me_client_forwards;
 use crate::model::*;
@@ -102,17 +104,21 @@ impl MeClient for MeSingle {
         Ok(())
     }
 
-    fn info(&self, _node: Option<String>) -> AnyResult<RedisInfo> {
+    fn info(&self, _node: Option<String>, section: Option<String>) -> AnyResult<RedisInfo> {
         let mut conn = self.get_conn()?;
-        let info: String = redis::cmd("info").query(&mut conn)?;
+        let info: String = info_cmd(section.as_deref()).query(&mut conn)?;
         Ok(RedisInfo {
             node: "".to_string(),
             info,
         })
     }
 
-    fn info_list(&self) -> AnyResult<Vec<RedisInfo>> {
-        let info = self.info(None)?;
+    fn info_list(
+        &self,
+        _node_filter: Option<String>,
+        section: Option<String>,
+    ) -> AnyResult<Vec<RedisInfo>> {
+        let info = self.info(None, section)?;
         Ok(vec![info])
     }
 
@@ -174,12 +180,54 @@ impl MeClient for MeSingle {
         };
 
         let mut conn = self.get_conn()?;
-        let value = redis::cmd(cmd.as_str()).arg(&args).query(&mut conn)?;
+        let value = match redis::cmd(cmd.as_str()).arg(&args).query(&mut conn) {
+            Ok(value) => value,
+            Err(e) => {
+                // 解析类错误说明共享连接已错位（见 is_protocol_desync_error），重建后再抛错，避免污染后续命令
+                if is_protocol_desync_error(&e) {
+                    drop(conn);
+                    let _ = self.reconnect();
+                }
+                return Err(e.into());
+            }
+        };
         Ok(redis_value_to_cli_display(
             value,
             param.output_mode,
             &cmd,
             &args,
+        ))
+    }
+
+    // 查询与 execute_command 相同，多拆出点名命令的表。
+    fn workbench_exec(&self, param: RedisCommand) -> AnyResult<WorkbenchExec> {
+        let (cmd, args) = parse_command(param.command.as_str())?;
+        if cmd.is_empty() {
+            return Ok(WorkbenchExec {
+                text: String::new(),
+                table: None,
+            });
+        };
+
+        let mut conn = self.get_conn()?;
+        let value = match redis::cmd(cmd.as_str()).arg(&args).query(&mut conn) {
+            Ok(value) => value,
+            Err(e) => {
+                if is_protocol_desync_error(&e) {
+                    drop(conn);
+                    let _ = self.reconnect();
+                }
+                return Err(e.into());
+            }
+        };
+        // 和查询同一条连接。FT.INFO 失败时向量字段为空，二进制只写长度。
+        let vectors = vector_fields_for_search(&cmd, &args, |info| info.query(&mut conn));
+        Ok(finish_workbench(
+            value,
+            param.output_mode,
+            &cmd,
+            &args,
+            &vectors,
         ))
     }
 
@@ -203,6 +251,13 @@ impl MeClient for MeSingle {
             .arg(key)
             .arg(value)
             .query(&mut conn)?;
+        Ok(())
+    }
+
+    fn config_rewrite(&self, _node: Option<String>) -> AnyResult<()> {
+        let cmd = resolve_command_name(&self.conf, "config");
+        let mut conn = self.get_conn()?;
+        let _: () = redis::cmd(&cmd).arg("rewrite").query(&mut conn)?;
         Ok(())
     }
 
@@ -240,7 +295,8 @@ impl MeClient for MeSingle {
             if let Some(size) = size
                 && size >= size_limit
             {
-                out.push((keys[index].to_bytes().to_vec(), size, "unknown".into()));
+                // 未查 TYPE 时用空串，不写成 unknown
+                out.push((keys[index].to_bytes().to_vec(), size, String::new()));
             }
         }
         if need_key_type && !out.is_empty() {
@@ -271,6 +327,20 @@ impl MeClient for MeSingle {
         }
         let sizes: Vec<Option<u64>> = pipe.query(&mut conn)?;
         Ok(sizes)
+    }
+
+    /// 列表右侧 TTL。PTTL 与入参等长，单位毫秒。
+    fn key_pttl(&self, keys: Vec<RedisKey>) -> AnyResult<Vec<i64>> {
+        if keys.is_empty() {
+            return Ok(vec![]);
+        }
+        let mut conn = self.get_conn()?;
+        let mut pipe = Pipeline::with_capacity(keys.len());
+        for key in &keys {
+            pipe.cmd("pttl").arg(key.to_bytes());
+        }
+        let ttls: Vec<i64> = pipe.query(&mut conn)?;
+        Ok(ttls)
     }
 
     fn client_list(
@@ -337,21 +407,23 @@ impl MeClient for MeSingle {
         )
     }
 
-    fn batch_del(&self, param: RedisBatchKey) -> AnyResult<()> {
+    fn batch_del(&self, param: RedisBatchKey) -> AnyResult<u64> {
         let key_list = batch_key0(self, param, false)?;
         if key_list.is_empty() {
-            return Ok(());
+            return Ok(0);
         }
 
         let size = key_list.len();
         let mut pipe = Pipeline::with_capacity(size);
         for key in key_list {
-            pipe.del(&key).ignore();
+            // 保留 DEL 的整数回复，合计才是实际删掉的条数
+            pipe.del(&key);
         }
         let mut conn = self.get_conn()?;
-        let _: () = pipe.query(&mut conn)?;
-        info!("batch delete finished: {}", size);
-        Ok(())
+        let deleted: Vec<i64> = pipe.query(&mut conn)?;
+        let count = deleted_count(&deleted);
+        info!("batch delete finished: {count} of {size}");
+        Ok(count)
     }
 
     fn batch_ttl(&self, param: RedisBatchTtl) -> AnyResult<()> {
@@ -512,6 +584,14 @@ impl MeClient for MeSingle {
 
         let mut conn = self.get_conn()?;
         let _: () = pipe.query(&mut conn)?;
+        Ok(())
+    }
+
+    fn value_download(&self, param: RedisValueDownload) -> AnyResult<()> {
+        let conn = self.get_new_conn()?;
+        let id = self.id.clone();
+        let app_handle = self.base().get_app_handle()?;
+        thread::spawn(move || value_download_0_thread(conn, param, app_handle, id));
         Ok(())
     }
 

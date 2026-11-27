@@ -1,19 +1,20 @@
 <script setup lang="ts">
+import { readText } from '@tauri-apps/plugin-clipboard-manager'
 // #region 导入
-import { computed, inject, nextTick, onUnmounted, ref, useTemplateRef, watch } from 'vue'
+import { computed, inject, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import MeIcon from '@/components/MeIcon.vue'
+import NodeList from '@/components/MeNodeList.vue'
 import MeSelectUpDownIcon from '@/components/MeSelectUpDownIcon.vue'
 import MeShortcut from '@/components/MeShortcut.vue'
-import { commandHelp, isReadonlyCommand, parseCommandName } from '@/locales/cmd'
+import { commandHelp, isReadonlyCommand } from '@/locales/cmd'
 import { shareProvideKey } from '@/types/me-interface'
 import type { CliOutputMode } from '@/types/tauri-specta'
-import { getTerminalShortcuts } from '@/utils/shortcut'
-import { bus, DB_SWITCH, meCopy, meCommands, isZh } from '@/utils/util'
-
-import CommandHelp from '../ext/CommandHelp.vue'
-import NodeList from '../ext/NodeList.vue'
+import { getTerminalShortcuts } from '@/utils/app/shortcut'
+import { bus, DB_SWITCH, formatSpectaErrorForUser, meCopy, meCommandsQuiet } from '@/utils/app/util'
+import { classifyTerminalCommand } from '@/utils/redis/terminal-guard'
+import CommandHelp from '@/views/tools/CommandHelp.vue'
 // #endregion
 
 // #region 核心状态
@@ -22,32 +23,25 @@ const { t } = useI18n()
 // 共享数据
 const share = inject(shareProvideKey)!
 const canEdit = computed(() => !share.readonly)
-// 只读列表头：英文 Read-only 较宽，中文只读可窄一些
-const readonlyColWidth = computed(() => (isZh.value ? 88 : 120))
 
-// 终端输出格式（对齐 redis-cli --raw / --json / --csv；每次进入默认 TTY）
+// 终端输出格式（对齐 redis-cli --raw / --json / --csv；每次进入默认 Raw）
 const outputModeOptions: { value: CliOutputMode; labelKey: string }[] = [
-  { value: 'standard', labelKey: 'redisTerminal.outputStandard' },
   { value: 'raw', labelKey: 'redisTerminal.outputRaw' },
+  { value: 'standard', labelKey: 'redisTerminal.outputStandard' },
   { value: 'json', labelKey: 'redisTerminal.outputJson' },
   { value: 'csv', labelKey: 'redisTerminal.outputCsv' },
 ]
-const outputMode = ref<CliOutputMode>('standard')
+const outputMode = ref<CliOutputMode>('raw')
 
-// 待颜色的文本
+// 待颜色的文本；欢迎语里的产品名额外加粗
 function colorText(color: string, text: string, bold = false): string {
-  return bold
-    ? `<span style="color: ${color}; font-weight: bold">${text}</span>`
-    : `<span style="color: ${color}">${text}</span>`
+  const weight = bold ? '; font-weight: bold' : ''
+  return `<span style="color: ${color}${weight}">${text}</span>`
 }
 
 const autoBroadcast = ref(true)
 const node = ref('')
-// 提示符带当前库号；SELECT 切库后 share.conn.db 变化会驱动重算（与 node 同理）
-const prefix = computed(() => {
-  const db = share.conn?.db ?? 0
-  return node.value ? `${node.value}[${db}]> ` : `[${db}]> `
-})
+const prefix = computed(() => (node.value ? node.value + '> ' : '$ '))
 const welcome = computed(() =>
   t('redisTerminal.welcome', { RedisME: colorText(share.color, 'RedisME', true) }),
 )
@@ -65,62 +59,36 @@ function formatCommandResult(data: string): string {
 let pasteEntered = false
 let pasteDone: (() => void) | null = null
 
-// 订阅类：命令会把共享连接切进订阅态、消息以 push 帧回流，污染后续读写 → 引导到发布订阅面板
-const subscribeCmds = new Set([
-  'SUBSCRIBE',
-  'PSUBSCRIBE',
-  'SSUBSCRIBE',
-  'UNSUBSCRIBE',
-  'PUNSUBSCRIBE',
-  'SUNSUBSCRIBE',
-])
-// 阻塞/独占类：会挂住共享连接直到超时，界面其它操作一起卡死 → 终端不支持
-const blockingCmds = new Set([
-  'MONITOR',
-  'BLPOP',
-  'BRPOP',
-  'BLMOVE',
-  'BLMOVEM',
-  'BRPOPLPUSH',
-  'BLMPOP',
-  'BZMPOP',
-  'BZPOPMIN',
-  'BZPOPMAX',
-  'WAIT',
-])
-
 // SELECT：走后端 select_db 同步 self.db，更新 share.conn.db 并通知键区，避免只改连接不改界面
-async function handleSelect(command: string): Promise<string> {
-  const arg = command.trim().split(/\s+/)[1]
-  const db = Number(arg)
-  if (arg === undefined || arg === '' || !Number.isInteger(db) || db < 0) {
-    return colorText('var(--el-color-error)', '(error) ERR invalid DB index')
-  }
+async function handleSelect(db: number): Promise<string> {
   if (!share.conn) return colorText('var(--el-color-error)', '(error) no connection')
   try {
-    await meCommands.selectDb(share.conn.id, db)
+    // 末尾传 false 关闭错误弹窗，集群切库等失败统一在终端内联回显，不另弹框
+    await meCommandsQuiet.selectDb(share.conn.id, db)
     share.conn.db = db
     bus.emit(DB_SWITCH, db)
     return colorText('var(--el-color-success)', 'OK')
   } catch (e: unknown) {
-    return colorText('var(--el-color-error)', `(error) ${String(e)}`)
+    return colorText('var(--el-color-error)', `(error) ${formatSpectaErrorForUser(String(e))}`)
   }
 }
 
 // 命中会话态命令返回适配后的输出；普通命令返回 null，继续走后端 executeCommand
 async function adaptCommand(command: string): Promise<string | null> {
-  const name = parseCommandName(command)
-  if (subscribeCmds.has(name)) {
+  const kind = classifyTerminalCommand(command)
+  if (kind === 'subscribe') {
     return colorText('var(--el-color-error)', `(error) ${t('redisTerminal.unsupportedSubscribe')}`)
   }
-  if (blockingCmds.has(name)) {
-    const key =
-      name === 'MONITOR' ? 'redisTerminal.unsupportedMonitor' : 'redisTerminal.unsupportedBlocking'
-    return colorText('var(--el-color-error)', `(error) ${t(key)}`)
+  if (kind === 'monitor') {
+    return colorText('var(--el-color-error)', `(error) ${t('redisTerminal.unsupportedMonitor')}`)
   }
-  if (name === 'SELECT') {
-    return handleSelect(command)
+  if (kind === 'blocking') {
+    return colorText('var(--el-color-error)', `(error) ${t('redisTerminal.unsupportedBlocking')}`)
   }
+  if (kind === 'select-invalid') {
+    return colorText('var(--el-color-error)', '(error) ERR invalid DB index')
+  }
+  if (kind && typeof kind === 'object') return handleSelect(kind.select)
   return null
 }
 
@@ -139,7 +107,7 @@ async function execCommand(command: string): Promise<string> {
       autoBroadcast: autoBroadcast.value,
       outputMode: outputMode.value,
     }
-    const data = await meCommands.executeCommand(share.conn!.id, param, false)
+    const data = await meCommandsQuiet.executeCommand(share.conn!.id, param)
     autoCopyIfNeed(data)
     return formatCommandResult(data)
   } catch (e: unknown) {
@@ -190,11 +158,13 @@ const keyShortcuts = computed(() => getTerminalShortcuts(t))
 
 // 多行粘贴：单条命令或每行一条。关掉弹框则取消。
 type XtermExpose = {
+  focus: () => void
   getCommand: () => string
   setCommand: (command: string) => void
   execute: (command: string) => boolean
 }
 const xtermRef = useTemplateRef<XtermExpose>('xtermRef')
+const terminalWrapRef = useTemplateRef<HTMLElement>('terminalWrapRef')
 
 type PasteMode = 'one' | 'lines'
 const pasteAskVisible = ref(false)
@@ -285,43 +255,57 @@ function onPaste(event: ClipboardEvent): void {
   event.preventDefault()
 }
 
-// 右键按下时选区还在；到 contextmenu 时可能已被清掉，有选区则留给组件复制
-let selectedOnPointer = ''
-
-function onMouseDown(): void {
-  selectedOnPointer = document.getSelection()?.toString() ?? ''
-}
-
-function insertAtCursor(root: HTMLElement, text: string): void {
+function insertAtCursor(text: string): void {
   const term = xtermRef.value
   if (!term) return
-  const input = root.querySelector('textarea')
+  // textarea 的 selectionStart 失焦后仍保留，限定在组件自己的 ref 子树内查
+  const input = terminalWrapRef.value?.querySelector('textarea')
   const current = term.getCommand()
   const at = input instanceof HTMLTextAreaElement ? input.selectionStart : current.length
   term.setCommand(current.slice(0, at) + text.trim() + current.slice(at))
 }
 
-function onContextMenu(event: MouseEvent): void {
-  const selected = (document.getSelection()?.toString() || selectedOnPointer).replaceAll(
-    '\u00a0',
-    ' ',
-  )
-  selectedOnPointer = ''
-  event.preventDefault()
-  event.stopPropagation()
-  if (selected) {
-    meCopy(selected)
-    return
-  }
-  const root = event.currentTarget
-  if (!(root instanceof HTMLElement)) return
-  void navigator.clipboard
-    .readText()
+// vue-web-terminal 初次挂载不会 focus 内部 textarea，Ctrl+V 的 keydown 到不了容器，
+// 需等 setCommand 等路径间接聚焦；这里点击和挂载时通过组件 ref 主动聚焦。
+// 有选区、或双击的后续 click（detail >= 2）时不抢焦，否则选完立刻 focus 会清掉选区
+function focusTerminalInput(event?: MouseEvent): void {
+  if (event && event.detail >= 2) return
+  const sel = document.getSelection()
+  if (sel && !sel.isCollapsed && sel.toString()) return
+  xtermRef.value?.focus()
+}
+
+// 页签切走后组件仍挂着，再切回来不会走 onMounted
+function focusCommandInput(): void {
+  nextTick(() => xtermRef.value?.focus())
+}
+
+onMounted(focusCommandInput)
+
+watch(
+  () => share.tabName,
+  name => {
+    if (name === 'terminal') focusCommandInput()
+  },
+)
+
+// 读取剪贴板并粘贴：多行走弹框判断，单行插入光标处
+// macOS WKWebView 会拦截 navigator.clipboard.readText（NotAllowedError），改用 Tauri 剪贴板插件
+function pasteFromClipboard(): void {
+  void readText()
     .then(text => {
       if (!text || enqueueMultiPaste(text)) return
-      enqueue(() => insertAtCursor(root, text))
+      enqueue(() => insertAtCursor(text))
     })
     .catch((error: unknown) => console.error(error))
+}
+
+// 终端 textarea 在 WKWebView 下收不到 Cmd+V 的 paste 事件，这里拦截快捷键统一走插件读取
+function onKeydown(event: KeyboardEvent): void {
+  if ((event.metaKey || event.ctrlKey) && event.key.toUpperCase() === 'V') {
+    event.preventDefault()
+    pasteFromClipboard()
+  }
 }
 
 onUnmounted(() => {
@@ -336,15 +320,17 @@ onUnmounted(() => {
     <!-- 命令输入 -->
     <div
       v-if="showCode"
+      ref="terminalWrapRef"
       class="terminal"
-      @paste.capture="onPaste"
-      @mousedown.capture="onMouseDown"
-      @contextmenu.capture="onContextMenu">
+      @click="focusTerminalInput"
+      @keydown.capture="onKeydown"
+      @paste.capture="onPaste">
       <me-xterm
         ref="xtermRef"
         class="terminal"
         :exec-command="execCommand"
         :on-command-done="finishCommand"
+        :on-paste="pasteFromClipboard"
         :prefix
         :welcome
         :command-help="commandHelp" />
@@ -352,7 +338,11 @@ onUnmounted(() => {
 
     <!-- 集群节点 -->
     <div class="node me-flex" v-if="share.conn?.cluster">
-      <el-tooltip raw-content :content="t('redisTerminal.broadcastHint')" placement="top">
+      <el-tooltip
+        raw-content
+        :content="t('redisTerminal.broadcastHint')"
+        placement="top"
+        popper-style="max-width: 420px">
         <el-checkbox
           v-model="autoBroadcast"
           :label="t('redisTerminal.autoBroadcast')"
